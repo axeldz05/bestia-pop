@@ -84,8 +84,10 @@ import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.data.network.MetadataFetcher
 import com.bestiapop.android.ui.MusicPlayerViewModel
 import com.bestiapop.android.ui.SortOption
+import com.bestiapop.android.ui.components.AddMusicDialog
 import com.bestiapop.android.ui.components.SongListItem
 import kotlinx.coroutines.launch
+
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -121,9 +123,11 @@ fun LibraryScreen(
     val isAlbumSelectionMode = selectedAlbumNames.isNotEmpty()
 
     // Dialog states
+    var showAddMusicDialog by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
     var showPlaylistDialog by remember { mutableStateOf(false) }
     var showCreatePlaylistDialog by remember { mutableStateOf(false) }
+
     var newPlaylistName by remember { mutableStateOf("") }
     var songsForPlaylist by remember { mutableStateOf<List<Song>>(emptyList()) }
 
@@ -235,7 +239,7 @@ fun LibraryScreen(
                     )
 
                     Button(
-                        onClick = onSelectFolderClick,
+                        onClick = { showAddMusicDialog = true },
                         colors = ButtonDefaults.buttonColors(
                             containerColor = MaterialTheme.colorScheme.primaryContainer,
                             contentColor = MaterialTheme.colorScheme.onPrimaryContainer
@@ -243,12 +247,13 @@ fun LibraryScreen(
                         shape = RoundedCornerShape(12.dp)
                     ) {
                         Icon(
-                            imageVector = Icons.Default.FolderOpen,
-                            contentDescription = "Importar",
+                            imageVector = Icons.Default.Add,
+                            contentDescription = "Agregar",
                             modifier = Modifier.padding(end = 6.dp)
                         )
-                        Text("Importar")
+                        Text("Agregar")
                     }
+
                 }
             }
 
@@ -598,6 +603,16 @@ fun LibraryScreen(
                 }
             }
         }
+
+        // Add Music Dialog
+        if (showAddMusicDialog) {
+            AddMusicDialog(
+                viewModel = viewModel,
+                onSelectFolderClick = onSelectFolderClick,
+                onDismiss = { showAddMusicDialog = false }
+            )
+        }
+
 
         // Artist Detail Screen (Shows Artist's Albums first + Multi-Album Selection)
         if (selectedArtistName != null) {

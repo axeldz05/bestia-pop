@@ -15,6 +15,8 @@ interface MusicDao {
     @Query("SELECT * FROM songs ORDER BY title ASC")
     fun getAllSongsFlow(): Flow<List<SongEntity>>
 
+
+
     @Query("SELECT * FROM songs WHERE uriString = :uri LIMIT 1")
     suspend fun getSongByUri(uri: String): SongEntity?
 

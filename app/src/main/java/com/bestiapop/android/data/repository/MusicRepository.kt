@@ -14,10 +14,12 @@ import com.bestiapop.android.data.db.toEntity
 import com.bestiapop.android.data.db.toSongEntity
 import com.bestiapop.android.data.model.Album
 import com.bestiapop.android.data.model.Artist
+import com.bestiapop.android.data.model.OnlineCatalogTrack
 import com.bestiapop.android.data.model.Playlist
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.data.network.MetadataFetcher
 import kotlinx.coroutines.Dispatchers
+
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -32,6 +34,8 @@ class MusicRepository(private val context: Context) {
     val allSongsFlow: Flow<List<Song>> = musicDao.getAllSongsFlow().map { entities ->
         entities.map { it.toSong() }
     }
+
+
 
     val playlistsFlow: Flow<List<Playlist>> = musicDao.getAllPlaylistsFlow().map { entities ->
         entities.map { entity ->
@@ -393,4 +397,149 @@ class MusicRepository(private val context: Context) {
     suspend fun removeSongFromPlaylist(playlistId: Long, songId: Long) = withContext(Dispatchers.IO) {
         musicDao.removeSongFromPlaylist(playlistId, songId)
     }
+
+    suspend fun downloadAndSaveOnlineTrack(
+        track: OnlineCatalogTrack,
+        onProgress: ((String) -> Unit)? = null
+    ): Song = withContext(Dispatchers.IO) {
+        onProgress?.invoke("Buscando audio de alta calidad en YouTube...")
+
+        var downloadUrl = track.audioUrl
+        var userAgentToUse = track.userAgent
+
+        var finalTitle = track.title
+        var finalArtist = track.artist
+        var finalArtwork = track.artworkUrl
+        var finalDurationMs = track.durationMs
+
+        // Re-obtener siempre un stream fresco de YouTube justo antes de descargar para evitar URLs de CDN caducadas (HTTP 403)
+        val queryOrId = track.id.ifBlank { track.audioUrl }
+        val extractRes = com.bestiapop.android.data.network.YouTubeExtractor.extractAudioStreamDetailed(queryOrId)
+
+        if (extractRes is com.bestiapop.android.data.network.YouTubeExtractResult.Success) {
+            val ytStream = extractRes.result
+            downloadUrl = ytStream.audioUrl
+            userAgentToUse = ytStream.userAgent
+            if (finalTitle.isBlank() || finalTitle == "YouTube Track" || finalTitle == "Canción desde Link") finalTitle = ytStream.title
+            if (finalArtist.isBlank() || finalArtist == "YouTube Artist" || finalArtist == "Enlace Web") finalArtist = ytStream.artist
+            if (finalArtwork.isNullOrBlank()) finalArtwork = ytStream.artworkUrl
+            if (finalDurationMs <= 0) finalDurationMs = ytStream.durationMs
+        } else if (extractRes is com.bestiapop.android.data.network.YouTubeExtractResult.Error) {
+            throw java.io.IOException(extractRes.message)
+        }
+
+
+        val musicDir = File(context.getExternalFilesDir(null), "DownloadedMusic")
+        if (!musicDir.exists()) musicDir.mkdirs()
+
+        val ext = when {
+            downloadUrl.contains("audio/mp4") || downloadUrl.contains("mime=audio%2Fmp4") || downloadUrl.endsWith(".m4a") -> "m4a"
+            downloadUrl.contains("audio/webm") || downloadUrl.contains("mime=audio%2Fwebm") || downloadUrl.endsWith(".webm") -> "webm"
+            downloadUrl.endsWith(".aac") -> "aac"
+            downloadUrl.endsWith(".ogg") -> "ogg"
+            downloadUrl.endsWith(".wav") -> "wav"
+            else -> "m4a"
+        }
+        val sanitizedName = (finalArtist + "_" + finalTitle).replace(Regex("[^a-zA-Z0-9_.-]"), "_")
+        val file = File(musicDir, "$sanitizedName.$ext")
+
+        onProgress?.invoke("Descargando audio (${finalTitle})...")
+
+        val client = okhttp3.OkHttpClient.Builder()
+            .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+            .followRedirects(true)
+            .followSslRedirects(true)
+            .build()
+
+        var downloadedBytes = 0L
+        var maxResumes = 5
+        var attempts = 0
+        var downloadSuccess = false
+        var lastHttpError: String? = null
+
+        while (attempts < maxResumes && !downloadSuccess) {
+            attempts++
+            try {
+                val reqBuilder = okhttp3.Request.Builder()
+                    .url(downloadUrl)
+                    .header("Accept", "*/*")
+                    .header("Accept-Encoding", "identity")
+                    .header("User-Agent", userAgentToUse)
+
+                if (downloadedBytes > 0) {
+                    reqBuilder.header("Range", "bytes=$downloadedBytes-")
+                }
+
+                client.newCall(reqBuilder.build()).execute().use { response ->
+                    if (response.isSuccessful || response.code == 206) {
+                        val body = response.body
+                        if (body != null) {
+                            val inputStream = body.byteStream()
+                            val fos = java.io.FileOutputStream(file, downloadedBytes > 0)
+                            val buffer = ByteArray(8192)
+                            var read: Int
+                            while (inputStream.read(buffer).also { read = it } != -1) {
+                                fos.write(buffer, 0, read)
+                                downloadedBytes += read
+                            }
+                            fos.flush()
+                            fos.close()
+                            downloadSuccess = true
+                        }
+                    } else {
+                        lastHttpError = "HTTP ${response.code} (${response.message.ifBlank { "Error de servidor" }})"
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                lastHttpError = e.localizedMessage ?: "Error de red"
+                if (file.exists() && file.length() > 0) {
+                    downloadedBytes = file.length()
+                }
+            }
+        }
+
+        if (!file.exists() || file.length() == 0L) {
+            val errorDetails = if (!lastHttpError.isNullOrBlank()) " ($lastHttpError)" else ""
+            throw java.io.IOException("No se pudo descargar el archivo de audio de YouTube$errorDetails. Verifica tu conexión a internet o intenta con otra canción.")
+        }
+
+        val savedUri = file.absolutePath
+
+
+
+
+        onProgress?.invoke("Obteniendo portada e información...")
+        if (finalArtwork.isNullOrEmpty()) {
+            finalArtwork = MetadataFetcher.fetchAlbumArtUrl(finalArtist, finalTitle)
+        }
+
+        val lyrics = MetadataFetcher.fetchLyrics(finalArtist, finalTitle)
+
+        val songEntity = SongEntity(
+            uriString = savedUri,
+            title = finalTitle,
+            artist = finalArtist,
+            album = "YouTube Music",
+            genre = "Music",
+            durationMs = if (finalDurationMs > 0) finalDurationMs else 180000L,
+            year = 0,
+            trackNumber = 0,
+            artworkUri = finalArtwork,
+            lyrics = lyrics,
+            folderPath = "DownloadedMusic",
+            dateAdded = System.currentTimeMillis()
+        )
+
+        onProgress?.invoke("Guardando en la biblioteca...")
+        val insertedId = musicDao.insertSong(songEntity)
+        val savedSong = songEntity.copy(id = insertedId).toSong()
+
+        onProgress?.invoke("¡Canción agregada con éxito!")
+        return@withContext savedSong
+    }
 }
+
+
+

@@ -59,3 +59,73 @@ data class CustomTheme(
     val colors: ColorSchemeData,
     val isDark: Boolean = true
 )
+
+data class OnlineCatalogTrack(
+    val id: String,
+    val title: String,
+    val artist: String,
+    val album: String,
+    val artworkUrl: String?,
+    val durationMs: Long,
+    val audioUrl: String,
+    val provider: String = "YouTube",
+    val userAgent: String = "Mozilla/5.0 (SmartHub; SMART-TV; U; Linux/SmartTV) AppleWebKit/538.1 (KHTML, like Gecko) TV Safari/538.1"
+)
+
+
+enum class CatalogCategory {
+    SONGS,
+    ALBUMS,
+    PLAYLISTS
+}
+
+data class CatalogAlbum(
+    val id: String,
+    val title: String,
+    val artist: String,
+    val coverUrl: String?,
+    val trackCount: Int = 0,
+    val releaseYear: String = ""
+)
+
+data class CatalogPlaylist(
+    val id: String,
+    val title: String,
+    val creator: String,
+    val coverUrl: String?,
+    val trackCount: Int = 0
+)
+
+enum class CandidateDownloadState {
+    IDLE,
+    DOWNLOADING,
+    SUCCESS,
+    ERROR
+}
+
+data class CatalogTrackCandidate(
+    val trackTitle: String,
+    val artist: String,
+    val albumName: String,
+    val coverUrl: String?,
+    val candidates: List<OnlineCatalogTrack>,
+    val currentCandidateIndex: Int = 0,
+    val isSelected: Boolean = true,
+    val downloadState: CandidateDownloadState = CandidateDownloadState.IDLE,
+    val downloadProgressPercent: Int = 0,
+    val errorMessage: String? = null
+) {
+    val currentTrack: OnlineCatalogTrack?
+        get() = candidates.getOrNull(currentCandidateIndex)
+}
+
+
+sealed class DownloadStatus {
+    object Idle : DownloadStatus()
+    data class Downloading(val message: String) : DownloadStatus()
+    data class Success(val song: Song, val message: String) : DownloadStatus()
+    data class Error(val message: String) : DownloadStatus()
+}
+
+
+

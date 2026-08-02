@@ -37,6 +37,9 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+import android.content.Context
+import android.media.AudioManager
+
 enum class SortOption {
     TITLE,
     ARTIST,
@@ -124,6 +127,28 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     private val _queue = MutableStateFlow<List<Song>>(emptyList())
     val queue = _queue.asStateFlow()
+
+    private val audioManager = getApplication<Application>().getSystemService(Context.AUDIO_SERVICE) as AudioManager
+
+    private val _volumeLevel = MutableStateFlow(getDeviceVolumeRatio())
+    val volumeLevel = _volumeLevel.asStateFlow()
+
+    private fun getDeviceVolumeRatio(): Float {
+        val current = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+        val max = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
+        return (current.toFloat() / max.toFloat()).coerceIn(0f, 1f)
+    }
+
+    fun setVolume(ratio: Float) {
+        val max = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
+        val targetVolume = (ratio * max).toInt().coerceIn(0, max)
+        try {
+            audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, targetVolume, 0)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        _volumeLevel.value = ratio
+    }
 
     init {
         initMediaController()

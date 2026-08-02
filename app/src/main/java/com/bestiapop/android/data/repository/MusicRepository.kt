@@ -248,13 +248,21 @@ class MusicRepository(private val context: Context) {
     }
 
     suspend fun enhanceSongMetadataAndLyrics(song: Song) = withContext(Dispatchers.IO) {
-        if (!song.artworkUri.isNullOrEmpty() && !song.lyrics.isNullOrEmpty()) {
-            return@withContext
-        }
-
         var artUrl = song.artworkUri
-        if (artUrl.isNullOrEmpty()) {
-            artUrl = MetadataFetcher.fetchAlbumArtUrl(song.artist, song.title)
+
+        if (artUrl.isNullOrEmpty() || artUrl.startsWith("content://")) {
+            val cleanPath = when {
+                song.uriString.startsWith("file://") -> song.uriString.removePrefix("file://")
+                song.uriString.startsWith("file:") -> song.uriString.removePrefix("file:")
+                else -> song.uriString
+            }
+            val embedded = extractAndSaveEmbeddedArtwork(cleanPath, "${song.artist}_${song.album}")
+            if (!embedded.isNullOrEmpty()) {
+                artUrl = embedded
+            } else {
+                val queryTerm = if (song.album.isNotEmpty() && !song.album.equals("Unknown Album", ignoreCase = true)) song.album else song.title
+                artUrl = MetadataFetcher.fetchAlbumArtUrl(song.artist, queryTerm)
+            }
         }
 
         var lyricsStr = song.lyrics

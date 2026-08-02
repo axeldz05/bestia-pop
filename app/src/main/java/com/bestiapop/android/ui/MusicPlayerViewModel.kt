@@ -101,10 +101,12 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     val artistsState: StateFlow<List<Artist>> = songsState.map { songs ->
         songs.groupBy { it.artist }.map { (artistName, artistSongs) ->
+            val photo = artistSongs.firstOrNull { !it.artworkUri.isNullOrEmpty() }?.artworkUri
             Artist(
                 name = artistName,
                 songCount = artistSongs.size,
-                albumCount = artistSongs.map { it.album }.distinct().size
+                albumCount = artistSongs.map { it.album }.distinct().size,
+                photoUri = photo
             )
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -162,6 +164,14 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                     songs.find { it.uriString == current.uriString }?.let { updated ->
                         _currentSong.value = updated
                     }
+                }
+            }
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            songsState.collect { songs ->
+                val unenhanced = songs.filter { it.artworkUri.isNullOrEmpty() || it.artworkUri?.startsWith("content://") == true }
+                for (song in unenhanced.take(20)) {
+                    repository.enhanceSongMetadataAndLyrics(song)
                 }
             }
         }
@@ -250,6 +260,23 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         }
 
         fetchOnlineMetadataForSong(song)
+    }
+
+    // Unified Collection / Group Pipeline ("Everything is a Playlist")
+    fun playCollection(songs: List<Song>, startSong: Song? = null) {
+        if (songs.isEmpty()) return
+        val targetStart = startSong ?: songs.first()
+        playSong(targetStart, songs)
+    }
+
+    fun shuffleCollection(songs: List<Song>) {
+        if (songs.isEmpty()) return
+        val shuffled = songs.shuffled()
+        playSong(shuffled.first(), shuffled)
+    }
+
+    fun enqueueCollection(songs: List<Song>) {
+        addToQueueBatch(songs)
     }
 
     private fun fetchOnlineMetadataForSong(song: Song) {

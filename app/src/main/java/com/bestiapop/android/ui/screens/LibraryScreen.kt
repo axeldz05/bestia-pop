@@ -2,6 +2,7 @@ package com.bestiapop.android.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,11 +23,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Album
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CreateNewFolder
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PlaylistAdd
@@ -36,11 +39,13 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.Sort
+import androidx.compose.material.icons.filled.ViewAgenda
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -69,11 +74,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import androidx.compose.foundation.ExperimentalFoundationApi
+import com.bestiapop.android.data.model.Album
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.ui.MusicPlayerViewModel
 import com.bestiapop.android.ui.SortOption
 import com.bestiapop.android.ui.components.SongListItem
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun LibraryScreen(
     viewModel: MusicPlayerViewModel,
@@ -91,20 +99,27 @@ fun LibraryScreen(
     var selectedTabIndex by remember { mutableIntStateOf(0) }
     var sortMenuExpanded by remember { mutableStateOf(false) }
 
-    // Album / Artist Detail selection state
+    // Tauon Layout option (show album section headers in song list, ON by default)
+    var showAlbumHeaders by remember { mutableStateOf(true) }
+
+    // Navigation states
     var selectedAlbumName by remember { mutableStateOf<String?>(null) }
     var selectedArtistName by remember { mutableStateOf<String?>(null) }
 
-    // Multi-selection state
+    // Multi-selection state for songs
     var selectedSongIds by remember { mutableStateOf(setOf<Long>()) }
-    val isSelectionMode = selectedSongIds.isNotEmpty()
+    val isSongSelectionMode = selectedSongIds.isNotEmpty()
+
+    // Multi-selection state for albums (when in Artist view or Albums tab)
+    var selectedAlbumNames by remember { mutableStateOf(setOf<String>()) }
+    val isAlbumSelectionMode = selectedAlbumNames.isNotEmpty()
 
     // Dialog states
     var showDeleteDialog by remember { mutableStateOf(false) }
     var showPlaylistDialog by remember { mutableStateOf(false) }
     var showCreatePlaylistDialog by remember { mutableStateOf(false) }
     var newPlaylistName by remember { mutableStateOf("") }
-    var singleSongForPlaylist by remember { mutableStateOf<Song?>(null) }
+    var songsForPlaylist by remember { mutableStateOf<List<Song>>(emptyList()) }
 
     val selectedSongs = remember(selectedSongIds, songs) {
         songs.filter { selectedSongIds.contains(it.id) }
@@ -116,8 +131,8 @@ fun LibraryScreen(
                 .fillMaxSize()
                 .padding(top = 16.dp, start = 16.dp, end = 16.dp)
         ) {
-            // Header Row (Normal vs Multi-Selection Mode)
-            if (isSelectionMode) {
+            // Header Row (Normal vs Song Multi-Selection Mode)
+            if (isSongSelectionMode) {
                 Surface(
                     color = MaterialTheme.colorScheme.primaryContainer,
                     shape = RoundedCornerShape(16.dp),
@@ -140,7 +155,7 @@ fun LibraryScreen(
                             }
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
-                                text = "${selectedSongIds.size} seleccionada(s)",
+                                text = "${selectedSongIds.size} canción(es)",
                                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                                 color = MaterialTheme.colorScheme.onPrimaryContainer
                             )
@@ -163,6 +178,36 @@ fun LibraryScreen(
                         }
                     }
                 }
+            } else if (isAlbumSelectionMode) {
+                Surface(
+                    color = MaterialTheme.colorScheme.secondaryContainer,
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 8.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            IconButton(onClick = { selectedAlbumNames = emptySet() }) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "Descartar selección de álbumes",
+                                    tint = MaterialTheme.colorScheme.onSecondaryContainer
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "${selectedAlbumNames.size} álbum(es)",
+                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                                color = MaterialTheme.colorScheme.onSecondaryContainer
+                            )
+                        }
+                    }
+                }
             } else {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -175,7 +220,6 @@ fun LibraryScreen(
                         color = MaterialTheme.colorScheme.onBackground
                     )
 
-                    // Select Folder Button
                     Button(
                         onClick = onSelectFolderClick,
                         colors = ButtonDefaults.buttonColors(
@@ -196,7 +240,7 @@ fun LibraryScreen(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // Search Bar & Sort Button
+            // Search Bar, Tauon Separator Toggle & Sort Button
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
@@ -220,7 +264,18 @@ fun LibraryScreen(
                     modifier = Modifier.weight(1f)
                 )
 
-                Spacer(modifier = Modifier.width(8.dp))
+                Spacer(modifier = Modifier.width(4.dp))
+
+                // Tauon Header Toggle Button
+                IconButton(
+                    onClick = { showAlbumHeaders = !showAlbumHeaders }
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.ViewAgenda,
+                        contentDescription = "Separadores de álbum",
+                        tint = if (showAlbumHeaders) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                    )
+                }
 
                 Box {
                     IconButton(onClick = { sortMenuExpanded = true }) {
@@ -235,6 +290,13 @@ fun LibraryScreen(
                         expanded = sortMenuExpanded,
                         onDismissRequest = { sortMenuExpanded = false }
                     ) {
+                        DropdownMenuItem(
+                            text = { Text("Separadores de Álbum (Tauon) ${if (showAlbumHeaders) "✓" else ""}") },
+                            onClick = {
+                                showAlbumHeaders = !showAlbumHeaders
+                                sortMenuExpanded = false
+                            }
+                        )
                         DropdownMenuItem(
                             text = { Text("Título ${if (sortOption == SortOption.TITLE) "✓" else ""}") },
                             onClick = {
@@ -253,20 +315,6 @@ fun LibraryScreen(
                             text = { Text("Álbum ${if (sortOption == SortOption.ALBUM) "✓" else ""}") },
                             onClick = {
                                 viewModel.setSortOption(SortOption.ALBUM)
-                                sortMenuExpanded = false
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Género ${if (sortOption == SortOption.GENRE) "✓" else ""}") },
-                            onClick = {
-                                viewModel.setSortOption(SortOption.GENRE)
-                                sortMenuExpanded = false
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Fecha de añadido ${if (sortOption == SortOption.DATE_ADDED) "✓" else ""}") },
-                            onClick = {
-                                viewModel.setSortOption(SortOption.DATE_ADDED)
                                 sortMenuExpanded = false
                             }
                         )
@@ -321,130 +369,131 @@ fun LibraryScreen(
                                     style = MaterialTheme.typography.titleMedium,
                                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                                 )
-                                Text(
-                                    text = "Usa 'Importar' o la Transferencia WiFi para añadir música.",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
-                                    modifier = Modifier.padding(top = 4.dp)
-                                )
                             }
                         }
                     } else {
                         LazyColumn(
                             modifier = Modifier
                                 .fillMaxSize()
-                                .padding(bottom = if (isSelectionMode) 80.dp else 0.dp)
+                                .padding(bottom = if (isSongSelectionMode) 80.dp else 0.dp)
                         ) {
-                            itemsIndexed(songs, key = { index, song -> "${song.id}_$index" }) { index, song ->
-                                val isSelected = selectedSongIds.contains(song.id)
-                                SongListItem(
-                                    song = song,
-                                    isCurrentPlaying = currentSong?.uriString == song.uriString,
-                                    isSelectionMode = isSelectionMode,
-                                    isSelected = isSelected,
-                                    onClick = {
-                                        if (isSelectionMode) {
-                                            selectedSongIds = if (isSelected) {
-                                                selectedSongIds - song.id
-                                            } else {
-                                                selectedSongIds + song.id
+                            if (showAlbumHeaders) {
+                                // Tauon Style: Group by Album with inline separators
+                                val groupedByAlbum = songs.groupBy { it.album }
+                                groupedByAlbum.forEach { (albumName, albumSongs) ->
+                                    item(key = "album_header_$albumName") {
+                                        TauonAlbumHeader(
+                                            albumName = albumName,
+                                            artistName = albumSongs.firstOrNull()?.artist ?: "Artista Desconocido",
+                                            artworkUri = albumSongs.firstOrNull()?.artworkUri,
+                                            songCount = albumSongs.size,
+                                            onPlayAlbum = {
+                                                viewModel.playCollection(albumSongs)
+                                                albumSongs.firstOrNull()?.let { onSongSelect(it) }
+                                            },
+                                            onShuffleAlbum = {
+                                                viewModel.shuffleCollection(albumSongs)
+                                                albumSongs.firstOrNull()?.let { onSongSelect(it) }
+                                            },
+                                            onQueueAlbum = {
+                                                viewModel.enqueueCollection(albumSongs)
+                                            },
+                                            onAddAlbumToPlaylist = {
+                                                songsForPlaylist = albumSongs
+                                                showPlaylistDialog = true
                                             }
-                                        } else {
-                                            viewModel.playSong(song, songs)
-                                            onSongSelect(song)
-                                        }
-                                    },
-                                    onLongClick = {
-                                        if (!isSelectionMode) {
-                                            selectedSongIds = setOf(song.id)
-                                        }
-                                    },
-                                    onToggleSelect = {
-                                        selectedSongIds = if (isSelected) {
-                                            selectedSongIds - song.id
-                                        } else {
-                                            selectedSongIds + song.id
-                                        }
-                                    },
-                                    onPlayNext = { viewModel.playNextInQueue(song) },
-                                    onAddToQueue = { viewModel.addToQueue(song) },
-                                    onAddToPlaylist = {
-                                        singleSongForPlaylist = song
-                                        showPlaylistDialog = true
-                                    }
-                                )
-                            }
-                        }
-                    }
-                }
-                1 -> {
-                    LazyColumn(modifier = Modifier.fillMaxSize()) {
-                        items(albums) { album ->
-                            Card(
-                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
-                                shape = RoundedCornerShape(14.dp),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 4.dp)
-                                    .clickable { selectedAlbumName = album.name }
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(12.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(52.dp)
-                                            .clip(RoundedCornerShape(10.dp))
-                                            .background(MaterialTheme.colorScheme.primaryContainer),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        if (!album.artworkUri.isNullOrEmpty()) {
-                                            AsyncImage(
-                                                model = album.artworkUri,
-                                                contentDescription = album.name,
-                                                contentScale = ContentScale.Crop,
-                                                modifier = Modifier.fillMaxSize()
-                                            )
-                                        } else {
-                                            Icon(
-                                                imageVector = Icons.Default.Album,
-                                                contentDescription = null,
-                                                tint = MaterialTheme.colorScheme.onPrimaryContainer
-                                            )
-                                        }
-                                    }
-
-                                    Spacer(modifier = Modifier.width(12.dp))
-
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            text = album.name,
-                                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                                            color = MaterialTheme.colorScheme.onSurface,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                        Text(
-                                            text = "${album.artist} • ${album.songCount} canciones",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
                                         )
                                     }
 
-                                    Icon(
-                                        imageVector = Icons.Default.KeyboardArrowRight,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                                    itemsIndexed(albumSongs, key = { idx, song -> "${song.id}_$idx" }) { _, song ->
+                                        val isSelected = selectedSongIds.contains(song.id)
+                                        SongListItem(
+                                            song = song,
+                                            isCurrentPlaying = currentSong?.uriString == song.uriString,
+                                            isSelectionMode = isSongSelectionMode,
+                                            isSelected = isSelected,
+                                            onClick = {
+                                                if (isSongSelectionMode) {
+                                                    selectedSongIds = if (isSelected) selectedSongIds - song.id else selectedSongIds + song.id
+                                                } else {
+                                                    viewModel.playSong(song, albumSongs)
+                                                    onSongSelect(song)
+                                                }
+                                            },
+                                            onLongClick = {
+                                                if (!isSongSelectionMode) selectedSongIds = setOf(song.id)
+                                            },
+                                            onToggleSelect = {
+                                                selectedSongIds = if (isSelected) selectedSongIds - song.id else selectedSongIds + song.id
+                                            },
+                                            onPlayNext = { viewModel.playNextInQueue(song) },
+                                            onAddToQueue = { viewModel.addToQueue(song) },
+                                            onAddToPlaylist = {
+                                                songsForPlaylist = listOf(song)
+                                                showPlaylistDialog = true
+                                            }
+                                        )
+                                    }
+                                }
+                            } else {
+                                // Flat Song List
+                                itemsIndexed(songs, key = { index, song -> "${song.id}_$index" }) { index, song ->
+                                    val isSelected = selectedSongIds.contains(song.id)
+                                    SongListItem(
+                                        song = song,
+                                        isCurrentPlaying = currentSong?.uriString == song.uriString,
+                                        isSelectionMode = isSongSelectionMode,
+                                        isSelected = isSelected,
+                                        onClick = {
+                                            if (isSongSelectionMode) {
+                                                selectedSongIds = if (isSelected) selectedSongIds - song.id else selectedSongIds + song.id
+                                            } else {
+                                                viewModel.playSong(song, songs)
+                                                onSongSelect(song)
+                                            }
+                                        },
+                                        onLongClick = {
+                                            if (!isSongSelectionMode) selectedSongIds = setOf(song.id)
+                                        },
+                                        onToggleSelect = {
+                                            selectedSongIds = if (isSelected) selectedSongIds - song.id else selectedSongIds + song.id
+                                        },
+                                        onPlayNext = { viewModel.playNextInQueue(song) },
+                                        onAddToQueue = { viewModel.addToQueue(song) },
+                                        onAddToPlaylist = {
+                                            songsForPlaylist = listOf(song)
+                                            showPlaylistDialog = true
+                                        }
                                     )
                                 }
                             }
                         }
                     }
                 }
+                1 -> {
+                    // Albums Tab
+                    LazyColumn(modifier = Modifier.fillMaxSize()) {
+                        items(albums) { album ->
+                            AlbumCard(
+                                album = album,
+                                onClick = { selectedAlbumName = album.name },
+                                onPlayAlbum = {
+                                    val albumSongs = songs.filter { it.album == album.name }
+                                    if (albumSongs.isNotEmpty()) {
+                                        viewModel.playSong(albumSongs.first(), albumSongs)
+                                        onSongSelect(albumSongs.first())
+                                    }
+                                },
+                                onQueueAlbum = {
+                                    val albumSongs = songs.filter { it.album == album.name }
+                                    viewModel.addToQueueBatch(albumSongs)
+                                }
+                            )
+                        }
+                    }
+                }
                 2 -> {
+                    // Artists Tab
                     LazyColumn(modifier = Modifier.fillMaxSize()) {
                         items(artists) { artist ->
                             Card(
@@ -466,11 +515,20 @@ fun LibraryScreen(
                                             .background(MaterialTheme.colorScheme.secondaryContainer),
                                         contentAlignment = Alignment.Center
                                     ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Person,
-                                            contentDescription = null,
-                                            tint = MaterialTheme.colorScheme.onSecondaryContainer
-                                        )
+                                        if (!artist.photoUri.isNullOrEmpty()) {
+                                            AsyncImage(
+                                                model = artist.photoUri,
+                                                contentDescription = artist.name,
+                                                contentScale = ContentScale.Crop,
+                                                modifier = Modifier.fillMaxSize()
+                                            )
+                                        } else {
+                                            Icon(
+                                                imageVector = Icons.Default.Person,
+                                                contentDescription = null,
+                                                tint = MaterialTheme.colorScheme.onSecondaryContainer
+                                            )
+                                        }
                                     }
 
                                     Spacer(modifier = Modifier.width(12.dp))
@@ -505,17 +563,11 @@ fun LibraryScreen(
             }
         }
 
-        // Album or Artist Detail Screen Overlay
-        if (selectedAlbumName != null || selectedArtistName != null) {
-            val isAlbumDetail = selectedAlbumName != null
-            val detailTitle = selectedAlbumName ?: selectedArtistName ?: ""
-            val detailSongs = remember(selectedAlbumName, selectedArtistName, songs) {
-                if (isAlbumDetail) {
-                    songs.filter { it.album == selectedAlbumName }
-                } else {
-                    songs.filter { it.artist == selectedArtistName }
-                }
-            }
+        // Artist Detail Screen (Shows Artist's Albums first + Multi-Album Selection)
+        if (selectedArtistName != null) {
+            val artistName = selectedArtistName!!
+            val artistSongs = remember(artistName, songs) { songs.filter { it.artist == artistName } }
+            val artistAlbums = remember(artistName, albums) { albums.filter { it.artist == artistName } }
 
             Surface(
                 modifier = Modifier.fillMaxSize(),
@@ -526,17 +578,15 @@ fun LibraryScreen(
                         .fillMaxSize()
                         .padding(top = 16.dp, start = 16.dp, end = 16.dp)
                 ) {
-                    // Detail Header Bar
+                    // Header
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        IconButton(
-                            onClick = {
-                                selectedAlbumName = null
-                                selectedArtistName = null
-                            }
-                        ) {
+                        IconButton(onClick = {
+                            selectedArtistName = null
+                            selectedAlbumNames = emptySet()
+                        }) {
                             Icon(
                                 imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                                 contentDescription = "Volver",
@@ -546,14 +596,14 @@ fun LibraryScreen(
                         Spacer(modifier = Modifier.width(8.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = detailTitle,
+                                text = artistName,
                                 style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
                                 color = MaterialTheme.colorScheme.onBackground,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
                             Text(
-                                text = if (isAlbumDetail) "Álbum • ${detailSongs.size} canciones" else "Artista • ${detailSongs.size} canciones",
+                                text = "Artista • ${artistAlbums.size} álbumes • ${artistSongs.size} canciones",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f)
                             )
@@ -562,16 +612,16 @@ fun LibraryScreen(
 
                     Spacer(modifier = Modifier.height(16.dp))
 
-                    // Action Buttons (Play All & Shuffle)
+                    // Play All Artist & Shuffle Buttons
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         Button(
                             onClick = {
-                                if (detailSongs.isNotEmpty()) {
-                                    viewModel.playSong(detailSongs.first(), detailSongs)
-                                    onSongSelect(detailSongs.first())
+                                if (artistSongs.isNotEmpty()) {
+                                    viewModel.playSong(artistSongs.first(), artistSongs)
+                                    onSongSelect(artistSongs.first())
                                 }
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
@@ -585,8 +635,8 @@ fun LibraryScreen(
 
                         OutlinedButton(
                             onClick = {
-                                if (detailSongs.isNotEmpty()) {
-                                    val shuffled = detailSongs.shuffled()
+                                if (artistSongs.isNotEmpty()) {
+                                    val shuffled = artistSongs.shuffled()
                                     viewModel.playSong(shuffled.first(), shuffled)
                                     onSongSelect(shuffled.first())
                                 }
@@ -602,31 +652,222 @@ fun LibraryScreen(
 
                     Spacer(modifier = Modifier.height(16.dp))
 
-                    // Detail Song List
+                    // List of Artist Albums (Clicking album opens single album view!)
                     LazyColumn(
                         modifier = Modifier
                             .fillMaxSize()
-                            .padding(bottom = if (isSelectionMode) 80.dp else 0.dp)
+                            .padding(bottom = if (isAlbumSelectionMode) 80.dp else 0.dp)
                     ) {
-                        itemsIndexed(detailSongs, key = { index, song -> "${song.id}_$index" }) { index, song ->
+                        items(artistAlbums) { album ->
+                            val isSelected = selectedAlbumNames.contains(album.name)
+                            Card(
+                                colors = CardDefaults.cardColors(
+                                    containerColor = if (isSelected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                                ),
+                                shape = RoundedCornerShape(14.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp)
+                                    .combinedClickable(
+                                        onClick = {
+                                            if (isAlbumSelectionMode) {
+                                                selectedAlbumNames = if (isSelected) selectedAlbumNames - album.name else selectedAlbumNames + album.name
+                                            } else {
+                                                selectedAlbumName = album.name // Opens single album detail view!
+                                            }
+                                        },
+                                        onLongClick = {
+                                            selectedAlbumNames = if (isSelected) selectedAlbumNames - album.name else selectedAlbumNames + album.name
+                                        }
+                                    )
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    if (isAlbumSelectionMode) {
+                                        Checkbox(
+                                            checked = isSelected,
+                                            onCheckedChange = {
+                                                selectedAlbumNames = if (isSelected) selectedAlbumNames - album.name else selectedAlbumNames + album.name
+                                            }
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                    }
+
+                                    Box(
+                                        modifier = Modifier
+                                            .size(56.dp)
+                                            .clip(RoundedCornerShape(10.dp))
+                                            .background(MaterialTheme.colorScheme.primaryContainer),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        if (!album.artworkUri.isNullOrEmpty()) {
+                                            AsyncImage(
+                                                model = album.artworkUri,
+                                                contentDescription = album.name,
+                                                contentScale = ContentScale.Crop,
+                                                modifier = Modifier.fillMaxSize()
+                                            )
+                                        } else {
+                                            Icon(
+                                                imageVector = Icons.Default.Album,
+                                                contentDescription = null,
+                                                tint = MaterialTheme.colorScheme.onPrimaryContainer
+                                            )
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.width(12.dp))
+
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = album.name,
+                                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Text(
+                                            text = "${album.songCount} canciones",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                                        )
+                                    }
+
+                                    IconButton(onClick = {
+                                        val albumSongs = songs.filter { it.album == album.name }
+                                        if (albumSongs.isNotEmpty()) {
+                                            viewModel.playSong(albumSongs.first(), albumSongs)
+                                            onSongSelect(albumSongs.first())
+                                        }
+                                    }) {
+                                        Icon(
+                                            imageVector = Icons.Default.PlayArrow,
+                                            contentDescription = "Reproducir disco",
+                                            tint = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+
+                                    Icon(
+                                        imageVector = Icons.Default.KeyboardArrowRight,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Single Album Detail Screen Overlay
+        if (selectedAlbumName != null) {
+            val albumName = selectedAlbumName!!
+            val albumSongs = remember(albumName, songs) { songs.filter { it.album == albumName } }
+
+            Surface(
+                modifier = Modifier.fillMaxSize(),
+                color = MaterialTheme.colorScheme.background
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(top = 16.dp, start = 16.dp, end = 16.dp)
+                ) {
+                    // Header
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IconButton(onClick = { selectedAlbumName = null }) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "Volver",
+                                tint = MaterialTheme.colorScheme.onBackground
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = albumName,
+                                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                                color = MaterialTheme.colorScheme.onBackground,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = "Álbum • ${albumSongs.firstOrNull()?.artist ?: ""} • ${albumSongs.size} canciones",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Button(
+                            onClick = {
+                                if (albumSongs.isNotEmpty()) {
+                                    viewModel.playSong(albumSongs.first(), albumSongs)
+                                    onSongSelect(albumSongs.first())
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(imageVector = Icons.Default.PlayArrow, contentDescription = null)
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Reproducir disco")
+                        }
+
+                        OutlinedButton(
+                            onClick = {
+                                if (albumSongs.isNotEmpty()) {
+                                    val shuffled = albumSongs.shuffled()
+                                    viewModel.playSong(shuffled.first(), shuffled)
+                                    onSongSelect(shuffled.first())
+                                }
+                            },
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(imageVector = Icons.Default.Shuffle, contentDescription = null)
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Aleatorio")
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(bottom = if (isSongSelectionMode) 80.dp else 0.dp)
+                    ) {
+                        itemsIndexed(albumSongs, key = { index, song -> "${song.id}_$index" }) { index, song ->
                             val isSelected = selectedSongIds.contains(song.id)
                             SongListItem(
                                 song = song,
                                 isCurrentPlaying = currentSong?.uriString == song.uriString,
-                                isSelectionMode = isSelectionMode,
+                                isSelectionMode = isSongSelectionMode,
                                 isSelected = isSelected,
                                 onClick = {
-                                    if (isSelectionMode) {
+                                    if (isSongSelectionMode) {
                                         selectedSongIds = if (isSelected) selectedSongIds - song.id else selectedSongIds + song.id
                                     } else {
-                                        viewModel.playSong(song, detailSongs)
+                                        viewModel.playSong(song, albumSongs)
                                         onSongSelect(song)
                                     }
                                 },
                                 onLongClick = {
-                                    if (!isSelectionMode) {
-                                        selectedSongIds = setOf(song.id)
-                                    }
+                                    if (!isSongSelectionMode) selectedSongIds = setOf(song.id)
                                 },
                                 onToggleSelect = {
                                     selectedSongIds = if (isSelected) selectedSongIds - song.id else selectedSongIds + song.id
@@ -634,7 +875,7 @@ fun LibraryScreen(
                                 onPlayNext = { viewModel.playNextInQueue(song) },
                                 onAddToQueue = { viewModel.addToQueue(song) },
                                 onAddToPlaylist = {
-                                    singleSongForPlaylist = song
+                                    songsForPlaylist = listOf(song)
                                     showPlaylistDialog = true
                                 }
                             )
@@ -644,8 +885,87 @@ fun LibraryScreen(
             }
         }
 
-        // Bottom Actions Bar for Multi-Selection
-        if (isSelectionMode) {
+        // Multi-Album Bottom Action Bar
+        if (isAlbumSelectionMode) {
+            val selectedAlbumsSongs = remember(selectedAlbumNames, songs) {
+                songs.filter { selectedAlbumNames.contains(it.album) }
+            }
+
+            Surface(
+                color = MaterialTheme.colorScheme.secondaryContainer,
+                tonalElevation = 8.dp,
+                shadowElevation = 12.dp,
+                shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .align(Alignment.BottomCenter)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    horizontalArrangement = Arrangement.SpaceAround,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Reproducir seleccionados
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.clickable {
+                            if (selectedAlbumsSongs.isNotEmpty()) {
+                                viewModel.playCollection(selectedAlbumsSongs)
+                                selectedAlbumsSongs.firstOrNull()?.let { onSongSelect(it) }
+                            }
+                            selectedAlbumNames = emptySet()
+                        }
+                    ) {
+                        Icon(imageVector = Icons.Default.PlayArrow, contentDescription = null, tint = MaterialTheme.colorScheme.onSecondaryContainer)
+                        Text(text = "Reproducir", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSecondaryContainer)
+                    }
+
+                    // Mezclar seleccionados
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.clickable {
+                            if (selectedAlbumsSongs.isNotEmpty()) {
+                                viewModel.shuffleCollection(selectedAlbumsSongs)
+                                selectedAlbumsSongs.firstOrNull()?.let { onSongSelect(it) }
+                            }
+                            selectedAlbumNames = emptySet()
+                        }
+                    ) {
+                        Icon(imageVector = Icons.Default.Shuffle, contentDescription = null, tint = MaterialTheme.colorScheme.onSecondaryContainer)
+                        Text(text = "Mezclar", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSecondaryContainer)
+                    }
+
+                    // Añadir a la cola
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.clickable {
+                            viewModel.enqueueCollection(selectedAlbumsSongs)
+                            selectedAlbumNames = emptySet()
+                        }
+                    ) {
+                        Icon(imageVector = Icons.Default.PlaylistAdd, contentDescription = null, tint = MaterialTheme.colorScheme.onSecondaryContainer)
+                        Text(text = "A la cola", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSecondaryContainer)
+                    }
+
+                    // Playlist
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.clickable {
+                            songsForPlaylist = selectedAlbumsSongs
+                            showPlaylistDialog = true
+                        }
+                    ) {
+                        Icon(imageVector = Icons.Default.PlaylistAddCheck, contentDescription = null, tint = MaterialTheme.colorScheme.onSecondaryContainer)
+                        Text(text = "Playlist", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSecondaryContainer)
+                    }
+                }
+            }
+        }
+
+        // Bottom Actions Bar for Song Multi-Selection
+        if (isSongSelectionMode) {
             Surface(
                 color = MaterialTheme.colorScheme.surfaceVariant,
                 tonalElevation = 8.dp,
@@ -662,7 +982,6 @@ fun LibraryScreen(
                     horizontalArrangement = Arrangement.SpaceAround,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Reproducir a continuación
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         modifier = Modifier.clickable {
@@ -670,19 +989,10 @@ fun LibraryScreen(
                             selectedSongIds = emptySet()
                         }
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.QueueMusic,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                        Text(
-                            text = "A continuación",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        Icon(imageVector = Icons.Default.QueueMusic, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        Text(text = "A continuación", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
 
-                    // Añadir a la cola
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         modifier = Modifier.clickable {
@@ -690,54 +1000,29 @@ fun LibraryScreen(
                             selectedSongIds = emptySet()
                         }
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.PlaylistAdd,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                        Text(
-                            text = "A la cola",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        Icon(imageVector = Icons.Default.PlaylistAdd, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        Text(text = "A la cola", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
 
-                    // Añadir a playlist
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         modifier = Modifier.clickable {
+                            songsForPlaylist = selectedSongs
                             showPlaylistDialog = true
                         }
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.PlaylistAddCheck,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                        Text(
-                            text = "Playlist",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        Icon(imageVector = Icons.Default.PlaylistAddCheck, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        Text(text = "Playlist", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
 
-                    // Eliminar
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         modifier = Modifier.clickable {
                             showDeleteDialog = true
                         }
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Delete,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.error
-                        )
-                        Text(
-                            text = "Eliminar",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.error
-                        )
+                        Icon(imageVector = Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error)
+                        Text(text = "Eliminar", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
                     }
                 }
             }
@@ -746,18 +1031,11 @@ fun LibraryScreen(
 
     // Delete Confirmation Dialog
     if (showDeleteDialog) {
-        val targets = if (isSelectionMode) selectedSongs else emptyList()
+        val targets = if (isSongSelectionMode) selectedSongs else emptyList()
         AlertDialog(
             onDismissRequest = { showDeleteDialog = false },
-            title = {
-                Text(
-                    text = "¿Eliminar ${targets.size} canción(es)?",
-                    fontWeight = FontWeight.Bold
-                )
-            },
-            text = {
-                Text(text = "Elegí cómo querés eliminar las canciones seleccionadas:")
-            },
+            title = { Text(text = "¿Eliminar ${targets.size} canción(es)?", fontWeight = FontWeight.Bold) },
+            text = { Text(text = "Elegí cómo querés eliminar las canciones seleccionadas:") },
             confirmButton = {
                 Column(
                     modifier = Modifier.fillMaxWidth(),
@@ -769,9 +1047,7 @@ fun LibraryScreen(
                             showDeleteDialog = false
                             selectedSongIds = emptySet()
                         },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.primary
-                        ),
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text("Solo quitar de la app")
@@ -783,9 +1059,7 @@ fun LibraryScreen(
                             showDeleteDialog = false
                             selectedSongIds = emptySet()
                         },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.error
-                        ),
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text("Eliminar del dispositivo (Disco)")
@@ -805,15 +1079,13 @@ fun LibraryScreen(
 
     // Add to Playlist Dialog
     if (showPlaylistDialog) {
-        val targets = if (singleSongForPlaylist != null) listOf(singleSongForPlaylist!!) else selectedSongs
+        val targets = songsForPlaylist
         AlertDialog(
             onDismissRequest = {
                 showPlaylistDialog = false
-                singleSongForPlaylist = null
+                songsForPlaylist = emptyList()
             },
-            title = {
-                Text("Añadir a Playlist (${targets.size} canción/es)")
-            },
+            title = { Text("Añadir a Playlist (${targets.size} canción/es)") },
             text = {
                 Column {
                     if (playlists.isEmpty()) {
@@ -827,17 +1099,16 @@ fun LibraryScreen(
                         LazyColumn(modifier = Modifier.height(200.dp)) {
                             items(playlists) { playlist ->
                                 Card(
-                                    colors = CardDefaults.cardColors(
-                                        containerColor = MaterialTheme.colorScheme.surfaceVariant
-                                    ),
+                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .padding(vertical = 4.dp)
                                         .clickable {
                                             viewModel.addSongsToPlaylist(playlist.id, targets)
                                             showPlaylistDialog = false
-                                            singleSongForPlaylist = null
+                                            songsForPlaylist = emptyList()
                                             selectedSongIds = emptySet()
+                                            selectedAlbumNames = emptySet()
                                         }
                                 ) {
                                     Row(
@@ -846,17 +1117,9 @@ fun LibraryScreen(
                                             .padding(12.dp),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Icon(
-                                            imageVector = Icons.Default.PlaylistAddCheck,
-                                            contentDescription = null,
-                                            tint = MaterialTheme.colorScheme.primary
-                                        )
+                                        Icon(imageVector = Icons.Default.PlaylistAddCheck, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                                         Spacer(modifier = Modifier.width(12.dp))
-                                        Text(
-                                            text = playlist.name,
-                                            style = MaterialTheme.typography.titleMedium,
-                                            fontWeight = FontWeight.SemiBold
-                                        )
+                                        Text(text = playlist.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                                     }
                                 }
                             }
@@ -865,11 +1128,7 @@ fun LibraryScreen(
 
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    TextButton(
-                        onClick = {
-                            showCreatePlaylistDialog = true
-                        }
-                    ) {
+                    TextButton(onClick = { showCreatePlaylistDialog = true }) {
                         Icon(imageVector = Icons.Default.Add, contentDescription = null)
                         Spacer(modifier = Modifier.width(6.dp))
                         Text("Crear nueva playlist")
@@ -878,12 +1137,10 @@ fun LibraryScreen(
             },
             confirmButton = {},
             dismissButton = {
-                TextButton(
-                    onClick = {
-                        showPlaylistDialog = false
-                        singleSongForPlaylist = null
-                    }
-                ) {
+                TextButton(onClick = {
+                    showPlaylistDialog = false
+                    songsForPlaylist = emptyList()
+                }) {
                     Text("Cancelar")
                 }
             }
@@ -922,5 +1179,214 @@ fun LibraryScreen(
                 }
             }
         )
+    }
+}
+
+@Composable
+private fun TauonAlbumHeader(
+    albumName: String,
+    artistName: String,
+    artworkUri: String?,
+    songCount: Int,
+    onPlayAlbum: () -> Unit,
+    onShuffleAlbum: () -> Unit,
+    onQueueAlbum: () -> Unit,
+    onAddAlbumToPlaylist: () -> Unit
+) {
+    var menuExpanded by remember { mutableStateOf(false) }
+
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 16.dp, bottom = 6.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(MaterialTheme.colorScheme.primaryContainer),
+                contentAlignment = Alignment.Center
+            ) {
+                if (!artworkUri.isNullOrEmpty()) {
+                    AsyncImage(
+                        model = artworkUri,
+                        contentDescription = albumName,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Default.Album,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = albumName,
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = "$artistName • $songCount canciones",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            IconButton(onClick = onPlayAlbum, modifier = Modifier.size(32.dp)) {
+                Icon(
+                    imageVector = Icons.Default.PlayArrow,
+                    contentDescription = "Reproducir disco",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+
+            IconButton(onClick = onShuffleAlbum, modifier = Modifier.size(32.dp)) {
+                Icon(
+                    imageVector = Icons.Default.Shuffle,
+                    contentDescription = "Aleatorio",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+
+            IconButton(onClick = onQueueAlbum, modifier = Modifier.size(32.dp)) {
+                Icon(
+                    imageVector = Icons.Default.QueueMusic,
+                    contentDescription = "Añadir disco a la cola",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+
+            Box {
+                IconButton(onClick = { menuExpanded = true }, modifier = Modifier.size(32.dp)) {
+                    Icon(
+                        imageVector = Icons.Default.MoreVert,
+                        contentDescription = "Opciones",
+                        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+
+                DropdownMenu(
+                    expanded = menuExpanded,
+                    onDismissRequest = { menuExpanded = false }
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("Añadir disco a Playlist") },
+                        onClick = {
+                            menuExpanded = false
+                            onAddAlbumToPlaylist()
+                        }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AlbumCard(
+    album: Album,
+    onClick: () -> Unit,
+    onPlayAlbum: () -> Unit,
+    onQueueAlbum: () -> Unit
+) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+        shape = RoundedCornerShape(14.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp)
+            .clickable(onClick = onClick)
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(52.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(MaterialTheme.colorScheme.primaryContainer),
+                contentAlignment = Alignment.Center
+            ) {
+                if (!album.artworkUri.isNullOrEmpty()) {
+                    AsyncImage(
+                        model = album.artworkUri,
+                        contentDescription = album.name,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Default.Album,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = album.name,
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = "${album.artist} • ${album.songCount} canciones",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            IconButton(onClick = onPlayAlbum) {
+                Icon(
+                    imageVector = Icons.Default.PlayArrow,
+                    contentDescription = "Reproducir disco",
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            }
+
+            IconButton(onClick = onQueueAlbum) {
+                Icon(
+                    imageVector = Icons.Default.QueueMusic,
+                    contentDescription = "Añadir disco a la cola",
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            }
+
+            Icon(
+                imageVector = Icons.Default.KeyboardArrowRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+            )
+        }
     }
 }

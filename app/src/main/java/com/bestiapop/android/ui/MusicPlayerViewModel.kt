@@ -536,6 +536,23 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
+    fun moveQueueItem(fromIndex: Int, toIndex: Int) {
+        val list = _queue.value.toMutableList()
+        if (fromIndex in list.indices && toIndex in list.indices && fromIndex != toIndex) {
+            val item = list.removeAt(fromIndex)
+            list.add(toIndex, item)
+            _queue.value = list
+            mediaController?.moveMediaItem(fromIndex, toIndex)
+        }
+    }
+
+    fun skipToQueueIndex(index: Int) {
+        if (index in 0 until _queue.value.size) {
+            mediaController?.seekTo(index, 0L)
+        }
+    }
+
+
     // Search and Sort
     fun setSearchQuery(query: String) {
         _searchQuery.value = query

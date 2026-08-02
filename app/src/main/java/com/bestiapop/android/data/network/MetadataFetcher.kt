@@ -161,4 +161,55 @@ object MetadataFetcher {
         }
         return@withContext null
     }
+
+    suspend fun fetchTrackDurationMs(artist: String, title: String): Long = withContext(Dispatchers.IO) {
+        val cleanTitle = cleanString(title)
+        val cleanArtist = if (artist.equals("Unknown Artist", ignoreCase = true)) "" else cleanString(artist)
+        val queryText = if (cleanArtist.isNotEmpty()) "$cleanArtist $cleanTitle" else cleanTitle
+        if (queryText.isEmpty()) return@withContext 0L
+
+        try {
+            val query = URLEncoder.encode(queryText, StandardCharsets.UTF_8.name())
+            val url = "https://api.deezer.com/search?q=$query&limit=1"
+            val request = Request.Builder().url(url).header("User-Agent", "BestiaPop/1.0").build()
+
+            client.newCall(request).execute().use { response ->
+                if (response.isSuccessful) {
+                    val body = response.body?.string() ?: ""
+                    val json = JSONObject(body)
+                    val data = json.optJSONArray("data")
+                    if (data != null && data.length() > 0) {
+                        val item = data.getJSONObject(0)
+                        val durationSec = item.optLong("duration", 0L)
+                        if (durationSec > 0) return@withContext durationSec * 1000L
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
+        try {
+            val query = URLEncoder.encode(queryText, StandardCharsets.UTF_8.name())
+            val url = "https://itunes.apple.com/search?term=$query&entity=song&limit=1"
+            val request = Request.Builder().url(url).build()
+
+            client.newCall(request).execute().use { response ->
+                if (response.isSuccessful) {
+                    val body = response.body?.string() ?: ""
+                    val json = JSONObject(body)
+                    val results = json.optJSONArray("results")
+                    if (results != null && results.length() > 0) {
+                        val item = results.getJSONObject(0)
+                        val trackTimeMillis = item.optLong("trackTimeMillis", 0L)
+                        if (trackTimeMillis > 0) return@withContext trackTimeMillis
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
+        return@withContext 0L
+    }
 }

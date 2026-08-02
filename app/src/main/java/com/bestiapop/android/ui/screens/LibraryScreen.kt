@@ -1,5 +1,6 @@
 package com.bestiapop.android.ui.screens
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -17,8 +18,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
@@ -27,6 +30,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CreateNewFolder
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.MoreVert
@@ -65,6 +69,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -74,12 +79,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
-import androidx.compose.foundation.ExperimentalFoundationApi
 import com.bestiapop.android.data.model.Album
 import com.bestiapop.android.data.model.Song
+import com.bestiapop.android.data.network.MetadataFetcher
 import com.bestiapop.android.ui.MusicPlayerViewModel
 import com.bestiapop.android.ui.SortOption
 import com.bestiapop.android.ui.components.SongListItem
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -120,6 +126,14 @@ fun LibraryScreen(
     var showCreatePlaylistDialog by remember { mutableStateOf(false) }
     var newPlaylistName by remember { mutableStateOf("") }
     var songsForPlaylist by remember { mutableStateOf<List<Song>>(emptyList()) }
+
+    // Metadata Editing State
+    var songToEdit by remember { mutableStateOf<Song?>(null) }
+    var editTitle by remember { mutableStateOf("") }
+    var editArtist by remember { mutableStateOf("") }
+    var editAlbum by remember { mutableStateOf("") }
+    var editGenre by remember { mutableStateOf("") }
+    var isFetchingOnline by remember { mutableStateOf(false) }
 
     val selectedSongs = remember(selectedSongIds, songs) {
         songs.filter { selectedSongIds.contains(it.id) }
@@ -431,6 +445,17 @@ fun LibraryScreen(
                                             onAddToPlaylist = {
                                                 songsForPlaylist = listOf(song)
                                                 showPlaylistDialog = true
+                                            },
+                                            onEditMetadata = {
+                                                songToEdit = song
+                                                editTitle = song.title
+                                                editArtist = song.artist
+                                                editAlbum = song.album
+                                                editGenre = song.genre
+                                            },
+                                            onDelete = {
+                                                selectedSongIds = setOf(song.id)
+                                                showDeleteDialog = true
                                             }
                                         )
                                     }
@@ -463,6 +488,17 @@ fun LibraryScreen(
                                         onAddToPlaylist = {
                                             songsForPlaylist = listOf(song)
                                             showPlaylistDialog = true
+                                        },
+                                        onEditMetadata = {
+                                            songToEdit = song
+                                            editTitle = song.title
+                                            editArtist = song.artist
+                                            editAlbum = song.album
+                                            editGenre = song.genre
+                                        },
+                                        onDelete = {
+                                            selectedSongIds = setOf(song.id)
+                                            showDeleteDialog = true
                                         }
                                     )
                                 }
@@ -877,6 +913,17 @@ fun LibraryScreen(
                                 onAddToPlaylist = {
                                     songsForPlaylist = listOf(song)
                                     showPlaylistDialog = true
+                                },
+                                onEditMetadata = {
+                                    songToEdit = song
+                                    editTitle = song.title
+                                    editArtist = song.artist
+                                    editAlbum = song.album
+                                    editGenre = song.genre
+                                },
+                                onDelete = {
+                                    selectedSongIds = setOf(song.id)
+                                    showDeleteDialog = true
                                 }
                             )
                         }
@@ -907,7 +954,6 @@ fun LibraryScreen(
                     horizontalArrangement = Arrangement.SpaceAround,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Reproducir seleccionados
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         modifier = Modifier.clickable {
@@ -922,7 +968,6 @@ fun LibraryScreen(
                         Text(text = "Reproducir", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSecondaryContainer)
                     }
 
-                    // Mezclar seleccionados
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         modifier = Modifier.clickable {
@@ -937,7 +982,6 @@ fun LibraryScreen(
                         Text(text = "Mezclar", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSecondaryContainer)
                     }
 
-                    // Añadir a la cola
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         modifier = Modifier.clickable {
@@ -949,7 +993,6 @@ fun LibraryScreen(
                         Text(text = "A la cola", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSecondaryContainer)
                     }
 
-                    // Playlist
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         modifier = Modifier.clickable {
@@ -964,7 +1007,7 @@ fun LibraryScreen(
             }
         }
 
-        // Bottom Actions Bar for Song Multi-Selection
+        // Song Multi-Selection Bottom Action Bar
         if (isSongSelectionMode) {
             Surface(
                 color = MaterialTheme.colorScheme.surfaceVariant,
@@ -1027,6 +1070,119 @@ fun LibraryScreen(
                 }
             }
         }
+    }
+
+    // Edit Metadata Dialog
+    if (songToEdit != null) {
+        val song = songToEdit!!
+        val coroutineScope = rememberCoroutineScope()
+
+        AlertDialog(
+            onDismissRequest = { songToEdit = null },
+            title = {
+                Text(
+                    text = "Editar Información de la Canción",
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    OutlinedTextField(
+                        value = editTitle,
+                        onValueChange = { editTitle = it },
+                        label = { Text("Título de la canción") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    OutlinedTextField(
+                        value = editArtist,
+                        onValueChange = { editArtist = it },
+                        label = { Text("Artista") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    OutlinedTextField(
+                        value = editAlbum,
+                        onValueChange = { editAlbum = it },
+                        label = { Text("Álbum") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    OutlinedTextField(
+                        value = editGenre,
+                        onValueChange = { editGenre = it },
+                        label = { Text("Género") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    OutlinedButton(
+                        onClick = {
+                            isFetchingOnline = true
+                            coroutineScope.launch {
+                                val targetTitle = editTitle.trim().ifBlank { "Unknown Track" }
+                                val targetArtist = editArtist.trim().ifBlank { "Unknown Artist" }
+                                val targetAlbum = editAlbum.trim().ifBlank { "Unknown Album" }
+                                val targetGenre = editGenre.trim().ifBlank { "Music" }
+
+                                viewModel.updateSongMetadata(
+                                    song.id,
+                                    targetTitle,
+                                    targetArtist,
+                                    targetAlbum,
+                                    targetGenre
+                                )
+                                viewModel.enhanceSongMetadataAndLyrics(song.copy(title = targetTitle, artist = targetArtist, album = targetAlbum))
+                                isFetchingOnline = false
+                                songToEdit = null
+                            }
+                        },
+                        enabled = !isFetchingOnline,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(imageVector = Icons.Default.Search, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(if (isFetchingOnline) "Buscando metadatos..." else "🔍 Auto-completar metadatos en línea")
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val targetTitle = editTitle.trim().ifBlank { "Unknown Track" }
+                        val targetArtist = editArtist.trim().ifBlank { "Unknown Artist" }
+                        val targetAlbum = editAlbum.trim().ifBlank { "Unknown Album" }
+                        val targetGenre = editGenre.trim().ifBlank { "Music" }
+
+                        viewModel.updateSongMetadata(
+                            song.id,
+                            targetTitle,
+                            targetArtist,
+                            targetAlbum,
+                            targetGenre
+                        )
+                        songToEdit = null
+                    }
+                ) {
+                    Text("Guardar")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { songToEdit = null }) {
+                    Text("Cancelar")
+                }
+            }
+        )
     }
 
     // Delete Confirmation Dialog

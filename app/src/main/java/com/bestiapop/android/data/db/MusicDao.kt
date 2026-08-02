@@ -39,6 +39,21 @@ interface MusicDao {
     @Query("UPDATE songs SET artworkUri = :artworkUri, lyrics = :lyrics WHERE id = :songId")
     suspend fun updateMetadataAndLyrics(songId: Long, artworkUri: String?, lyrics: String?)
 
+    @Query("UPDATE songs SET title = :title, artist = :artist, album = :album, genre = :genre WHERE id = :songId")
+    suspend fun updateSongMetadata(songId: Long, title: String, artist: String, album: String, genre: String)
+
+    @Query("SELECT artworkUri FROM songs WHERE album = :albumName AND artworkUri IS NOT NULL AND artworkUri != '' LIMIT 1")
+    suspend fun getArtworkForAlbum(albumName: String): String?
+
+    @Query("UPDATE songs SET artworkUri = :artworkUri WHERE album = :albumName")
+    suspend fun setAlbumArtwork(albumName: String, artworkUri: String?)
+
+    @Query("UPDATE songs SET artworkUri = :artworkUri WHERE id = :songId")
+    suspend fun updateSongArtwork(songId: Long, artworkUri: String?)
+
+    @Query("UPDATE songs SET durationMs = :durationMs WHERE id = :songId")
+    suspend fun updateSongDuration(songId: Long, durationMs: Long)
+
     // Playlists
     @Query("SELECT * FROM playlists ORDER BY name ASC")
     fun getAllPlaylistsFlow(): Flow<List<PlaylistEntity>>

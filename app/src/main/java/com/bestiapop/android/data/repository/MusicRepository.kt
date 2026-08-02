@@ -248,7 +248,10 @@ class MusicRepository(private val context: Context) {
     }
 
     suspend fun enhanceSongMetadataAndLyrics(song: Song) = withContext(Dispatchers.IO) {
-        var artUrl = song.artworkUri
+        val albumName = if (song.album.isBlank()) "Unknown Album" else song.album
+        val existingAlbumArt = musicDao.getArtworkForAlbum(albumName)
+
+        var artUrl = if (!song.artworkUri.isNullOrEmpty() && !song.artworkUri.startsWith("content://")) song.artworkUri else existingAlbumArt
 
         if (artUrl.isNullOrEmpty() || artUrl.startsWith("content://")) {
             val cleanPath = when {
@@ -256,11 +259,11 @@ class MusicRepository(private val context: Context) {
                 song.uriString.startsWith("file:") -> song.uriString.removePrefix("file:")
                 else -> song.uriString
             }
-            val embedded = extractAndSaveEmbeddedArtwork(cleanPath, "${song.artist}_${song.album}")
+            val embedded = extractAndSaveEmbeddedArtwork(cleanPath, "${song.artist}_${albumName}")
             if (!embedded.isNullOrEmpty()) {
                 artUrl = embedded
             } else {
-                val queryTerm = if (song.album.isNotEmpty() && !song.album.equals("Unknown Album", ignoreCase = true)) song.album else song.title
+                val queryTerm = if (albumName != "Unknown Album") albumName else song.title
                 artUrl = MetadataFetcher.fetchAlbumArtUrl(song.artist, queryTerm)
             }
         }
@@ -272,6 +275,105 @@ class MusicRepository(private val context: Context) {
 
         if (artUrl != song.artworkUri || lyricsStr != song.lyrics) {
             musicDao.updateMetadataAndLyrics(song.id, artUrl, lyricsStr)
+        }
+
+        if (!artUrl.isNullOrEmpty()) {
+            musicDao.setAlbumArtwork(albumName, artUrl)
+        }
+
+        if (song.durationMs <= 0) {
+            val cleanPath = when {
+                song.uriString.startsWith("file://") -> song.uriString.removePrefix("file://")
+                song.uriString.startsWith("file:") -> song.uriString.removePrefix("file:")
+                else -> song.uriString
+            }
+            var calculatedDur = calculateAudioDurationMs(cleanPath)
+            if (calculatedDur <= 0) {
+                calculatedDur = MetadataFetcher.fetchTrackDurationMs(song.artist, song.title)
+            }
+            if (calculatedDur > 0) {
+                musicDao.updateSongDuration(song.id, calculatedDur)
+            }
+        }
+    }
+
+    fun calculateAudioDurationMs(audioPathOrUri: String): Long {
+        val uri = Uri.parse(audioPathOrUri)
+
+        try {
+            val retriever = MediaMetadataRetriever()
+            if (audioPathOrUri.startsWith("content://")) {
+                retriever.setDataSource(context, uri)
+            } else {
+                retriever.setDataSource(audioPathOrUri)
+            }
+            val durStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+            retriever.release()
+            val dur = durStr?.toLongOrNull() ?: 0L
+            if (dur > 0) return dur
+        } catch (ignored: Exception) {}
+
+        try {
+            val extractor = android.media.MediaExtractor()
+            if (audioPathOrUri.startsWith("content://")) {
+                extractor.setDataSource(context, uri, null)
+            } else {
+                extractor.setDataSource(audioPathOrUri)
+            }
+            for (i in 0 until extractor.trackCount) {
+                val format = extractor.getTrackFormat(i)
+                val mime = format.getString(android.media.MediaFormat.KEY_MIME)
+                if (mime?.startsWith("audio/") == true && format.containsKey(android.media.MediaFormat.KEY_DURATION)) {
+                    val durationUs = format.getLong(android.media.MediaFormat.KEY_DURATION)
+                    extractor.release()
+                    if (durationUs > 0) return durationUs / 1000L
+                }
+            }
+            extractor.release()
+        } catch (ignored: Exception) {}
+
+        try {
+            val mp = android.media.MediaPlayer()
+            if (audioPathOrUri.startsWith("content://")) {
+                mp.setDataSource(context, uri)
+            } else {
+                mp.setDataSource(audioPathOrUri)
+            }
+            mp.prepare()
+            val dur = mp.duration.toLong()
+            mp.release()
+            if (dur > 0) return dur
+        } catch (ignored: Exception) {}
+
+        return 0L
+    }
+
+    suspend fun updateSongDuration(songId: Long, durationMs: Long) = withContext(Dispatchers.IO) {
+        musicDao.updateSongDuration(songId, durationMs)
+    }
+
+    suspend fun updateSongMetadata(
+        songId: Long,
+        title: String,
+        artist: String,
+        album: String,
+        genre: String
+    ) = withContext(Dispatchers.IO) {
+        val safeTitle = title.ifBlank { "Unknown Track" }
+        val safeArtist = artist.ifBlank { "Unknown Artist" }
+        val safeAlbum = album.ifBlank { "Unknown Album" }
+        val safeGenre = genre.ifBlank { "Music" }
+
+        musicDao.updateSongMetadata(songId, safeTitle, safeArtist, safeAlbum, safeGenre)
+
+        val existingArt = musicDao.getArtworkForAlbum(safeAlbum)
+        if (!existingArt.isNullOrEmpty()) {
+            musicDao.setAlbumArtwork(safeAlbum, existingArt)
+        } else {
+            val fetchedArt = MetadataFetcher.fetchAlbumArtUrl(safeArtist, safeAlbum)
+            if (!fetchedArt.isNullOrEmpty()) {
+                musicDao.setAlbumArtwork(safeAlbum, fetchedArt)
+            }
         }
     }
 

@@ -51,7 +51,9 @@ fun SongListItem(
     onToggleSelect: () -> Unit = {},
     onPlayNext: () -> Unit,
     onAddToQueue: () -> Unit,
-    onAddToPlaylist: () -> Unit
+    onAddToPlaylist: () -> Unit,
+    onEditMetadata: (() -> Unit)? = null,
+    onDelete: (() -> Unit)? = null
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
 
@@ -185,6 +187,24 @@ fun SongListItem(
                                 onAddToPlaylist()
                             }
                         )
+                        if (onEditMetadata != null) {
+                            DropdownMenuItem(
+                                text = { Text("Editar información") },
+                                onClick = {
+                                    menuExpanded = false
+                                    onEditMetadata()
+                                }
+                            )
+                        }
+                        if (onDelete != null) {
+                            DropdownMenuItem(
+                                text = { Text("Eliminar", color = MaterialTheme.colorScheme.error) },
+                                onClick = {
+                                    menuExpanded = false
+                                    onDelete()
+                                }
+                            )
+                        }
                     }
                 }
             }

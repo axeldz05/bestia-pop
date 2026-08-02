@@ -72,7 +72,16 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     val sortOption = _sortOption.asStateFlow()
 
     val songsState: StateFlow<List<Song>> = combine(rawSongs, _searchQuery, _sortOption) { list, query, sort ->
-        var filtered = if (query.isBlank()) list else list.filter {
+        val albumArtMap = list.groupBy { it.album }.mapValues { (_, albumSongs) ->
+            albumSongs.firstOrNull { !it.artworkUri.isNullOrEmpty() }?.artworkUri
+        }
+
+        val unifiedList = list.map { song ->
+            val albumArt = song.artworkUri ?: albumArtMap[song.album]
+            if (albumArt != song.artworkUri) song.copy(artworkUri = albumArt) else song
+        }
+
+        var filtered = if (query.isBlank()) unifiedList else unifiedList.filter {
             it.title.contains(query, ignoreCase = true) ||
             it.artist.contains(query, ignoreCase = true) ||
             it.album.contains(query, ignoreCase = true) ||
@@ -218,6 +227,11 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 mediaController?.let { controller ->
                     if (controller.isPlaying && System.currentTimeMillis() - lastSeekTimestamp > 600) {
                         _playbackPositionMs.value = controller.currentPosition.coerceAtLeast(0L)
+                        val dur = controller.duration
+                        val curr = _currentSong.value
+                        if (dur > 0 && curr != null && curr.durationMs <= 0) {
+                            updateSongDuration(curr.id, dur)
+                        }
                     }
                 }
                 delay(200)
@@ -225,7 +239,19 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
+    fun updateSongDuration(songId: Long, durationMs: Long) {
+        viewModelScope.launch {
+            repository.updateSongDuration(songId, durationMs)
+        }
+    }
+
     fun retryFetchLyrics(song: Song) {
+        viewModelScope.launch {
+            repository.enhanceSongMetadataAndLyrics(song)
+        }
+    }
+
+    fun enhanceSongMetadataAndLyrics(song: Song) {
         viewModelScope.launch {
             repository.enhanceSongMetadataAndLyrics(song)
         }
@@ -403,6 +429,18 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     fun deleteSongsFromApp(songs: List<Song>) {
         viewModelScope.launch {
             repository.deleteSongsFromApp(songs)
+        }
+    }
+
+    fun updateSongMetadata(
+        songId: Long,
+        title: String,
+        artist: String,
+        album: String,
+        genre: String
+    ) {
+        viewModelScope.launch {
+            repository.updateSongMetadata(songId, title, artist, album, genre)
         }
     }
 

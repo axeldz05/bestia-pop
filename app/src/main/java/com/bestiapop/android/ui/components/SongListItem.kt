@@ -1,6 +1,7 @@
 package com.bestiapop.android.ui.components
 
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -13,6 +14,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -36,11 +39,16 @@ import coil.compose.AsyncImage
 import com.bestiapop.android.data.model.Song
 import java.util.Locale
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun SongListItem(
     song: Song,
     isCurrentPlaying: Boolean = false,
+    isSelectionMode: Boolean = false,
+    isSelected: Boolean = false,
     onClick: () -> Unit,
+    onLongClick: () -> Unit = {},
+    onToggleSelect: () -> Unit = {},
     onPlayNext: () -> Unit,
     onAddToQueue: () -> Unit,
     onAddToPlaylist: () -> Unit
@@ -48,17 +56,41 @@ fun SongListItem(
     var menuExpanded by remember { mutableStateOf(false) }
 
     Surface(
-        color = if (isCurrentPlaying) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surface,
+        color = when {
+            isSelected -> MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
+            isCurrentPlaying -> MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+            else -> MaterialTheme.colorScheme.surface
+        },
         shape = RoundedCornerShape(12.dp),
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 8.dp, vertical = 4.dp)
-            .clickable { onClick() }
+            .combinedClickable(
+                onClick = {
+                    if (isSelectionMode) {
+                        onToggleSelect()
+                    } else {
+                        onClick()
+                    }
+                },
+                onLongClick = onLongClick
+            )
     ) {
         Row(
             modifier = Modifier.padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            if (isSelectionMode) {
+                Checkbox(
+                    checked = isSelected,
+                    onCheckedChange = { onToggleSelect() },
+                    colors = CheckboxDefaults.colors(
+                        checkedColor = MaterialTheme.colorScheme.primary
+                    )
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+            }
+
             // Album Art
             Box(
                 modifier = Modifier
@@ -96,9 +128,9 @@ fun SongListItem(
                 Text(
                     text = song.title,
                     style = MaterialTheme.typography.titleMedium.copy(
-                        fontWeight = if (isCurrentPlaying) FontWeight.Bold else FontWeight.Medium
+                        fontWeight = if (isCurrentPlaying || isSelected) FontWeight.Bold else FontWeight.Medium
                     ),
-                    color = if (isCurrentPlaying) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                    color = if (isCurrentPlaying || isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -118,49 +150,51 @@ fun SongListItem(
                 modifier = Modifier.padding(horizontal = 8.dp)
             )
 
-            // Options menu
-            Box {
-                IconButton(onClick = { menuExpanded = true }) {
-                    Icon(
-                        imageVector = Icons.Default.MoreVert,
-                        contentDescription = "Options",
-                        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                    )
-                }
-                DropdownMenu(
-                    expanded = menuExpanded,
-                    onDismissRequest = { menuExpanded = false }
-                ) {
-                    DropdownMenuItem(
-                        text = { Text("Reproducir a continuación") },
-                        onClick = {
-                            menuExpanded = false
-                            onPlayNext()
-                        }
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Añadir a la cola") },
-                        onClick = {
-                            menuExpanded = false
-                            onAddToQueue()
-                        }
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Añadir a playlist") },
-                        onClick = {
-                            menuExpanded = false
-                            onAddToPlaylist()
-                        }
-                    )
+            // Options menu (hidden during multi-selection mode)
+            if (!isSelectionMode) {
+                Box {
+                    IconButton(onClick = { menuExpanded = true }) {
+                        Icon(
+                            imageVector = Icons.Default.MoreVert,
+                            contentDescription = "Options",
+                            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                        )
+                    }
+                    DropdownMenu(
+                        expanded = menuExpanded,
+                        onDismissRequest = { menuExpanded = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Reproducir a continuación") },
+                            onClick = {
+                                menuExpanded = false
+                                onPlayNext()
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Añadir a la cola") },
+                            onClick = {
+                                menuExpanded = false
+                                onAddToQueue()
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Añadir a playlist") },
+                            onClick = {
+                                menuExpanded = false
+                                onAddToPlaylist()
+                            }
+                        )
+                    }
                 }
             }
         }
     }
 }
 
-fun formatDuration(ms: Long): String {
-    val totalSec = ms / 1000
-    val min = totalSec / 60
-    val sec = totalSec % 60
-    return String.format(Locale.US, "%d:%02d", min, sec)
+fun formatDuration(durationMs: Long): String {
+    val totalSeconds = durationMs / 1000
+    val minutes = totalSeconds / 60
+    val seconds = totalSeconds % 60
+    return String.format(Locale.getDefault(), "%d:%02d", minutes, seconds)
 }

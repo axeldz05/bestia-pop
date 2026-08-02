@@ -33,6 +33,9 @@ interface MusicDao {
     @Query("DELETE FROM songs WHERE id = :songId")
     suspend fun deleteSong(songId: Long)
 
+    @Query("DELETE FROM songs WHERE id IN (:songIds)")
+    suspend fun deleteSongsByIds(songIds: List<Long>)
+
     @Query("UPDATE songs SET artworkUri = :artworkUri, lyrics = :lyrics WHERE id = :songId")
     suspend fun updateMetadataAndLyrics(songId: Long, artworkUri: String?, lyrics: String?)
 

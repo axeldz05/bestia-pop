@@ -19,8 +19,10 @@ import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.data.network.MetadataFetcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
+import java.io.File
 
 class MusicRepository(private val context: Context) {
 
@@ -56,7 +58,8 @@ class MusicRepository(private val context: Context) {
             MediaStore.Audio.Media.DURATION,
             MediaStore.Audio.Media.YEAR,
             MediaStore.Audio.Media.TRACK,
-            MediaStore.Audio.Media.DATA
+            MediaStore.Audio.Media.DATA,
+            MediaStore.Audio.Media.ALBUM_ID
         )
 
         val selection = "${MediaStore.Audio.Media.IS_MUSIC} != 0 AND ${MediaStore.Audio.Media.DURATION} >= 30000"
@@ -111,6 +114,8 @@ class MusicRepository(private val context: Context) {
                     val durationStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
                     val durationMs = durationStr?.toLongOrNull() ?: 0L
 
+                    val embeddedArt = extractAndSaveEmbeddedArtwork(uri.toString(), uri.toString())
+
                     if (isRealMusicTrack(durationMs, uri.toString(), file.name ?: "")) {
                         list.add(
                             SongEntity(
@@ -122,7 +127,7 @@ class MusicRepository(private val context: Context) {
                                 durationMs = durationMs,
                                 year = 0,
                                 trackNumber = 0,
-                                artworkUri = null,
+                                artworkUri = embeddedArt,
                                 lyrics = null,
                                 folderPath = folder.name ?: "",
                                 dateAdded = System.currentTimeMillis()
@@ -135,6 +140,32 @@ class MusicRepository(private val context: Context) {
             }
         }
         retriever.release()
+    }
+
+    fun extractAndSaveEmbeddedArtwork(audioPathOrUri: String, identifier: String): String? {
+        val retriever = MediaMetadataRetriever()
+        try {
+            if (audioPathOrUri.startsWith("content://")) {
+                retriever.setDataSource(context, android.net.Uri.parse(audioPathOrUri))
+            } else {
+                retriever.setDataSource(audioPathOrUri)
+            }
+            val pictureBytes = retriever.embeddedPicture
+            if (pictureBytes != null && pictureBytes.isNotEmpty()) {
+                val artDir = File(context.cacheDir, "album_art")
+                if (!artDir.exists()) artDir.mkdirs()
+                val artFile = File(artDir, "art_${identifier.hashCode()}.jpg")
+                artFile.outputStream().use { out ->
+                    out.write(pictureBytes)
+                }
+                return artFile.toURI().toString()
+            }
+        } catch (e: Exception) {
+            // ignore
+        } finally {
+            try { retriever.release() } catch (ignored: Exception) {}
+        }
+        return null
     }
 
     private fun isRealMusicTrack(durationMs: Long, filePath: String, fileName: String = ""): Boolean {
@@ -165,8 +196,55 @@ class MusicRepository(private val context: Context) {
                 lower.endsWith(".ogg") || lower.endsWith(".wav") || lower.endsWith(".aac")
     }
 
+    suspend fun getAllSongsSync(): List<Song> = withContext(Dispatchers.IO) {
+        musicDao.getAllSongsFlow().first().map { it.toSong() }
+    }
+
     suspend fun saveUploadedSong(song: SongEntity) = withContext(Dispatchers.IO) {
         musicDao.insertSong(song)
+    }
+
+    suspend fun deleteSongsFromApp(songs: List<Song>) = withContext(Dispatchers.IO) {
+        val ids = songs.map { it.id }
+        if (ids.isNotEmpty()) {
+            musicDao.deleteSongsByIds(ids)
+        }
+    }
+
+    suspend fun deleteSongsFromDevice(songs: List<Song>) = withContext(Dispatchers.IO) {
+        val uploadDir = File(context.getExternalFilesDir(null), "UploadedMusic")
+        songs.forEach { song ->
+            try {
+                if (song.uriString.startsWith("content://")) {
+                    context.contentResolver.delete(Uri.parse(song.uriString), null, null)
+                }
+
+                val cleanPath = when {
+                    song.uriString.startsWith("file://") -> song.uriString.removePrefix("file://")
+                    song.uriString.startsWith("file:") -> song.uriString.removePrefix("file:")
+                    else -> song.uriString
+                }
+
+                val file = File(cleanPath)
+                if (file.exists()) {
+                    file.delete()
+                }
+
+                val fileName = cleanPath.substringAfterLast("/").substringAfterLast("\\")
+                if (fileName.isNotEmpty() && uploadDir.exists()) {
+                    val fileInUploadDir = File(uploadDir, fileName)
+                    if (fileInUploadDir.exists()) {
+                        fileInUploadDir.delete()
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+        val ids = songs.map { it.id }
+        if (ids.isNotEmpty()) {
+            musicDao.deleteSongsByIds(ids)
+        }
     }
 
     suspend fun enhanceSongMetadataAndLyrics(song: Song) = withContext(Dispatchers.IO) {

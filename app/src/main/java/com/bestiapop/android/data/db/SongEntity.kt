@@ -70,6 +70,14 @@ fun android.database.Cursor.toSongEntity(): SongEntity {
     val track = getInt(getColumnIndexOrThrow(android.provider.MediaStore.Audio.Media.TRACK))
     val filePath = getString(getColumnIndexOrThrow(android.provider.MediaStore.Audio.Media.DATA)) ?: ""
     val uri = android.content.ContentUris.withAppendedId(android.provider.MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id).toString()
+    val albumIdIdx = getColumnIndex(android.provider.MediaStore.Audio.Media.ALBUM_ID)
+    val albumId = if (albumIdIdx != -1) getLong(albumIdIdx) else -1L
+    val artworkUri = if (albumId > 0) {
+        android.content.ContentUris.withAppendedId(
+            android.net.Uri.parse("content://media/external/audio/albumart"),
+            albumId
+        ).toString()
+    } else null
 
     return SongEntity(
         uriString = uri,
@@ -80,7 +88,7 @@ fun android.database.Cursor.toSongEntity(): SongEntity {
         durationMs = duration,
         year = year,
         trackNumber = track,
-        artworkUri = null,
+        artworkUri = artworkUri,
         lyrics = null,
         folderPath = filePath,
         dateAdded = System.currentTimeMillis()

@@ -52,14 +52,16 @@ fun MainScreen(
     Scaffold(
         bottomBar = {
             Column {
-                BottomPlayerBar(
-                    currentSong = currentSong,
-                    isPlaying = isPlaying,
-                    progressMs = positionMs,
-                    onPlayPauseClick = { viewModel.togglePlayPause() },
-                    onNextClick = { viewModel.skipToNext() },
-                    onBarClick = { showFullPlayer = true }
-                )
+                if (!showFullPlayer) {
+                    BottomPlayerBar(
+                        currentSong = currentSong,
+                        isPlaying = isPlaying,
+                        progressMs = positionMs,
+                        onPlayPauseClick = { viewModel.togglePlayPause() },
+                        onNextClick = { viewModel.skipToNext() },
+                        onBarClick = { showFullPlayer = true }
+                    )
+                }
 
                 NavigationBar(
                     containerColor = MaterialTheme.colorScheme.surface,
@@ -68,7 +70,10 @@ fun MainScreen(
                     navItems.forEachIndexed { index, item ->
                         NavigationBarItem(
                             selected = selectedNavIndex == index,
-                            onClick = { selectedNavIndex = index },
+                            onClick = {
+                                selectedNavIndex = index
+                                showFullPlayer = false
+                            },
                             icon = { Icon(item.icon, contentDescription = item.label) },
                             label = { Text(item.label) },
                             colors = NavigationBarItemDefaults.colors(

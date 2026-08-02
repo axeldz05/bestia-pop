@@ -131,6 +131,15 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         viewModelScope.launch {
             repository.scanMediaStore()
         }
+        viewModelScope.launch {
+            songsState.collect { songs ->
+                _currentSong.value?.let { current ->
+                    songs.find { it.uriString == current.uriString }?.let { updated ->
+                        _currentSong.value = updated
+                    }
+                }
+            }
+        }
     }
 
     private fun initMediaController() {
@@ -203,6 +212,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                             .setTitle(s.title)
                             .setArtist(s.artist)
                             .setAlbumTitle(s.album)
+                            .setArtworkUri(s.artworkUri?.let { Uri.parse(it) })
                             .build()
                     )
                     .build()
@@ -215,6 +225,12 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         }
 
         fetchOnlineMetadataForSong(song)
+    }
+
+    private fun fetchOnlineMetadataForSong(song: Song) {
+        viewModelScope.launch {
+            repository.enhanceSongMetadataAndLyrics(song)
+        }
     }
 
     fun togglePlayPause() {
@@ -266,42 +282,82 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     // Queue Management
     fun addToQueue(song: Song) {
+        addToQueueBatch(listOf(song))
+    }
+
+    fun addToQueueBatch(songs: List<Song>) {
+        if (songs.isEmpty()) return
         val currentList = _queue.value.toMutableList()
-        currentList.add(song)
+        currentList.addAll(songs)
         _queue.value = currentList
 
-        mediaController?.addMediaItem(
-            MediaItem.Builder()
-                .setMediaId(song.uriString)
-                .setUri(song.uriString)
-                .setMediaMetadata(
-                    MediaMetadata.Builder()
-                        .setTitle(song.title)
-                        .setArtist(song.artist)
-                        .build()
-                ).build()
-        )
+        mediaController?.let { controller ->
+            val mediaItems = songs.map { song ->
+                MediaItem.Builder()
+                    .setMediaId(song.uriString)
+                    .setUri(song.uriString)
+                    .setMediaMetadata(
+                        MediaMetadata.Builder()
+                            .setTitle(song.title)
+                            .setArtist(song.artist)
+                            .setAlbumTitle(song.album)
+                            .setArtworkUri(song.artworkUri?.let { Uri.parse(it) })
+                            .build()
+                    ).build()
+            }
+            controller.addMediaItems(mediaItems)
+        }
     }
 
     fun playNextInQueue(song: Song) {
+        playNextBatch(listOf(song))
+    }
+
+    fun playNextBatch(songs: List<Song>) {
+        if (songs.isEmpty()) return
         val currentList = _queue.value.toMutableList()
-        val currentIndex = mediaController?.currentMediaItemIndex ?: 0
+        val currentIndex = (mediaController?.currentMediaItemIndex ?: 0).coerceAtLeast(0)
         val insertIndex = (currentIndex + 1).coerceAtMost(currentList.size)
-        currentList.add(insertIndex, song)
+
+        currentList.addAll(insertIndex, songs)
         _queue.value = currentList
 
-        mediaController?.addMediaItem(
-            insertIndex,
-            MediaItem.Builder()
-                .setMediaId(song.uriString)
-                .setUri(song.uriString)
-                .setMediaMetadata(
-                    MediaMetadata.Builder()
-                        .setTitle(song.title)
-                        .setArtist(song.artist)
-                        .build()
-                ).build()
-        )
+        mediaController?.let { controller ->
+            val mediaItems = songs.map { song ->
+                MediaItem.Builder()
+                    .setMediaId(song.uriString)
+                    .setUri(song.uriString)
+                    .setMediaMetadata(
+                        MediaMetadata.Builder()
+                            .setTitle(song.title)
+                            .setArtist(song.artist)
+                            .setAlbumTitle(song.album)
+                            .setArtworkUri(song.artworkUri?.let { Uri.parse(it) })
+                            .build()
+                    ).build()
+            }
+            controller.addMediaItems(insertIndex, mediaItems)
+        }
+    }
+
+    fun addSongsToPlaylist(playlistId: Long, songs: List<Song>) {
+        viewModelScope.launch {
+            songs.forEach { song ->
+                repository.addSongToPlaylist(playlistId, song.id)
+            }
+        }
+    }
+
+    fun deleteSongsFromApp(songs: List<Song>) {
+        viewModelScope.launch {
+            repository.deleteSongsFromApp(songs)
+        }
+    }
+
+    fun deleteSongsFromDevice(songs: List<Song>) {
+        viewModelScope.launch {
+            repository.deleteSongsFromDevice(songs)
+        }
     }
 
     fun removeFromQueue(index: Int) {
@@ -326,13 +382,6 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     fun importFolder(treeUri: Uri) {
         viewModelScope.launch {
             repository.scanFolderUri(treeUri)
-        }
-    }
-
-    // Online metadata fetch
-    private fun fetchOnlineMetadataForSong(song: Song) {
-        viewModelScope.launch {
-            repository.enhanceSongMetadataAndLyrics(song)
         }
     }
 

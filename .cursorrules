@@ -1,0 +1,42 @@
+# BestiaPop (sofoapps) — Cursor rules
+
+App Android Kotlin/Compose de música: biblioteca local, playlists, descarga online (YouTube), temas y WiFi sync.
+
+## Skills de arquitectura (fuente de verdad viva)
+
+Leer y seguir estos skills del repo **antes** de diseñar o implementar cambios no triviales. Contienen referencias directas a implementaciones actuales:
+
+| Skill | Path | Usar cuando |
+|-------|------|-------------|
+| **Arquitectura** | `.cursor/skills/bestiapop-architecture/SKILL.md` | Capas, stack, flujos, dónde colocar código |
+| **Features** | `.cursor/skills/bestiapop-features/SKILL.md` | Comportamiento esencial e invariantes + entry points |
+| **Implementation map** | `.cursor/skills/bestiapop-implementation-map/SKILL.md` | Localizar archivos/clases/funciones concretas |
+| **Living docs** | `.cursor/skills/bestiapop-living-docs/SKILL.md` | Protocolo para actualizar los skills anteriores |
+
+Resumen histórico de principios (mantener alineado con features): `.agents/AGENTS.md`
+
+## Obligación de mantener los skills
+
+Al modificar arquitectura, features esenciales o APIs/ubicaciones de código, **actualizar en el mismo cambio** los skills de la tabla (según `bestiapop-living-docs`):
+
+1. Añadir/ajustar referencias **directas** (`path` + `Class`/`fun`).
+2. Eliminar referencias obsoletas.
+3. No dejar invariantes documentados que el código ya no cumpla.
+
+Si solo hay un bugfix local sin cambio de diseño, no hace falta tocar skills.
+
+## Convenciones de código
+
+- Package root: `com.bestiapop.android`
+- Lógica nueva de negocio → `domain/usecase`; persistencia/red → `data`; UI → `ui`
+- Reproducción de agrupaciones → pipeline unificado `playCollection` / `shuffleCollection` / `enqueueCollection` (no inventar paths paralelos)
+- Descarga de audio online → re-extraer stream YouTube antes de bajar (CDN expira → 403)
+- Portada de **álbum** propaga a canciones; portada de **playlist** no
+- Imágenes elegidas por el usuario → copiar a `context.filesDir`
+- Preferir patrones y nombres ya usados en `MusicPlayerViewModel`, `MusicRepository`, use cases existentes
+- No crear markdown de docs extras salvo que el usuario lo pida; los skills anteriores son el lugar para documentar arquitectura/features
+
+## Build / deploy
+
+- Compilar/instalar en dispositivo: `./install.sh` (Gradle assembleDebug + adb)
+- Tests unitarios bajo `app/src/test`; instrumentados bajo `app/src/androidTest`

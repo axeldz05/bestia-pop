@@ -1,5 +1,7 @@
 # Arquitectura y Principios del Proyecto BestiaPop (sofoapps)
 
+Documentación viva ampliada (mapa de código, features, capas): skills en `.cursor/skills/` — ver `.cursorrules` y en particular `bestiapop-architecture`, `bestiapop-features`, `bestiapop-implementation-map`, `bestiapop-living-docs`. Actualizar esos skills cuando cambie la implementación.
+
 ## 1. Filosofía "Todo es una Playlist" (Colecciones Unificadas)
 - Todas las agrupaciones de música (Lista de canciones, Álbumes, Artistas, Playlists personalizadas, Colas de reproducción) deben tratarse mediante un pipeline unificado de colecciones (`playCollection`, `shuffleCollection`, `enqueueCollection`).
 - Las acciones de reproducción, mezcla y cola deben ser consistentes e intercambiables sin importar el origen de la colección.

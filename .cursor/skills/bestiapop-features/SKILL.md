@@ -1,0 +1,96 @@
+---
+name: bestiapop-features
+description: >-
+  Funcionalidades esenciales de BestiaPop con referencias a APIs y archivos.
+  Usar al implementar o modificar reproducción por colecciones, biblioteca
+  (filtro/orden/vistas), descarga YouTube, portadas álbum/playlist, playlists,
+  temas o WiFi sync. Actualizar este skill cuando cambie el comportamiento.
+---
+
+# BestiaPop — Features esenciales
+
+Cada feature lista **invariantes** + **entry points**. Si el código diverge, actualizar este archivo (ver `bestiapop-living-docs`).
+
+## 1. Colecciones unificadas (“todo es playlist”)
+
+**Invariante:** Listas, álbumes, artistas, playlists y colas usan el mismo pipeline de reproducción.
+
+| Acción | ViewModel | Use case |
+|--------|-----------|----------|
+| Reproducir colección | `playCollection(songs, startIndex)` / `playCollection(songs, startSong)` | `PlayCollectionUseCase.playCollection` |
+| Shuffle | `shuffleCollection(songs)` | `PlayCollectionUseCase.shuffleCollection` |
+| Encolar | `enqueueCollection(songs)` | `PlayCollectionUseCase.prepareQueueAppend` |
+| Una canción | `playSong(song, playlistOrQueue)` | (arma cola + MediaController) |
+
+Archivos: `domain/usecase/PlayCollectionUseCase.kt`, `ui/MusicPlayerViewModel.kt`.
+
+## 2. Búsqueda online y descarga de audio
+
+**Invariante:** Catálogo/metadatos pueden venir de iTunes/Deezer; el stream se resuelve con YouTube. Re-extraer URL CDN antes de descargar (evitar HTTP 403).
+
+| Paso | Dónde |
+|------|--------|
+| Search catálogo tracks | `MetadataFetcher.searchOnlineCatalog` / `YouTubeExtractor.searchYouTube` |
+| Álbumes / playlists online | `MetadataFetcher.searchAlbums` / `searchPlaylists` + `fetchAlbumTrackCandidates` / `fetchPlaylistTrackCandidates` |
+| Extraer stream | `YouTubeExtractor.extractAudioStream` / `extractAudioStreamDetailed` |
+| Descargar + persistir | `DownloadAudioTrackUseCase.execute` → `IMusicRepository.downloadAndSaveOnlineTrack` |
+| UI diálogo | `ui/components/AddMusicDialog.kt` |
+| Orquestación VM | `searchCatalog`, `searchOnlineCatalog`, `downloadSingleCandidate`, `downloadSelectedCandidatesBatch`, `downloadFromUrl`, `downloadOnlineTrack` |
+
+Modelo clave: `OnlineCatalogTrack`, `CatalogTrackCandidate`, `DownloadStatus`.
+
+## 3. Biblioteca: filtro, orden y vistas
+
+**Invariante:** `songsState` filtra por título/artista/álbum/género y ordena con `SortOption`.
+
+| Capacidad | API |
+|-----------|-----|
+| Query | `MusicPlayerViewModel.searchQuery` |
+| Sort | `SortOption`: TITLE, ARTIST, ALBUM, GENRE, DATE_ADDED |
+| Filtrado/orden | `GetLibrarySongsUseCase.execute` |
+| Vista plana vs grupos álbum | `LibraryViewMode.FLAT` / `ALBUM_GROUPS` → `buildLibraryListItems` / `buildListItems` |
+| Derivados | `extractAlbums`, `extractArtists` → `albumsState`, `artistsState` |
+
+UI: `LibraryScreen`, `LibrarySongList`, `LibraryAlbumGrid`, `LibraryArtistList`.
+Estado: `ui/state/LibraryUiState.kt`, `LibraryListItem.kt`.
+
+## 4. Portadas: álbum ≠ playlist
+
+| Tipo | Comportamiento | Entry points |
+|------|----------------|--------------|
+| **Álbum** | Al asignar portada, **todas** las canciones del álbum heredan | `setAlbumArtwork` → `ManageArtworkUseCase.updateAlbumArtwork` |
+| **Playlist** | `Playlist.coverUri` / `PlaylistEntity.coverUri` es de la lista; **no** pisa artwork de canciones | `createPlaylist` / `updatePlaylist`, `savePlaylistCoverImage` |
+| **Persistencia local** | Copiar imagen a `context.filesDir` | `MusicRepository.savePlaylistCoverImage`, `extractAndSaveEmbeddedArtwork` |
+
+Herencia visual en lista: `GetLibrarySongsUseCase.execute` unifica artwork faltante desde otras canciones del mismo álbum.
+
+## 5. Playlists locales
+
+CRUD + membresía vía `IMusicRepository` / `ManagePlaylistUseCase`:
+`createPlaylist`, `updatePlaylist`, `deletePlaylist`, `addSongToPlaylist`, `removeSongFromPlaylist`.
+Flows: `playlistsFlow`, `getPlaylistSongsFlow`, `getPlaylistDetailsFlow`.
+UI: `PlaylistsScreen`.
+
+## 6. Importación / biblioteca local
+
+| Acción | API |
+|--------|-----|
+| Scan MediaStore | `scanMediaStore()` |
+| Scan carpeta SAF | `scanFolderUri(treeUri)` |
+| Upload WiFi → DB | `saveUploadedSong` |
+| Borrar app / dispositivo | `deleteSongsFromApp` / `deleteSongsFromDevice` |
+| Enriquecer meta/letras | `enhanceSongMetadataAndLyrics` |
+
+## 7. Temas
+
+`ThemePreferencesRepository` + `ThemePresets` + `ThemeSettingsScreen` + `CustomTheme` / `ColorSchemeData`.
+State: `currentThemeState`.
+
+## 8. WiFi Sync
+
+`WebServerService` (Ktor) + `WebServerScreen`. Sirve para transferir audio al dispositivo en red local.
+
+## Relacionado
+
+- Capas y stack → `bestiapop-architecture`
+- Paths exactos → `bestiapop-implementation-map`

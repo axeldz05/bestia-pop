@@ -90,6 +90,24 @@ State: `currentThemeState`.
 
 `WebServerService` (Ktor) + `WebServerScreen`. Sirve para transferir audio al dispositivo en red local.
 
+## 9. ListenBrainz (scrobbling + Para Ti)
+
+**Invariantes:**
+- Scrobbling solo si `ListenBrainzSettings.enabled` + token válido; offline encola en `pending_listens`.
+- Sección **Para Ti** en Playlists solo si `showDiscoverPlaylists` (`enabled && discoverEnabled && username`).
+- Playlists Discover = `GET /1/user/{user}/playlists/createdfor`; detalle = `GET /1/playlist/{mbid}`.
+- Reproducción: solo tracks matcheados a biblioteca local (artist+title normalizado); pipeline `playCollection` / `shuffleCollection`.
+
+| Capacidad | Entry point |
+|-----------|-------------|
+| Prefs | `ListenBrainzPreferencesRepository` / `ListenBrainzSettings` |
+| Settings UI | `ListenBrainzSettingsScreen` — toggle registrar + **Mostrar Para Ti** |
+| Submit listens | `ListenBrainzClient.submitListens`, `ListenTracker`, `ListenSyncCoordinator` |
+| List Discover | `ListenBrainzClient.fetchCreatedForPlaylists` → `MusicPlayerViewModel.refreshListenBrainzDiscoverPlaylists` |
+| Abrir playlist | `openListenBrainzPlaylist` + `MatchListenBrainzTracksUseCase` |
+| Play / shuffle | `playListenBrainzPlaylist` / `shuffleListenBrainzPlaylist` |
+| UI sección | `PlaylistsScreen` — sección "Para Ti" + detalle read-only |
+
 ## Relacionado
 
 - Capas y stack → `bestiapop-architecture`

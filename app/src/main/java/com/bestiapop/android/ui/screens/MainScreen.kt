@@ -7,8 +7,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.LibraryMusic
-import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.QueueMusic
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -60,7 +60,7 @@ fun MainScreen(
         NavItem("Biblioteca", Icons.Default.LibraryMusic),
         NavItem("Playlists", Icons.Default.QueueMusic),
         NavItem("WiFi Sync", Icons.Default.Wifi),
-        NavItem("Temas", Icons.Default.Palette)
+        NavItem("Ajustes", Icons.Default.Settings)
     )
 
     fun openFullPlayer() {
@@ -114,7 +114,7 @@ fun MainScreen(
                         }
                     )
                     2 -> WebServerScreen()
-                    3 -> ThemeSettingsScreen(viewModel = viewModel)
+                    3 -> SettingsScreen(viewModel = viewModel)
                 }
             }
         }

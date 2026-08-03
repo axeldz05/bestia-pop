@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.QueueMusic
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -38,6 +39,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -56,14 +58,20 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import com.bestiapop.android.data.listenbrainz.LbPlaylistSummary
+import com.bestiapop.android.data.listenbrainz.MatchedLbPlaylist
+import com.bestiapop.android.data.listenbrainz.MatchedLbTrack
 import com.bestiapop.android.data.model.Playlist
 import com.bestiapop.android.data.model.Song
+import com.bestiapop.android.ui.LbDiscoverListUiState
+import com.bestiapop.android.ui.LbPlaylistDetailUiState
 import com.bestiapop.android.ui.MusicPlayerViewModel
 import com.bestiapop.android.ui.components.SongListItem
 
@@ -78,26 +86,47 @@ fun PlaylistsScreen(
 ) {
     val playlists by viewModel.playlists.collectAsState(initial = emptyList())
     val allSongs by viewModel.songsState.collectAsState()
+    val lbSettings by viewModel.listenBrainzSettings.collectAsState()
+    val lbDiscoverPlaylists by viewModel.lbDiscoverPlaylists.collectAsState()
+    val lbDiscoverListState by viewModel.lbDiscoverListState.collectAsState()
+    val selectedLbPlaylist by viewModel.selectedLbPlaylist.collectAsState()
+    val lbPlaylistDetailState by viewModel.lbPlaylistDetailState.collectAsState()
 
     var showCreateDialog by remember { mutableStateOf(false) }
     var selectedPlaylistId by remember { mutableStateOf<Long?>(activeSelectedPlaylistId) }
+    var selectedLbPlaylistMbid by remember { mutableStateOf<String?>(null) }
     var playlistToDelete by remember { mutableStateOf<Playlist?>(null) }
+
+    val showDiscover = lbSettings.showDiscoverPlaylists
 
     LaunchedEffect(activeSelectedPlaylistId) {
         if (activeSelectedPlaylistId != null) {
             selectedPlaylistId = activeSelectedPlaylistId
+            selectedLbPlaylistMbid = null
+            viewModel.closeListenBrainzPlaylist()
+        }
+    }
+
+    LaunchedEffect(showDiscover) {
+        if (showDiscover) {
+            viewModel.refreshListenBrainzDiscoverPlaylists()
+        } else {
+            selectedLbPlaylistMbid = null
+            viewModel.closeListenBrainzPlaylist()
         }
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
         Scaffold(
             floatingActionButton = {
-                FloatingActionButton(
-                    onClick = { showCreateDialog = true },
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary
-                ) {
-                    Icon(imageVector = Icons.Default.Add, contentDescription = "Crear Playlist")
+                if (selectedPlaylistId == null && selectedLbPlaylistMbid == null) {
+                    FloatingActionButton(
+                        onClick = { showCreateDialog = true },
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary
+                    ) {
+                        Icon(imageVector = Icons.Default.Add, contentDescription = "Crear Playlist")
+                    }
                 }
             },
             containerColor = MaterialTheme.colorScheme.background
@@ -108,49 +137,143 @@ fun PlaylistsScreen(
                     .padding(padding)
                     .padding(16.dp)
             ) {
-                Text(
-                    text = "Mis Playlists",
-                    style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
-                    color = MaterialTheme.colorScheme.onBackground
-                )
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                if (playlists.isEmpty()) {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Icon(
-                                imageVector = Icons.Default.QueueMusic,
-                                contentDescription = null,
-                                modifier = Modifier.size(64.dp).padding(8.dp),
-                                tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    if (showDiscover) {
+                        item(key = "para-ti-header") {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "Para Ti",
+                                    style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
+                                    color = MaterialTheme.colorScheme.onBackground,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                IconButton(onClick = { viewModel.refreshListenBrainzDiscoverPlaylists() }) {
+                                    Icon(
+                                        imageVector = Icons.Default.Refresh,
+                                        contentDescription = "Actualizar Para Ti",
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Playlists Discover de ListenBrainz",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             Spacer(modifier = Modifier.height(8.dp))
+                        }
+
+                        when (val state = lbDiscoverListState) {
+                            is LbDiscoverListUiState.Loading -> {
+                                item(key = "para-ti-loading") {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 24.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        CircularProgressIndicator()
+                                    }
+                                }
+                            }
+                            is LbDiscoverListUiState.Error -> {
+                                item(key = "para-ti-error") {
+                                    Text(
+                                        text = state.message,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.error,
+                                        modifier = Modifier.padding(vertical = 8.dp)
+                                    )
+                                }
+                            }
+                            is LbDiscoverListUiState.Success, is LbDiscoverListUiState.Idle -> {
+                                if (lbDiscoverPlaylists.isEmpty() && state is LbDiscoverListUiState.Success) {
+                                    item(key = "para-ti-empty") {
+                                        Text(
+                                            text = "Aún no hay playlists Discover en tu cuenta.",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                                            modifier = Modifier.padding(vertical = 8.dp)
+                                        )
+                                    }
+                                } else {
+                                    items(lbDiscoverPlaylists, key = { "lb-${it.mbid}" }) { playlist ->
+                                        LbPlaylistCardItem(
+                                            playlist = playlist,
+                                            onClick = {
+                                                selectedPlaylistId = null
+                                                onSelectPlaylistDetail(null)
+                                                selectedLbPlaylistMbid = playlist.mbid
+                                                viewModel.openListenBrainzPlaylist(playlist.mbid)
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        item(key = "mis-playlists-header") {
+                            Spacer(modifier = Modifier.height(16.dp))
                             Text(
-                                text = "No tenés playlists creadas",
-                                style = MaterialTheme.typography.titleMedium,
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                                text = "Mis Playlists",
+                                style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
+                                color = MaterialTheme.colorScheme.onBackground
                             )
+                            Spacer(modifier = Modifier.height(8.dp))
+                        }
+                    } else {
+                        item(key = "mis-playlists-header-only") {
                             Text(
-                                text = "Tocá el botón '+' para crear tu primera lista personalizada.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
-                                modifier = Modifier.padding(top = 4.dp)
+                                text = "Mis Playlists",
+                                style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
+                                color = MaterialTheme.colorScheme.onBackground
                             )
+                            Spacer(modifier = Modifier.height(8.dp))
                         }
                     }
-                } else {
-                    LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
+
+                    if (playlists.isEmpty()) {
+                        item(key = "local-empty") {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 32.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.QueueMusic,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(64.dp).padding(8.dp),
+                                    tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    text = "No tenés playlists creadas",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                                )
+                                Text(
+                                    text = "Tocá el botón '+' para crear tu primera lista personalizada.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                                    modifier = Modifier.padding(top = 4.dp)
+                                )
+                            }
+                        }
+                    } else {
                         items(playlists, key = { it.id }) { playlist ->
                             PlaylistCardItem(
                                 playlist = playlist,
                                 onClick = {
+                                    selectedLbPlaylistMbid = null
+                                    viewModel.closeListenBrainzPlaylist()
                                     selectedPlaylistId = playlist.id
                                     onSelectPlaylistDetail(playlist.id)
                                 },
@@ -162,7 +285,7 @@ fun PlaylistsScreen(
             }
         }
 
-        // Selected Playlist Detail View Screen
+        // Selected local Playlist Detail View Screen
         if (selectedPlaylistId != null) {
             val playlistId = selectedPlaylistId!!
             val detailsState by viewModel.getPlaylistDetailsFlow(playlistId).collectAsState(initial = null)
@@ -185,6 +308,25 @@ fun PlaylistsScreen(
             }
         }
 
+        // ListenBrainz Discover playlist detail
+        if (selectedLbPlaylistMbid != null) {
+            val currentSong by viewModel.currentSong.collectAsState()
+            LbPlaylistDetailScreen(
+                detailState = lbPlaylistDetailState,
+                matchedPlaylist = selectedLbPlaylist,
+                onBack = {
+                    selectedLbPlaylistMbid = null
+                    viewModel.closeListenBrainzPlaylist()
+                },
+                onPlay = { viewModel.playListenBrainzPlaylist() },
+                onShuffle = { viewModel.shuffleListenBrainzPlaylist() },
+                onPlaySong = { song, queue -> viewModel.playSong(song, queue) },
+                currentSongUri = currentSong?.uriString,
+                onPlayNext = { viewModel.playNextInQueue(it) },
+                onAddToQueue = { viewModel.addToQueue(it) }
+            )
+        }
+
         // Create Playlist Dialog
         if (showCreateDialog) {
             PlaylistFormDialog(
@@ -196,6 +338,8 @@ fun PlaylistsScreen(
                 onDismiss = { showCreateDialog = false },
                 onSave = { name, desc, coverUri ->
                     viewModel.createPlaylist(name, desc, coverUri) { newId ->
+                        selectedLbPlaylistMbid = null
+                        viewModel.closeListenBrainzPlaylist()
                         selectedPlaylistId = newId
                         onSelectPlaylistDetail(newId)
                     }
@@ -231,6 +375,306 @@ fun PlaylistsScreen(
                     }
                 }
             )
+        }
+    }
+}
+
+@Composable
+private fun LbPlaylistCardItem(
+    playlist: LbPlaylistSummary,
+    onClick: () -> Unit
+) {
+    Surface(
+        color = MaterialTheme.colorScheme.surface,
+        shape = RoundedCornerShape(14.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(60.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(MaterialTheme.colorScheme.tertiaryContainer),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.QueueMusic,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onTertiaryContainer,
+                    modifier = Modifier.size(28.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.width(14.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = playlist.title,
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                if (!playlist.description.isNullOrBlank()) {
+                    Text(
+                        text = playlist.description,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                Text(
+                    text = if (playlist.trackCount > 0) {
+                        "${playlist.trackCount} tracks · ListenBrainz"
+                    } else {
+                        "ListenBrainz"
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.9f)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun LbPlaylistDetailScreen(
+    detailState: LbPlaylistDetailUiState,
+    matchedPlaylist: MatchedLbPlaylist?,
+    onBack: () -> Unit,
+    onPlay: () -> Unit,
+    onShuffle: () -> Unit,
+    onPlaySong: (Song, List<Song>) -> Unit,
+    currentSongUri: String?,
+    onPlayNext: (Song) -> Unit,
+    onAddToQueue: (Song) -> Unit
+) {
+    Surface(
+        modifier = Modifier.fillMaxSize(),
+        color = MaterialTheme.colorScheme.background
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(top = 16.dp, start = 16.dp, end = 16.dp)
+        ) {
+            val title = matchedPlaylist?.detail?.summary?.title ?: "Para Ti"
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(onClick = onBack) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "Volver",
+                        tint = MaterialTheme.colorScheme.onBackground
+                    )
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                    color = MaterialTheme.colorScheme.onBackground,
+                    modifier = Modifier.weight(1f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            when (detailState) {
+                is LbPlaylistDetailUiState.Loading, is LbPlaylistDetailUiState.Idle -> {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator()
+                    }
+                }
+                is LbPlaylistDetailUiState.Error -> {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = detailState.message,
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
+                }
+                is LbPlaylistDetailUiState.Success -> {
+                    val matched = matchedPlaylist
+                    if (matched == null) {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "No se pudo cargar la playlist",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    } else {
+                        val description = matched.detail.summary.description
+                        val matchedSongs = matched.matchedSongs
+
+                        if (!description.isNullOrBlank()) {
+                            Text(
+                                text = description,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
+                                maxLines = 3,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                        }
+
+                        Text(
+                            text = "${matched.matchedCount} de ${matched.totalCount} disponibles en tu biblioteca",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                        )
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Button(
+                                onClick = onPlay,
+                                enabled = matchedSongs.isNotEmpty(),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = MaterialTheme.colorScheme.primary
+                                ),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(imageVector = Icons.Default.PlayArrow, contentDescription = null)
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Reproducir")
+                            }
+
+                            OutlinedButton(
+                                onClick = onShuffle,
+                                enabled = matchedSongs.isNotEmpty(),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(imageVector = Icons.Default.Shuffle, contentDescription = null)
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Aleatorio")
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        if (matched.matches.isEmpty()) {
+                            Box(
+                                modifier = Modifier.fillMaxSize(),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = "Esta playlist no tiene tracks",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                )
+                            }
+                        } else {
+                            LazyColumn(modifier = Modifier.fillMaxSize()) {
+                                items(
+                                    items = matched.matches,
+                                    key = { match ->
+                                        "${match.track.recordingMbid ?: match.track.title}|${match.track.artist}|${match.localSong?.id}"
+                                    }
+                                ) { match ->
+                                    LbMatchedTrackRow(
+                                        match = match,
+                                        matchedSongs = matchedSongs,
+                                        isCurrentPlaying = match.localSong?.uriString == currentSongUri,
+                                        onPlaySong = onPlaySong,
+                                        onPlayNext = onPlayNext,
+                                        onAddToQueue = onAddToQueue
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LbMatchedTrackRow(
+    match: MatchedLbTrack,
+    matchedSongs: List<Song>,
+    isCurrentPlaying: Boolean,
+    onPlaySong: (Song, List<Song>) -> Unit,
+    onPlayNext: (Song) -> Unit,
+    onAddToQueue: (Song) -> Unit
+) {
+    val local = match.localSong
+    if (local != null) {
+        SongListItem(
+            song = local,
+            isCurrentPlaying = isCurrentPlaying,
+            onClick = { onPlaySong(local, matchedSongs) },
+            onPlayNext = { onPlayNext(local) },
+            onAddToQueue = { onAddToQueue(local) }
+        )
+    } else {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .alpha(0.45f)
+                .padding(vertical = 10.dp, horizontal = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.QueueMusic,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = match.track.title,
+                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = match.track.artist,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = "No en biblioteca",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
     }
 }

@@ -28,6 +28,7 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 | Biblioteca | `ui/screens/LibraryScreen.kt` |
 | Lista canciones / álbumes / artistas | `ui/screens/library/LibrarySongList.kt`, `LibraryAlbumGrid.kt`, `LibraryArtistList.kt`, `LibraryDialogs.kt` |
 | Playlists | `ui/screens/PlaylistsScreen.kt` |
+| Ajustes / ListenBrainz | `ui/screens/SettingsScreen.kt`, `ListenBrainzSettingsScreen.kt` |
 | Now playing | `ui/screens/NowPlayingScreen.kt` |
 | Cola | `ui/screens/QueueScreen.kt` |
 | WiFi sync | `ui/screens/WebServerScreen.kt` |
@@ -57,6 +58,7 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 | `DownloadAudioTrackUseCase` | `domain/usecase/DownloadAudioTrackUseCase.kt` | wrap download Result |
 | `ManageArtworkUseCase` | `domain/usecase/ManageArtworkUseCase.kt` | album artwork propagation |
 | `ManagePlaylistUseCase` | `domain/usecase/ManagePlaylistUseCase.kt` | playlist ops over repo |
+| `MatchListenBrainzTracksUseCase` | `domain/usecase/MatchListenBrainzTracksUseCase.kt` | match LB tracks → local `Song` |
 | Puerto | `domain/repository/IMusicRepository.kt` | contrato repositorio |
 
 ## Data
@@ -72,6 +74,11 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 | Catálogo / lyrics / covers web | `data/network/MetadataFetcher.kt` |
 | YouTube search + stream | `data/network/YouTubeExtractor.kt` |
 | Theme DataStore | `data/preferences/ThemePreferencesRepository.kt` |
+| ListenBrainz prefs | `data/preferences/ListenBrainzPreferencesRepository.kt` |
+| ListenBrainz API | `data/network/ListenBrainzClient.kt` |
+| LB models + sync | `data/listenbrainz/LbPlaylistModels.kt`, `ListenTracker.kt`, `ListenSyncCoordinator.kt` |
+| Connectivity | `data/network/ConnectivityObserver.kt` |
+| Pending listens Room | `data/db/PendingListenEntity.kt`, `PendingListenDao.kt` |
 | Storage helpers | `data/util/StorageUtils.kt` |
 
 ## Services
@@ -97,6 +104,7 @@ Mantener esta lista alineada con `MusicPlayerViewModel.kt`:
 - Playback: `playSong`, `playCollection`, `shuffleCollection`, `enqueueCollection`, `playNextInQueue`, `playNextBatch`, `currentSong`, `queue`, `repeatMode`, `isShuffle`
 - Artwork: `setAlbumArtwork`
 - Online: `searchCatalog`, `searchOnlineCatalog`, `downloadSingleCandidate`, `downloadSelectedCandidatesBatch`, `downloadFromUrl`, `downloadOnlineTrack`
+- ListenBrainz: `listenBrainzSettings`, `setListenBrainzEnabled`, `setListenBrainzDiscoverEnabled`, `refreshListenBrainzDiscoverPlaylists`, `openListenBrainzPlaylist`, `playListenBrainzPlaylist`, `shuffleListenBrainzPlaylist`
 
 ## Cómo actualizar este mapa
 

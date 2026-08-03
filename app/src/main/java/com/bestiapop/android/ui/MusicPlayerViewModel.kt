@@ -14,11 +14,22 @@ import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.MoreExecutors
+import com.bestiapop.android.data.db.AppDatabase
+import com.bestiapop.android.data.listenbrainz.LbApiResult
+import com.bestiapop.android.data.listenbrainz.LbPlaylistSummary
+import com.bestiapop.android.data.listenbrainz.ListenSyncCoordinator
+import com.bestiapop.android.data.listenbrainz.ListenTracker
+import com.bestiapop.android.data.listenbrainz.MatchedLbPlaylist
 import com.bestiapop.android.data.model.*
 
+import com.bestiapop.android.data.network.ConnectivityObserver
+import com.bestiapop.android.data.network.ListenBrainzClient
 import com.bestiapop.android.data.network.MetadataFetcher
+import com.bestiapop.android.data.preferences.ListenBrainzPreferencesRepository
+import com.bestiapop.android.data.preferences.ListenBrainzSettings
 import com.bestiapop.android.data.preferences.ThemePreferencesRepository
 import com.bestiapop.android.data.repository.MusicRepository
+import com.bestiapop.android.domain.usecase.MatchListenBrainzTracksUseCase
 import com.bestiapop.android.service.MusicService
 import com.bestiapop.android.ui.state.LibraryListItem
 import com.bestiapop.android.ui.state.LibraryViewMode
@@ -31,6 +42,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -43,6 +55,7 @@ import java.util.concurrent.atomic.AtomicInteger
 
 import android.content.Context
 import android.media.AudioManager
+import android.os.SystemClock
 
 enum class SortOption {
     TITLE,
@@ -52,10 +65,48 @@ enum class SortOption {
     DATE_ADDED
 }
 
+sealed class TokenValidationUiState {
+    data object Idle : TokenValidationUiState()
+    data object Validating : TokenValidationUiState()
+    data class Success(val username: String) : TokenValidationUiState()
+    data class Error(val message: String) : TokenValidationUiState()
+}
+
+sealed class LbDiscoverListUiState {
+    data object Idle : LbDiscoverListUiState()
+    data object Loading : LbDiscoverListUiState()
+    data object Success : LbDiscoverListUiState()
+    data class Error(val message: String) : LbDiscoverListUiState()
+}
+
+sealed class LbPlaylistDetailUiState {
+    data object Idle : LbPlaylistDetailUiState()
+    data object Loading : LbPlaylistDetailUiState()
+    data object Success : LbPlaylistDetailUiState()
+    data class Error(val message: String) : LbPlaylistDetailUiState()
+}
+
 class MusicPlayerViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository = MusicRepository(application)
     private val themeRepository = ThemePreferencesRepository(application)
+    private val listenBrainzPreferences = ListenBrainzPreferencesRepository(application)
+    private val pendingListenDao = AppDatabase.getDatabase(application).pendingListenDao()
+    private val connectivityObserver = ConnectivityObserver(application)
+
+    private val listenSyncCoordinator = ListenSyncCoordinator(
+        scope = viewModelScope,
+        pendingListenDao = pendingListenDao,
+        preferences = listenBrainzPreferences,
+        isOnline = { connectivityObserver.isCurrentlyOnline() }
+    )
+
+    private val listenTracker = ListenTracker(
+        scope = viewModelScope,
+        pendingListenDao = pendingListenDao,
+        preferences = listenBrainzPreferences,
+        onListenEnqueued = { listenSyncCoordinator.requestSync() }
+    )
 
     private var controllerFuture: ListenableFuture<MediaController>? = null
     private var mediaController: MediaController? = null
@@ -63,6 +114,31 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     // Theme state
     val currentThemeState: StateFlow<CustomTheme> = themeRepository.selectedThemeFlow
         .stateIn(viewModelScope, SharingStarted.Lazily, ThemePresets.MidnightDark)
+
+    // ListenBrainz state
+    val listenBrainzSettings: StateFlow<ListenBrainzSettings> =
+        listenBrainzPreferences.settingsFlow
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ListenBrainzSettings())
+
+    val pendingListenCount: StateFlow<Int> = pendingListenDao.countFlow()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
+
+    private val _tokenValidationState = MutableStateFlow<TokenValidationUiState>(TokenValidationUiState.Idle)
+    val tokenValidationState = _tokenValidationState.asStateFlow()
+
+    private val matchListenBrainzTracksUseCase = MatchListenBrainzTracksUseCase()
+
+    private val _lbDiscoverPlaylists = MutableStateFlow<List<LbPlaylistSummary>>(emptyList())
+    val lbDiscoverPlaylists = _lbDiscoverPlaylists.asStateFlow()
+
+    private val _lbDiscoverListState = MutableStateFlow<LbDiscoverListUiState>(LbDiscoverListUiState.Idle)
+    val lbDiscoverListState = _lbDiscoverListState.asStateFlow()
+
+    private val _selectedLbPlaylist = MutableStateFlow<MatchedLbPlaylist?>(null)
+    val selectedLbPlaylist = _selectedLbPlaylist.asStateFlow()
+
+    private val _lbPlaylistDetailState = MutableStateFlow<LbPlaylistDetailUiState>(LbPlaylistDetailUiState.Idle)
+    val lbPlaylistDetailState = _lbPlaylistDetailState.asStateFlow()
 
     // Raw songs & playlists
     val rawSongs = repository.allSongsFlow
@@ -193,6 +269,19 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             repository.migrateLegacyYouTubeMusicSongs()
         }
 
+        viewModelScope.launch {
+            connectivityObserver.isOnline.collect { online ->
+                if (online) listenSyncCoordinator.requestSync()
+            }
+        }
+
+        viewModelScope.launch {
+            // Kick sync on startup if there are pending listens and we're online.
+            if (pendingListenDao.count() > 0 && connectivityObserver.isCurrentlyOnline()) {
+                listenSyncCoordinator.requestSync()
+            }
+        }
+
         viewModelScope.launch(Dispatchers.IO) {
             songsState.collect { songs ->
                 val artists = songs.map { it.artist }.distinct().filter { it.isNotBlank() && !it.equals("Unknown Artist", ignoreCase = true) }
@@ -252,6 +341,9 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         mediaController?.addListener(object : Player.Listener {
             override fun onIsPlayingChanged(isPlayingNow: Boolean) {
                 _isPlaying.value = isPlayingNow
+                if (!isPlayingNow) {
+                    listenTracker.onStopped()
+                }
             }
 
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
@@ -272,9 +364,12 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                         ?: songsState.value.find { it.uriString == idOrUri || it.id.toString() == idOrUri }
                     if (song != null) {
                         _currentSong.value = song
+                        listenTracker.onTrackChanged(song)
                         requestMetadataEnhancement(song)
+                    } else {
+                        listenTracker.onTrackChanged(null)
                     }
-                }
+                } ?: listenTracker.onTrackChanged(null)
 
                 if (wrappedShuffleCycle) {
                     val avoid = _queue.value.getOrNull(lastMediaItemIndex)
@@ -344,6 +439,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         try {
             _queue.value = shuffled
             _currentSong.value = shuffled.first()
+            listenTracker.onTrackChanged(shuffled.first())
             _isShuffle.value = true
             lastMediaItemIndex = 0
             mediaController?.let { controller ->
@@ -374,8 +470,13 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                         val curr = _currentSong.value
                         if (dur > 0 && curr != null && curr.durationMs <= 0) {
                             updateSongDuration(curr.id, dur)
+                            listenTracker.onDurationKnown(curr.id, dur)
                         }
                     }
+                    listenTracker.onPlaybackTick(
+                        isPlaying = controller.isPlaying,
+                        elapsedRealtimeMs = SystemClock.elapsedRealtime()
+                    )
                 }
                 delay(200)
             }
@@ -445,6 +546,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
         _queue.value = targetQueue
         _currentSong.value = targetQueue[index]
+        listenTracker.onTrackChanged(targetQueue[index])
         lastMediaItemIndex = index
         _isShuffle.value = false
         bumpQueueFocus()
@@ -737,6 +839,141 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         viewModelScope.launch {
             themeRepository.saveCustomColors(colors)
         }
+    }
+
+    // ListenBrainz Actions
+    fun setListenBrainzEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            listenBrainzPreferences.setEnabled(enabled)
+            if (enabled) listenSyncCoordinator.requestSync()
+            if (!enabled) clearDiscoverState()
+        }
+    }
+
+    fun setListenBrainzDiscoverEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            listenBrainzPreferences.setDiscoverEnabled(enabled)
+            if (enabled) {
+                refreshListenBrainzDiscoverPlaylists()
+            } else {
+                clearDiscoverState()
+            }
+        }
+    }
+
+    fun saveListenBrainzToken(token: String) {
+        viewModelScope.launch {
+            listenBrainzPreferences.setToken(token)
+            _tokenValidationState.value = TokenValidationUiState.Idle
+        }
+    }
+
+    fun validateListenBrainzToken(token: String = listenBrainzSettings.value.userToken) {
+        viewModelScope.launch {
+            val trimmed = token.trim()
+            if (trimmed.isBlank()) {
+                _tokenValidationState.value = TokenValidationUiState.Error("Token vacío")
+                return@launch
+            }
+            _tokenValidationState.value = TokenValidationUiState.Validating
+            listenBrainzPreferences.setToken(trimmed)
+            val result = ListenBrainzClient.validateToken(trimmed)
+            if (result.valid && !result.username.isNullOrBlank()) {
+                listenBrainzPreferences.setUsername(result.username)
+                listenBrainzPreferences.setEnabled(true)
+                _tokenValidationState.value = TokenValidationUiState.Success(result.username)
+                listenSyncCoordinator.requestSync()
+                if (listenBrainzSettings.value.discoverEnabled) {
+                    refreshListenBrainzDiscoverPlaylists()
+                }
+            } else {
+                listenBrainzPreferences.setUsername(null)
+                _tokenValidationState.value = TokenValidationUiState.Error(
+                    result.message ?: "Token inválido"
+                )
+            }
+        }
+    }
+
+    fun clearListenBrainz() {
+        viewModelScope.launch {
+            listenBrainzPreferences.clear()
+            _tokenValidationState.value = TokenValidationUiState.Idle
+            clearDiscoverState()
+        }
+    }
+
+    fun refreshListenBrainzDiscoverPlaylists() {
+        viewModelScope.launch {
+            val settings = listenBrainzPreferences.settingsFlow.first()
+            if (!settings.showDiscoverPlaylists) {
+                clearDiscoverState()
+                return@launch
+            }
+            val username = settings.username ?: return@launch
+            _lbDiscoverListState.value = LbDiscoverListUiState.Loading
+            when (
+                val result = ListenBrainzClient.fetchCreatedForPlaylists(
+                    username = username,
+                    token = settings.userToken
+                )
+            ) {
+                is LbApiResult.Success -> {
+                    _lbDiscoverPlaylists.value = result.data
+                    _lbDiscoverListState.value = LbDiscoverListUiState.Success
+                }
+                is LbApiResult.Failure -> {
+                    _lbDiscoverListState.value = LbDiscoverListUiState.Error(result.message)
+                }
+            }
+        }
+    }
+
+    fun openListenBrainzPlaylist(mbid: String) {
+        viewModelScope.launch {
+            val settings = listenBrainzPreferences.settingsFlow.first()
+            if (!settings.showDiscoverPlaylists || mbid.isBlank()) return@launch
+            _lbPlaylistDetailState.value = LbPlaylistDetailUiState.Loading
+            _selectedLbPlaylist.value = null
+            when (
+                val result = ListenBrainzClient.fetchPlaylist(
+                    playlistMbid = mbid,
+                    token = settings.userToken
+                )
+            ) {
+                is LbApiResult.Success -> {
+                    val library = rawSongs.first()
+                    _selectedLbPlaylist.value = matchListenBrainzTracksUseCase.execute(result.data, library)
+                    _lbPlaylistDetailState.value = LbPlaylistDetailUiState.Success
+                }
+                is LbApiResult.Failure -> {
+                    _lbPlaylistDetailState.value = LbPlaylistDetailUiState.Error(result.message)
+                }
+            }
+        }
+    }
+
+    fun closeListenBrainzPlaylist() {
+        _selectedLbPlaylist.value = null
+        _lbPlaylistDetailState.value = LbPlaylistDetailUiState.Idle
+    }
+
+    fun playListenBrainzPlaylist() {
+        val songs = _selectedLbPlaylist.value?.matchedSongs.orEmpty()
+        if (songs.isEmpty()) return
+        playCollection(songs, startIndex = 0)
+    }
+
+    fun shuffleListenBrainzPlaylist() {
+        val songs = _selectedLbPlaylist.value?.matchedSongs.orEmpty()
+        if (songs.isEmpty()) return
+        shuffleCollection(songs)
+    }
+
+    private fun clearDiscoverState() {
+        _lbDiscoverPlaylists.value = emptyList()
+        _lbDiscoverListState.value = LbDiscoverListUiState.Idle
+        closeListenBrainzPlaylist()
     }
 
     // Online Catalog & Link Downloader Actions

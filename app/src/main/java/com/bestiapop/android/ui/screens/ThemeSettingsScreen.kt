@@ -49,7 +49,8 @@ import com.bestiapop.android.ui.theme.ThemePresets
 
 @Composable
 fun ThemeSettingsScreen(
-    viewModel: MusicPlayerViewModel
+    viewModel: MusicPlayerViewModel,
+    showTitle: Boolean = true
 ) {
     val currentTheme by viewModel.currentThemeState.collectAsState()
     var showColorPicker by remember { mutableStateOf(false) }
@@ -59,25 +60,26 @@ fun ThemeSettingsScreen(
             .fillMaxSize()
             .padding(16.dp)
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = Icons.Default.Palette,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(end = 8.dp)
-            )
-            Text(
-                text = "Temas y Estilo",
-                style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
-                color = MaterialTheme.colorScheme.onBackground
-            )
+        if (showTitle) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Palette,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(end = 8.dp)
+                )
+                Text(
+                    text = "Temas y Estilo",
+                    style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
         }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
         // Custom theme editor trigger card
         Card(
             shape = RoundedCornerShape(20.dp),

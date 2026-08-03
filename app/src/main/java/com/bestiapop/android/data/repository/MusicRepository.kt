@@ -256,11 +256,7 @@ class MusicRepository(private val context: Context) : IMusicRepository {
                     context.contentResolver.delete(Uri.parse(song.uriString), null, null)
                 }
 
-                val cleanPath = when {
-                    song.uriString.startsWith("file://") -> song.uriString.removePrefix("file://")
-                    song.uriString.startsWith("file:") -> song.uriString.removePrefix("file:")
-                    else -> song.uriString
-                }
+                val cleanPath = cleanFilePath(song.uriString)
 
                 val file = File(cleanPath)
                 if (file.exists()) {
@@ -284,18 +280,28 @@ class MusicRepository(private val context: Context) : IMusicRepository {
         }
     }
 
+    private fun cleanFilePath(uriString: String): String = when {
+        uriString.startsWith("file://") -> uriString.removePrefix("file://")
+        uriString.startsWith("file:") -> uriString.removePrefix("file:")
+        else -> uriString
+    }
+
+    private fun hasUsableArtwork(artworkUri: String?): Boolean =
+        !artworkUri.isNullOrEmpty() && !artworkUri.startsWith("content://")
+
     override suspend fun enhanceSongMetadataAndLyrics(song: Song) = withContext(Dispatchers.IO) {
+        val hasUsableArt = hasUsableArtwork(song.artworkUri)
+        val hasLyrics = !song.lyrics.isNullOrEmpty()
+        val hasDuration = song.durationMs > 0
+        if (hasUsableArt && hasLyrics && hasDuration) return@withContext
+
         val albumName = if (song.album.isBlank()) "Unknown Album" else song.album
         val existingAlbumArt = musicDao.getArtworkForAlbum(albumName)
 
-        var artUrl = if (!song.artworkUri.isNullOrEmpty() && !song.artworkUri.startsWith("content://")) song.artworkUri else existingAlbumArt
+        var artUrl = if (hasUsableArt) song.artworkUri else existingAlbumArt
 
         if (artUrl.isNullOrEmpty() || artUrl.startsWith("content://")) {
-            val cleanPath = when {
-                song.uriString.startsWith("file://") -> song.uriString.removePrefix("file://")
-                song.uriString.startsWith("file:") -> song.uriString.removePrefix("file:")
-                else -> song.uriString
-            }
+            val cleanPath = cleanFilePath(song.uriString)
             val embedded = extractAndSaveEmbeddedArtwork(cleanPath, "${song.artist}_${albumName}")
             if (!embedded.isNullOrEmpty()) {
                 artUrl = embedded
@@ -314,16 +320,12 @@ class MusicRepository(private val context: Context) : IMusicRepository {
             musicDao.updateMetadataAndLyrics(song.id, artUrl, lyricsStr)
         }
 
-        if (!artUrl.isNullOrEmpty()) {
+        if (!artUrl.isNullOrEmpty() && (existingAlbumArt.isNullOrEmpty() || existingAlbumArt != artUrl)) {
             musicDao.setAlbumArtwork(albumName, artUrl)
         }
 
         if (song.durationMs <= 0) {
-            val cleanPath = when {
-                song.uriString.startsWith("file://") -> song.uriString.removePrefix("file://")
-                song.uriString.startsWith("file:") -> song.uriString.removePrefix("file:")
-                else -> song.uriString
-            }
+            val cleanPath = cleanFilePath(song.uriString)
             var calculatedDur = calculateAudioDurationMs(cleanPath)
             if (calculatedDur <= 0) {
                 calculatedDur = MetadataFetcher.fetchTrackDurationMs(song.artist, song.title)
@@ -583,7 +585,12 @@ class MusicRepository(private val context: Context) : IMusicRepository {
         onProgress?.invoke("Obteniendo información del álbum y portada...")
 
         var finalAlbum = track.album
-        if (finalAlbum.isBlank() || finalAlbum.equals("YouTube Music", ignoreCase = true) || finalAlbum.equals("Single", ignoreCase = true)) {
+        val hasUsefulAlbum = finalAlbum.isNotBlank() &&
+            !finalAlbum.equals("YouTube Music", ignoreCase = true) &&
+            !finalAlbum.equals("Single", ignoreCase = true)
+        val hasArtwork = !finalArtwork.isNullOrEmpty()
+
+        if (!hasUsefulAlbum || !hasArtwork) {
             val fullMeta = MetadataFetcher.fetchFullTrackMetadata(finalArtist, finalTitle)
             if (fullMeta != null) {
                 if (!fullMeta.album.isNullOrBlank()) {
@@ -592,18 +599,19 @@ class MusicRepository(private val context: Context) : IMusicRepository {
                 if (finalArtwork.isNullOrEmpty() && !fullMeta.artworkUrl.isNullOrEmpty()) {
                     finalArtwork = fullMeta.artworkUrl
                 }
-                if (!fullMeta.artistName.isNullOrBlank() && (finalArtist.isBlank() || finalArtist == "YouTube Artist")) {
+                if (!fullMeta.artistName.isNullOrBlank() &&
+                    (finalArtist.isBlank() || finalArtist == "YouTube Artist" || finalArtist == "Enlace Web")
+                ) {
                     finalArtist = fullMeta.artistName
+                }
+                if (finalDurationMs <= 0 && fullMeta.durationMs > 0) {
+                    finalDurationMs = fullMeta.durationMs
                 }
             }
         }
 
         if (finalAlbum.isBlank() || finalAlbum.equals("YouTube Music", ignoreCase = true)) {
             finalAlbum = "$finalArtist - Single"
-        }
-
-        if (finalArtwork.isNullOrEmpty()) {
-            finalArtwork = MetadataFetcher.fetchAlbumArtUrl(finalArtist, finalTitle)
         }
 
         val lyrics = MetadataFetcher.fetchLyrics(finalArtist, finalTitle)

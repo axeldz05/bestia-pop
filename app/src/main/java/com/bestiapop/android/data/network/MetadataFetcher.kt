@@ -14,7 +14,8 @@ data class FullTrackMetadata(
     val album: String?,
     val artworkUrl: String?,
     val artistName: String?,
-    val title: String?
+    val title: String?,
+    val durationMs: Long = 0L
 )
 
 object MetadataFetcher {
@@ -28,6 +29,88 @@ object MetadataFetcher {
         return raw.replace(Regex("\\.(mp3|flac|m4a|wav|ogg|aac)$", RegexOption.IGNORE_CASE), "")
             .replace("_", " ")
             .trim()
+    }
+
+    private fun cleanArtist(artist: String): String {
+        return if (artist.equals("Unknown Artist", ignoreCase = true)) "" else cleanString(artist)
+    }
+
+    private fun buildQueryText(artist: String, titleOrAlbum: String): String? {
+        val cleanTitle = cleanString(titleOrAlbum)
+        val cleanArtist = cleanArtist(artist)
+        val queryText = if (cleanArtist.isNotEmpty()) "$cleanArtist $cleanTitle" else cleanTitle
+        return queryText.ifEmpty { null }
+    }
+
+    private fun encodeQuery(queryText: String): String =
+        URLEncoder.encode(queryText, StandardCharsets.UTF_8.name())
+
+    private fun normalizeItunesArtwork(artworkUrl100: String): String? {
+        if (artworkUrl100.isEmpty()) return null
+        return artworkUrl100.replace("100x100bb", "600x600bb")
+    }
+
+    private fun pickCoverUrl(coverXl: String?, coverBig: String?): String? {
+        return coverXl?.ifBlank { null } ?: coverBig?.ifBlank { null }
+    }
+
+    private fun getJson(url: String, userAgent: String = "BestiaPop/1.0"): JSONObject? {
+        return try {
+            val request = Request.Builder().url(url).header("User-Agent", userAgent).build()
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return null
+                val body = response.body?.string() ?: return null
+                JSONObject(body)
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            null
+        }
+    }
+
+    private fun searchDeezerTrack(queryText: String): FullTrackMetadata? {
+        val url = "https://api.deezer.com/search?q=${encodeQuery(queryText)}&limit=1"
+        val json = getJson(url) ?: return null
+        val data = json.optJSONArray("data") ?: return null
+        if (data.length() == 0) return null
+        val item = data.getJSONObject(0)
+        val albumObj = item.optJSONObject("album")
+        val artistObj = item.optJSONObject("artist")
+        val durationSec = item.optLong("duration", 0L)
+        return FullTrackMetadata(
+            album = albumObj?.optString("title")?.ifBlank { null },
+            artworkUrl = pickCoverUrl(
+                albumObj?.optString("cover_xl"),
+                albumObj?.optString("cover_big")
+            ),
+            artistName = artistObj?.optString("name")?.ifBlank { null },
+            title = item.optString("title").ifBlank { null },
+            durationMs = if (durationSec > 0) durationSec * 1000L else 0L
+        )
+    }
+
+    private fun searchItunesSong(queryText: String): FullTrackMetadata? {
+        val url = "https://itunes.apple.com/search?term=${encodeQuery(queryText)}&entity=song&limit=1"
+        val json = getJson(url) ?: return null
+        val results = json.optJSONArray("results") ?: return null
+        if (results.length() == 0) return null
+        val item = results.getJSONObject(0)
+        return FullTrackMetadata(
+            album = item.optString("collectionName").ifBlank { null },
+            artworkUrl = normalizeItunesArtwork(item.optString("artworkUrl100")),
+            artistName = item.optString("artistName").ifBlank { null },
+            title = item.optString("trackName").ifBlank { null },
+            durationMs = item.optLong("trackTimeMillis", 0L)
+        )
+    }
+
+    private fun searchDeezerAlbumArt(queryText: String): String? {
+        val url = "https://api.deezer.com/search/album?q=${encodeQuery(queryText)}&limit=1"
+        val json = getJson(url) ?: return null
+        val data = json.optJSONArray("data") ?: return null
+        if (data.length() == 0) return null
+        val item = data.getJSONObject(0)
+        return pickCoverUrl(item.optString("cover_xl"), item.optString("cover_big"))
     }
 
     suspend fun getFeaturedDemoCatalog(): List<com.bestiapop.android.data.model.OnlineCatalogTrack> = withContext(Dispatchers.IO) {
@@ -138,173 +221,48 @@ object MetadataFetcher {
 
 
     suspend fun fetchArtistPhotoUrl(artist: String): String? = withContext(Dispatchers.IO) {
-        val cleanArtist = if (artist.equals("Unknown Artist", ignoreCase = true)) "" else cleanString(artist)
-        if (cleanArtist.isEmpty()) return@withContext null
+        val cleanArtistName = cleanArtist(artist)
+        if (cleanArtistName.isEmpty()) return@withContext null
 
-        try {
-            val query = URLEncoder.encode(cleanArtist, StandardCharsets.UTF_8.name())
-            val url = "https://api.deezer.com/search/artist?q=$query&limit=1"
-            val request = Request.Builder().url(url).header("User-Agent", "BestiaPop/1.0").build()
-
-            client.newCall(request).execute().use { response ->
-                if (response.isSuccessful) {
-                    val body = response.body?.string() ?: ""
-                    val json = JSONObject(body)
-                    val data = json.optJSONArray("data")
-                    if (data != null && data.length() > 0) {
-                        val item = data.getJSONObject(0)
-                        val pictureXl = item.optString("picture_xl")
-                        val pictureBig = item.optString("picture_big")
-                        if (pictureXl.isNotEmpty()) return@withContext pictureXl
-                        if (pictureBig.isNotEmpty()) return@withContext pictureBig
-                    }
-                }
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-        return@withContext null
+        val url = "https://api.deezer.com/search/artist?q=${encodeQuery(cleanArtistName)}&limit=1"
+        val json = getJson(url) ?: return@withContext null
+        val data = json.optJSONArray("data") ?: return@withContext null
+        if (data.length() == 0) return@withContext null
+        val item = data.getJSONObject(0)
+        return@withContext pickCoverUrl(item.optString("picture_xl"), item.optString("picture_big"))
     }
 
     suspend fun fetchAlbumArtUrl(artist: String, titleOrAlbum: String): String? = withContext(Dispatchers.IO) {
-        val cleanTitle = cleanString(titleOrAlbum)
-        val cleanArtist = if (artist.equals("Unknown Artist", ignoreCase = true)) "" else cleanString(artist)
-        val queryText = if (cleanArtist.isNotEmpty()) "$cleanArtist $cleanTitle" else cleanTitle
-        if (queryText.isEmpty()) return@withContext null
-
-        // 1. Try Deezer Search API first (1000x1000 ultra HD)
-        try {
-            val query = URLEncoder.encode(queryText, StandardCharsets.UTF_8.name())
-            val url = "https://api.deezer.com/search/album?q=$query&limit=1"
-            val request = Request.Builder().url(url).header("User-Agent", "BestiaPop/1.0").build()
-
-            client.newCall(request).execute().use { response ->
-                if (response.isSuccessful) {
-                    val body = response.body?.string() ?: ""
-                    val json = JSONObject(body)
-                    val data = json.optJSONArray("data")
-                    if (data != null && data.length() > 0) {
-                        val item = data.getJSONObject(0)
-                        val coverXl = item.optString("cover_xl")
-                        val coverBig = item.optString("cover_big")
-                        if (coverXl.isNotEmpty()) return@withContext coverXl
-                        if (coverBig.isNotEmpty()) return@withContext coverBig
-                    }
-                }
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-
-        // 2. Fallback to iTunes Search API (600x600 HD)
-        try {
-            val query = URLEncoder.encode(queryText, StandardCharsets.UTF_8.name())
-            val url = "https://itunes.apple.com/search?term=$query&entity=song&limit=1"
-            val request = Request.Builder().url(url).build()
-
-            client.newCall(request).execute().use { response ->
-                if (response.isSuccessful) {
-                    val body = response.body?.string() ?: ""
-                    val json = JSONObject(body)
-                    val results = json.optJSONArray("results")
-                    if (results != null && results.length() > 0) {
-                        val item = results.getJSONObject(0)
-                        val artworkUrl100 = item.optString("artworkUrl100")
-                        if (artworkUrl100.isNotEmpty()) {
-                            return@withContext artworkUrl100.replace("100x100bb", "600x600bb")
-                        }
-                    }
-                }
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-
-        return@withContext null
+        val queryText = buildQueryText(artist, titleOrAlbum) ?: return@withContext null
+        searchDeezerAlbumArt(queryText)?.let { return@withContext it }
+        return@withContext searchItunesSong(queryText)?.artworkUrl
     }
 
     suspend fun fetchFullTrackMetadata(artist: String, title: String): FullTrackMetadata? = withContext(Dispatchers.IO) {
-        val cleanArtist = if (artist.equals("Unknown Artist", ignoreCase = true)) "" else cleanString(artist)
-        val cleanTitle = cleanString(title)
-        val queryText = if (cleanArtist.isNotEmpty()) "$cleanArtist $cleanTitle" else cleanTitle
-        if (queryText.isEmpty()) return@withContext null
-
-        var album: String? = null
-        var artworkUrl: String? = null
-        var foundArtist: String? = null
-        var foundTitle: String? = null
-
-        // 1. Deezer Track Search API
-        try {
-            val query = URLEncoder.encode(queryText, StandardCharsets.UTF_8.name())
-            val url = "https://api.deezer.com/search?q=$query&limit=1"
-            val request = Request.Builder().url(url).header("User-Agent", "BestiaPop/1.0").build()
-
-            client.newCall(request).execute().use { response ->
-                if (response.isSuccessful) {
-                    val body = response.body?.string() ?: ""
-                    val json = JSONObject(body)
-                    val data = json.optJSONArray("data")
-                    if (data != null && data.length() > 0) {
-                        val item = data.getJSONObject(0)
-                        foundTitle = item.optString("title").ifBlank { null }
-                        val artistObj = item.optJSONObject("artist")
-                        foundArtist = artistObj?.optString("name")?.ifBlank { null }
-                        val albumObj = item.optJSONObject("album")
-                        album = albumObj?.optString("title")?.ifBlank { null }
-                        artworkUrl = albumObj?.optString("cover_xl")?.ifEmpty { albumObj.optString("cover_big") }?.ifBlank { null }
-                    }
-                }
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
+        val queryText = buildQueryText(artist, title) ?: return@withContext null
+        val deezer = searchDeezerTrack(queryText)
+        if (deezer != null && !deezer.album.isNullOrEmpty()) {
+            return@withContext deezer
         }
-
-        // 2. Fallback to iTunes Track Search API
-        if (album.isNullOrEmpty()) {
-            try {
-                val query = URLEncoder.encode(queryText, StandardCharsets.UTF_8.name())
-                val url = "https://itunes.apple.com/search?term=$query&entity=song&limit=1"
-                val request = Request.Builder().url(url).build()
-
-                client.newCall(request).execute().use { response ->
-                    if (response.isSuccessful) {
-                        val body = response.body?.string() ?: ""
-                        val json = JSONObject(body)
-                        val results = json.optJSONArray("results")
-                        if (results != null && results.length() > 0) {
-                            val item = results.getJSONObject(0)
-                            if (album.isNullOrEmpty()) album = item.optString("collectionName").ifBlank { null }
-                            if (artworkUrl.isNullOrEmpty()) {
-                                val art = item.optString("artworkUrl100")
-                                if (art.isNotEmpty()) artworkUrl = art.replace("100x100bb", "600x600bb")
-                            }
-                            if (foundArtist.isNullOrEmpty()) foundArtist = item.optString("artistName").ifBlank { null }
-                            if (foundTitle.isNullOrEmpty()) foundTitle = item.optString("trackName").ifBlank { null }
-                        }
-                    }
-                }
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
-        }
-
+        val itunes = searchItunesSong(queryText) ?: return@withContext deezer
+        if (deezer == null) return@withContext itunes
         return@withContext FullTrackMetadata(
-            album = album,
-            artworkUrl = artworkUrl,
-            artistName = foundArtist,
-            title = foundTitle,
+            album = deezer.album ?: itunes.album,
+            artworkUrl = deezer.artworkUrl ?: itunes.artworkUrl,
+            artistName = deezer.artistName ?: itunes.artistName,
+            title = deezer.title ?: itunes.title,
+            durationMs = if (deezer.durationMs > 0) deezer.durationMs else itunes.durationMs
         )
     }
 
     suspend fun fetchLyrics(artist: String, title: String): String? = withContext(Dispatchers.IO) {
         try {
             val cleanTitle = cleanString(title)
-            val cleanArtist = if (artist.equals("Unknown Artist", ignoreCase = true)) "" else cleanString(artist)
+            val cleanArtistName = cleanArtist(artist)
 
-            if (cleanArtist.isNotEmpty()) {
-                val artistEnc = URLEncoder.encode(cleanArtist, StandardCharsets.UTF_8.name())
-                val trackEnc = URLEncoder.encode(cleanTitle, StandardCharsets.UTF_8.name())
+            if (cleanArtistName.isNotEmpty()) {
+                val artistEnc = encodeQuery(cleanArtistName)
+                val trackEnc = encodeQuery(cleanTitle)
                 val url = "https://lrclib.net/api/get?artist_name=$artistEnc&track_name=$trackEnc"
                 val request = Request.Builder()
                     .url(url)
@@ -323,8 +281,9 @@ object MetadataFetcher {
                 }
             }
 
-            // Fallback: General search query on LrcLib
-            val q = URLEncoder.encode(if (cleanArtist.isNotEmpty()) "$cleanArtist $cleanTitle" else cleanTitle, StandardCharsets.UTF_8.name())
+            val q = encodeQuery(
+                if (cleanArtistName.isNotEmpty()) "$cleanArtistName $cleanTitle" else cleanTitle
+            )
             val searchUrl = "https://lrclib.net/api/search?q=$q"
             val searchReq = Request.Builder()
                 .url(searchUrl)
@@ -351,54 +310,7 @@ object MetadataFetcher {
     }
 
     suspend fun fetchTrackDurationMs(artist: String, title: String): Long = withContext(Dispatchers.IO) {
-        val cleanTitle = cleanString(title)
-        val cleanArtist = if (artist.equals("Unknown Artist", ignoreCase = true)) "" else cleanString(artist)
-        val queryText = if (cleanArtist.isNotEmpty()) "$cleanArtist $cleanTitle" else cleanTitle
-        if (queryText.isEmpty()) return@withContext 0L
-
-        try {
-            val query = URLEncoder.encode(queryText, StandardCharsets.UTF_8.name())
-            val url = "https://api.deezer.com/search?q=$query&limit=1"
-            val request = Request.Builder().url(url).header("User-Agent", "BestiaPop/1.0").build()
-
-            client.newCall(request).execute().use { response ->
-                if (response.isSuccessful) {
-                    val body = response.body?.string() ?: ""
-                    val json = JSONObject(body)
-                    val data = json.optJSONArray("data")
-                    if (data != null && data.length() > 0) {
-                        val item = data.getJSONObject(0)
-                        val durationSec = item.optLong("duration", 0L)
-                        if (durationSec > 0) return@withContext durationSec * 1000L
-                    }
-                }
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-
-        try {
-            val query = URLEncoder.encode(queryText, StandardCharsets.UTF_8.name())
-            val url = "https://itunes.apple.com/search?term=$query&entity=song&limit=1"
-            val request = Request.Builder().url(url).build()
-
-            client.newCall(request).execute().use { response ->
-                if (response.isSuccessful) {
-                    val body = response.body?.string() ?: ""
-                    val json = JSONObject(body)
-                    val results = json.optJSONArray("results")
-                    if (results != null && results.length() > 0) {
-                        val item = results.getJSONObject(0)
-                        val trackTimeMillis = item.optLong("trackTimeMillis", 0L)
-                        if (trackTimeMillis > 0) return@withContext trackTimeMillis
-                    }
-                }
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-
-        return@withContext 0L
+        fetchFullTrackMetadata(artist, title)?.durationMs ?: 0L
     }
 
     suspend fun searchAlbums(query: String): List<com.bestiapop.android.data.model.CatalogAlbum> = withContext(Dispatchers.IO) {

@@ -73,44 +73,18 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private val _sortOption = MutableStateFlow(SortOption.TITLE)
     val sortOption = _sortOption.asStateFlow()
 
+    private val getLibrarySongsUseCase = com.bestiapop.android.domain.usecase.GetLibrarySongsUseCase()
+    private val downloadAudioTrackUseCase =
+        com.bestiapop.android.domain.usecase.DownloadAudioTrackUseCase(repository)
+
     val songsState: StateFlow<List<Song>> = combine(rawSongs, _searchQuery, _sortOption) { list, query, sort ->
-        val albumArtMap = list.groupBy { it.album }.mapValues { (_, albumSongs) ->
-            albumSongs.firstOrNull { !it.artworkUri.isNullOrEmpty() }?.artworkUri
-        }
-
-        val unifiedList = list.map { song ->
-            val albumArt = song.artworkUri ?: albumArtMap[song.album]
-            if (albumArt != song.artworkUri) song.copy(artworkUri = albumArt) else song
-        }
-
-        var filtered = if (query.isBlank()) unifiedList else unifiedList.filter {
-            it.title.contains(query, ignoreCase = true) ||
-            it.artist.contains(query, ignoreCase = true) ||
-            it.album.contains(query, ignoreCase = true) ||
-            it.genre.contains(query, ignoreCase = true)
-        }
-
-        when (sort) {
-            SortOption.TITLE -> filtered.sortedBy { it.title.lowercase() }
-            SortOption.ARTIST -> filtered.sortedBy { it.artist.lowercase() }
-            SortOption.ALBUM -> filtered.sortedBy { it.album.lowercase() }
-            SortOption.GENRE -> filtered.sortedBy { it.genre.lowercase() }
-            SortOption.DATE_ADDED -> filtered.sortedByDescending { it.dateAdded }
-        }
+        getLibrarySongsUseCase.execute(list, query, sort)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val albumsState: StateFlow<List<Album>> = songsState.map { songs ->
-        songs.groupBy { it.album }.map { (albumName, albumSongs) ->
-            Album(
-                name = albumName,
-                artist = albumSongs.firstOrNull()?.artist ?: "Unknown Artist",
-                songCount = albumSongs.size,
-                artworkUri = albumSongs.firstOrNull { !it.artworkUri.isNullOrEmpty() }?.artworkUri
-            )
-        }
+        getLibrarySongsUseCase.extractAlbums(songs)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    private val getLibrarySongsUseCase = com.bestiapop.android.domain.usecase.GetLibrarySongsUseCase()
     private val _artistPhotos = MutableStateFlow<Map<String, String>>(emptyMap())
 
     val artistsState: StateFlow<List<Artist>> = combine(songsState, _artistPhotos) { songs: List<Song>, photoMap: Map<String, String> ->
@@ -229,7 +203,9 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
         viewModelScope.launch(Dispatchers.IO) {
             songsState.collect { songs ->
-                val unenhanced = songs.filter { it.artworkUri.isNullOrEmpty() || it.artworkUri?.startsWith("content://") == true }
+                val unenhanced = songs.filter {
+                    it.artworkUri.isNullOrEmpty() || it.artworkUri?.startsWith("content://") == true
+                }
                 for (song in unenhanced.take(20)) {
                     repository.enhanceSongMetadataAndLyrics(song)
                 }
@@ -266,7 +242,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                         ?: songsState.value.find { it.uriString == idOrUri || it.id.toString() == idOrUri }
                     if (song != null) {
                         _currentSong.value = song
-                        fetchOnlineMetadataForSong(song)
+                        requestMetadataEnhancement(song)
                     }
                 }
             }
@@ -301,12 +277,22 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     fun retryFetchLyrics(song: Song) {
-        viewModelScope.launch {
-            repository.enhanceSongMetadataAndLyrics(song)
-        }
+        requestMetadataEnhancement(song, force = true)
     }
 
     fun enhanceSongMetadataAndLyrics(song: Song) {
+        requestMetadataEnhancement(song, force = true)
+    }
+
+    private fun songNeedsMetadataEnhancement(song: Song): Boolean {
+        val artMissing = song.artworkUri.isNullOrEmpty() || song.artworkUri?.startsWith("content://") == true
+        val lyricsMissing = song.lyrics.isNullOrEmpty()
+        val durationMissing = song.durationMs <= 0
+        return artMissing || lyricsMissing || durationMissing
+    }
+
+    private fun requestMetadataEnhancement(song: Song, force: Boolean = false) {
+        if (!force && !songNeedsMetadataEnhancement(song)) return
         viewModelScope.launch {
             repository.enhanceSongMetadataAndLyrics(song)
         }
@@ -371,7 +357,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             controller.play()
         }
 
-        fetchOnlineMetadataForSong(targetQueue[index])
+        requestMetadataEnhancement(targetQueue[index])
     }
 
 
@@ -407,12 +393,6 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     fun enqueueCollection(songs: List<Song>) {
         addToQueueBatch(songs)
-    }
-
-    private fun fetchOnlineMetadataForSong(song: Song) {
-        viewModelScope.launch {
-            repository.enhanceSongMetadataAndLyrics(song)
-        }
     }
 
     fun togglePlayPause() {
@@ -781,6 +761,20 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
+    private fun mapDownloadError(e: Throwable): String = when {
+        e.message?.contains("403") == true ->
+            "Error HTTP 403 Forbidden: Enlace o firma expirada de YouTube."
+        e.message?.contains("YouTube") == true ->
+            e.message ?: "No se pudo obtener audio de YouTube."
+        else ->
+            "Falló la descarga: ${e.localizedMessage ?: "Error de red."}"
+    }
+
+    private suspend fun downloadTrack(
+        track: OnlineCatalogTrack,
+        onProgress: ((String) -> Unit)? = null
+    ): Result<Song> = downloadAudioTrackUseCase.execute(track, onProgress)
+
     fun downloadSingleCandidate(index: Int) {
         val list = _activeTrackCandidates.value
         if (index !in list.indices) return
@@ -789,23 +783,26 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
         viewModelScope.launch {
             updateCandidateState(candidate.trackTitle, CandidateDownloadState.DOWNLOADING, percent = 20)
-            try {
-                updateCandidateState(candidate.trackTitle, CandidateDownloadState.DOWNLOADING, percent = 50)
-                repository.downloadAndSaveOnlineTrack(track) { msg ->
-                    if (msg.contains("Descargando audio", ignoreCase = true)) {
-                        updateCandidateState(candidate.trackTitle, CandidateDownloadState.DOWNLOADING, percent = 75)
-                    }
+            updateCandidateState(candidate.trackTitle, CandidateDownloadState.DOWNLOADING, percent = 50)
+            val result = downloadTrack(track) { msg ->
+                if (msg.contains("Descargando audio", ignoreCase = true)) {
+                    updateCandidateState(candidate.trackTitle, CandidateDownloadState.DOWNLOADING, percent = 75)
                 }
-                updateCandidateState(candidate.trackTitle, CandidateDownloadState.SUCCESS, percent = 100)
-            } catch (e: Exception) {
-                e.printStackTrace()
-                val detailedErr = when {
-                    e.message?.contains("403") == true -> "Error HTTP 403 Forbidden: Enlace o firma expirada de YouTube."
-                    e.message?.contains("YouTube") == true -> e.message ?: "No se pudo obtener audio de YouTube."
-                    else -> "Falló la descarga: ${e.localizedMessage ?: "Error de red."}"
-                }
-                updateCandidateState(candidate.trackTitle, CandidateDownloadState.ERROR, percent = 0, error = detailedErr)
             }
+            result.fold(
+                onSuccess = {
+                    updateCandidateState(candidate.trackTitle, CandidateDownloadState.SUCCESS, percent = 100)
+                },
+                onFailure = { e ->
+                    e.printStackTrace()
+                    updateCandidateState(
+                        candidate.trackTitle,
+                        CandidateDownloadState.ERROR,
+                        percent = 0,
+                        error = mapDownloadError(e)
+                    )
+                }
+            )
         }
     }
 
@@ -819,7 +816,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             val completedCount = AtomicInteger(0)
             val successCount = AtomicInteger(0)
 
-            val semaphore = Semaphore(3) // 3 descargas simultáneas en paralelo
+            val semaphore = Semaphore(3)
 
             val jobs = selected.map { candidate ->
                 async {
@@ -829,27 +826,28 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                         _downloadStatus.value = DownloadStatus.Downloading("Descargando ($currentProgress/$total): ${track.title}...")
 
                         updateCandidateState(candidate.trackTitle, CandidateDownloadState.DOWNLOADING, percent = 20)
+                        updateCandidateState(candidate.trackTitle, CandidateDownloadState.DOWNLOADING, percent = 50)
 
-                        try {
-                            updateCandidateState(candidate.trackTitle, CandidateDownloadState.DOWNLOADING, percent = 50)
-
-                            repository.downloadAndSaveOnlineTrack(track) { msg ->
-                                if (msg.contains("Descargando audio", ignoreCase = true)) {
-                                    updateCandidateState(candidate.trackTitle, CandidateDownloadState.DOWNLOADING, percent = 75)
-                                }
+                        val result = downloadTrack(track) { msg ->
+                            if (msg.contains("Descargando audio", ignoreCase = true)) {
+                                updateCandidateState(candidate.trackTitle, CandidateDownloadState.DOWNLOADING, percent = 75)
                             }
-
-                            updateCandidateState(candidate.trackTitle, CandidateDownloadState.SUCCESS, percent = 100)
-                            successCount.incrementAndGet()
-                        } catch (e: Exception) {
-                            e.printStackTrace()
-                            val detailedErr = when {
-                                e.message?.contains("403") == true -> "Error HTTP 403 Forbidden: Enlace o firma expirada de YouTube."
-                                e.message?.contains("YouTube") == true -> e.message ?: "No se pudo obtener audio de YouTube."
-                                else -> "Falló la descarga: ${e.localizedMessage ?: "Error de red o conexión."}"
-                            }
-                            updateCandidateState(candidate.trackTitle, CandidateDownloadState.ERROR, percent = 0, error = detailedErr)
                         }
+                        result.fold(
+                            onSuccess = {
+                                updateCandidateState(candidate.trackTitle, CandidateDownloadState.SUCCESS, percent = 100)
+                                successCount.incrementAndGet()
+                            },
+                            onFailure = { e ->
+                                e.printStackTrace()
+                                updateCandidateState(
+                                    candidate.trackTitle,
+                                    CandidateDownloadState.ERROR,
+                                    percent = 0,
+                                    error = mapDownloadError(e)
+                                )
+                            }
+                        )
                     }
                 }
             }
@@ -862,37 +860,38 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
-
-
-
-
     fun downloadFromUrl(url: String) {
         val trimmed = url.trim()
         if (trimmed.isBlank()) return
-        viewModelScope.launch {
-            _downloadStatus.value = DownloadStatus.Downloading("Extrayendo información de YouTube...")
-            val (track, errorMsg) = com.bestiapop.android.data.network.YouTubeLinkFetcher.fetchTrackFromUrlDetailed(trimmed)
-            if (track == null) {
-                _downloadStatus.value = DownloadStatus.Error(errorMsg ?: "No se pudieron obtener datos del enlace ingresado.")
-                return@launch
-            }
-            downloadOnlineTrack(track)
-        }
+        // Single YouTube extract happens inside downloadAndSaveOnlineTrack
+        downloadOnlineTrack(
+            OnlineCatalogTrack(
+                id = trimmed,
+                title = "",
+                artist = "",
+                album = "",
+                artworkUrl = null,
+                durationMs = 0L,
+                audioUrl = trimmed,
+                provider = "YouTube"
+            )
+        )
     }
-
-
 
     fun downloadOnlineTrack(track: OnlineCatalogTrack) {
         viewModelScope.launch {
             _downloadStatus.value = DownloadStatus.Downloading("Iniciando descarga...")
-            try {
-                val song = repository.downloadAndSaveOnlineTrack(track) { progressMsg ->
-                    _downloadStatus.value = DownloadStatus.Downloading(progressMsg)
-                }
-                _downloadStatus.value = DownloadStatus.Success(song, "¡${song.title} agregada a la biblioteca!")
-            } catch (e: Exception) {
-                _downloadStatus.value = DownloadStatus.Error("Error al descargar la canción: ${e.localizedMessage}")
+            val result = downloadTrack(track) { progressMsg ->
+                _downloadStatus.value = DownloadStatus.Downloading(progressMsg)
             }
+            result.fold(
+                onSuccess = { song ->
+                    _downloadStatus.value = DownloadStatus.Success(song, "¡${song.title} agregada a la biblioteca!")
+                },
+                onFailure = { e ->
+                    _downloadStatus.value = DownloadStatus.Error("Error al descargar la canción: ${e.localizedMessage}")
+                }
+            )
         }
     }
 

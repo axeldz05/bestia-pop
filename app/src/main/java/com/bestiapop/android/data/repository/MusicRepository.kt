@@ -26,18 +26,28 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import java.io.File
 
-class MusicRepository(private val context: Context) {
+import com.bestiapop.android.domain.repository.IMusicRepository
+
+class MusicRepository(private val context: Context) : IMusicRepository {
 
     private val db = AppDatabase.getDatabase(context)
     private val musicDao = db.musicDao()
 
-    val allSongsFlow: Flow<List<Song>> = musicDao.getAllSongsFlow().map { entities ->
+    private val sharedDownloadClient = okhttp3.OkHttpClient.Builder()
+        .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+        .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+        .connectionPool(okhttp3.ConnectionPool(10, 5, java.util.concurrent.TimeUnit.MINUTES))
+        .followRedirects(true)
+        .followSslRedirects(true)
+        .build()
+
+    override val allSongsFlow: Flow<List<Song>> = musicDao.getAllSongsFlow().map { entities ->
         entities.map { it.toSong() }
     }
 
 
 
-    val playlistsFlow: Flow<List<Playlist>> = musicDao.getAllPlaylistsFlow().map { entities ->
+    override val playlistsFlow: Flow<List<Playlist>> = musicDao.getAllPlaylistsFlow().map { entities ->
         entities.map { entity ->
             Playlist(
                 id = entity.playlistId,
@@ -49,13 +59,13 @@ class MusicRepository(private val context: Context) {
         }
     }
 
-    fun getPlaylistSongsFlow(playlistId: Long): Flow<List<Song>> {
+    override fun getPlaylistSongsFlow(playlistId: Long): Flow<List<Song>> {
         return musicDao.getPlaylistWithSongsFlow(playlistId).map { withSongs ->
             withSongs?.songs?.map { it.toSong() } ?: emptyList()
         }
     }
 
-    fun getPlaylistDetailsFlow(playlistId: Long): Flow<Pair<Playlist, List<Song>>?> {
+    override fun getPlaylistDetailsFlow(playlistId: Long): Flow<Pair<Playlist, List<Song>>?> {
         return musicDao.getPlaylistWithSongsFlow(playlistId).map { withSongs ->
             if (withSongs == null) null
             else {
@@ -74,7 +84,7 @@ class MusicRepository(private val context: Context) {
         }
     }
 
-    suspend fun scanMediaStore() = withContext(Dispatchers.IO) {
+    override suspend fun scanMediaStore() = withContext(Dispatchers.IO) {
         val projection = arrayOf(
             MediaStore.Audio.Media._ID,
             MediaStore.Audio.Media.TITLE,
@@ -112,7 +122,7 @@ class MusicRepository(private val context: Context) {
         }
     }
 
-    suspend fun scanFolderUri(treeUri: Uri) = withContext(Dispatchers.IO) {
+    override suspend fun scanFolderUri(treeUri: Uri) = withContext(Dispatchers.IO) {
         val rootFolder = DocumentFile.fromTreeUri(context, treeUri) ?: return@withContext
         val scanned = mutableListOf<SongEntity>()
         scanDocumentFolderRecursively(rootFolder, scanned)
@@ -167,7 +177,7 @@ class MusicRepository(private val context: Context) {
         retriever.release()
     }
 
-    fun extractAndSaveEmbeddedArtwork(audioPathOrUri: String, identifier: String): String? {
+    override fun extractAndSaveEmbeddedArtwork(audioPathOrUri: String, identifier: String): String? {
         val retriever = MediaMetadataRetriever()
         try {
             if (audioPathOrUri.startsWith("content://")) {
@@ -221,23 +231,25 @@ class MusicRepository(private val context: Context) {
                 lower.endsWith(".ogg") || lower.endsWith(".wav") || lower.endsWith(".aac")
     }
 
-    suspend fun getAllSongsSync(): List<Song> = withContext(Dispatchers.IO) {
+    override suspend fun getAllSongsSync(): List<Song> = withContext(Dispatchers.IO) {
         musicDao.getAllSongsFlow().first().map { it.toSong() }
     }
 
-    suspend fun saveUploadedSong(song: SongEntity) = withContext(Dispatchers.IO) {
+    override suspend fun saveUploadedSong(song: SongEntity) = withContext(Dispatchers.IO) {
         musicDao.insertSong(song)
     }
 
-    suspend fun deleteSongsFromApp(songs: List<Song>) = withContext(Dispatchers.IO) {
+    override suspend fun deleteSongsFromApp(songs: List<Song>) = withContext(Dispatchers.IO) {
         val ids = songs.map { it.id }
         if (ids.isNotEmpty()) {
             musicDao.deleteSongsByIds(ids)
         }
     }
 
-    suspend fun deleteSongsFromDevice(songs: List<Song>) = withContext(Dispatchers.IO) {
-        val uploadDir = File(context.getExternalFilesDir(null), "UploadedMusic")
+    override suspend fun deleteSongsFromDevice(songs: List<Song>) = withContext(Dispatchers.IO) {
+        val uploadDir = com.bestiapop.android.data.util.StorageUtils.getPublicMusicDirectory(context)
+        val oldUploadDir = File(context.getExternalFilesDir(null), "UploadedMusic")
+        val oldDownloadDir = File(context.getExternalFilesDir(null), "DownloadedMusic")
         songs.forEach { song ->
             try {
                 if (song.uriString.startsWith("content://")) {
@@ -256,11 +268,11 @@ class MusicRepository(private val context: Context) {
                 }
 
                 val fileName = cleanPath.substringAfterLast("/").substringAfterLast("\\")
-                if (fileName.isNotEmpty() && uploadDir.exists()) {
+                if (fileName.isNotEmpty()) {
                     val fileInUploadDir = File(uploadDir, fileName)
-                    if (fileInUploadDir.exists()) {
-                        fileInUploadDir.delete()
-                    }
+                    if (fileInUploadDir.exists()) fileInUploadDir.delete()
+                    if (oldUploadDir.exists()) File(oldUploadDir, fileName).takeIf { it.exists() }?.delete()
+                    if (oldDownloadDir.exists()) File(oldDownloadDir, fileName).takeIf { it.exists() }?.delete()
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -272,7 +284,7 @@ class MusicRepository(private val context: Context) {
         }
     }
 
-    suspend fun enhanceSongMetadataAndLyrics(song: Song) = withContext(Dispatchers.IO) {
+    override suspend fun enhanceSongMetadataAndLyrics(song: Song) = withContext(Dispatchers.IO) {
         val albumName = if (song.album.isBlank()) "Unknown Album" else song.album
         val existingAlbumArt = musicDao.getArtworkForAlbum(albumName)
 
@@ -373,11 +385,11 @@ class MusicRepository(private val context: Context) {
         return 0L
     }
 
-    suspend fun updateSongDuration(songId: Long, durationMs: Long) = withContext(Dispatchers.IO) {
+    override suspend fun updateSongDuration(songId: Long, durationMs: Long) = withContext(Dispatchers.IO) {
         musicDao.updateSongDuration(songId, durationMs)
     }
 
-    suspend fun updateSongMetadata(
+    override suspend fun updateSongMetadata(
         songId: Long,
         title: String,
         artist: String,
@@ -403,7 +415,7 @@ class MusicRepository(private val context: Context) {
     }
 
     // Playlists
-    fun savePlaylistCoverImage(sourceUriStr: String?): String? {
+    override fun savePlaylistCoverImage(sourceUriStr: String?): String? {
         if (sourceUriStr.isNullOrBlank()) return null
         if (sourceUriStr.startsWith("file://") && sourceUriStr.contains("playlist_covers")) {
             return sourceUriStr
@@ -426,7 +438,7 @@ class MusicRepository(private val context: Context) {
         }
     }
 
-    suspend fun createPlaylist(name: String, description: String? = null, coverUri: String? = null): Long = withContext(Dispatchers.IO) {
+    override suspend fun createPlaylist(name: String, description: String?, coverUri: String?): Long = withContext(Dispatchers.IO) {
         val savedCover = savePlaylistCoverImage(coverUri)
         musicDao.insertPlaylist(
             PlaylistEntity(
@@ -437,7 +449,7 @@ class MusicRepository(private val context: Context) {
         )
     }
 
-    suspend fun updatePlaylist(id: Long, name: String, description: String? = null, coverUri: String? = null) = withContext(Dispatchers.IO) {
+    override suspend fun updatePlaylist(id: Long, name: String, description: String?, coverUri: String?) = withContext(Dispatchers.IO) {
         val existing = musicDao.getPlaylistById(id) ?: return@withContext
         val savedCover = if (!coverUri.isNullOrEmpty() && coverUri != existing.coverUri) {
             savePlaylistCoverImage(coverUri)
@@ -452,22 +464,22 @@ class MusicRepository(private val context: Context) {
         musicDao.updatePlaylist(updated)
     }
 
-    suspend fun deletePlaylist(id: Long) = withContext(Dispatchers.IO) {
+    override suspend fun deletePlaylist(id: Long) = withContext(Dispatchers.IO) {
         musicDao.clearPlaylistSongs(id)
         musicDao.deletePlaylist(id)
     }
 
-    suspend fun addSongToPlaylist(playlistId: Long, songId: Long) = withContext(Dispatchers.IO) {
+    override suspend fun addSongToPlaylist(playlistId: Long, songId: Long) = withContext(Dispatchers.IO) {
         musicDao.addSongToPlaylist(PlaylistSongCrossRef(playlistId = playlistId, songId = songId))
     }
 
-    suspend fun removeSongFromPlaylist(playlistId: Long, songId: Long) = withContext(Dispatchers.IO) {
+    override suspend fun removeSongFromPlaylist(playlistId: Long, songId: Long) = withContext(Dispatchers.IO) {
         musicDao.removeSongFromPlaylist(playlistId, songId)
     }
 
-    suspend fun downloadAndSaveOnlineTrack(
+    override suspend fun downloadAndSaveOnlineTrack(
         track: OnlineCatalogTrack,
-        onProgress: ((String) -> Unit)? = null
+        onProgress: ((String) -> Unit)?
     ): Song = withContext(Dispatchers.IO) {
         onProgress?.invoke("Buscando audio de alta calidad en YouTube...")
 
@@ -495,9 +507,7 @@ class MusicRepository(private val context: Context) {
             throw java.io.IOException(extractRes.message)
         }
 
-
-        val musicDir = File(context.getExternalFilesDir(null), "DownloadedMusic")
-        if (!musicDir.exists()) musicDir.mkdirs()
+        val musicDir = com.bestiapop.android.data.util.StorageUtils.getPublicMusicDirectory(context)
 
         val ext = when {
             downloadUrl.contains("audio/mp4") || downloadUrl.contains("mime=audio%2Fmp4") || downloadUrl.endsWith(".m4a") -> "m4a"
@@ -511,13 +521,6 @@ class MusicRepository(private val context: Context) {
         val file = File(musicDir, "$sanitizedName.$ext")
 
         onProgress?.invoke("Descargando audio (${finalTitle})...")
-
-        val client = okhttp3.OkHttpClient.Builder()
-            .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
-            .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
-            .followRedirects(true)
-            .followSslRedirects(true)
-            .build()
 
         var downloadedBytes = 0L
         var maxResumes = 5
@@ -538,13 +541,13 @@ class MusicRepository(private val context: Context) {
                     reqBuilder.header("Range", "bytes=$downloadedBytes-")
                 }
 
-                client.newCall(reqBuilder.build()).execute().use { response ->
+                sharedDownloadClient.newCall(reqBuilder.build()).execute().use { response ->
                     if (response.isSuccessful || response.code == 206) {
                         val body = response.body
                         if (body != null) {
                             val inputStream = body.byteStream()
                             val fos = java.io.FileOutputStream(file, downloadedBytes > 0)
-                            val buffer = ByteArray(8192)
+                            val buffer = ByteArray(65536)
                             var read: Int
                             while (inputStream.read(buffer).also { read = it } != -1) {
                                 fos.write(buffer, 0, read)
@@ -595,7 +598,7 @@ class MusicRepository(private val context: Context) {
             trackNumber = 0,
             artworkUri = finalArtwork,
             lyrics = lyrics,
-            folderPath = "DownloadedMusic",
+            folderPath = "Music/BestiaPop",
             dateAdded = System.currentTimeMillis()
         )
 

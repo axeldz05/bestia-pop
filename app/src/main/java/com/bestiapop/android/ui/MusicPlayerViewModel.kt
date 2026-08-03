@@ -33,6 +33,11 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
+import java.util.concurrent.atomic.AtomicInteger
 
 import android.content.Context
 import android.media.AudioManager
@@ -361,10 +366,24 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
 
     // Unified Collection / Group Pipeline ("Everything is a Playlist")
-    fun playCollection(songs: List<Song>, startSong: Song? = null) {
+    fun playCollection(songs: List<Song>, startIndex: Int = 0) {
         if (songs.isEmpty()) return
-        val targetStart = startSong ?: songs.first()
-        playSong(targetStart, songs)
+        val validIndex = startIndex.coerceIn(0, songs.size - 1)
+        playSong(songs[validIndex], songs)
+    }
+
+    fun playCollection(songs: List<Song>, startSong: Song) {
+        playSong(startSong, songs)
+    }
+
+    fun setAlbumArtwork(albumName: String, artworkUri: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val savedUri = repository.savePlaylistCoverImage(artworkUri) ?: artworkUri
+            val albumSongs = songsState.value.filter { it.album.equals(albumName, ignoreCase = true) }
+            albumSongs.forEach { song ->
+                repository.enhanceSongMetadataAndLyrics(song.copy(artworkUri = savedUri))
+            }
+        }
     }
 
     fun shuffleCollection(songs: List<Song>) {
@@ -500,6 +519,15 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         viewModelScope.launch {
             songs.forEach { song ->
                 repository.addSongToPlaylist(playlistId, song.id)
+            }
+        }
+    }
+
+    @JvmName("addSongsToPlaylistByIds")
+    fun addSongsToPlaylist(playlistId: Long, songIds: List<Long>) {
+        viewModelScope.launch {
+            songIds.forEach { id ->
+                repository.addSongToPlaylist(playlistId, id)
             }
         }
     }
@@ -740,46 +768,83 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
+    fun downloadSingleCandidate(index: Int) {
+        val list = _activeTrackCandidates.value
+        if (index !in list.indices) return
+        val candidate = list[index]
+        val track = candidate.currentTrack ?: return
+
+        viewModelScope.launch {
+            updateCandidateState(candidate.trackTitle, CandidateDownloadState.DOWNLOADING, percent = 20)
+            try {
+                updateCandidateState(candidate.trackTitle, CandidateDownloadState.DOWNLOADING, percent = 50)
+                repository.downloadAndSaveOnlineTrack(track) { msg ->
+                    if (msg.contains("Descargando audio", ignoreCase = true)) {
+                        updateCandidateState(candidate.trackTitle, CandidateDownloadState.DOWNLOADING, percent = 75)
+                    }
+                }
+                updateCandidateState(candidate.trackTitle, CandidateDownloadState.SUCCESS, percent = 100)
+            } catch (e: Exception) {
+                e.printStackTrace()
+                val detailedErr = when {
+                    e.message?.contains("403") == true -> "Error HTTP 403 Forbidden: Enlace o firma expirada de YouTube."
+                    e.message?.contains("YouTube") == true -> e.message ?: "No se pudo obtener audio de YouTube."
+                    else -> "Falló la descarga: ${e.localizedMessage ?: "Error de red."}"
+                }
+                updateCandidateState(candidate.trackTitle, CandidateDownloadState.ERROR, percent = 0, error = detailedErr)
+            }
+        }
+    }
+
     fun downloadSelectedCandidatesBatch() {
         val selected = _activeTrackCandidates.value.filter { it.isSelected && it.currentTrack != null }
         if (selected.isEmpty()) return
 
         viewModelScope.launch {
             _downloadStatus.value = DownloadStatus.Downloading("Iniciando descarga de ${selected.size} canciones...")
-            var count = 0
-            var successCount = 0
-            for (candidate in selected) {
-                val track = candidate.currentTrack ?: continue
-                count++
-                _downloadStatus.value = DownloadStatus.Downloading("Descargando ($count/${selected.size}): ${track.title}...")
+            val total = selected.size
+            val completedCount = AtomicInteger(0)
+            val successCount = AtomicInteger(0)
 
-                updateCandidateState(candidate.trackTitle, CandidateDownloadState.DOWNLOADING, percent = 20)
+            val semaphore = Semaphore(3) // 3 descargas simultáneas en paralelo
 
-                try {
-                    updateCandidateState(candidate.trackTitle, CandidateDownloadState.DOWNLOADING, percent = 50)
+            val jobs = selected.map { candidate ->
+                async {
+                    semaphore.withPermit {
+                        val track = candidate.currentTrack ?: return@withPermit
+                        val currentProgress = completedCount.incrementAndGet()
+                        _downloadStatus.value = DownloadStatus.Downloading("Descargando ($currentProgress/$total): ${track.title}...")
 
-                    repository.downloadAndSaveOnlineTrack(track) { msg ->
-                        _downloadStatus.value = DownloadStatus.Downloading("Descargando ($count/${selected.size}): $msg")
-                        if (msg.contains("Descargando audio", ignoreCase = true)) {
-                            updateCandidateState(candidate.trackTitle, CandidateDownloadState.DOWNLOADING, percent = 75)
+                        updateCandidateState(candidate.trackTitle, CandidateDownloadState.DOWNLOADING, percent = 20)
+
+                        try {
+                            updateCandidateState(candidate.trackTitle, CandidateDownloadState.DOWNLOADING, percent = 50)
+
+                            repository.downloadAndSaveOnlineTrack(track) { msg ->
+                                if (msg.contains("Descargando audio", ignoreCase = true)) {
+                                    updateCandidateState(candidate.trackTitle, CandidateDownloadState.DOWNLOADING, percent = 75)
+                                }
+                            }
+
+                            updateCandidateState(candidate.trackTitle, CandidateDownloadState.SUCCESS, percent = 100)
+                            successCount.incrementAndGet()
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                            val detailedErr = when {
+                                e.message?.contains("403") == true -> "Error HTTP 403 Forbidden: Enlace o firma expirada de YouTube."
+                                e.message?.contains("YouTube") == true -> e.message ?: "No se pudo obtener audio de YouTube."
+                                else -> "Falló la descarga: ${e.localizedMessage ?: "Error de red o conexión."}"
+                            }
+                            updateCandidateState(candidate.trackTitle, CandidateDownloadState.ERROR, percent = 0, error = detailedErr)
                         }
                     }
-
-                    updateCandidateState(candidate.trackTitle, CandidateDownloadState.SUCCESS, percent = 100)
-                    successCount++
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                    val detailedErr = when {
-                        e.message?.contains("403") == true -> "Error HTTP 403 Forbidden: Enlace o firma expirada de YouTube."
-                        e.message?.contains("YouTube") == true -> e.message ?: "No se pudo obtener audio de YouTube."
-                        else -> "Falló la descarga: ${e.localizedMessage ?: "Error de red o conexión."}"
-                    }
-                    updateCandidateState(candidate.trackTitle, CandidateDownloadState.ERROR, percent = 0, error = detailedErr)
                 }
             }
+            jobs.awaitAll()
+
             _downloadStatus.value = DownloadStatus.Success(
                 song = Song(uriString = "", title = "Descarga completada"),
-                message = "¡$successCount de ${selected.size} canciones procesadas!"
+                message = "¡${successCount.get()} de $total canciones procesadas!"
             )
         }
     }

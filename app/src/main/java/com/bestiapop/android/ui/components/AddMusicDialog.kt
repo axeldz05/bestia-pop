@@ -234,6 +234,7 @@ fun AddMusicDialog(
                             onSelectPlaylist = { playlist -> viewModel.selectPlaylistForInspection(playlist) },
                             onCycleCandidate = { index -> viewModel.cycleTrackCandidate(index) },
                             onToggleSelection = { index -> viewModel.toggleTrackSelection(index) },
+                            onRetryCandidate = { index -> viewModel.downloadSingleCandidate(index) },
                             onDownloadBatch = { viewModel.downloadSelectedCandidatesBatch() },
                             onClearCollection = { viewModel.clearSelectedCollection() },
                             onPlayDownloaded = { song ->
@@ -494,6 +495,7 @@ private fun OnlineCatalogTab(
     onSelectPlaylist: (com.bestiapop.android.data.model.CatalogPlaylist) -> Unit,
     onCycleCandidate: (Int) -> Unit,
     onToggleSelection: (Int) -> Unit,
+    onRetryCandidate: (Int) -> Unit,
     onDownloadBatch: () -> Unit,
     onClearCollection: () -> Unit,
     onPlayDownloaded: (com.bestiapop.android.data.model.Song) -> Unit
@@ -514,6 +516,7 @@ private fun OnlineCatalogTab(
             onBack = onClearCollection,
             onCycleCandidate = onCycleCandidate,
             onToggleSelection = onToggleSelection,
+            onRetryCandidate = onRetryCandidate,
             onDownloadBatch = onDownloadBatch,
             onPlayDownloaded = onPlayDownloaded
         )
@@ -730,6 +733,7 @@ private fun CollectionTrackInspectionView(
     onBack: () -> Unit,
     onCycleCandidate: (Int) -> Unit,
     onToggleSelection: (Int) -> Unit,
+    onRetryCandidate: (Int) -> Unit,
     onDownloadBatch: () -> Unit,
     onPlayDownloaded: (com.bestiapop.android.data.model.Song) -> Unit
 ) {
@@ -787,7 +791,8 @@ private fun CollectionTrackInspectionView(
                     CandidateTrackCard(
                         item = item,
                         onToggleSelect = { onToggleSelection(index) },
-                        onCycleCandidate = { onCycleCandidate(index) }
+                        onCycleCandidate = { onCycleCandidate(index) },
+                        onRetryDownload = { onRetryCandidate(index) }
                     )
                 }
             }
@@ -816,7 +821,8 @@ private fun CollectionTrackInspectionView(
 private fun CandidateTrackCard(
     item: com.bestiapop.android.data.model.CatalogTrackCandidate,
     onToggleSelect: () -> Unit,
-    onCycleCandidate: () -> Unit
+    onCycleCandidate: () -> Unit,
+    onRetryDownload: () -> Unit
 ) {
     val currentYt = item.currentTrack
 
@@ -940,12 +946,20 @@ private fun CandidateTrackCard(
                 }
                 com.bestiapop.android.data.model.CandidateDownloadState.ERROR -> {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Default.Error,
-                            contentDescription = "Error",
-                            tint = MaterialTheme.colorScheme.error,
-                            modifier = Modifier.size(22.dp)
-                        )
+                        OutlinedButton(
+                            onClick = onRetryDownload,
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.primary),
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
+                            Icon(Icons.Default.Refresh, contentDescription = "Reintentar", modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Reintentar", style = MaterialTheme.typography.labelSmall)
+                        }
+                        Spacer(modifier = Modifier.width(4.dp))
+                        IconButton(onClick = onCycleCandidate) {
+                            Icon(Icons.Default.Search, contentDescription = "Buscar otro", tint = MaterialTheme.colorScheme.primary)
+                        }
                     }
                 }
             }

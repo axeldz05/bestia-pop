@@ -1,9 +1,7 @@
 package com.bestiapop.android.ui.screens
 
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,60 +11,32 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
-import android.net.Uri
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.AddPhotoAlternate
-import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.CreateNewFolder
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FolderOpen
-import androidx.compose.material.icons.filled.KeyboardArrowRight
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.PlaylistAdd
-import androidx.compose.material.icons.filled.PlaylistAddCheck
-import androidx.compose.material.icons.filled.QueueMusic
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material.icons.filled.ViewAgenda
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -74,28 +44,27 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImage
 import com.bestiapop.android.data.model.Album
+import com.bestiapop.android.data.model.Artist
 import com.bestiapop.android.data.model.Playlist
 import com.bestiapop.android.data.model.Song
-import com.bestiapop.android.data.network.MetadataFetcher
 import com.bestiapop.android.ui.MusicPlayerViewModel
 import com.bestiapop.android.ui.SortOption
-import com.bestiapop.android.ui.components.AddMusicDialog
-import com.bestiapop.android.ui.components.SongListItem
-import kotlinx.coroutines.launch
+import com.bestiapop.android.ui.components.MultiSelectActionBar
+import com.bestiapop.android.ui.screens.library.AddToPlaylistDialog
+import com.bestiapop.android.ui.screens.library.ConfirmDeleteSongsDialog
+import com.bestiapop.android.ui.screens.library.EditSongMetadataDialog
+import com.bestiapop.android.ui.screens.library.LibraryAlbumGrid
+import com.bestiapop.android.ui.screens.library.LibraryArtistList
+import com.bestiapop.android.ui.screens.library.LibrarySongList
+import com.bestiapop.android.ui.screens.library.SetAlbumArtworkDialog
+import com.bestiapop.android.ui.state.LibraryViewMode
 
-
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun LibraryScreen(
     viewModel: MusicPlayerViewModel,
@@ -124,309 +93,143 @@ fun LibraryScreen(
         }
     }
 
-    // Tauon Layout option (show album section headers in song list, ON by default)
     var showAlbumHeaders by remember { mutableStateOf(true) }
-
-    // Navigation states
     var selectedAlbumName by remember { mutableStateOf<String?>(null) }
     var selectedArtistName by remember { mutableStateOf<String?>(null) }
 
-    // Multi-selection state for songs
+    // Multi-selection state
     var selectedSongIds by remember { mutableStateOf(setOf<Long>()) }
-    val isSongSelectionMode = selectedSongIds.isNotEmpty()
+    val isMultiSelectMode = selectedSongIds.isNotEmpty()
 
-    // Multi-selection state for albums (when in Artist view or Albums tab)
-    var selectedAlbumNames by remember { mutableStateOf(setOf<String>()) }
-    val isAlbumSelectionMode = selectedAlbumNames.isNotEmpty()
-
-    // Dialog states
+    // Add Music dialog state
     var showAddMusicDialog by remember { mutableStateOf(false) }
-    var showDeleteDialog by remember { mutableStateOf(false) }
-    var showPlaylistDialog by remember { mutableStateOf(false) }
-    var showCreatePlaylistDialog by remember { mutableStateOf(false) }
 
-    var newPlaylistName by remember { mutableStateOf("") }
-    var newPlaylistDescription by remember { mutableStateOf("") }
-    var newPlaylistCoverUri by remember { mutableStateOf<String?>(null) }
-    var songsForPlaylist by remember { mutableStateOf<List<Song>>(emptyList()) }
+    // Active Dialogs state
+    var editingSong by remember { mutableStateOf<Song?>(null) }
+    var albumForCoverChange by remember { mutableStateOf<Album?>(null) }
+    var songForPlaylistAddition by remember { mutableStateOf<Song?>(null) }
+    var songsForDeletion by remember { mutableStateOf<List<Song>?>(null) }
 
-    // Metadata Editing State
-    var songToEdit by remember { mutableStateOf<Song?>(null) }
-    var editTitle by remember { mutableStateOf("") }
-    var editArtist by remember { mutableStateOf("") }
-    var editAlbum by remember { mutableStateOf("") }
-    var editGenre by remember { mutableStateOf("") }
-    var isFetchingOnline by remember { mutableStateOf(false) }
-
-    val targetPlaylistSongs by remember(targetPlaylistForAddition) {
-        if (targetPlaylistForAddition != null) {
-            viewModel.getPlaylistSongsFlow(targetPlaylistForAddition.id)
+    // Selection handlers
+    val toggleSelectSong: (Song) -> Unit = { song ->
+        selectedSongIds = if (selectedSongIds.contains(song.id)) {
+            selectedSongIds - song.id
         } else {
-            kotlinx.coroutines.flow.flowOf(emptyList())
+            selectedSongIds + song.id
         }
-    }.collectAsState(initial = emptyList())
-
-    val existingSongIds = remember(targetPlaylistSongs) {
-        targetPlaylistSongs.map { it.id }.toSet()
     }
 
-    val candidateSongs = remember(songs, existingSongIds, isPlaylistAdditionMode) {
+    val selectAllSongs: () -> Unit = {
+        selectedSongIds = songs.map { it.id }.toSet()
+    }
+
+    val clearSelection: () -> Unit = {
+        selectedSongIds = emptySet()
+    }
+
+    Column(modifier = Modifier.fillMaxSize()) {
+
+        // Mode Banner for Playlist Addition
         if (isPlaylistAdditionMode) {
-            songs.filter { !existingSongIds.contains(it.id) }
-        } else {
-            songs
-        }
-    }
-
-    val selectedSongs = remember(selectedSongIds, candidateSongs) {
-        candidateSongs.filter { selectedSongIds.contains(it.id) }
-    }
-
-    Box(modifier = Modifier.fillMaxSize()) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(top = 16.dp, start = 16.dp, end = 16.dp)
-        ) {
-            // Header Row (Playlist Addition Mode vs Normal Multi-Selection Mode)
-            if (isPlaylistAdditionMode) {
-                Surface(
-                    color = MaterialTheme.colorScheme.primaryContainer,
-                    shape = RoundedCornerShape(16.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 8.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            IconButton(onClick = {
-                                selectedSongIds = emptySet()
-                                onCancelPlaylistAddition()
-                            }) {
-                                Icon(
-                                    imageVector = Icons.Default.Close,
-                                    contentDescription = "Cancelar adición",
-                                    tint = MaterialTheme.colorScheme.onPrimaryContainer
-                                )
-                            }
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = "Añadir a '${targetPlaylistForAddition!!.name}' (${selectedSongIds.size})",
-                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                                color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-
-                        IconButton(
-                            onClick = {
-                                selectedSongIds = if (selectedSongIds.size == candidateSongs.size) {
-                                    emptySet()
-                                } else {
-                                    candidateSongs.map { it.id }.toSet()
-                                }
-                            }
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.SelectAll,
-                                contentDescription = "Seleccionar todo",
-                                tint = MaterialTheme.colorScheme.onPrimaryContainer
-                            )
-                        }
-                    }
-                }
-            } else if (isSongSelectionMode) {
-                Surface(
-                    color = MaterialTheme.colorScheme.primaryContainer,
-                    shape = RoundedCornerShape(16.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 8.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            IconButton(onClick = { selectedSongIds = emptySet() }) {
-                                Icon(
-                                    imageVector = Icons.Default.Close,
-                                    contentDescription = "Descartar selección",
-                                    tint = MaterialTheme.colorScheme.onPrimaryContainer
-                                )
-                            }
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = "${selectedSongIds.size} canción(es)",
-                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                                color = MaterialTheme.colorScheme.onPrimaryContainer
-                            )
-                        }
-
-                        IconButton(
-                            onClick = {
-                                selectedSongIds = if (selectedSongIds.size == songs.size) {
-                                    emptySet()
-                                } else {
-                                    songs.map { it.id }.toSet()
-                                }
-                            }
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.SelectAll,
-                                contentDescription = "Seleccionar todo",
-                                tint = MaterialTheme.colorScheme.onPrimaryContainer
-                            )
-                        }
-                    }
-                }
-            } else if (isAlbumSelectionMode) {
-                Surface(
-                    color = MaterialTheme.colorScheme.secondaryContainer,
-                    shape = RoundedCornerShape(16.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 8.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            IconButton(onClick = { selectedAlbumNames = emptySet() }) {
-                                Icon(
-                                    imageVector = Icons.Default.Close,
-                                    contentDescription = "Descartar selección de álbumes",
-                                    tint = MaterialTheme.colorScheme.onSecondaryContainer
-                                )
-                            }
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = "${selectedAlbumNames.size} álbum(es)",
-                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                                color = MaterialTheme.colorScheme.onSecondaryContainer
-                            )
-                        }
-                    }
-                }
-            } else {
+            Surface(
+                color = MaterialTheme.colorScheme.primaryContainer,
+                modifier = Modifier.fillMaxWidth()
+            ) {
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                    modifier = Modifier.padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text(
-                        text = "Biblioteca",
-                        style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
-                        color = MaterialTheme.colorScheme.onBackground
+                        text = "Añadiendo a \"${targetPlaylistForAddition?.name}\" (${selectedSongIds.size} sel.)",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
                     )
-
-                    Button(
-                        onClick = { showAddMusicDialog = true },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.primaryContainer,
-                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer
-                        ),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Add,
-                            contentDescription = "Agregar",
-                            modifier = Modifier.padding(end = 6.dp)
-                        )
-                        Text("Agregar")
+                    Row {
+                        IconButton(onClick = onCancelPlaylistAddition) {
+                            Icon(Icons.Default.Close, contentDescription = "Cancelar")
+                        }
+                        IconButton(
+                            onClick = {
+                                viewModel.addSongsToPlaylist(
+                                    targetPlaylistForAddition?.id ?: 0L,
+                                    selectedSongIds.toList()
+                                )
+                                onCompletePlaylistAddition()
+                            },
+                            enabled = selectedSongIds.isNotEmpty()
+                        ) {
+                            Icon(Icons.Default.Check, contentDescription = "Confirmar")
+                        }
                     }
+                }
+            }
+        }
 
+        // Top Search Bar & Header Actions
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (selectedAlbumName != null || selectedArtistName != null) {
+                IconButton(onClick = {
+                    selectedAlbumName = null
+                    selectedArtistName = null
+                }) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Volver")
                 }
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { viewModel.setSearchQuery(it) },
+                placeholder = { Text("Buscar canción, artista, álbum, género...") },
+                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                trailingIcon = {
+                    if (searchQuery.isNotEmpty()) {
+                        IconButton(onClick = { viewModel.setSearchQuery("") }) {
+                            Icon(Icons.Default.Close, contentDescription = "Limpiar")
+                        }
+                    }
+                },
+                singleLine = true,
+                modifier = Modifier.weight(1f),
+                colors = OutlinedTextFieldDefaults.colors(
+                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                    focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                ),
+                shape = RoundedCornerShape(12.dp)
+            )
 
-            // Search Bar, Tauon Separator Toggle & Sort Button
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                OutlinedTextField(
-                    value = searchQuery,
-                    onValueChange = { viewModel.setSearchQuery(it) },
-                    placeholder = { Text("Buscar canción, artista...") },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Default.Search,
-                            contentDescription = "Search"
-                        )
-                    },
-                    singleLine = true,
-                    shape = RoundedCornerShape(14.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = MaterialTheme.colorScheme.primary,
-                        unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
-                    ),
-                    modifier = Modifier.weight(1f)
-                )
+            Spacer(modifier = Modifier.width(4.dp))
 
-                Spacer(modifier = Modifier.width(4.dp))
-
-                // Tauon Header Toggle Button
-                IconButton(
-                    onClick = { showAlbumHeaders = !showAlbumHeaders }
+            // Sort Menu Trigger
+            Box {
+                IconButton(onClick = { sortMenuExpanded = true }) {
+                    Icon(Icons.Default.Sort, contentDescription = "Ordenar")
+                }
+                DropdownMenu(
+                    expanded = sortMenuExpanded,
+                    onDismissRequest = { sortMenuExpanded = false }
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.ViewAgenda,
-                        contentDescription = "Separadores de álbum",
-                        tint = if (showAlbumHeaders) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
-                    )
-                }
-
-                Box {
-                    IconButton(onClick = { sortMenuExpanded = true }) {
-                        Icon(
-                            imageVector = Icons.Default.Sort,
-                            contentDescription = "Ordenar",
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                    }
-
-                    DropdownMenu(
-                        expanded = sortMenuExpanded,
-                        onDismissRequest = { sortMenuExpanded = false }
-                    ) {
+                    SortOption.values().forEach { option ->
                         DropdownMenuItem(
-                            text = { Text("Separadores de Álbum (Tauon) ${if (showAlbumHeaders) "✓" else ""}") },
+                            text = {
+                                Text(
+                                    text = when (option) {
+                                        SortOption.TITLE -> "Título"
+                                        SortOption.ARTIST -> "Artista"
+                                        SortOption.ALBUM -> "Álbum"
+                                        SortOption.GENRE -> "Género"
+                                        SortOption.DATE_ADDED -> "Fecha de adición"
+                                    },
+                                    fontWeight = if (sortOption == option) FontWeight.Bold else FontWeight.Normal
+                                )
+                            },
                             onClick = {
-                                showAlbumHeaders = !showAlbumHeaders
-                                sortMenuExpanded = false
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Título ${if (sortOption == SortOption.TITLE) "✓" else ""}") },
-                            onClick = {
-                                viewModel.setSortOption(SortOption.TITLE)
-                                sortMenuExpanded = false
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Artista ${if (sortOption == SortOption.ARTIST) "✓" else ""}") },
-                            onClick = {
-                                viewModel.setSortOption(SortOption.ARTIST)
-                                sortMenuExpanded = false
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Álbum ${if (sortOption == SortOption.ALBUM) "✓" else ""}") },
-                            onClick = {
-                                viewModel.setSortOption(SortOption.ALBUM)
+                                viewModel.setSortOption(option)
                                 sortMenuExpanded = false
                             }
                         )
@@ -434,14 +237,11 @@ fun LibraryScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
+        }
 
-            // Tabs Header
-            TabRow(
-                selectedTabIndex = selectedTabIndex,
-                containerColor = MaterialTheme.colorScheme.surface,
-                contentColor = MaterialTheme.colorScheme.primary
-            ) {
+        // Section Tabs (Canciones, Álbumes, Artistas)
+        if (selectedAlbumName == null && selectedArtistName == null && !isPlaylistAdditionMode) {
+            TabRow(selectedTabIndex = selectedTabIndex) {
                 Tab(
                     selected = selectedTabIndex == 0,
                     onClick = { selectedTabIndex = 0 },
@@ -458,1322 +258,265 @@ fun LibraryScreen(
                     text = { Text("Artistas (${artists.size})") }
                 )
             }
+        }
 
-            Spacer(modifier = Modifier.height(8.dp))
+        // Main Quick Play/Shuffle Action Header
+        if (!isMultiSelectMode && !isPlaylistAdditionMode && selectedAlbumName == null && selectedArtistName == null) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row {
+                    Button(
+                        onClick = { viewModel.playCollection(songs) },
+                        enabled = songs.isNotEmpty()
+                    ) {
+                        Icon(Icons.Default.PlayArrow, contentDescription = null)
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Reproducir todo")
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Button(
+                        onClick = { viewModel.shuffleCollection(songs) },
+                        enabled = songs.isNotEmpty()
+                    ) {
+                        Icon(Icons.Default.Shuffle, contentDescription = null)
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Mezclar")
+                    }
+                }
 
-            // Tab Content
-            when (selectedTabIndex) {
-                0 -> {
-                    if (candidateSongs.isEmpty()) {
-                        Box(
-                            modifier = Modifier.fillMaxSize(),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Icon(
-                                    imageVector = Icons.Default.CreateNewFolder,
-                                    contentDescription = null,
-                                    modifier = Modifier.padding(16.dp),
-                                    tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
-                                )
-                                Text(
-                                    text = if (isPlaylistAdditionMode) "Todas las canciones ya forman parte de esta playlist" else "No se encontraron canciones",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                                )
-                            }
-                        }
-                    } else {
-                        LazyColumn(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(bottom = if (isSongSelectionMode || isPlaylistAdditionMode) 80.dp else 0.dp)
-                        ) {
-                            if (showAlbumHeaders) {
-                                // Tauon Style: Group by Album with inline separators
-                                val groupedByAlbum = candidateSongs.groupBy { it.album }
-                                groupedByAlbum.forEach { (albumName, albumSongs) ->
-                                    item(key = "album_header_$albumName") {
-                                        TauonAlbumHeader(
-                                            albumName = albumName,
-                                            artistName = albumSongs.firstOrNull()?.artist ?: "Artista Desconocido",
-                                            artworkUri = albumSongs.firstOrNull()?.artworkUri,
-                                            songCount = albumSongs.size,
-                                            onPlayAlbum = {
-                                                viewModel.playCollection(albumSongs)
-                                                albumSongs.firstOrNull()?.let { onSongSelect(it) }
-                                            },
-                                            onShuffleAlbum = {
-                                                viewModel.shuffleCollection(albumSongs)
-                                                albumSongs.firstOrNull()?.let { onSongSelect(it) }
-                                            },
-                                            onQueueAlbum = {
-                                                viewModel.enqueueCollection(albumSongs)
-                                            },
-                                            onAddAlbumToPlaylist = {
-                                                songsForPlaylist = albumSongs
-                                                showPlaylistDialog = true
-                                            }
-                                        )
-                                    }
+                if (selectedTabIndex == 0) {
+                    IconButton(onClick = { showAlbumHeaders = !showAlbumHeaders }) {
+                        Icon(
+                            imageVector = Icons.Default.ViewAgenda,
+                            contentDescription = "Cambiar vista",
+                            tint = if (showAlbumHeaders) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                }
+            }
+        }
 
-                                    itemsIndexed(albumSongs, key = { idx, song -> "${song.id}_$idx" }) { _, song ->
-                                        val isSelected = selectedSongIds.contains(song.id)
-                                        SongListItem(
-                                            song = song,
-                                            isCurrentPlaying = currentSong?.uriString == song.uriString,
-                                            isSelectionMode = isSongSelectionMode || isPlaylistAdditionMode,
-                                            isSelected = isSelected,
-                                            onClick = {
-                                                if (isSongSelectionMode || isPlaylistAdditionMode) {
-                                                    selectedSongIds = if (isSelected) selectedSongIds - song.id else selectedSongIds + song.id
-                                                } else {
-                                                    viewModel.playSong(song, songs)
-                                                    onSongSelect(song)
-                                                }
-                                            },
-                                            onLongClick = {
-                                                if (!isSongSelectionMode && !isPlaylistAdditionMode) selectedSongIds = setOf(song.id)
-                                            },
-                                            onToggleSelect = {
-                                                selectedSongIds = if (isSelected) selectedSongIds - song.id else selectedSongIds + song.id
-                                            },
-                                            onPlayNext = { viewModel.playNextInQueue(song) },
-                                            onAddToQueue = { viewModel.addToQueue(song) },
-                                            onAddToPlaylist = {
-                                                songsForPlaylist = listOf(song)
-                                                showPlaylistDialog = true
-                                            },
-                                            onEditMetadata = {
-                                                songToEdit = song
-                                                editTitle = song.title
-                                                editArtist = song.artist
-                                                editAlbum = song.album
-                                                editGenre = song.genre
-                                            },
-                                            onDelete = {
-                                                selectedSongIds = setOf(song.id)
-                                                showDeleteDialog = true
-                                            }
-                                        )
-                                    }
-                                }
+        // Multi-Selection Action Bar (if active)
+        if (isMultiSelectMode && !isPlaylistAdditionMode) {
+            val selectedSongs = songs.filter { selectedSongIds.contains(it.id) }
+            MultiSelectActionBar(
+                selectedCount = selectedSongs.size,
+                onPlaySelected = {
+                    viewModel.playCollection(selectedSongs)
+                    clearSelection()
+                },
+                onEnqueueSelected = {
+                    viewModel.enqueueCollection(selectedSongs)
+                    clearSelection()
+                },
+                onAddToPlaylist = {
+                    songForPlaylistAddition = selectedSongs.firstOrNull()
+                },
+                onDeleteSelected = {
+                    songsForDeletion = selectedSongs
+                },
+                onSelectAll = selectAllSongs,
+                onClearSelection = clearSelection
+            )
+        }
+
+        // Main Content Switcher based on Selected Navigation
+        Box(modifier = Modifier.weight(1f)) {
+            when {
+                selectedAlbumName != null -> {
+                    val albumSongs = songs.filter { it.album.equals(selectedAlbumName, ignoreCase = true) }
+                    LibrarySongList(
+                        songs = albumSongs,
+                        currentSong = currentSong,
+                        viewMode = LibraryViewMode.FLAT,
+                        isSelectionMode = isMultiSelectMode,
+                        selectedSongIds = selectedSongIds,
+                        onSongClick = { song, index ->
+                            if (isMultiSelectMode) toggleSelectSong(song) else viewModel.playCollection(albumSongs, index)
+                        },
+                        onSongLongClick = toggleSelectSong,
+                        onToggleSelect = toggleSelectSong,
+                        onPlayNext = { viewModel.playNextInQueue(it) },
+                        onAddToQueue = { viewModel.addToQueue(it) },
+                        onAddToPlaylist = { songForPlaylistAddition = it },
+                        onEditMetadata = { editingSong = it },
+                        onDeleteSong = { songsForDeletion = listOf(it) },
+                        onPlayAlbum = { _, _ -> },
+                        onShuffleAlbum = { _, _ -> }
+                    )
+                }
+
+                selectedArtistName != null -> {
+                    val artistSongs = songs.filter { it.artist.equals(selectedArtistName, ignoreCase = true) }
+                    LibrarySongList(
+                        songs = artistSongs,
+                        currentSong = currentSong,
+                        viewMode = LibraryViewMode.ALBUM_GROUPS,
+                        isSelectionMode = isMultiSelectMode,
+                        selectedSongIds = selectedSongIds,
+                        onSongClick = { song, index ->
+                            if (isMultiSelectMode) toggleSelectSong(song) else viewModel.playCollection(artistSongs, index)
+                        },
+                        onSongLongClick = toggleSelectSong,
+                        onToggleSelect = toggleSelectSong,
+                        onPlayNext = { viewModel.playNextInQueue(it) },
+                        onAddToQueue = { viewModel.addToQueue(it) },
+                        onAddToPlaylist = { songForPlaylistAddition = it },
+                        onEditMetadata = { editingSong = it },
+                        onDeleteSong = { songsForDeletion = listOf(it) },
+                        onPlayAlbum = { name, albumSongs -> viewModel.playCollection(albumSongs) },
+                        onShuffleAlbum = { name, albumSongs -> viewModel.shuffleCollection(albumSongs) }
+                    )
+                }
+
+                selectedTabIndex == 0 -> {
+                    LibrarySongList(
+                        songs = songs,
+                        currentSong = currentSong,
+                        viewMode = if (showAlbumHeaders) LibraryViewMode.ALBUM_GROUPS else LibraryViewMode.FLAT,
+                        isSelectionMode = isMultiSelectMode || isPlaylistAdditionMode,
+                        selectedSongIds = selectedSongIds,
+                        onSongClick = { song, index ->
+                            if (isPlaylistAdditionMode || isMultiSelectMode) {
+                                toggleSelectSong(song)
                             } else {
-                                // Flat Song List
-                                itemsIndexed(candidateSongs, key = { index, song -> "${song.id}_$index" }) { index, song ->
-                                    val isSelected = selectedSongIds.contains(song.id)
-                                    SongListItem(
-                                        song = song,
-                                        isCurrentPlaying = currentSong?.uriString == song.uriString,
-                                        isSelectionMode = isSongSelectionMode || isPlaylistAdditionMode,
-                                        isSelected = isSelected,
-                                        onClick = {
-                                            if (isSongSelectionMode || isPlaylistAdditionMode) {
-                                                selectedSongIds = if (isSelected) selectedSongIds - song.id else selectedSongIds + song.id
-                                            } else {
-                                                viewModel.playSong(song, songs)
-                                                onSongSelect(song)
-                                            }
-                                        },
-                                        onLongClick = {
-                                            if (!isSongSelectionMode && !isPlaylistAdditionMode) selectedSongIds = setOf(song.id)
-                                        },
-                                        onToggleSelect = {
-                                            selectedSongIds = if (isSelected) selectedSongIds - song.id else selectedSongIds + song.id
-                                        },
-                                        onPlayNext = { viewModel.playNextInQueue(song) },
-                                        onAddToQueue = { viewModel.addToQueue(song) },
-                                        onAddToPlaylist = {
-                                            songsForPlaylist = listOf(song)
-                                            showPlaylistDialog = true
-                                        },
-                                        onEditMetadata = {
-                                            songToEdit = song
-                                            editTitle = song.title
-                                            editArtist = song.artist
-                                            editAlbum = song.album
-                                            editGenre = song.genre
-                                        },
-                                        onDelete = {
-                                            selectedSongIds = setOf(song.id)
-                                            showDeleteDialog = true
-                                        }
-                                    )
-                                }
+                                viewModel.playCollection(songs, index)
                             }
-                        }
-                    }
+                        },
+                        onSongLongClick = toggleSelectSong,
+                        onToggleSelect = toggleSelectSong,
+                        onPlayNext = { viewModel.playNextInQueue(it) },
+                        onAddToQueue = { viewModel.addToQueue(it) },
+                        onAddToPlaylist = { songForPlaylistAddition = it },
+                        onEditMetadata = { editingSong = it },
+                        onDeleteSong = { songsForDeletion = listOf(it) },
+                        onPlayAlbum = { name, albumSongs -> viewModel.playCollection(albumSongs) },
+                        onShuffleAlbum = { name, albumSongs -> viewModel.shuffleCollection(albumSongs) }
+                    )
                 }
-                1 -> {
-                    // Albums Tab
-                    LazyColumn(modifier = Modifier.fillMaxSize()) {
-                        items(albums) { album ->
-                            AlbumCard(
-                                album = album,
-                                onClick = { selectedAlbumName = album.name },
-                                onPlayAlbum = {
-                                    val albumSongs = songs.filter { it.album == album.name }
-                                    if (albumSongs.isNotEmpty()) {
-                                        viewModel.playSong(albumSongs.first(), albumSongs)
-                                        onSongSelect(albumSongs.first())
-                                    }
-                                },
-                                onQueueAlbum = {
-                                    val albumSongs = songs.filter { it.album == album.name }
-                                    viewModel.addToQueueBatch(albumSongs)
-                                }
-                            )
-                        }
-                    }
+
+                selectedTabIndex == 1 -> {
+                    LibraryAlbumGrid(
+                        albums = albums,
+                        onAlbumClick = { selectedAlbumName = it.name },
+                        onPlayAlbum = { album ->
+                            val albumSongs = songs.filter { it.album.equals(album.name, ignoreCase = true) }
+                            viewModel.playCollection(albumSongs)
+                        },
+                        onShuffleAlbum = { album ->
+                            val albumSongs = songs.filter { it.album.equals(album.name, ignoreCase = true) }
+                            viewModel.shuffleCollection(albumSongs)
+                        },
+                        onChangeAlbumCover = { albumForCoverChange = it }
+                    )
                 }
-                2 -> {
-                    // Artists Tab
-                    LazyColumn(modifier = Modifier.fillMaxSize()) {
-                        items(artists) { artist ->
-                            Card(
-                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
-                                shape = RoundedCornerShape(14.dp),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 4.dp)
-                                    .clickable { selectedArtistName = artist.name }
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(12.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(52.dp)
-                                            .clip(CircleShape)
-                                            .background(MaterialTheme.colorScheme.secondaryContainer),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        if (!artist.photoUri.isNullOrEmpty()) {
-                                            AsyncImage(
-                                                model = artist.photoUri,
-                                                contentDescription = artist.name,
-                                                contentScale = ContentScale.Crop,
-                                                modifier = Modifier.fillMaxSize()
-                                            )
-                                        } else {
-                                            Icon(
-                                                imageVector = Icons.Default.Person,
-                                                contentDescription = null,
-                                                tint = MaterialTheme.colorScheme.onSecondaryContainer
-                                            )
-                                        }
-                                    }
 
-                                    Spacer(modifier = Modifier.width(12.dp))
-
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            text = artist.name,
-                                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                                            color = MaterialTheme.colorScheme.onSurface,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                        Text(
-                                            text = "${artist.albumCount} álbumes • ${artist.songCount} canciones",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                    }
-
-                                    Icon(
-                                        imageVector = Icons.Default.KeyboardArrowRight,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
-                                    )
-                                }
-                            }
+                selectedTabIndex == 2 -> {
+                    LibraryArtistList(
+                        artists = artists,
+                        onArtistClick = { selectedArtistName = it.name },
+                        onPlayArtist = { artist ->
+                            val artistSongs = songs.filter { it.artist.equals(artist.name, ignoreCase = true) }
+                            viewModel.playCollection(artistSongs)
+                        },
+                        onShuffleArtist = { artist ->
+                            val artistSongs = songs.filter { it.artist.equals(artist.name, ignoreCase = true) }
+                            viewModel.shuffleCollection(artistSongs)
                         }
-                    }
+                    )
                 }
             }
-        }
 
-        // Add Music Dialog
-        if (showAddMusicDialog) {
-            AddMusicDialog(
-                viewModel = viewModel,
-                onSelectFolderClick = onSelectFolderClick,
-                onDismiss = { showAddMusicDialog = false }
-            )
-        }
-
-
-        // Artist Detail Screen (Shows Artist's Albums first + Multi-Album Selection)
-        if (selectedArtistName != null) {
-            val artistName = selectedArtistName!!
-            val artistSongs = remember(artistName, songs) { songs.filter { it.artist == artistName } }
-            val artistAlbums = remember(artistName, albums) { albums.filter { it.artist == artistName } }
-
-            Surface(
-                modifier = Modifier.fillMaxSize(),
-                color = MaterialTheme.colorScheme.background
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(top = 16.dp, start = 16.dp, end = 16.dp)
-                ) {
-                    // Header
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        IconButton(onClick = {
-                            selectedArtistName = null
-                            selectedAlbumNames = emptySet()
-                        }) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = "Volver",
-                                tint = MaterialTheme.colorScheme.onBackground
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = artistName,
-                                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                                color = MaterialTheme.colorScheme.onBackground,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            Text(
-                                text = "Artista • ${artistAlbums.size} álbumes • ${artistSongs.size} canciones",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f)
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    // Play All Artist & Shuffle Buttons
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        Button(
-                            onClick = {
-                                if (artistSongs.isNotEmpty()) {
-                                    viewModel.playSong(artistSongs.first(), artistSongs)
-                                    onSongSelect(artistSongs.first())
-                                }
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Icon(imageVector = Icons.Default.PlayArrow, contentDescription = null)
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Reproducir todo")
-                        }
-
-                        OutlinedButton(
-                            onClick = {
-                                if (artistSongs.isNotEmpty()) {
-                                    val shuffled = artistSongs.shuffled()
-                                    viewModel.playSong(shuffled.first(), shuffled)
-                                    onSongSelect(shuffled.first())
-                                }
-                            },
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Icon(imageVector = Icons.Default.Shuffle, contentDescription = null)
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Aleatorio")
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    // List of Artist Albums (Clicking album opens single album view!)
-                    LazyColumn(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(bottom = if (isAlbumSelectionMode) 80.dp else 0.dp)
-                    ) {
-                        items(artistAlbums) { album ->
-                            val isSelected = selectedAlbumNames.contains(album.name)
-                            Card(
-                                colors = CardDefaults.cardColors(
-                                    containerColor = if (isSelected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                                ),
-                                shape = RoundedCornerShape(14.dp),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 4.dp)
-                                    .combinedClickable(
-                                        onClick = {
-                                            if (isAlbumSelectionMode) {
-                                                selectedAlbumNames = if (isSelected) selectedAlbumNames - album.name else selectedAlbumNames + album.name
-                                            } else {
-                                                selectedAlbumName = album.name // Opens single album detail view!
-                                            }
-                                        },
-                                        onLongClick = {
-                                            selectedAlbumNames = if (isSelected) selectedAlbumNames - album.name else selectedAlbumNames + album.name
-                                        }
-                                    )
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(12.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    if (isAlbumSelectionMode) {
-                                        Checkbox(
-                                            checked = isSelected,
-                                            onCheckedChange = {
-                                                selectedAlbumNames = if (isSelected) selectedAlbumNames - album.name else selectedAlbumNames + album.name
-                                            }
-                                        )
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                    }
-
-                                    Box(
-                                        modifier = Modifier
-                                            .size(56.dp)
-                                            .clip(RoundedCornerShape(10.dp))
-                                            .background(MaterialTheme.colorScheme.primaryContainer),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        if (!album.artworkUri.isNullOrEmpty()) {
-                                            AsyncImage(
-                                                model = album.artworkUri,
-                                                contentDescription = album.name,
-                                                contentScale = ContentScale.Crop,
-                                                modifier = Modifier.fillMaxSize()
-                                            )
-                                        } else {
-                                            Icon(
-                                                imageVector = Icons.Default.Album,
-                                                contentDescription = null,
-                                                tint = MaterialTheme.colorScheme.onPrimaryContainer
-                                            )
-                                        }
-                                    }
-
-                                    Spacer(modifier = Modifier.width(12.dp))
-
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            text = album.name,
-                                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                                            color = MaterialTheme.colorScheme.onSurface,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                        Text(
-                                            text = "${album.songCount} canciones",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                                        )
-                                    }
-
-                                    IconButton(onClick = {
-                                        val albumSongs = songs.filter { it.album == album.name }
-                                        if (albumSongs.isNotEmpty()) {
-                                            viewModel.playSong(albumSongs.first(), albumSongs)
-                                            onSongSelect(albumSongs.first())
-                                        }
-                                    }) {
-                                        Icon(
-                                            imageVector = Icons.Default.PlayArrow,
-                                            contentDescription = "Reproducir disco",
-                                            tint = MaterialTheme.colorScheme.primary
-                                        )
-                                    }
-
-                                    Icon(
-                                        imageVector = Icons.Default.KeyboardArrowRight,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // Single Album Detail Screen Overlay
-        if (selectedAlbumName != null) {
-            val albumName = selectedAlbumName!!
-            val albumSongs = remember(albumName, songs) { songs.filter { it.album == albumName } }
-
-            Surface(
-                modifier = Modifier.fillMaxSize(),
-                color = MaterialTheme.colorScheme.background
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(top = 16.dp, start = 16.dp, end = 16.dp)
-                ) {
-                    // Header
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        IconButton(onClick = { selectedAlbumName = null }) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = "Volver",
-                                tint = MaterialTheme.colorScheme.onBackground
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = albumName,
-                                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                                color = MaterialTheme.colorScheme.onBackground,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            Text(
-                                text = "Álbum • ${albumSongs.firstOrNull()?.artist ?: ""} • ${albumSongs.size} canciones",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f)
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        Button(
-                            onClick = {
-                                if (albumSongs.isNotEmpty()) {
-                                    viewModel.playSong(albumSongs.first(), albumSongs)
-                                    onSongSelect(albumSongs.first())
-                                }
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Icon(imageVector = Icons.Default.PlayArrow, contentDescription = null)
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Reproducir disco")
-                        }
-
-                        OutlinedButton(
-                            onClick = {
-                                if (albumSongs.isNotEmpty()) {
-                                    val shuffled = albumSongs.shuffled()
-                                    viewModel.playSong(shuffled.first(), shuffled)
-                                    onSongSelect(shuffled.first())
-                                }
-                            },
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Icon(imageVector = Icons.Default.Shuffle, contentDescription = null)
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Aleatorio")
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    LazyColumn(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(bottom = if (isSongSelectionMode) 80.dp else 0.dp)
-                    ) {
-                        itemsIndexed(albumSongs, key = { index, song -> "${song.id}_$index" }) { index, song ->
-                            val isSelected = selectedSongIds.contains(song.id)
-                            SongListItem(
-                                song = song,
-                                isCurrentPlaying = currentSong?.uriString == song.uriString,
-                                isSelectionMode = isSongSelectionMode,
-                                isSelected = isSelected,
-                                onClick = {
-                                    if (isSongSelectionMode) {
-                                        selectedSongIds = if (isSelected) selectedSongIds - song.id else selectedSongIds + song.id
-                                    } else {
-                                        viewModel.playSong(song, albumSongs)
-                                        onSongSelect(song)
-                                    }
-                                },
-                                onLongClick = {
-                                    if (!isSongSelectionMode) selectedSongIds = setOf(song.id)
-                                },
-                                onToggleSelect = {
-                                    selectedSongIds = if (isSelected) selectedSongIds - song.id else selectedSongIds + song.id
-                                },
-                                onPlayNext = { viewModel.playNextInQueue(song) },
-                                onAddToQueue = { viewModel.addToQueue(song) },
-                                onAddToPlaylist = {
-                                    songsForPlaylist = listOf(song)
-                                    showPlaylistDialog = true
-                                },
-                                onEditMetadata = {
-                                    songToEdit = song
-                                    editTitle = song.title
-                                    editArtist = song.artist
-                                    editAlbum = song.album
-                                    editGenre = song.genre
-                                },
-                                onDelete = {
-                                    selectedSongIds = setOf(song.id)
-                                    showDeleteDialog = true
-                                }
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
-        // Multi-Album Bottom Action Bar
-        if (isAlbumSelectionMode) {
-            val selectedAlbumsSongs = remember(selectedAlbumNames, songs) {
-                songs.filter { selectedAlbumNames.contains(it.album) }
-            }
-
-            Surface(
-                color = MaterialTheme.colorScheme.secondaryContainer,
-                tonalElevation = 8.dp,
-                shadowElevation = 12.dp,
-                shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
+            FloatingActionButton(
+                onClick = { showAddMusicDialog = true },
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .align(Alignment.BottomCenter)
+                    .align(Alignment.BottomEnd)
+                    .padding(16.dp),
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary
             ) {
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                    horizontalArrangement = Arrangement.SpaceAround,
+                    modifier = Modifier.padding(horizontal = 12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier.clickable {
-                            if (selectedAlbumsSongs.isNotEmpty()) {
-                                viewModel.playCollection(selectedAlbumsSongs)
-                                selectedAlbumsSongs.firstOrNull()?.let { onSongSelect(it) }
-                            }
-                            selectedAlbumNames = emptySet()
-                        }
-                    ) {
-                        Icon(imageVector = Icons.Default.PlayArrow, contentDescription = null, tint = MaterialTheme.colorScheme.onSecondaryContainer)
-                        Text(text = "Reproducir", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSecondaryContainer)
-                    }
-
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier.clickable {
-                            if (selectedAlbumsSongs.isNotEmpty()) {
-                                viewModel.shuffleCollection(selectedAlbumsSongs)
-                                selectedAlbumsSongs.firstOrNull()?.let { onSongSelect(it) }
-                            }
-                            selectedAlbumNames = emptySet()
-                        }
-                    ) {
-                        Icon(imageVector = Icons.Default.Shuffle, contentDescription = null, tint = MaterialTheme.colorScheme.onSecondaryContainer)
-                        Text(text = "Mezclar", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSecondaryContainer)
-                    }
-
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier.clickable {
-                            viewModel.enqueueCollection(selectedAlbumsSongs)
-                            selectedAlbumNames = emptySet()
-                        }
-                    ) {
-                        Icon(imageVector = Icons.Default.PlaylistAdd, contentDescription = null, tint = MaterialTheme.colorScheme.onSecondaryContainer)
-                        Text(text = "A la cola", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSecondaryContainer)
-                    }
-
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier.clickable {
-                            songsForPlaylist = selectedAlbumsSongs
-                            showPlaylistDialog = true
-                        }
-                    ) {
-                        Icon(imageVector = Icons.Default.PlaylistAddCheck, contentDescription = null, tint = MaterialTheme.colorScheme.onSecondaryContainer)
-                        Text(text = "Playlist", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSecondaryContainer)
-                    }
-                }
-            }
-        }
-
-        // Playlist Addition Mode Bottom Action Bar
-        if (isPlaylistAdditionMode) {
-            Surface(
-                color = MaterialTheme.colorScheme.primaryContainer,
-                tonalElevation = 8.dp,
-                shadowElevation = 12.dp,
-                shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .align(Alignment.BottomCenter)
-            ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Button(
-                        onClick = {
-                            if (selectedSongs.isNotEmpty()) {
-                                viewModel.addSongsToPlaylist(targetPlaylistForAddition!!.id, selectedSongs)
-                            }
-                            selectedSongIds = emptySet()
-                            onCompletePlaylistAddition()
-                        },
-                        enabled = selectedSongs.isNotEmpty(),
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                        shape = RoundedCornerShape(14.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(48.dp)
-                    ) {
-                        Icon(imageVector = Icons.Default.PlaylistAdd, contentDescription = null)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "Añadir seleccionados a la playlist ${targetPlaylistForAddition!!.name} (${selectedSongs.size})",
-                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                }
-            }
-        } else if (isSongSelectionMode) {
-            Surface(
-                color = MaterialTheme.colorScheme.surfaceVariant,
-                tonalElevation = 8.dp,
-                shadowElevation = 12.dp,
-                shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .align(Alignment.BottomCenter)
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                    horizontalArrangement = Arrangement.SpaceAround,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier.clickable {
-                            viewModel.playNextBatch(selectedSongs)
-                            selectedSongIds = emptySet()
-                        }
-                    ) {
-                        Icon(imageVector = Icons.Default.QueueMusic, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                        Text(text = "A continuación", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier.clickable {
-                            viewModel.addToQueueBatch(selectedSongs)
-                            selectedSongIds = emptySet()
-                        }
-                    ) {
-                        Icon(imageVector = Icons.Default.PlaylistAdd, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                        Text(text = "A la cola", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier.clickable {
-                            songsForPlaylist = selectedSongs
-                            showPlaylistDialog = true
-                        }
-                    ) {
-                        Icon(imageVector = Icons.Default.PlaylistAddCheck, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                        Text(text = "Playlist", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier.clickable {
-                            showDeleteDialog = true
-                        }
-                    ) {
-                        Icon(imageVector = Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error)
-                        Text(text = "Eliminar", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
-                    }
+                    Icon(Icons.Default.Add, contentDescription = null)
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Agregar", fontWeight = FontWeight.Bold)
                 }
             }
         }
     }
 
-    // Edit Metadata Dialog
-    if (songToEdit != null) {
-        val song = songToEdit!!
-        val coroutineScope = rememberCoroutineScope()
-
-        AlertDialog(
-            onDismissRequest = { songToEdit = null },
-            title = {
-                Text(
-                    text = "Editar Información de la Canción",
-                    fontWeight = FontWeight.Bold
-                )
-            },
-            text = {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    OutlinedTextField(
-                        value = editTitle,
-                        onValueChange = { editTitle = it },
-                        label = { Text("Título de la canción") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    OutlinedTextField(
-                        value = editArtist,
-                        onValueChange = { editArtist = it },
-                        label = { Text("Artista") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    OutlinedTextField(
-                        value = editAlbum,
-                        onValueChange = { editAlbum = it },
-                        label = { Text("Álbum") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    OutlinedTextField(
-                        value = editGenre,
-                        onValueChange = { editGenre = it },
-                        label = { Text("Género") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    Spacer(modifier = Modifier.height(4.dp))
-
-                    OutlinedButton(
-                        onClick = {
-                            isFetchingOnline = true
-                            coroutineScope.launch {
-                                val targetTitle = editTitle.trim().ifBlank { "Unknown Track" }
-                                val targetArtist = editArtist.trim().ifBlank { "Unknown Artist" }
-                                val targetAlbum = editAlbum.trim().ifBlank { "Unknown Album" }
-                                val targetGenre = editGenre.trim().ifBlank { "Music" }
-
-                                viewModel.updateSongMetadata(
-                                    song.id,
-                                    targetTitle,
-                                    targetArtist,
-                                    targetAlbum,
-                                    targetGenre
-                                )
-                                viewModel.enhanceSongMetadataAndLyrics(song.copy(title = targetTitle, artist = targetArtist, album = targetAlbum))
-                                isFetchingOnline = false
-                                songToEdit = null
-                            }
-                        },
-                        enabled = !isFetchingOnline,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(imageVector = Icons.Default.Search, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(if (isFetchingOnline) "Buscando metadatos..." else "🔍 Auto-completar metadatos en línea")
-                    }
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        val targetTitle = editTitle.trim().ifBlank { "Unknown Track" }
-                        val targetArtist = editArtist.trim().ifBlank { "Unknown Artist" }
-                        val targetAlbum = editAlbum.trim().ifBlank { "Unknown Album" }
-                        val targetGenre = editGenre.trim().ifBlank { "Music" }
-
-                        viewModel.updateSongMetadata(
-                            song.id,
-                            targetTitle,
-                            targetArtist,
-                            targetAlbum,
-                            targetGenre
-                        )
-                        songToEdit = null
-                    }
-                ) {
-                    Text("Guardar")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { songToEdit = null }) {
-                    Text("Cancelar")
-                }
+    // Modal Dialog Invocations
+    editingSong?.let { song ->
+        EditSongMetadataDialog(
+            song = song,
+            onDismiss = { editingSong = null },
+            onConfirm = { title, artist, album, genre ->
+                viewModel.updateSongMetadata(song.id, title, artist, album, genre)
+                editingSong = null
             }
         )
     }
 
-    // Delete Confirmation Dialog
-    if (showDeleteDialog) {
-        val targets = if (isSongSelectionMode) selectedSongs else emptyList()
-        AlertDialog(
-            onDismissRequest = { showDeleteDialog = false },
-            title = { Text(text = "¿Eliminar ${targets.size} canción(es)?", fontWeight = FontWeight.Bold) },
-            text = { Text(text = "Elegí cómo querés eliminar las canciones seleccionadas:") },
-            confirmButton = {
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Button(
-                        onClick = {
-                            viewModel.deleteSongsFromApp(targets)
-                            showDeleteDialog = false
-                            selectedSongIds = emptySet()
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("Solo quitar de la app")
-                    }
-
-                    Button(
-                        onClick = {
-                            viewModel.deleteSongsFromDevice(targets)
-                            showDeleteDialog = false
-                            selectedSongIds = emptySet()
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("Eliminar del dispositivo (Disco)")
-                    }
-
-                    OutlinedButton(
-                        onClick = { showDeleteDialog = false },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("Cancelar")
-                    }
-                }
-            },
-            dismissButton = null
-        )
-    }
-
-    // Add to Playlist Dialog
-    if (showPlaylistDialog) {
-        val targets = songsForPlaylist
-        AlertDialog(
-            onDismissRequest = {
-                showPlaylistDialog = false
-                songsForPlaylist = emptyList()
-            },
-            title = { Text("Añadir a Playlist (${targets.size} canción/es)") },
-            text = {
-                Column {
-                    if (playlists.isEmpty()) {
-                        Text(
-                            text = "No tenés playlists creadas aún.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                            modifier = Modifier.padding(vertical = 12.dp)
-                        )
-                    } else {
-                        LazyColumn(modifier = Modifier.height(200.dp)) {
-                            items(playlists) { playlist ->
-                                Card(
-                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(vertical = 4.dp)
-                                        .clickable {
-                                            viewModel.addSongsToPlaylist(playlist.id, targets)
-                                            showPlaylistDialog = false
-                                            songsForPlaylist = emptyList()
-                                            selectedSongIds = emptySet()
-                                            selectedAlbumNames = emptySet()
-                                        }
-                                ) {
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(12.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Icon(imageVector = Icons.Default.PlaylistAddCheck, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                                        Spacer(modifier = Modifier.width(12.dp))
-                                        Text(text = playlist.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    TextButton(onClick = { showCreatePlaylistDialog = true }) {
-                        Icon(imageVector = Icons.Default.Add, contentDescription = null)
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Crear nueva playlist")
-                    }
-                }
-            },
-            confirmButton = {},
-            dismissButton = {
-                TextButton(onClick = {
-                    showPlaylistDialog = false
-                    songsForPlaylist = emptyList()
-                }) {
-                    Text("Cancelar")
-                }
+    albumForCoverChange?.let { album ->
+        SetAlbumArtworkDialog(
+            albumName = album.name,
+            currentArtworkUri = album.artworkUri,
+            onDismiss = { albumForCoverChange = null },
+            onArtworkSelected = { newUri ->
+                viewModel.setAlbumArtwork(album.name, newUri)
+                albumForCoverChange = null
             }
         )
     }
 
-    // Create New Playlist Dialog
-    if (showCreatePlaylistDialog) {
-        val imagePickerLauncher = rememberLauncherForActivityResult(
-            contract = ActivityResultContracts.GetContent()
-        ) { uri: Uri? ->
-            uri?.let { newPlaylistCoverUri = it.toString() }
-        }
-
-        AlertDialog(
-            onDismissRequest = {
-                showCreatePlaylistDialog = false
-                newPlaylistName = ""
-                newPlaylistDescription = ""
-                newPlaylistCoverUri = null
+    songForPlaylistAddition?.let { song ->
+        AddToPlaylistDialog(
+            playlists = playlists,
+            onDismiss = { songForPlaylistAddition = null },
+            onSelectPlaylist = { playlist ->
+                val targetIds = if (isMultiSelectMode) selectedSongIds.toList() else listOf(song.id)
+                viewModel.addSongsToPlaylist(playlist.id, targetIds)
+                songForPlaylistAddition = null
+                clearSelection()
             },
-            title = { Text("Nueva Playlist", fontWeight = FontWeight.Bold) },
-            text = {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .verticalScroll(rememberScrollState()),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(100.dp)
-                            .clip(RoundedCornerShape(14.dp))
-                            .background(MaterialTheme.colorScheme.surfaceVariant)
-                            .clickable { imagePickerLauncher.launch("image/*") },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        if (!newPlaylistCoverUri.isNullOrEmpty()) {
-                            coil.compose.AsyncImage(
-                                model = newPlaylistCoverUri,
-                                contentDescription = "Portada de Playlist",
-                                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize()
-                            )
-                        } else {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Icon(
-                                    imageVector = Icons.Default.AddPhotoAlternate,
-                                    contentDescription = "Portada",
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(32.dp)
-                                )
-                                Text(
-                                    text = "Portada local",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                    }
-
-                    OutlinedTextField(
-                        value = newPlaylistName,
-                        onValueChange = { newPlaylistName = it },
-                        label = { Text("Nombre de la playlist *") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    OutlinedTextField(
-                        value = newPlaylistDescription,
-                        onValueChange = { newPlaylistDescription = it },
-                        label = { Text("Descripción (opcional)") },
-                        maxLines = 3,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        if (newPlaylistName.isNotBlank()) {
-                            val targets = songsForPlaylist
-                            viewModel.createPlaylist(
-                                name = newPlaylistName.trim(),
-                                description = newPlaylistDescription.trim(),
-                                coverUri = newPlaylistCoverUri
-                            ) { createdId ->
-                                if (targets.isNotEmpty()) {
-                                    viewModel.addSongsToPlaylist(createdId, targets)
-                                }
-                            }
-                            newPlaylistName = ""
-                            newPlaylistDescription = ""
-                            newPlaylistCoverUri = null
-                            showCreatePlaylistDialog = false
-                            showPlaylistDialog = false
-                            songsForPlaylist = emptyList()
-                            selectedSongIds = emptySet()
-                            selectedAlbumNames = emptySet()
-                        }
-                    },
-                    enabled = newPlaylistName.isNotBlank()
-                ) {
-                    Text("Crear")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = {
-                    showCreatePlaylistDialog = false
-                    newPlaylistName = ""
-                    newPlaylistDescription = ""
-                    newPlaylistCoverUri = null
-                }) {
-                    Text("Cancelar")
-                }
+            onCreateNewPlaylist = {
+                songForPlaylistAddition = null
             }
         )
     }
-}
 
-@Composable
-private fun TauonAlbumHeader(
-    albumName: String,
-    artistName: String,
-    artworkUri: String?,
-    songCount: Int,
-    onPlayAlbum: () -> Unit,
-    onShuffleAlbum: () -> Unit,
-    onQueueAlbum: () -> Unit,
-    onAddAlbumToPlaylist: () -> Unit
-) {
-    var menuExpanded by remember { mutableStateOf(false) }
-
-    Surface(
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-        shape = RoundedCornerShape(12.dp),
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(top = 16.dp, bottom = 6.dp)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(44.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(MaterialTheme.colorScheme.primaryContainer),
-                contentAlignment = Alignment.Center
-            ) {
-                if (!artworkUri.isNullOrEmpty()) {
-                    AsyncImage(
-                        model = artworkUri,
-                        contentDescription = albumName,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize()
-                    )
-                } else {
-                    Icon(
-                        imageVector = Icons.Default.Album,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                        modifier = Modifier.size(24.dp)
-                    )
-                }
+    songsForDeletion?.let { targetSongs ->
+        ConfirmDeleteSongsDialog(
+            songCount = targetSongs.size,
+            onDismiss = { songsForDeletion = null },
+            onConfirmDeleteFromApp = {
+                viewModel.deleteSongsFromApp(targetSongs)
+                songsForDeletion = null
+                clearSelection()
+            },
+            onConfirmDeleteFromDevice = {
+                viewModel.deleteSongsFromDevice(targetSongs)
+                songsForDeletion = null
+                clearSelection()
             }
-
-            Spacer(modifier = Modifier.width(12.dp))
-
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = albumName,
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = "$artistName • $songCount canciones",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-
-            IconButton(onClick = onPlayAlbum, modifier = Modifier.size(32.dp)) {
-                Icon(
-                    imageVector = Icons.Default.PlayArrow,
-                    contentDescription = "Reproducir disco",
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(20.dp)
-                )
-            }
-
-            IconButton(onClick = onShuffleAlbum, modifier = Modifier.size(32.dp)) {
-                Icon(
-                    imageVector = Icons.Default.Shuffle,
-                    contentDescription = "Aleatorio",
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(18.dp)
-                )
-            }
-
-            IconButton(onClick = onQueueAlbum, modifier = Modifier.size(32.dp)) {
-                Icon(
-                    imageVector = Icons.Default.QueueMusic,
-                    contentDescription = "Añadir disco a la cola",
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(18.dp)
-                )
-            }
-
-            Box {
-                IconButton(onClick = { menuExpanded = true }, modifier = Modifier.size(32.dp)) {
-                    Icon(
-                        imageVector = Icons.Default.MoreVert,
-                        contentDescription = "Opciones",
-                        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
-
-                DropdownMenu(
-                    expanded = menuExpanded,
-                    onDismissRequest = { menuExpanded = false }
-                ) {
-                    DropdownMenuItem(
-                        text = { Text("Añadir disco a Playlist") },
-                        onClick = {
-                            menuExpanded = false
-                            onAddAlbumToPlaylist()
-                        }
-                    )
-                }
-            }
-        }
+        )
     }
-}
 
-@Composable
-private fun AlbumCard(
-    album: Album,
-    onClick: () -> Unit,
-    onPlayAlbum: () -> Unit,
-    onQueueAlbum: () -> Unit
-) {
-    Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
-        shape = RoundedCornerShape(14.dp),
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp)
-            .clickable(onClick = onClick)
-    ) {
-        Row(
-            modifier = Modifier.padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(52.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(MaterialTheme.colorScheme.primaryContainer),
-                contentAlignment = Alignment.Center
-            ) {
-                if (!album.artworkUri.isNullOrEmpty()) {
-                    AsyncImage(
-                        model = album.artworkUri,
-                        contentDescription = album.name,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize()
-                    )
-                } else {
-                    Icon(
-                        imageVector = Icons.Default.Album,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.width(12.dp))
-
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = album.name,
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = "${album.artist} • ${album.songCount} canciones",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-
-            IconButton(onClick = onPlayAlbum) {
-                Icon(
-                    imageVector = Icons.Default.PlayArrow,
-                    contentDescription = "Reproducir disco",
-                    tint = MaterialTheme.colorScheme.primary
-                )
-            }
-
-            IconButton(onClick = onQueueAlbum) {
-                Icon(
-                    imageVector = Icons.Default.QueueMusic,
-                    contentDescription = "Añadir disco a la cola",
-                    tint = MaterialTheme.colorScheme.primary
-                )
-            }
-
-            Icon(
-                imageVector = Icons.Default.KeyboardArrowRight,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
-            )
-        }
+    if (showAddMusicDialog) {
+        com.bestiapop.android.ui.components.AddMusicDialog(
+            viewModel = viewModel,
+            onSelectFolderClick = {
+                showAddMusicDialog = false
+                onSelectFolderClick()
+            },
+            onDismiss = { showAddMusicDialog = false }
+        )
     }
 }

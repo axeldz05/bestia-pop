@@ -111,8 +111,7 @@ class WebServerService : Service() {
         serviceScope.launch {
             try {
                 val repository = MusicRepository(applicationContext)
-                val uploadDir = File(getExternalFilesDir(null), "UploadedMusic")
-                if (!uploadDir.exists()) uploadDir.mkdirs()
+                val uploadDir = com.bestiapop.android.data.util.StorageUtils.getPublicMusicDirectory(applicationContext)
 
                 server = embeddedServer(CIO, port = PORT) {
                     routing {

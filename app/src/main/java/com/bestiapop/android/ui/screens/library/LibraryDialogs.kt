@@ -1,0 +1,269 @@
+package com.bestiapop.android.ui.screens.library
+
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AddPhotoAlternate
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import com.bestiapop.android.data.model.Playlist
+import com.bestiapop.android.data.model.Song
+import com.bestiapop.android.ui.components.ArtworkThumbnail
+
+@Composable
+fun EditSongMetadataDialog(
+    song: Song,
+    onDismiss: () -> Unit,
+    onConfirm: (title: String, artist: String, album: String, genre: String) -> Unit
+) {
+    var title by remember { mutableStateOf(song.title) }
+    var artist by remember { mutableStateOf(song.artist) }
+    var album by remember { mutableStateOf(song.album) }
+    var genre by remember { mutableStateOf(song.genre) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Editar información de canción") },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedTextField(
+                    value = title,
+                    onValueChange = { title = it },
+                    label = { Text("Título") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = artist,
+                    onValueChange = { artist = it },
+                    label = { Text("Artista") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = album,
+                    onValueChange = { album = it },
+                    label = { Text("Álbum") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = genre,
+                    onValueChange = { genre = it },
+                    label = { Text("Género") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            Button(onClick = { onConfirm(title, artist, album, genre) }) {
+                Text("Guardar")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancelar")
+            }
+        }
+    )
+}
+
+@Composable
+fun SetAlbumArtworkDialog(
+    albumName: String,
+    currentArtworkUri: String?,
+    onDismiss: () -> Unit,
+    onArtworkSelected: (String) -> Unit
+) {
+    var selectedUri by remember { mutableStateOf(currentArtworkUri) }
+
+    val imagePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let {
+            selectedUri = it.toString()
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Cambiar portada del álbum") },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    text = "Asignar nueva portada para \"$albumName\". Todas las canciones del álbum heredarán esta imagen.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+
+                ArtworkThumbnail(
+                    artworkUri = selectedUri,
+                    size = 120.dp,
+                    cornerRadius = 12.dp
+                )
+
+                OutlinedButton(
+                    onClick = { imagePickerLauncher.launch("image/*") }
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.AddPhotoAlternate,
+                        contentDescription = "Seleccionar imagen"
+                    )
+                    Spacer(modifier = Modifier.padding(horizontal = 4.dp))
+                    Text("Seleccionar imagen de la galería")
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    selectedUri?.let { onArtworkSelected(it) }
+                },
+                enabled = !selectedUri.isNullOrEmpty()
+            ) {
+                Text("Guardar Portada")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancelar")
+            }
+        }
+    )
+}
+
+@Composable
+fun AddToPlaylistDialog(
+    playlists: List<Playlist>,
+    onDismiss: () -> Unit,
+    onSelectPlaylist: (Playlist) -> Unit,
+    onCreateNewPlaylist: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Agregar a playlist") },
+        text = {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                OutlinedButton(
+                    onClick = onCreateNewPlaylist,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("+ Crear nueva playlist")
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+                LazyColumn(modifier = Modifier.height(200.dp)) {
+                    items(playlists) { playlist ->
+                        Surface(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onSelectPlaylist(playlist) }
+                                .padding(vertical = 6.dp),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                ArtworkThumbnail(
+                                    artworkUri = playlist.coverUri,
+                                    size = 40.dp
+                                )
+                                Spacer(modifier = Modifier.padding(horizontal = 6.dp))
+                                Column {
+                                    Text(
+                                        text = playlist.name,
+                                        style = MaterialTheme.typography.bodyMedium
+                                    )
+                                    Text(
+                                        text = "${playlist.songCount} canciones",
+                                        style = MaterialTheme.typography.labelSmall
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancelar")
+            }
+        }
+    )
+}
+
+@Composable
+fun ConfirmDeleteSongsDialog(
+    songCount: Int,
+    onDismiss: () -> Unit,
+    onConfirmDeleteFromApp: () -> Unit,
+    onConfirmDeleteFromDevice: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Eliminar canción(es)") },
+        text = {
+            Text("¿Cómo deseas eliminar $songCount canción(es)?\n\n- Solo de la aplicación: Elimina el registro de la base de datos de BestiaPop.\n- Del dispositivo: Borra el archivo físico de audio de la memoria.")
+        },
+        confirmButton = {
+            Button(
+                onClick = onConfirmDeleteFromDevice,
+                colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.error
+                )
+            ) {
+                Text("Borrar del dispositivo")
+            }
+        },
+        dismissButton = {
+            Row {
+                TextButton(onClick = onDismiss) {
+                    Text("Cancelar")
+                }
+                TextButton(onClick = onConfirmDeleteFromApp) {
+                    Text("Solo de la app")
+                }
+            }
+        }
+    )
+}

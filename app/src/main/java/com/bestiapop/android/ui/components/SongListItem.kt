@@ -94,34 +94,11 @@ fun SongListItem(
             }
 
             // Album Art
-            Box(
-                modifier = Modifier
-                    .size(48.dp)
-                    .clip(RoundedCornerShape(8.dp)),
-                contentAlignment = Alignment.Center
-            ) {
-                if (!song.artworkUri.isNullOrEmpty()) {
-                    AsyncImage(
-                        model = song.artworkUri,
-                        contentDescription = song.title,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.size(48.dp)
-                    )
-                } else {
-                    Surface(
-                        color = MaterialTheme.colorScheme.surfaceVariant,
-                        modifier = Modifier.size(48.dp)
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                imageVector = Icons.Default.MusicNote,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                    }
-                }
-            }
+            ArtworkThumbnail(
+                artworkUri = song.artworkUri,
+                size = 48.dp,
+                contentDescription = song.title
+            )
 
             Spacer(modifier = Modifier.width(12.dp))
 

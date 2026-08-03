@@ -343,6 +343,19 @@ object YouTubeExtractor {
             val searchResults = searchYouTube(trimmed)
             if (searchResults.isNotEmpty()) {
                 videoId = searchResults.first().id
+            } else {
+                // Fallback query: Limpiar paréntesis, "Remastered", "Deluxe", "feat.", y caracteres especiales
+                val cleanedQuery = trimmed
+                    .replace(Regex("(?i)\\(.*?(?:remaster|version|edition|deluxe|feat).*?\\)"), "")
+                    .replace(Regex("(?i)\\[.*?(?:remaster|version|edition|deluxe|feat).*?\\]"), "")
+                    .replace(Regex("[^a-zA-Z0-9\\s]"), " ")
+                    .trim()
+                if (cleanedQuery.isNotBlank() && cleanedQuery != trimmed) {
+                    val fallbackResults = searchYouTube(cleanedQuery)
+                    if (fallbackResults.isNotEmpty()) {
+                        videoId = fallbackResults.first().id
+                    }
+                }
             }
         }
 

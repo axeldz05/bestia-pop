@@ -95,7 +95,9 @@ class GetLibrarySongsUseCase {
                 name = albumName,
                 artist = artistName,
                 songCount = albumSongs.size,
-                artworkUri = firstArt
+                artworkUri = firstArt,
+                genre = dominantGenre(albumSongs.map { it.genre }),
+                dateAdded = albumSongs.maxOfOrNull { it.dateAdded }
             )
         }.sortedBy { it.name.lowercase() }
     }
@@ -108,8 +110,20 @@ class GetLibrarySongsUseCase {
                 name = artistName,
                 songCount = artistSongs.size,
                 albumCount = albumCount,
-                photoUri = photoArt
+                photoUri = photoArt,
+                genre = dominantGenre(artistSongs.map { it.genre }),
+                dateAdded = artistSongs.maxOfOrNull { it.dateAdded }
             )
         }.sortedBy { it.name.lowercase() }
+    }
+
+    private fun dominantGenre(genres: List<String>): String? {
+        if (genres.isEmpty()) return null
+        return genres
+            .filter { it.isNotBlank() && !it.equals("Unknown Genre", ignoreCase = true) }
+            .groupingBy { it }
+            .eachCount()
+            .maxByOrNull { it.value }
+            ?.key
     }
 }

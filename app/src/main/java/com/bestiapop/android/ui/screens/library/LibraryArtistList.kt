@@ -22,17 +22,21 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.bestiapop.android.data.model.Artist
+import com.bestiapop.android.ui.SortOption
 import com.bestiapop.android.ui.components.ArtworkThumbnail
+import com.bestiapop.android.ui.components.formatSortRelevantInfo
 
 @Composable
 fun LibraryArtistList(
     artists: List<Artist>,
+    sortOption: SortOption = SortOption.TITLE,
     onArtistClick: (Artist) -> Unit,
     onPlayArtist: (Artist) -> Unit,
     onShuffleArtist: (Artist) -> Unit,
@@ -56,6 +60,7 @@ fun LibraryArtistList(
         items(artists, key = { it.name }) { artist ->
             ArtistListItem(
                 artist = artist,
+                sortOption = sortOption,
                 onClick = { onArtistClick(artist) },
                 onPlay = { onPlayArtist(artist) },
                 onShuffle = { onShuffleArtist(artist) }
@@ -67,10 +72,26 @@ fun LibraryArtistList(
 @Composable
 fun ArtistListItem(
     artist: Artist,
+    sortOption: SortOption = SortOption.TITLE,
     onClick: () -> Unit,
     onPlay: () -> Unit,
     onShuffle: () -> Unit
 ) {
+    val sortInfo = remember(artist.genre, artist.dateAdded, sortOption) {
+        formatSortRelevantInfo(
+            sortOption = sortOption,
+            genre = artist.genre,
+            dateAdded = artist.dateAdded,
+            alreadyShowsArtist = true,
+            alreadyShowsAlbum = false,
+            alreadyShowsTitle = false
+        )
+    }
+    val subtitle = remember(artist.albumCount, artist.songCount, sortInfo) {
+        val base = "${artist.albumCount} álbumes • ${artist.songCount} canciones"
+        if (sortInfo.isNullOrBlank()) base else "$base • $sortInfo"
+    }
+
     Surface(
         modifier = Modifier
             .fillMaxWidth()
@@ -101,7 +122,7 @@ fun ArtistListItem(
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    text = "${artist.albumCount} álbumes • ${artist.songCount} canciones",
+                    text = subtitle,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
                     maxLines = 1,

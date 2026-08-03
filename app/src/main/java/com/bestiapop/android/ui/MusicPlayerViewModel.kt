@@ -118,6 +118,14 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private val _queue = MutableStateFlow<List<Song>>(emptyList())
     val queue = _queue.asStateFlow()
 
+    /** Bumped on user-initiated track changes so the queue UI can scroll to the current item. */
+    private val _queueFocusEpoch = MutableStateFlow(0)
+    val queueFocusEpoch = _queueFocusEpoch.asStateFlow()
+
+    private fun bumpQueueFocus() {
+        _queueFocusEpoch.value = _queueFocusEpoch.value + 1
+    }
+
     private val audioManager = getApplication<Application>().getSystemService(Context.AUDIO_SERVICE) as AudioManager
 
     private val _volumeLevel = MutableStateFlow(getDeviceVolumeRatio())
@@ -237,6 +245,9 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         }, MoreExecutors.directExecutor())
     }
 
+    private var lastMediaItemIndex: Int = -1
+    private var suppressShuffleWrapDetection: Boolean = false
+
     private fun setupPlayerListener() {
         mediaController?.addListener(object : Player.Listener {
             override fun onIsPlayingChanged(isPlayingNow: Boolean) {
@@ -244,6 +255,17 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             }
 
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                val controller = mediaController
+                val newIndex = controller?.currentMediaItemIndex ?: -1
+                val wrappedShuffleCycle = !suppressShuffleWrapDetection &&
+                    _isShuffle.value &&
+                    _repeatMode.value == RepeatMode.ALL &&
+                    reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO &&
+                    lastMediaItemIndex >= 0 &&
+                    _queue.value.isNotEmpty() &&
+                    lastMediaItemIndex == _queue.value.lastIndex &&
+                    newIndex == 0
+
                 mediaItem?.let { item ->
                     val idOrUri = item.mediaId
                     val song = _queue.value.find { it.uriString == idOrUri || it.id.toString() == idOrUri }
@@ -253,9 +275,91 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                         requestMetadataEnhancement(song)
                     }
                 }
-            }
 
+                if (wrappedShuffleCycle) {
+                    val avoid = _queue.value.getOrNull(lastMediaItemIndex)
+                    applyShuffledQueue(
+                        songs = _queue.value,
+                        keepSongFirst = null,
+                        avoidStartingWith = avoid,
+                        startPlaying = true
+                    )
+                } else {
+                    lastMediaItemIndex = newIndex
+                }
+            }
         })
+    }
+
+    private fun songToMediaItem(s: Song): MediaItem {
+        return MediaItem.Builder()
+            .setMediaId(s.uriString)
+            .setUri(parseToMediaUri(s.uriString))
+            .setMediaMetadata(
+                MediaMetadata.Builder()
+                    .setTitle(s.title)
+                    .setArtist(s.artist)
+                    .setAlbumTitle(s.album)
+                    .setArtworkUri(parseToArtworkUri(s.artworkUri))
+                    .build()
+            )
+            .build()
+    }
+
+    /**
+     * Builds a shuffled queue permutation. Optionally pins [keepSongFirst] at index 0,
+     * or avoids starting with [avoidStartingWith] after a full cycle.
+     */
+    private fun applyShuffledQueue(
+        songs: List<Song>,
+        keepSongFirst: Song?,
+        avoidStartingWith: Song? = null,
+        startPlaying: Boolean = true
+    ) {
+        if (songs.isEmpty()) return
+        val shuffled = when {
+            keepSongFirst != null -> {
+                val rest = songs.filter {
+                    it.id != keepSongFirst.id && it.uriString != keepSongFirst.uriString
+                }.shuffled()
+                listOf(keepSongFirst) + rest
+            }
+            avoidStartingWith != null && songs.size > 1 -> {
+                var attempt = songs.shuffled()
+                var tries = 0
+                while (
+                    tries < 5 &&
+                    (attempt.first().id == avoidStartingWith.id ||
+                        attempt.first().uriString == avoidStartingWith.uriString)
+                ) {
+                    attempt = songs.shuffled()
+                    tries++
+                }
+                attempt
+            }
+            else -> songs.shuffled()
+        }
+
+        suppressShuffleWrapDetection = true
+        try {
+            _queue.value = shuffled
+            _currentSong.value = shuffled.first()
+            _isShuffle.value = true
+            lastMediaItemIndex = 0
+            mediaController?.let { controller ->
+                val resumePosition = if (keepSongFirst != null) {
+                    controller.currentPosition.coerceAtLeast(0L)
+                } else {
+                    0L
+                }
+                controller.shuffleModeEnabled = false
+                controller.setMediaItems(shuffled.map { songToMediaItem(it) }, 0, resumePosition)
+                controller.prepare()
+                if (startPlaying) controller.play()
+            }
+        } finally {
+            suppressShuffleWrapDetection = false
+        }
     }
 
     private var lastSeekTimestamp = 0L
@@ -341,26 +445,13 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
         _queue.value = targetQueue
         _currentSong.value = targetQueue[index]
+        lastMediaItemIndex = index
+        _isShuffle.value = false
+        bumpQueueFocus()
 
         mediaController?.let { controller ->
-            controller.clearMediaItems()
-            val items = targetQueue.map { s ->
-                MediaItem.Builder()
-                    .setMediaId(s.uriString)
-                    .setUri(parseToMediaUri(s.uriString))
-                    .setMediaMetadata(
-                        MediaMetadata.Builder()
-                            .setTitle(s.title)
-                            .setArtist(s.artist)
-                            .setAlbumTitle(s.album)
-                            .setArtworkUri(parseToArtworkUri(s.artworkUri))
-                            .build()
-                    )
-
-                    .build()
-            }
-            controller.setMediaItems(items)
-            controller.seekTo(index, 0L)
+            controller.shuffleModeEnabled = false
+            controller.setMediaItems(targetQueue.map { songToMediaItem(it) }, index, 0L)
             controller.prepare()
             controller.play()
         }
@@ -395,8 +486,8 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     fun shuffleCollection(songs: List<Song>) {
         if (songs.isEmpty()) return
-        val shuffled = songs.shuffled()
-        playSong(shuffled.first(), shuffled)
+        applyShuffledQueue(songs, keepSongFirst = null)
+        bumpQueueFocus()
     }
 
     fun enqueueCollection(songs: List<Song>) {
@@ -414,10 +505,12 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     fun skipToNext() {
+        bumpQueueFocus()
         mediaController?.seekToNextMediaItem()
     }
 
     fun skipToPrevious() {
+        bumpQueueFocus()
         mediaController?.seekToPreviousMediaItem()
     }
 
@@ -446,8 +539,20 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     fun toggleShuffle() {
         val newShuffle = !_isShuffle.value
-        _isShuffle.value = newShuffle
-        mediaController?.shuffleModeEnabled = newShuffle
+        if (newShuffle) {
+            val queue = _queue.value
+            val current = _currentSong.value
+            if (queue.isEmpty()) {
+                _isShuffle.value = true
+                mediaController?.shuffleModeEnabled = false
+                return
+            }
+            applyShuffledQueue(queue, keepSongFirst = current)
+            bumpQueueFocus()
+        } else {
+            _isShuffle.value = false
+            mediaController?.shuffleModeEnabled = false
+        }
     }
 
     // Queue Management
@@ -462,22 +567,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         _queue.value = currentList
 
         mediaController?.let { controller ->
-            val mediaItems = songs.map { song ->
-                MediaItem.Builder()
-                    .setMediaId(song.uriString)
-                    .setUri(parseToMediaUri(song.uriString))
-                    .setMediaMetadata(
-                        MediaMetadata.Builder()
-                            .setTitle(song.title)
-                            .setArtist(song.artist)
-                            .setAlbumTitle(song.album)
-                            .setArtworkUri(parseToArtworkUri(song.artworkUri))
-                            .build()
-                    ).build()
-
-
-            }
-            controller.addMediaItems(mediaItems)
+            controller.addMediaItems(songs.map { songToMediaItem(it) })
         }
 
     }
@@ -496,22 +586,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         _queue.value = currentList
 
         mediaController?.let { controller ->
-            val mediaItems = songs.map { song ->
-                MediaItem.Builder()
-                    .setMediaId(song.uriString)
-                    .setUri(parseToMediaUri(song.uriString))
-                    .setMediaMetadata(
-                        MediaMetadata.Builder()
-                            .setTitle(song.title)
-                            .setArtist(song.artist)
-                            .setAlbumTitle(song.album)
-                            .setArtworkUri(parseToArtworkUri(song.artworkUri))
-                            .build()
-                    ).build()
-
-
-            }
-            controller.addMediaItems(insertIndex, mediaItems)
+            controller.addMediaItems(insertIndex, songs.map { songToMediaItem(it) })
         }
 
     }
@@ -578,6 +653,8 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     fun skipToQueueIndex(index: Int) {
         if (index in 0 until _queue.value.size) {
+            bumpQueueFocus()
+            lastMediaItemIndex = index
             mediaController?.seekTo(index, 0L)
         }
     }

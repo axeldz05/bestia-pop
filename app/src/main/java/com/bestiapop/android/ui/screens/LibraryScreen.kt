@@ -97,6 +97,7 @@ fun LibraryScreen(
     var showAlbumHeaders by remember { mutableStateOf(true) }
     var selectedAlbumName by remember { mutableStateOf<String?>(null) }
     var selectedArtistName by remember { mutableStateOf<String?>(null) }
+    var collapsedAlbumNames by remember { mutableStateOf(setOf<String>()) }
 
     // Multi-selection state
     var selectedSongIds by remember { mutableStateOf(setOf<Long>()) }
@@ -120,6 +121,33 @@ fun LibraryScreen(
                 selectedSongIds - song.id
             } else {
                 selectedSongIds + song.id
+            }
+        }
+    }
+
+    val toggleSelectAlbum = remember<(List<Song>) -> Unit> {
+        { albumSongs ->
+            val ids = albumSongs.map { it.id }.toSet()
+            selectedSongIds = if (ids.isNotEmpty() && ids.all { selectedSongIds.contains(it) }) {
+                selectedSongIds - ids
+            } else {
+                selectedSongIds + ids
+            }
+        }
+    }
+
+    val onAlbumLongClick = remember<(List<Song>) -> Unit> {
+        { albumSongs ->
+            selectedSongIds = selectedSongIds + albumSongs.map { it.id }
+        }
+    }
+
+    val toggleCollapseAlbum = remember<(String) -> Unit> {
+        { albumName ->
+            collapsedAlbumNames = if (collapsedAlbumNames.contains(albumName)) {
+                collapsedAlbumNames - albumName
+            } else {
+                collapsedAlbumNames + albumName
             }
         }
     }
@@ -338,6 +366,8 @@ fun LibraryScreen(
                         currentSongId = currentSongId,
                         isSelectionMode = isMultiSelectMode,
                         selectedSongIds = selectedSongIds,
+                        collapsedAlbumNames = collapsedAlbumNames,
+                        sortOption = sortOption,
                         onSongClick = { song, index ->
                             if (isMultiSelectMode) toggleSelectSong(song) else viewModel.playCollection(albumSongs, index)
                         },
@@ -349,7 +379,10 @@ fun LibraryScreen(
                         onEditMetadata = onEditMetadata,
                         onDeleteSong = onDeleteSong,
                         onPlayAlbum = onPlayAlbum,
-                        onShuffleAlbum = onShuffleAlbum
+                        onShuffleAlbum = onShuffleAlbum,
+                        onToggleSelectAlbum = toggleSelectAlbum,
+                        onAlbumLongClick = onAlbumLongClick,
+                        onToggleCollapseAlbum = toggleCollapseAlbum
                     )
                 }
 
@@ -365,6 +398,8 @@ fun LibraryScreen(
                         currentSongId = currentSongId,
                         isSelectionMode = isMultiSelectMode,
                         selectedSongIds = selectedSongIds,
+                        collapsedAlbumNames = collapsedAlbumNames,
+                        sortOption = sortOption,
                         onSongClick = { song, index ->
                             if (isMultiSelectMode) toggleSelectSong(song) else viewModel.playCollection(artistSongs, index)
                         },
@@ -376,7 +411,10 @@ fun LibraryScreen(
                         onEditMetadata = onEditMetadata,
                         onDeleteSong = onDeleteSong,
                         onPlayAlbum = onPlayAlbum,
-                        onShuffleAlbum = onShuffleAlbum
+                        onShuffleAlbum = onShuffleAlbum,
+                        onToggleSelectAlbum = toggleSelectAlbum,
+                        onAlbumLongClick = onAlbumLongClick,
+                        onToggleCollapseAlbum = toggleCollapseAlbum
                     )
                 }
 
@@ -394,6 +432,8 @@ fun LibraryScreen(
                         currentSongId = currentSongId,
                         isSelectionMode = isMultiSelectMode || isPlaylistAdditionMode,
                         selectedSongIds = selectedSongIds,
+                        collapsedAlbumNames = collapsedAlbumNames,
+                        sortOption = sortOption,
                         onSongClick = { song, index ->
                             if (isPlaylistAdditionMode || isMultiSelectMode) {
                                 toggleSelectSong(song)
@@ -409,13 +449,17 @@ fun LibraryScreen(
                         onEditMetadata = onEditMetadata,
                         onDeleteSong = onDeleteSong,
                         onPlayAlbum = onPlayAlbum,
-                        onShuffleAlbum = onShuffleAlbum
+                        onShuffleAlbum = onShuffleAlbum,
+                        onToggleSelectAlbum = toggleSelectAlbum,
+                        onAlbumLongClick = onAlbumLongClick,
+                        onToggleCollapseAlbum = toggleCollapseAlbum
                     )
                 }
 
                 selectedTabIndex == 1 -> {
                     LibraryAlbumGrid(
                         albums = albums,
+                        sortOption = sortOption,
                         onAlbumClick = { selectedAlbumName = it.name },
                         onPlayAlbum = { album ->
                             val albumSongs = songs.filter { it.album.equals(album.name, ignoreCase = true) }
@@ -432,6 +476,7 @@ fun LibraryScreen(
                 selectedTabIndex == 2 -> {
                     LibraryArtistList(
                         artists = artists,
+                        sortOption = sortOption,
                         onArtistClick = { selectedArtistName = it.name },
                         onPlayArtist = { artist ->
                             val artistSongs = songs.filter { it.artist.equals(artist.name, ignoreCase = true) }

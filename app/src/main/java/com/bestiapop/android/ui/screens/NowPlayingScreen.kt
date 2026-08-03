@@ -1,8 +1,12 @@
 package com.bestiapop.android.ui.screens
 
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.drag
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,6 +24,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -55,6 +60,7 @@ import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -67,21 +73,29 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
-import kotlinx.coroutines.launch
-import kotlin.math.roundToInt
 import com.bestiapop.android.data.model.RepeatMode
 import com.bestiapop.android.ui.MusicPlayerViewModel
 import com.bestiapop.android.ui.components.formatDuration
+import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 
 
 private data class LrcLine(val timeMs: Long, val text: String)
@@ -118,65 +132,154 @@ fun NowPlayingScreen(
     val isShuffle by viewModel.isShuffle.collectAsState()
     val volumeLevel by viewModel.volumeLevel.collectAsState()
     val queueItems by viewModel.queue.collectAsState()
+    val queueFocusEpoch by viewModel.queueFocusEpoch.collectAsState()
 
     var selectedTab by remember { mutableIntStateOf(0) } // 0 = Portada, 1 = Letra, 2 = Cola
     var isDragging by remember { mutableStateOf(false) }
     var dragPosition by remember { mutableFloatStateOf(0f) }
+    val queueListState = rememberLazyListState()
 
     val song = currentSong ?: return
     val currentPosition = if (isDragging) dragPosition.toLong() else positionMs
 
-    // Swipe-to-dismiss state
-    val swipeOffset = remember { Animatable(0f) }
+    // Swipe-to-dismiss: Portada uses nested scroll; Letra/Cola dismiss only outside the
+    // lyrics/queue panel so those lists keep exclusive vertical scrolling.
+    //
+    // dragOffset is updated synchronously (not via Animatable.snapTo in a coroutine) so the
+    // threshold check on finger-up always sees the real drag distance. Using async snapTo
+    // raced with onPostFling and left a translucent full-screen Surface covering the mini bar.
     val coroutineScope = rememberCoroutineScope()
     val configuration = LocalConfiguration.current
     val density = configuration.densityDpi / 160f
     val screenHeightPx = configuration.screenHeightDp * density
     val dismissThresholdPx = screenHeightPx * 0.30f
 
-    val nestedScrollConnection = remember(coroutineScope, dismissThresholdPx, screenHeightPx) {
-        object : androidx.compose.ui.input.nestedscroll.NestedScrollConnection {
-            override fun onPreScroll(available: androidx.compose.ui.geometry.Offset, source: androidx.compose.ui.input.nestedscroll.NestedScrollSource): androidx.compose.ui.geometry.Offset {
-                val delta = available.y
-                // If already dragging to dismiss, consume scroll to continue/reverse the drag
-                if (swipeOffset.value > 0f) {
-                    val newOffset = (swipeOffset.value + delta).coerceAtLeast(0f)
-                    coroutineScope.launch { swipeOffset.snapTo(newOffset) }
-                    return if (newOffset > 0f) available else androidx.compose.ui.geometry.Offset(0f, -(swipeOffset.value))
+    var dragOffset by remember { mutableFloatStateOf(0f) }
+    val enterOffset = remember { Animatable(screenHeightPx) }
+
+    var surfaceCoords by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    var innerScrollCoords by remember { mutableStateOf<LayoutCoordinates?>(null) }
+
+    LaunchedEffect(Unit) {
+        enterOffset.animateTo(0f, tween(280))
+    }
+
+    LaunchedEffect(selectedTab) {
+        if (selectedTab == 0) {
+            innerScrollCoords = null
+        }
+        dragOffset = 0f
+    }
+
+    fun touchInInnerScrollZone(positionInSurface: Offset): Boolean {
+        val surface = surfaceCoords ?: return false
+        val inner = innerScrollCoords ?: return false
+        if (!surface.isAttached || !inner.isAttached) return false
+        val bounds = surface.localBoundingBoxOf(inner, clipBounds = false)
+        return bounds.contains(positionInSurface)
+    }
+
+    fun settleSwipeDismiss() {
+        if (dragOffset > dismissThresholdPx) {
+            onDismiss()
+        } else if (dragOffset > 0f) {
+            val start = dragOffset
+            coroutineScope.launch {
+                Animatable(start).animateTo(0f, tween(200)) {
+                    dragOffset = value
                 }
-                return androidx.compose.ui.geometry.Offset.Zero
+            }
+        }
+    }
+
+    val nestedScrollConnection = remember(dismissThresholdPx, selectedTab, onDismiss) {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                val delta = available.y
+                if (dragOffset > 0f) {
+                    val old = dragOffset
+                    val newOffset = (old + delta).coerceAtLeast(0f)
+                    dragOffset = newOffset
+                    return Offset(0f, newOffset - old)
+                }
+                return Offset.Zero
             }
 
-            override fun onPostScroll(consumed: androidx.compose.ui.geometry.Offset, available: androidx.compose.ui.geometry.Offset, source: androidx.compose.ui.input.nestedscroll.NestedScrollSource): androidx.compose.ui.geometry.Offset {
+            override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
+                if (selectedTab != 0) return Offset.Zero
                 val delta = available.y
-                // Content is at top and user is still dragging down → start dismiss
                 if (delta > 0f) {
-                    coroutineScope.launch {
-                        swipeOffset.snapTo((swipeOffset.value + delta).coerceAtLeast(0f))
+                    dragOffset = (dragOffset + delta).coerceAtLeast(0f)
+                    // Crossed threshold mid-drag: remove overlay immediately so it cannot
+                    // keep eating hits over the already-visible mini bar.
+                    if (dragOffset > dismissThresholdPx) {
+                        onDismiss()
                     }
                     return available
                 }
-                return androidx.compose.ui.geometry.Offset.Zero
+                return Offset.Zero
             }
 
-            override suspend fun onPostFling(consumed: androidx.compose.ui.unit.Velocity, available: androidx.compose.ui.unit.Velocity): androidx.compose.ui.unit.Velocity {
-                if (swipeOffset.value > dismissThresholdPx) {
-                    swipeOffset.animateTo(screenHeightPx)
-                    onDismiss()
-                } else if (swipeOffset.value > 0f) {
-                    swipeOffset.animateTo(0f)
-                }
+            override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
+                settleSwipeDismiss()
                 return available
             }
         }
     }
 
+    val outsideScrollDismissPointer = Modifier.pointerInput(
+        selectedTab,
+        dismissThresholdPx,
+        onDismiss
+    ) {
+        if (selectedTab == 0) return@pointerInput
+        awaitEachGesture {
+            val down = awaitFirstDown(requireUnconsumed = false)
+            if (touchInInnerScrollZone(down.position)) {
+                return@awaitEachGesture
+            }
+            var totalY = dragOffset
+            drag(down.id) { change ->
+                val dy = change.positionChange().y
+                if (dy != 0f) {
+                    change.consume()
+                    totalY = (totalY + dy).coerceAtLeast(0f)
+                    dragOffset = totalY
+                    if (totalY > dismissThresholdPx) {
+                        onDismiss()
+                    }
+                }
+            }
+            // If still composed (did not cross threshold during drag), settle.
+            settleSwipeDismiss()
+        }
+    }
+
+    val currentQueueIndex = remember(queueItems, song.id, song.uriString) {
+        queueItems.indexOfFirst { it.id == song.id || it.uriString == song.uriString }
+    }
+
+    // Scroll queue to current song only when entering Cola or on user-initiated track change
+    LaunchedEffect(selectedTab, queueFocusEpoch) {
+        if (selectedTab != 2) return@LaunchedEffect
+        val index = currentQueueIndex
+        if (index >= 0) {
+            queueListState.animateScrollToItem(index)
+        }
+    }
+
+    val surfaceModifier = Modifier
+        .fillMaxSize()
+        .onGloballyPositioned { surfaceCoords = it }
+        .nestedScroll(nestedScrollConnection)
+        .then(outsideScrollDismissPointer)
+        .offset {
+            IntOffset(0, (enterOffset.value + dragOffset).roundToInt())
+        }
+        .alpha((1f - (dragOffset / screenHeightPx).coerceIn(0f, 1f)))
+
     Surface(
-        modifier = Modifier
-            .fillMaxSize()
-            .nestedScroll(nestedScrollConnection)
-            .offset { IntOffset(0, swipeOffset.value.roundToInt()) }
-            .alpha((1f - (swipeOffset.value / screenHeightPx).coerceIn(0f, 0.6f)).coerceAtLeast(0.4f)),
+        modifier = surfaceModifier,
         color = MaterialTheme.colorScheme.background
     ) {
         Column(
@@ -196,7 +299,9 @@ fun NowPlayingScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                IconButton(onClick = onDismiss) {
+                IconButton(onClick = {
+                    onDismiss()
+                }) {
                     Icon(
                         imageVector = Icons.Default.KeyboardArrowDown,
                         contentDescription = "Cerrar",
@@ -293,6 +398,7 @@ fun NowPlayingScreen(
                         modifier = Modifier
                             .fillMaxWidth(0.85f)
                             .height(280.dp)
+                            .onGloballyPositioned { innerScrollCoords = it }
                             .clip(RoundedCornerShape(24.dp))
                             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
                             .padding(16.dp),
@@ -370,6 +476,7 @@ fun NowPlayingScreen(
                         modifier = Modifier
                             .fillMaxWidth(0.92f)
                             .height(280.dp)
+                            .onGloballyPositioned { innerScrollCoords = it }
                             .clip(RoundedCornerShape(24.dp))
                             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
                     ) {
@@ -393,10 +500,9 @@ fun NowPlayingScreen(
                                 )
                             }
                         } else {
-                            val currentIndex = queueItems.indexOfFirst {
-                                it.id == song.id || it.uriString == song.uriString
-                            }
+                            val currentIndex = currentQueueIndex
                             LazyColumn(
+                                state = queueListState,
                                 modifier = Modifier.fillMaxSize()
                             ) {
                                 itemsIndexed(queueItems, key = { idx, s -> "${s.id}_$idx" }) { index, queueSong ->

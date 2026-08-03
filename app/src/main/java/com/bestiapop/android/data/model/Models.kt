@@ -26,14 +26,18 @@ data class Album(
     val name: String,
     val artist: String,
     val songCount: Int,
-    val artworkUri: String? = null
+    val artworkUri: String? = null,
+    val genre: String? = null,
+    val dateAdded: Long? = null
 )
 
 data class Artist(
     val name: String,
     val songCount: Int,
     val albumCount: Int,
-    val photoUri: String? = null
+    val photoUri: String? = null,
+    val genre: String? = null,
+    val dateAdded: Long? = null
 )
 
 data class Playlist(

@@ -1,5 +1,7 @@
 package com.bestiapop.android.ui.screens.library
 
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -8,29 +10,37 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Shuffle
+import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TriStateCheckbox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.State
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.bestiapop.android.data.model.Song
+import com.bestiapop.android.ui.SortOption
 import com.bestiapop.android.ui.components.ArtworkThumbnail
 import com.bestiapop.android.ui.components.SongListItem
+import com.bestiapop.android.ui.components.formatSortRelevantInfo
 import com.bestiapop.android.ui.state.LibraryListItem
 
 @Composable
@@ -39,6 +49,8 @@ fun LibrarySongList(
     currentSongId: Long?,
     isSelectionMode: Boolean,
     selectedSongIds: Set<Long>,
+    collapsedAlbumNames: Set<String> = emptySet(),
+    sortOption: SortOption = SortOption.TITLE,
     onSongClick: (Song, Int) -> Unit,
     onSongLongClick: (Song) -> Unit,
     onToggleSelect: (Song) -> Unit,
@@ -49,6 +61,9 @@ fun LibrarySongList(
     onDeleteSong: (Song) -> Unit,
     onPlayAlbum: (String, List<Song>) -> Unit,
     onShuffleAlbum: (String, List<Song>) -> Unit,
+    onToggleSelectAlbum: (List<Song>) -> Unit = {},
+    onAlbumLongClick: (List<Song>) -> Unit = {},
+    onToggleCollapseAlbum: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     if (items.isEmpty()) {
@@ -65,6 +80,10 @@ fun LibrarySongList(
         return
     }
 
+    val visibleItems = remember(items, collapsedAlbumNames) {
+        filterCollapsedAlbumSongs(items, collapsedAlbumNames)
+    }
+
     val onSongClickState = rememberUpdatedState(onSongClick)
     val onSongLongClickState = rememberUpdatedState(onSongLongClick)
     val onToggleSelectState = rememberUpdatedState(onToggleSelect)
@@ -75,28 +94,55 @@ fun LibrarySongList(
     val onDeleteSongState = rememberUpdatedState(onDeleteSong)
     val onPlayAlbumState = rememberUpdatedState(onPlayAlbum)
     val onShuffleAlbumState = rememberUpdatedState(onShuffleAlbum)
+    val onToggleSelectAlbumState = rememberUpdatedState(onToggleSelectAlbum)
+    val onAlbumLongClickState = rememberUpdatedState(onAlbumLongClick)
+    val onToggleCollapseAlbumState = rememberUpdatedState(onToggleCollapseAlbum)
 
     LazyColumn(modifier = modifier.fillMaxSize()) {
         items(
-            items = items,
+            items = visibleItems,
             key = { it.key },
             contentType = { it.contentType }
         ) { item ->
             when (item) {
                 is LibraryListItem.AlbumHeader -> {
+                    val albumIds = remember(item.albumSongs) {
+                        item.albumSongs.map { it.id }.toSet()
+                    }
+                    val selectedCount = albumIds.count { selectedSongIds.contains(it) }
+                    val selectionState = when {
+                        selectedCount == 0 -> AlbumHeaderSelectionState.NONE
+                        selectedCount == albumIds.size -> AlbumHeaderSelectionState.ALL
+                        else -> AlbumHeaderSelectionState.PARTIAL
+                    }
                     val playAlbum = remember(item.albumName, item.albumSongs) {
                         { onPlayAlbumState.value(item.albumName, item.albumSongs) }
                     }
                     val shuffleAlbum = remember(item.albumName, item.albumSongs) {
                         { onShuffleAlbumState.value(item.albumName, item.albumSongs) }
                     }
+                    val toggleSelectAlbum = remember(item.albumSongs) {
+                        { onToggleSelectAlbumState.value(item.albumSongs) }
+                    }
+                    val albumLongClick = remember(item.albumSongs) {
+                        { onAlbumLongClickState.value(item.albumSongs) }
+                    }
+                    val toggleCollapse = remember(item.albumName) {
+                        { onToggleCollapseAlbumState.value(item.albumName) }
+                    }
                     TauonAlbumHeader(
                         albumName = item.albumName,
                         artistName = item.artistName,
                         artworkUri = item.artworkUri,
                         songCount = item.songCount,
+                        isCollapsed = collapsedAlbumNames.contains(item.albumName),
+                        isSelectionMode = isSelectionMode,
+                        selectionState = selectionState,
                         onPlayAlbum = playAlbum,
-                        onShuffleAlbum = shuffleAlbum
+                        onShuffleAlbum = shuffleAlbum,
+                        onToggleSelect = toggleSelectAlbum,
+                        onLongClick = albumLongClick,
+                        onToggleCollapse = toggleCollapse
                     )
                 }
 
@@ -107,6 +153,7 @@ fun LibrarySongList(
                         currentSongId = currentSongId,
                         isSelectionMode = isSelectionMode,
                         isSelected = selectedSongIds.contains(item.song.id),
+                        sortOption = sortOption,
                         onSongClickState = onSongClickState,
                         onSongLongClickState = onSongLongClickState,
                         onToggleSelectState = onToggleSelectState,
@@ -122,6 +169,35 @@ fun LibrarySongList(
     }
 }
 
+internal fun filterCollapsedAlbumSongs(
+    items: List<LibraryListItem>,
+    collapsedAlbumNames: Set<String>
+): List<LibraryListItem> {
+    if (collapsedAlbumNames.isEmpty()) return items
+    val result = ArrayList<LibraryListItem>(items.size)
+    var hidingAlbum: String? = null
+    for (item in items) {
+        when (item) {
+            is LibraryListItem.AlbumHeader -> {
+                hidingAlbum = if (collapsedAlbumNames.contains(item.albumName)) item.albumName else null
+                result += item
+            }
+            is LibraryListItem.SongRow -> {
+                if (hidingAlbum == null || item.song.album != hidingAlbum) {
+                    result += item
+                }
+            }
+        }
+    }
+    return result
+}
+
+enum class AlbumHeaderSelectionState {
+    NONE,
+    PARTIAL,
+    ALL
+}
+
 @Composable
 private fun LibrarySongRow(
     song: Song,
@@ -129,6 +205,7 @@ private fun LibrarySongRow(
     currentSongId: Long?,
     isSelectionMode: Boolean,
     isSelected: Boolean,
+    sortOption: SortOption,
     onSongClickState: State<(Song, Int) -> Unit>,
     onSongLongClickState: State<(Song) -> Unit>,
     onToggleSelectState: State<(Song) -> Unit>,
@@ -163,12 +240,23 @@ private fun LibrarySongRow(
     val onDelete = remember(song.id) {
         { onDeleteSongState.value(songState.value) }
     }
+    val secondaryInfo = remember(song.genre, song.dateAdded, sortOption) {
+        formatSortRelevantInfo(
+            sortOption = sortOption,
+            genre = song.genre,
+            dateAdded = song.dateAdded,
+            alreadyShowsArtist = true,
+            alreadyShowsAlbum = true,
+            alreadyShowsTitle = true
+        )
+    }
 
     SongListItem(
         song = song,
         isCurrentPlaying = currentSongId == song.id,
         isSelectionMode = isSelectionMode,
         isSelected = isSelected,
+        secondaryInfo = secondaryInfo,
         onClick = onClick,
         onLongClick = onLongClick,
         onToggleSelect = onToggleSelect,
@@ -180,20 +268,35 @@ private fun LibrarySongRow(
     )
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun TauonAlbumHeader(
     albumName: String,
     artistName: String,
     artworkUri: String?,
     songCount: Int,
+    isCollapsed: Boolean = false,
+    isSelectionMode: Boolean = false,
+    selectionState: AlbumHeaderSelectionState = AlbumHeaderSelectionState.NONE,
     onPlayAlbum: () -> Unit,
-    onShuffleAlbum: () -> Unit
+    onShuffleAlbum: () -> Unit,
+    onToggleSelect: () -> Unit = {},
+    onLongClick: () -> Unit = {},
+    onToggleCollapse: () -> Unit = {}
 ) {
     Surface(
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 8.dp, vertical = 6.dp),
+            .padding(horizontal = 8.dp, vertical = 6.dp)
+            .combinedClickable(
+                onClick = {
+                    if (isSelectionMode) {
+                        onToggleSelect()
+                    }
+                },
+                onLongClick = onLongClick
+            ),
         shape = RoundedCornerShape(8.dp)
     ) {
         Row(
@@ -201,14 +304,32 @@ fun TauonAlbumHeader(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                modifier = Modifier.weight(1f),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (isSelectionMode) {
+                    val toggleState = when (selectionState) {
+                        AlbumHeaderSelectionState.NONE -> ToggleableState.Off
+                        AlbumHeaderSelectionState.PARTIAL -> ToggleableState.Indeterminate
+                        AlbumHeaderSelectionState.ALL -> ToggleableState.On
+                    }
+                    TriStateCheckbox(
+                        state = toggleState,
+                        onClick = onToggleSelect,
+                        colors = CheckboxDefaults.colors(
+                            checkedColor = MaterialTheme.colorScheme.primary
+                        )
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                }
                 ArtworkThumbnail(
                     artworkUri = artworkUri,
                     size = 52.dp,
                     cornerRadius = 8.dp
                 )
                 Spacer(modifier = Modifier.width(12.dp))
-                Column {
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = albumName,
                         style = MaterialTheme.typography.titleMedium,
@@ -222,19 +343,28 @@ fun TauonAlbumHeader(
                     )
                 }
             }
-            Row {
-                IconButton(onClick = onPlayAlbum) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onToggleCollapse) {
                     Icon(
-                        imageVector = Icons.Default.PlayArrow,
-                        contentDescription = "Reproducir álbum",
-                        tint = MaterialTheme.colorScheme.primary
+                        imageVector = if (isCollapsed) Icons.Default.ExpandMore else Icons.Default.ExpandLess,
+                        contentDescription = if (isCollapsed) "Expandir álbum" else "Plegar álbum",
+                        modifier = Modifier.size(22.dp)
                     )
                 }
-                IconButton(onClick = onShuffleAlbum) {
-                    Icon(
-                        imageVector = Icons.Default.Shuffle,
-                        contentDescription = "Mezclar álbum"
-                    )
+                if (!isSelectionMode) {
+                    IconButton(onClick = onPlayAlbum) {
+                        Icon(
+                            imageVector = Icons.Default.PlayArrow,
+                            contentDescription = "Reproducir álbum",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    IconButton(onClick = onShuffleAlbum) {
+                        Icon(
+                            imageVector = Icons.Default.Shuffle,
+                            contentDescription = "Mezclar álbum"
+                        )
+                    }
                 }
             }
         }

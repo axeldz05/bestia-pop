@@ -43,6 +43,7 @@ fun SongListItem(
     isCurrentPlaying: Boolean = false,
     isSelectionMode: Boolean = false,
     isSelected: Boolean = false,
+    secondaryInfo: String? = null,
     onClick: () -> Unit,
     onLongClick: () -> Unit = {},
     onToggleSelect: () -> Unit = {},
@@ -65,7 +66,10 @@ fun SongListItem(
         MaterialTheme.colorScheme.onSurface
     }
     val titleWeight = if (isCurrentPlaying || isSelected) FontWeight.Bold else FontWeight.Medium
-    val subtitle = remember(song.artist, song.album) { "${song.artist} • ${song.album}" }
+    val subtitle = remember(song.artist, song.album, secondaryInfo) {
+        val base = "${song.artist} • ${song.album}"
+        if (secondaryInfo.isNullOrBlank()) base else "$base • $secondaryInfo"
+    }
     val durationText = remember(song.durationMs) { formatDuration(song.durationMs) }
 
     Row(

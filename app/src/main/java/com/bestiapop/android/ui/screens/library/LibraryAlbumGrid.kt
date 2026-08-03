@@ -40,12 +40,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.bestiapop.android.data.model.Album
-import com.bestiapop.android.data.model.Song
+import com.bestiapop.android.ui.SortOption
 import com.bestiapop.android.ui.components.ArtworkThumbnail
+import com.bestiapop.android.ui.components.formatSortRelevantInfo
 
 @Composable
 fun LibraryAlbumGrid(
     albums: List<Album>,
+    sortOption: SortOption = SortOption.TITLE,
     onAlbumClick: (Album) -> Unit,
     onPlayAlbum: (Album) -> Unit,
     onShuffleAlbum: (Album) -> Unit,
@@ -76,6 +78,7 @@ fun LibraryAlbumGrid(
         items(albums, key = { it.name }) { album ->
             AlbumGridCard(
                 album = album,
+                sortOption = sortOption,
                 onClick = { onAlbumClick(album) },
                 onPlay = { onPlayAlbum(album) },
                 onShuffle = { onShuffleAlbum(album) },
@@ -88,12 +91,27 @@ fun LibraryAlbumGrid(
 @Composable
 fun AlbumGridCard(
     album: Album,
+    sortOption: SortOption = SortOption.TITLE,
     onClick: () -> Unit,
     onPlay: () -> Unit,
     onShuffle: () -> Unit,
     onChangeCover: () -> Unit
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
+    val sortInfo = remember(album.genre, album.dateAdded, sortOption) {
+        formatSortRelevantInfo(
+            sortOption = sortOption,
+            genre = album.genre,
+            dateAdded = album.dateAdded,
+            alreadyShowsArtist = true,
+            alreadyShowsAlbum = true,
+            alreadyShowsTitle = true
+        )
+    }
+    val subtitle = remember(album.artist, album.songCount, sortInfo) {
+        val base = "${album.artist} • ${album.songCount} canciones"
+        if (sortInfo.isNullOrBlank()) base else "$base • $sortInfo"
+    }
 
     Card(
         modifier = Modifier
@@ -171,7 +189,7 @@ fun AlbumGridCard(
             )
 
             Text(
-                text = "${album.artist} • ${album.songCount} canciones",
+                text = subtitle,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
                 maxLines = 1,

@@ -435,7 +435,7 @@ fun LibraryScreen(
                                                 if (isSongSelectionMode) {
                                                     selectedSongIds = if (isSelected) selectedSongIds - song.id else selectedSongIds + song.id
                                                 } else {
-                                                    viewModel.playSong(song, albumSongs)
+                                                    viewModel.playSong(song, songs)
                                                     onSongSelect(song)
                                                 }
                                             },

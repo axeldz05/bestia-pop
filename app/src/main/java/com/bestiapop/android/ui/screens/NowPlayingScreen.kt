@@ -1,5 +1,6 @@
 package com.bestiapop.android.ui.screens
 
+import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -12,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -59,17 +61,24 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 import com.bestiapop.android.data.model.RepeatMode
 import com.bestiapop.android.ui.MusicPlayerViewModel
 import com.bestiapop.android.ui.components.formatDuration
@@ -117,8 +126,57 @@ fun NowPlayingScreen(
     val song = currentSong ?: return
     val currentPosition = if (isDragging) dragPosition.toLong() else positionMs
 
+    // Swipe-to-dismiss state
+    val swipeOffset = remember { Animatable(0f) }
+    val coroutineScope = rememberCoroutineScope()
+    val configuration = LocalConfiguration.current
+    val density = configuration.densityDpi / 160f
+    val screenHeightPx = configuration.screenHeightDp * density
+    val dismissThresholdPx = screenHeightPx * 0.30f
+
+    val nestedScrollConnection = remember(coroutineScope, dismissThresholdPx, screenHeightPx) {
+        object : androidx.compose.ui.input.nestedscroll.NestedScrollConnection {
+            override fun onPreScroll(available: androidx.compose.ui.geometry.Offset, source: androidx.compose.ui.input.nestedscroll.NestedScrollSource): androidx.compose.ui.geometry.Offset {
+                val delta = available.y
+                // If already dragging to dismiss, consume scroll to continue/reverse the drag
+                if (swipeOffset.value > 0f) {
+                    val newOffset = (swipeOffset.value + delta).coerceAtLeast(0f)
+                    coroutineScope.launch { swipeOffset.snapTo(newOffset) }
+                    return if (newOffset > 0f) available else androidx.compose.ui.geometry.Offset(0f, -(swipeOffset.value))
+                }
+                return androidx.compose.ui.geometry.Offset.Zero
+            }
+
+            override fun onPostScroll(consumed: androidx.compose.ui.geometry.Offset, available: androidx.compose.ui.geometry.Offset, source: androidx.compose.ui.input.nestedscroll.NestedScrollSource): androidx.compose.ui.geometry.Offset {
+                val delta = available.y
+                // Content is at top and user is still dragging down → start dismiss
+                if (delta > 0f) {
+                    coroutineScope.launch {
+                        swipeOffset.snapTo((swipeOffset.value + delta).coerceAtLeast(0f))
+                    }
+                    return available
+                }
+                return androidx.compose.ui.geometry.Offset.Zero
+            }
+
+            override suspend fun onPostFling(consumed: androidx.compose.ui.unit.Velocity, available: androidx.compose.ui.unit.Velocity): androidx.compose.ui.unit.Velocity {
+                if (swipeOffset.value > dismissThresholdPx) {
+                    swipeOffset.animateTo(screenHeightPx)
+                    onDismiss()
+                } else if (swipeOffset.value > 0f) {
+                    swipeOffset.animateTo(0f)
+                }
+                return available
+            }
+        }
+    }
+
     Surface(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier
+            .fillMaxSize()
+            .nestedScroll(nestedScrollConnection)
+            .offset { IntOffset(0, swipeOffset.value.roundToInt()) }
+            .alpha((1f - (swipeOffset.value / screenHeightPx).coerceIn(0f, 0.6f)).coerceAtLeast(0.4f)),
         color = MaterialTheme.colorScheme.background
     ) {
         Column(

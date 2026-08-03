@@ -17,6 +17,9 @@ interface MusicDao {
 
 
 
+    @Query("SELECT * FROM songs WHERE album = 'YouTube Music'")
+    suspend fun getLegacyYouTubeMusicSongs(): List<SongEntity>
+
     @Query("SELECT * FROM songs WHERE uriString = :uri LIMIT 1")
     suspend fun getSongByUri(uri: String): SongEntity?
 

@@ -110,16 +110,11 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    val artistsState: StateFlow<List<Artist>> = songsState.map { songs ->
-        songs.groupBy { it.artist }.map { (artistName, artistSongs) ->
-            val photo = artistSongs.firstOrNull { !it.artworkUri.isNullOrEmpty() }?.artworkUri
-            Artist(
-                name = artistName,
-                songCount = artistSongs.size,
-                albumCount = artistSongs.map { it.album }.distinct().size,
-                photoUri = photo
-            )
-        }
+    private val getLibrarySongsUseCase = com.bestiapop.android.domain.usecase.GetLibrarySongsUseCase()
+    private val _artistPhotos = MutableStateFlow<Map<String, String>>(emptyMap())
+
+    val artistsState: StateFlow<List<Artist>> = combine(songsState, _artistPhotos) { songs: List<Song>, photoMap: Map<String, String> ->
+        getLibrarySongsUseCase.extractArtists(songs, photoMap)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     // Player State
@@ -202,6 +197,24 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             _catalogSearchResults.value = MetadataFetcher.getFeaturedDemoCatalog()
             _albumSearchResults.value = MetadataFetcher.searchAlbums("")
             _playlistSearchResults.value = MetadataFetcher.searchPlaylists("")
+        }
+
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.migrateLegacyYouTubeMusicSongs()
+        }
+
+        viewModelScope.launch(Dispatchers.IO) {
+            songsState.collect { songs ->
+                val artists = songs.map { it.artist }.distinct().filter { it.isNotBlank() && !it.equals("Unknown Artist", ignoreCase = true) }
+                for (artist in artists) {
+                    if (!_artistPhotos.value.containsKey(artist)) {
+                        val photoUrl = MetadataFetcher.fetchArtistPhotoUrl(artist)
+                        if (!photoUrl.isNullOrEmpty()) {
+                            _artistPhotos.value = _artistPhotos.value + (artist to photoUrl)
+                        }
+                    }
+                }
+            }
         }
 
         viewModelScope.launch {

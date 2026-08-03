@@ -580,7 +580,28 @@ class MusicRepository(private val context: Context) : IMusicRepository {
 
 
 
-        onProgress?.invoke("Obteniendo portada e información...")
+        onProgress?.invoke("Obteniendo información del álbum y portada...")
+
+        var finalAlbum = track.album
+        if (finalAlbum.isBlank() || finalAlbum.equals("YouTube Music", ignoreCase = true) || finalAlbum.equals("Single", ignoreCase = true)) {
+            val fullMeta = MetadataFetcher.fetchFullTrackMetadata(finalArtist, finalTitle)
+            if (fullMeta != null) {
+                if (!fullMeta.album.isNullOrBlank()) {
+                    finalAlbum = fullMeta.album
+                }
+                if (finalArtwork.isNullOrEmpty() && !fullMeta.artworkUrl.isNullOrEmpty()) {
+                    finalArtwork = fullMeta.artworkUrl
+                }
+                if (!fullMeta.artistName.isNullOrBlank() && (finalArtist.isBlank() || finalArtist == "YouTube Artist")) {
+                    finalArtist = fullMeta.artistName
+                }
+            }
+        }
+
+        if (finalAlbum.isBlank() || finalAlbum.equals("YouTube Music", ignoreCase = true)) {
+            finalAlbum = "$finalArtist - Single"
+        }
+
         if (finalArtwork.isNullOrEmpty()) {
             finalArtwork = MetadataFetcher.fetchAlbumArtUrl(finalArtist, finalTitle)
         }
@@ -591,7 +612,7 @@ class MusicRepository(private val context: Context) : IMusicRepository {
             uriString = savedUri,
             title = finalTitle,
             artist = finalArtist,
-            album = "YouTube Music",
+            album = finalAlbum,
             genre = "Music",
             durationMs = if (finalDurationMs > 0) finalDurationMs else 180000L,
             year = 0,
@@ -608,6 +629,29 @@ class MusicRepository(private val context: Context) : IMusicRepository {
 
         onProgress?.invoke("¡Canción agregada con éxito!")
         return@withContext savedSong
+    }
+
+    suspend fun migrateLegacyYouTubeMusicSongs() = withContext(Dispatchers.IO) {
+        try {
+            val legacySongs = musicDao.getLegacyYouTubeMusicSongs()
+            if (legacySongs.isEmpty()) return@withContext
+
+            for (song in legacySongs) {
+                val fullMeta = MetadataFetcher.fetchFullTrackMetadata(song.artist, song.title)
+                val realAlbum = fullMeta?.album?.ifBlank { null } ?: "${song.artist} - Single"
+                val realArtwork = fullMeta?.artworkUrl?.ifBlank { null } ?: song.artworkUri
+                val realArtist = fullMeta?.artistName?.ifBlank { null } ?: song.artist
+
+                val updated = song.copy(
+                    artist = realArtist,
+                    album = realAlbum,
+                    artworkUri = realArtwork
+                )
+                musicDao.updateSong(updated)
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
 }
 

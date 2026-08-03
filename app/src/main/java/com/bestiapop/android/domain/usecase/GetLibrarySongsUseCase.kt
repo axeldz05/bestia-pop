@@ -58,10 +58,10 @@ class GetLibrarySongsUseCase {
         }.sortedBy { it.name.lowercase() }
     }
 
-    fun extractArtists(songs: List<Song>): List<Artist> {
+    fun extractArtists(songs: List<Song>, artistPhotoMap: Map<String, String> = emptyMap()): List<Artist> {
         return songs.groupBy { it.artist }.map { (artistName, artistSongs) ->
             val albumCount = artistSongs.map { it.album }.distinct().size
-            val photoArt = artistSongs.firstOrNull { !it.artworkUri.isNullOrEmpty() }?.artworkUri
+            val photoArt = artistPhotoMap[artistName]
             Artist(
                 name = artistName,
                 songCount = artistSongs.size,

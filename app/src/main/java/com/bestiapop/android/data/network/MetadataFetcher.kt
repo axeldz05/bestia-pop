@@ -10,6 +10,13 @@ import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 import java.util.concurrent.TimeUnit
 
+data class FullTrackMetadata(
+    val album: String?,
+    val artworkUrl: String?,
+    val artistName: String?,
+    val title: String?
+)
+
 object MetadataFetcher {
 
     private val client = OkHttpClient.Builder()
@@ -214,6 +221,80 @@ object MetadataFetcher {
         }
 
         return@withContext null
+    }
+
+    suspend fun fetchFullTrackMetadata(artist: String, title: String): FullTrackMetadata? = withContext(Dispatchers.IO) {
+        val cleanArtist = if (artist.equals("Unknown Artist", ignoreCase = true)) "" else cleanString(artist)
+        val cleanTitle = cleanString(title)
+        val queryText = if (cleanArtist.isNotEmpty()) "$cleanArtist $cleanTitle" else cleanTitle
+        if (queryText.isEmpty()) return@withContext null
+
+        var album: String? = null
+        var artworkUrl: String? = null
+        var foundArtist: String? = null
+        var foundTitle: String? = null
+
+        // 1. Deezer Track Search API
+        try {
+            val query = URLEncoder.encode(queryText, StandardCharsets.UTF_8.name())
+            val url = "https://api.deezer.com/search?q=$query&limit=1"
+            val request = Request.Builder().url(url).header("User-Agent", "BestiaPop/1.0").build()
+
+            client.newCall(request).execute().use { response ->
+                if (response.isSuccessful) {
+                    val body = response.body?.string() ?: ""
+                    val json = JSONObject(body)
+                    val data = json.optJSONArray("data")
+                    if (data != null && data.length() > 0) {
+                        val item = data.getJSONObject(0)
+                        foundTitle = item.optString("title").ifBlank { null }
+                        val artistObj = item.optJSONObject("artist")
+                        foundArtist = artistObj?.optString("name")?.ifBlank { null }
+                        val albumObj = item.optJSONObject("album")
+                        album = albumObj?.optString("title")?.ifBlank { null }
+                        artworkUrl = albumObj?.optString("cover_xl")?.ifEmpty { albumObj.optString("cover_big") }?.ifBlank { null }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
+        // 2. Fallback to iTunes Track Search API
+        if (album.isNullOrEmpty()) {
+            try {
+                val query = URLEncoder.encode(queryText, StandardCharsets.UTF_8.name())
+                val url = "https://itunes.apple.com/search?term=$query&entity=song&limit=1"
+                val request = Request.Builder().url(url).build()
+
+                client.newCall(request).execute().use { response ->
+                    if (response.isSuccessful) {
+                        val body = response.body?.string() ?: ""
+                        val json = JSONObject(body)
+                        val results = json.optJSONArray("results")
+                        if (results != null && results.length() > 0) {
+                            val item = results.getJSONObject(0)
+                            if (album.isNullOrEmpty()) album = item.optString("collectionName").ifBlank { null }
+                            if (artworkUrl.isNullOrEmpty()) {
+                                val art = item.optString("artworkUrl100")
+                                if (art.isNotEmpty()) artworkUrl = art.replace("100x100bb", "600x600bb")
+                            }
+                            if (foundArtist.isNullOrEmpty()) foundArtist = item.optString("artistName").ifBlank { null }
+                            if (foundTitle.isNullOrEmpty()) foundTitle = item.optString("trackName").ifBlank { null }
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+
+        return@withContext FullTrackMetadata(
+            album = album,
+            artworkUrl = artworkUrl,
+            artistName = foundArtist,
+            title = foundTitle,
+        )
     }
 
     suspend fun fetchLyrics(artist: String, title: String): String? = withContext(Dispatchers.IO) {

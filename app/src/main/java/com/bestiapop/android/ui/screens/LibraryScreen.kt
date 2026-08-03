@@ -56,6 +56,7 @@ import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.ui.MusicPlayerViewModel
 import com.bestiapop.android.ui.SortOption
 import com.bestiapop.android.ui.components.MultiSelectActionBar
+import com.bestiapop.android.ui.components.PlaylistAdditionActionBar
 import com.bestiapop.android.ui.screens.library.AddToPlaylistDialog
 import com.bestiapop.android.ui.screens.library.ConfirmDeleteSongsDialog
 import com.bestiapop.android.ui.screens.library.EditSongMetadataDialog
@@ -129,42 +130,7 @@ fun LibraryScreen(
 
     Column(modifier = Modifier.fillMaxSize()) {
 
-        // Mode Banner for Playlist Addition
-        if (isPlaylistAdditionMode) {
-            Surface(
-                color = MaterialTheme.colorScheme.primaryContainer,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    modifier = Modifier.padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        text = "Añadiendo a \"${targetPlaylistForAddition?.name}\" (${selectedSongIds.size} sel.)",
-                        style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
-                    Row {
-                        IconButton(onClick = onCancelPlaylistAddition) {
-                            Icon(Icons.Default.Close, contentDescription = "Cancelar")
-                        }
-                        IconButton(
-                            onClick = {
-                                viewModel.addSongsToPlaylist(
-                                    targetPlaylistForAddition?.id ?: 0L,
-                                    selectedSongIds.toList()
-                                )
-                                onCompletePlaylistAddition()
-                            },
-                            enabled = selectedSongIds.isNotEmpty()
-                        ) {
-                            Icon(Icons.Default.Check, contentDescription = "Confirmar")
-                        }
-                    }
-                }
-            }
-        }
+
 
         // Top Search Bar & Header Actions
         Row(
@@ -325,6 +291,22 @@ fun LibraryScreen(
             )
         }
 
+        // Playlist Addition Action Bar at the Bottom
+        if (isPlaylistAdditionMode) {
+            PlaylistAdditionActionBar(
+                playlistName = targetPlaylistForAddition?.name ?: "Playlist",
+                selectedCount = selectedSongIds.size,
+                onConfirmAddition = {
+                    viewModel.addSongsToPlaylist(
+                        targetPlaylistForAddition?.id ?: 0L,
+                        selectedSongIds.toList()
+                    )
+                    onCompletePlaylistAddition()
+                },
+                onCancelAddition = onCancelPlaylistAddition
+            )
+        }
+
         // Main Content Switcher based on Selected Navigation
         Box(modifier = Modifier.weight(1f)) {
             when {
@@ -432,21 +414,23 @@ fun LibraryScreen(
                 }
             }
 
-            FloatingActionButton(
-                onClick = { showAddMusicDialog = true },
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(16.dp),
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically
+            if (!isPlaylistAdditionMode) {
+                FloatingActionButton(
+                    onClick = { showAddMusicDialog = true },
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(16.dp),
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary
                 ) {
-                    Icon(Icons.Default.Add, contentDescription = null)
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Agregar", fontWeight = FontWeight.Bold)
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = null)
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Agregar", fontWeight = FontWeight.Bold)
+                    }
                 }
             }
         }

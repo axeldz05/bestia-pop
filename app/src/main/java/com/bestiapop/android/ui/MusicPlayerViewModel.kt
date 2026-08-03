@@ -20,6 +20,8 @@ import com.bestiapop.android.data.network.MetadataFetcher
 import com.bestiapop.android.data.preferences.ThemePreferencesRepository
 import com.bestiapop.android.data.repository.MusicRepository
 import com.bestiapop.android.service.MusicService
+import com.bestiapop.android.ui.state.LibraryListItem
+import com.bestiapop.android.ui.state.LibraryViewMode
 import com.bestiapop.android.ui.theme.ThemePresets
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -80,6 +82,12 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     val songsState: StateFlow<List<Song>> = combine(rawSongs, _searchQuery, _sortOption) { list, query, sort ->
         getLibrarySongsUseCase.execute(list, query, sort)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    fun buildLibraryListItems(
+        songs: List<Song>,
+        viewMode: LibraryViewMode
+    ): List<LibraryListItem> =
+        getLibrarySongsUseCase.buildListItems(songs, viewMode)
 
     val albumsState: StateFlow<List<Album>> = songsState.map { songs ->
         getLibrarySongsUseCase.extractAlbums(songs)

@@ -501,7 +501,11 @@ private fun PlaylistDetailScreen(
                 }
             } else {
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    items(songs, key = { it.id }) { song ->
+                    items(
+                        items = songs,
+                        key = { it.id },
+                        contentType = { "song" }
+                    ) { song ->
                         SongListItem(
                             song = song,
                             isCurrentPlaying = viewModel.currentSong.collectAsState().value?.uriString == song.uriString,

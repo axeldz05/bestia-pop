@@ -10,14 +10,12 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.QueueMusic
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -86,39 +84,34 @@ fun QueueScreen(
                 }
             }
         } else {
+            val currentSongId = currentSong?.id
             LazyColumn(modifier = Modifier.fillMaxSize()) {
-                itemsIndexed(queue) { index, song ->
-                    Surface(
-                        color = if (currentSong?.uriString == song.uriString) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surface,
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 4.dp)
+                itemsIndexed(
+                    items = queue,
+                    key = { _, song -> song.id },
+                    contentType = { _, _ -> "song" }
+                ) { index, song ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(end = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Box(modifier = Modifier.weight(1f)) {
-                                SongListItem(
-                                    song = song,
-                                    isCurrentPlaying = currentSong?.uriString == song.uriString,
-                                    onClick = { viewModel.playSong(song, queue) },
-                                    onPlayNext = { viewModel.playNextInQueue(song) },
-                                    onAddToQueue = { viewModel.addToQueue(song) },
-                                    onAddToPlaylist = { }
-                                )
-                            }
+                        Box(modifier = Modifier.weight(1f)) {
+                            SongListItem(
+                                song = song,
+                                isCurrentPlaying = currentSongId == song.id,
+                                onClick = { viewModel.playSong(song, queue) },
+                                onPlayNext = { viewModel.playNextInQueue(song) },
+                                onAddToQueue = { viewModel.addToQueue(song) },
+                                onAddToPlaylist = { }
+                            )
+                        }
 
-                            IconButton(onClick = { viewModel.removeFromQueue(index) }) {
-                                Icon(
-                                    imageVector = Icons.Default.Delete,
-                                    contentDescription = "Quitar",
-                                    tint = MaterialTheme.colorScheme.error
-                                )
-                            }
+                        IconButton(onClick = { viewModel.removeFromQueue(index) }) {
+                            Icon(
+                                imageVector = Icons.Default.Delete,
+                                contentDescription = "Quitar",
+                                tint = MaterialTheme.colorScheme.error
+                            )
                         }
                     }
                 }

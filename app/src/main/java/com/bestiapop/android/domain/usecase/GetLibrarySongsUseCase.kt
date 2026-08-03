@@ -4,6 +4,8 @@ import com.bestiapop.android.data.model.Album
 import com.bestiapop.android.data.model.Artist
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.ui.SortOption
+import com.bestiapop.android.ui.state.LibraryListItem
+import com.bestiapop.android.ui.state.LibraryViewMode
 
 class GetLibrarySongsUseCase {
 
@@ -42,6 +44,46 @@ class GetLibrarySongsUseCase {
             SortOption.ALBUM -> filtered.sortedBy { it.album.lowercase() }
             SortOption.GENRE -> filtered.sortedBy { it.genre.lowercase() }
             SortOption.DATE_ADDED -> filtered.sortedByDescending { it.dateAdded }
+        }
+    }
+
+    /**
+     * Builds a flat, keyed list for LazyColumn: optional album headers + song rows
+     * with stable indices into [songs] for playCollection.
+     */
+    fun buildListItems(
+        songs: List<Song>,
+        viewMode: LibraryViewMode
+    ): List<LibraryListItem> {
+        if (songs.isEmpty()) return emptyList()
+
+        return when (viewMode) {
+            LibraryViewMode.FLAT -> songs.mapIndexed { index, song ->
+                LibraryListItem.SongRow(song = song, index = index)
+            }
+
+            LibraryViewMode.ALBUM_GROUPS -> {
+                val indexById = HashMap<Long, Int>(songs.size)
+                songs.forEachIndexed { index, song -> indexById[song.id] = index }
+
+                val items = ArrayList<LibraryListItem>(songs.size + songs.size / 4 + 1)
+                songs.groupBy { it.album }.forEach { (albumName, albumSongs) ->
+                    items += LibraryListItem.AlbumHeader(
+                        albumName = albumName,
+                        artistName = albumSongs.firstOrNull()?.artist ?: "Artista desconocido",
+                        artworkUri = albumSongs.firstOrNull { !it.artworkUri.isNullOrEmpty() }?.artworkUri,
+                        songCount = albumSongs.size,
+                        albumSongs = albumSongs
+                    )
+                    albumSongs.forEach { song ->
+                        items += LibraryListItem.SongRow(
+                            song = song,
+                            index = indexById[song.id] ?: 0
+                        )
+                    }
+                }
+                items
+            }
         }
     }
 

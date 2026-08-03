@@ -1,6 +1,7 @@
 package com.bestiapop.android.ui.components
 
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -8,12 +9,10 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.DropdownMenu
@@ -21,7 +20,6 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -31,11 +29,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImage
 import com.bestiapop.android.data.model.Song
 import java.util.Locale
 
@@ -57,16 +54,26 @@ fun SongListItem(
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
 
-    Surface(
-        color = when {
-            isSelected -> MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
-            isCurrentPlaying -> MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
-            else -> MaterialTheme.colorScheme.surface
-        },
-        shape = RoundedCornerShape(12.dp),
+    val backgroundColor = when {
+        isSelected -> MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
+        isCurrentPlaying -> MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+        else -> Color.Transparent
+    }
+    val titleColor = if (isCurrentPlaying || isSelected) {
+        MaterialTheme.colorScheme.primary
+    } else {
+        MaterialTheme.colorScheme.onSurface
+    }
+    val titleWeight = if (isCurrentPlaying || isSelected) FontWeight.Bold else FontWeight.Medium
+    val subtitle = remember(song.artist, song.album) { "${song.artist} • ${song.album}" }
+    val durationText = remember(song.durationMs) { formatDuration(song.durationMs) }
+
+    Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 8.dp, vertical = 4.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(backgroundColor)
             .combinedClickable(
                 onClick = {
                     if (isSelectionMode) {
@@ -77,114 +84,128 @@ fun SongListItem(
                 },
                 onLongClick = onLongClick
             )
+            .padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(
-            modifier = Modifier.padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            if (isSelectionMode) {
-                Checkbox(
-                    checked = isSelected,
-                    onCheckedChange = { onToggleSelect() },
-                    colors = CheckboxDefaults.colors(
-                        checkedColor = MaterialTheme.colorScheme.primary
-                    )
+        if (isSelectionMode) {
+            Checkbox(
+                checked = isSelected,
+                onCheckedChange = { onToggleSelect() },
+                colors = CheckboxDefaults.colors(
+                    checkedColor = MaterialTheme.colorScheme.primary
                 )
-                Spacer(modifier = Modifier.width(8.dp))
-            }
-
-            // Album Art
-            ArtworkThumbnail(
-                artworkUri = song.artworkUri,
-                size = 48.dp,
-                contentDescription = song.title
             )
+            Spacer(modifier = Modifier.width(8.dp))
+        }
 
-            Spacer(modifier = Modifier.width(12.dp))
+        ArtworkThumbnail(
+            artworkUri = song.artworkUri,
+            size = 48.dp,
+            contentDescription = song.title
+        )
 
-            // Details
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = song.title,
-                    style = MaterialTheme.typography.titleMedium.copy(
-                        fontWeight = if (isCurrentPlaying || isSelected) FontWeight.Bold else FontWeight.Medium
-                    ),
-                    color = if (isCurrentPlaying || isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = "${song.artist} • ${song.album}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
+        Spacer(modifier = Modifier.width(12.dp))
 
+        Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = formatDuration(song.durationMs),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
-                modifier = Modifier.padding(horizontal = 8.dp)
+                text = song.title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = titleWeight,
+                color = titleColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
 
-            // Options menu (hidden during multi-selection mode)
-            if (!isSelectionMode) {
-                Box {
-                    IconButton(onClick = { menuExpanded = true }) {
-                        Icon(
-                            imageVector = Icons.Default.MoreVert,
-                            contentDescription = "Options",
-                            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                        )
-                    }
-                    DropdownMenu(
-                        expanded = menuExpanded,
-                        onDismissRequest = { menuExpanded = false }
-                    ) {
-                        DropdownMenuItem(
-                            text = { Text("Reproducir a continuación") },
-                            onClick = {
-                                menuExpanded = false
-                                onPlayNext()
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Añadir a la cola") },
-                            onClick = {
-                                menuExpanded = false
-                                onAddToQueue()
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Añadir a playlist") },
-                            onClick = {
-                                menuExpanded = false
-                                onAddToPlaylist()
-                            }
-                        )
-                        if (onEditMetadata != null) {
-                            DropdownMenuItem(
-                                text = { Text("Editar información") },
-                                onClick = {
-                                    menuExpanded = false
-                                    onEditMetadata()
-                                }
-                            )
-                        }
-                        if (onDelete != null) {
-                            DropdownMenuItem(
-                                text = { Text("Eliminar", color = MaterialTheme.colorScheme.error) },
-                                onClick = {
-                                    menuExpanded = false
-                                    onDelete()
-                                }
-                            )
-                        }
-                    }
+        Text(
+            text = durationText,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+            modifier = Modifier.padding(horizontal = 8.dp)
+        )
+
+        if (!isSelectionMode) {
+            Box {
+                IconButton(onClick = { menuExpanded = true }) {
+                    Icon(
+                        imageVector = Icons.Default.MoreVert,
+                        contentDescription = "Options",
+                        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                    )
+                }
+                if (menuExpanded) {
+                    SongOptionsMenu(
+                        onDismiss = { menuExpanded = false },
+                        onPlayNext = onPlayNext,
+                        onAddToQueue = onAddToQueue,
+                        onAddToPlaylist = onAddToPlaylist,
+                        onEditMetadata = onEditMetadata,
+                        onDelete = onDelete
+                    )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun SongOptionsMenu(
+    onDismiss: () -> Unit,
+    onPlayNext: () -> Unit,
+    onAddToQueue: () -> Unit,
+    onAddToPlaylist: () -> Unit,
+    onEditMetadata: (() -> Unit)?,
+    onDelete: (() -> Unit)?
+) {
+    DropdownMenu(
+        expanded = true,
+        onDismissRequest = onDismiss
+    ) {
+        DropdownMenuItem(
+            text = { Text("Reproducir a continuación") },
+            onClick = {
+                onDismiss()
+                onPlayNext()
+            }
+        )
+        DropdownMenuItem(
+            text = { Text("Añadir a la cola") },
+            onClick = {
+                onDismiss()
+                onAddToQueue()
+            }
+        )
+        DropdownMenuItem(
+            text = { Text("Añadir a playlist") },
+            onClick = {
+                onDismiss()
+                onAddToPlaylist()
+            }
+        )
+        if (onEditMetadata != null) {
+            DropdownMenuItem(
+                text = { Text("Editar información") },
+                onClick = {
+                    onDismiss()
+                    onEditMetadata()
+                }
+            )
+        }
+        if (onDelete != null) {
+            DropdownMenuItem(
+                text = { Text("Eliminar", color = MaterialTheme.colorScheme.error) },
+                onClick = {
+                    onDismiss()
+                    onDelete()
+                }
+            )
         }
     }
 }

@@ -7,6 +7,7 @@ import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.ui.components.MultiSelectActionBar
+import com.bestiapop.android.domain.usecase.GetLibrarySongsUseCase
 import com.bestiapop.android.ui.screens.library.LibrarySongList
 import com.bestiapop.android.ui.state.LibraryViewMode
 import org.junit.Rule
@@ -38,6 +39,9 @@ class LibraryScreenFunctionalTest {
         )
     )
 
+    private val libraryItems = GetLibrarySongsUseCase()
+        .buildListItems(sampleSongs, LibraryViewMode.FLAT)
+
     @Test
     fun multiSelectActionBar_displaysSelectedCountAndActions() {
         var playClicked = false
@@ -64,9 +68,8 @@ class LibraryScreenFunctionalTest {
 
         composeTestRule.setContent {
             LibrarySongList(
-                songs = sampleSongs,
-                currentSong = null,
-                viewMode = LibraryViewMode.FLAT,
+                items = libraryItems,
+                currentSongId = null,
                 isSelectionMode = false,
                 selectedSongIds = emptySet(),
                 onSongClick = { song, _ -> clickedSong = song },

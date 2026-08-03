@@ -23,6 +23,7 @@ import com.bestiapop.android.service.MusicService
 import com.bestiapop.android.ui.theme.ThemePresets
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -570,9 +571,34 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     // Playlists
-    fun createPlaylist(name: String) {
+    fun getPlaylistSongsFlow(playlistId: Long): Flow<List<Song>> {
+        return repository.getPlaylistSongsFlow(playlistId)
+    }
+
+    fun getPlaylistDetailsFlow(playlistId: Long): Flow<Pair<Playlist, List<Song>>?> {
+        return repository.getPlaylistDetailsFlow(playlistId)
+    }
+
+    fun createPlaylist(
+        name: String,
+        description: String? = null,
+        coverUri: String? = null,
+        onCreated: ((Long) -> Unit)? = null
+    ) {
         viewModelScope.launch {
-            repository.createPlaylist(name)
+            val id = repository.createPlaylist(name, description, coverUri)
+            onCreated?.invoke(id)
+        }
+    }
+
+    fun updatePlaylist(
+        id: Long,
+        name: String,
+        description: String? = null,
+        coverUri: String? = null
+    ) {
+        viewModelScope.launch {
+            repository.updatePlaylist(id, name, description, coverUri)
         }
     }
 
@@ -588,9 +614,9 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
-    fun removeSongFromPlaylist(playlistId: Long, song: Song) {
+    fun removeSongFromPlaylist(playlistId: Long, songId: Long) {
         viewModelScope.launch {
-            repository.removeSongFromPlaylist(playlistId, song.id)
+            repository.removeSongFromPlaylist(playlistId, songId)
         }
     }
 

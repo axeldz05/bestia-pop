@@ -51,7 +51,7 @@ fun SongListItem(
     onToggleSelect: () -> Unit = {},
     onPlayNext: () -> Unit,
     onAddToQueue: () -> Unit,
-    onAddToPlaylist: () -> Unit,
+    onAddToPlaylist: () -> Unit = {},
     onEditMetadata: (() -> Unit)? = null,
     onDelete: (() -> Unit)? = null
 ) {

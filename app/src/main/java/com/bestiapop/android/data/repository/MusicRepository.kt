@@ -42,6 +42,8 @@ class MusicRepository(private val context: Context) {
             Playlist(
                 id = entity.playlistId,
                 name = entity.name,
+                description = entity.description,
+                coverUri = entity.coverUri,
                 createdAt = entity.createdAt
             )
         }
@@ -50,6 +52,25 @@ class MusicRepository(private val context: Context) {
     fun getPlaylistSongsFlow(playlistId: Long): Flow<List<Song>> {
         return musicDao.getPlaylistWithSongsFlow(playlistId).map { withSongs ->
             withSongs?.songs?.map { it.toSong() } ?: emptyList()
+        }
+    }
+
+    fun getPlaylistDetailsFlow(playlistId: Long): Flow<Pair<Playlist, List<Song>>?> {
+        return musicDao.getPlaylistWithSongsFlow(playlistId).map { withSongs ->
+            if (withSongs == null) null
+            else {
+                val entity = withSongs.playlist
+                val playlist = Playlist(
+                    id = entity.playlistId,
+                    name = entity.name,
+                    description = entity.description,
+                    coverUri = entity.coverUri,
+                    songCount = withSongs.songs.size,
+                    createdAt = entity.createdAt
+                )
+                val songs = withSongs.songs.map { it.toSong() }
+                Pair(playlist, songs)
+            }
         }
     }
 
@@ -382,11 +403,57 @@ class MusicRepository(private val context: Context) {
     }
 
     // Playlists
-    suspend fun createPlaylist(name: String): Long = withContext(Dispatchers.IO) {
-        musicDao.insertPlaylist(PlaylistEntity(name = name))
+    fun savePlaylistCoverImage(sourceUriStr: String?): String? {
+        if (sourceUriStr.isNullOrBlank()) return null
+        if (sourceUriStr.startsWith("file://") && sourceUriStr.contains("playlist_covers")) {
+            return sourceUriStr
+        }
+        try {
+            val uri = Uri.parse(sourceUriStr)
+            val coversDir = File(context.filesDir, "playlist_covers")
+            if (!coversDir.exists()) coversDir.mkdirs()
+
+            val destFile = File(coversDir, "cover_${System.currentTimeMillis()}_${(1000..9999).random()}.jpg")
+            context.contentResolver.openInputStream(uri)?.use { input ->
+                destFile.outputStream().use { output ->
+                    input.copyTo(output)
+                }
+            }
+            return destFile.toURI().toString()
+        } catch (e: Exception) {
+            e.printStackTrace()
+            return sourceUriStr
+        }
+    }
+
+    suspend fun createPlaylist(name: String, description: String? = null, coverUri: String? = null): Long = withContext(Dispatchers.IO) {
+        val savedCover = savePlaylistCoverImage(coverUri)
+        musicDao.insertPlaylist(
+            PlaylistEntity(
+                name = name,
+                description = description?.ifBlank { null },
+                coverUri = savedCover
+            )
+        )
+    }
+
+    suspend fun updatePlaylist(id: Long, name: String, description: String? = null, coverUri: String? = null) = withContext(Dispatchers.IO) {
+        val existing = musicDao.getPlaylistById(id) ?: return@withContext
+        val savedCover = if (!coverUri.isNullOrEmpty() && coverUri != existing.coverUri) {
+            savePlaylistCoverImage(coverUri)
+        } else {
+            coverUri
+        }
+        val updated = existing.copy(
+            name = name,
+            description = description?.ifBlank { null },
+            coverUri = savedCover
+        )
+        musicDao.updatePlaylist(updated)
     }
 
     suspend fun deletePlaylist(id: Long) = withContext(Dispatchers.IO) {
+        musicDao.clearPlaylistSongs(id)
         musicDao.deletePlaylist(id)
     }
 

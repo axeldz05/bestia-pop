@@ -57,14 +57,23 @@ interface MusicDao {
     suspend fun updateSongDuration(songId: Long, durationMs: Long)
 
     // Playlists
-    @Query("SELECT * FROM playlists ORDER BY name ASC")
+    @Query("SELECT * FROM playlists ORDER BY createdAt DESC")
     fun getAllPlaylistsFlow(): Flow<List<PlaylistEntity>>
+
+    @Query("SELECT * FROM playlists WHERE playlistId = :playlistId")
+    suspend fun getPlaylistById(playlistId: Long): PlaylistEntity?
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertPlaylist(playlist: PlaylistEntity): Long
 
+    @Update
+    suspend fun updatePlaylist(playlist: PlaylistEntity)
+
     @Query("DELETE FROM playlists WHERE playlistId = :playlistId")
     suspend fun deletePlaylist(playlistId: Long)
+
+    @Query("DELETE FROM playlist_song_cross_ref WHERE playlistId = :playlistId")
+    suspend fun clearPlaylistSongs(playlistId: Long)
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun addSongToPlaylist(ref: PlaylistSongCrossRef)

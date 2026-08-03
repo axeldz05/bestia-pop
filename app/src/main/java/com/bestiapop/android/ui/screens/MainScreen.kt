@@ -42,6 +42,9 @@ fun MainScreen(
     val isPlaying by viewModel.isPlaying.collectAsState()
     val positionMs by viewModel.playbackPositionMs.collectAsState()
 
+    var targetPlaylistForAddition by remember { mutableStateOf<com.bestiapop.android.data.model.Playlist?>(null) }
+    var selectedPlaylistIdForDetail by remember { mutableStateOf<Long?>(null) }
+
     val navItems = listOf(
         NavItem("Biblioteca", Icons.Default.LibraryMusic),
         NavItem("Playlists", Icons.Default.QueueMusic),
@@ -96,10 +99,32 @@ fun MainScreen(
             when (selectedNavIndex) {
                 0 -> LibraryScreen(
                     viewModel = viewModel,
+                    targetPlaylistForAddition = targetPlaylistForAddition,
+                    onCompletePlaylistAddition = {
+                        selectedPlaylistIdForDetail = targetPlaylistForAddition?.id
+                        targetPlaylistForAddition = null
+                        selectedNavIndex = 1
+                    },
+                    onCancelPlaylistAddition = {
+                        selectedPlaylistIdForDetail = targetPlaylistForAddition?.id
+                        targetPlaylistForAddition = null
+                        selectedNavIndex = 1
+                    },
                     onSelectFolderClick = onSelectFolderClick,
                     onSongSelect = { showFullPlayer = true }
                 )
-                1 -> PlaylistsScreen(viewModel = viewModel)
+                1 -> PlaylistsScreen(
+                    viewModel = viewModel,
+                    activeSelectedPlaylistId = selectedPlaylistIdForDetail,
+                    onSelectPlaylistDetail = { id ->
+                        selectedPlaylistIdForDetail = id
+                    },
+                    onAddSongsRequest = { playlist ->
+                        selectedPlaylistIdForDetail = playlist.id
+                        targetPlaylistForAddition = playlist
+                        selectedNavIndex = 0
+                    }
+                )
                 2 -> WebServerScreen()
                 3 -> ThemeSettingsScreen(viewModel = viewModel)
             }

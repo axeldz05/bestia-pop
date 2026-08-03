@@ -22,9 +22,13 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
@@ -64,6 +68,7 @@ import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -80,6 +85,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.bestiapop.android.data.model.Album
+import com.bestiapop.android.data.model.Playlist
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.data.network.MetadataFetcher
 import com.bestiapop.android.ui.MusicPlayerViewModel
@@ -93,6 +99,9 @@ import kotlinx.coroutines.launch
 @Composable
 fun LibraryScreen(
     viewModel: MusicPlayerViewModel,
+    targetPlaylistForAddition: Playlist? = null,
+    onCompletePlaylistAddition: () -> Unit = {},
+    onCancelPlaylistAddition: () -> Unit = {},
     onSelectFolderClick: () -> Unit,
     onSongSelect: (Song) -> Unit
 ) {
@@ -106,6 +115,14 @@ fun LibraryScreen(
 
     var selectedTabIndex by remember { mutableIntStateOf(0) }
     var sortMenuExpanded by remember { mutableStateOf(false) }
+
+    val isPlaylistAdditionMode = targetPlaylistForAddition != null
+
+    LaunchedEffect(targetPlaylistForAddition) {
+        if (targetPlaylistForAddition != null) {
+            selectedTabIndex = 0
+        }
+    }
 
     // Tauon Layout option (show album section headers in song list, ON by default)
     var showAlbumHeaders by remember { mutableStateOf(true) }
@@ -129,6 +146,8 @@ fun LibraryScreen(
     var showCreatePlaylistDialog by remember { mutableStateOf(false) }
 
     var newPlaylistName by remember { mutableStateOf("") }
+    var newPlaylistDescription by remember { mutableStateOf("") }
+    var newPlaylistCoverUri by remember { mutableStateOf<String?>(null) }
     var songsForPlaylist by remember { mutableStateOf<List<Song>>(emptyList()) }
 
     // Metadata Editing State
@@ -139,8 +158,28 @@ fun LibraryScreen(
     var editGenre by remember { mutableStateOf("") }
     var isFetchingOnline by remember { mutableStateOf(false) }
 
-    val selectedSongs = remember(selectedSongIds, songs) {
-        songs.filter { selectedSongIds.contains(it.id) }
+    val targetPlaylistSongs by remember(targetPlaylistForAddition) {
+        if (targetPlaylistForAddition != null) {
+            viewModel.getPlaylistSongsFlow(targetPlaylistForAddition.id)
+        } else {
+            kotlinx.coroutines.flow.flowOf(emptyList())
+        }
+    }.collectAsState(initial = emptyList())
+
+    val existingSongIds = remember(targetPlaylistSongs) {
+        targetPlaylistSongs.map { it.id }.toSet()
+    }
+
+    val candidateSongs = remember(songs, existingSongIds, isPlaylistAdditionMode) {
+        if (isPlaylistAdditionMode) {
+            songs.filter { !existingSongIds.contains(it.id) }
+        } else {
+            songs
+        }
+    }
+
+    val selectedSongs = remember(selectedSongIds, candidateSongs) {
+        candidateSongs.filter { selectedSongIds.contains(it.id) }
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -149,8 +188,62 @@ fun LibraryScreen(
                 .fillMaxSize()
                 .padding(top = 16.dp, start = 16.dp, end = 16.dp)
         ) {
-            // Header Row (Normal vs Song Multi-Selection Mode)
-            if (isSongSelectionMode) {
+            // Header Row (Playlist Addition Mode vs Normal Multi-Selection Mode)
+            if (isPlaylistAdditionMode) {
+                Surface(
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 8.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            IconButton(onClick = {
+                                selectedSongIds = emptySet()
+                                onCancelPlaylistAddition()
+                            }) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "Cancelar adición",
+                                    tint = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "Añadir a '${targetPlaylistForAddition!!.name}' (${selectedSongIds.size})",
+                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+
+                        IconButton(
+                            onClick = {
+                                selectedSongIds = if (selectedSongIds.size == candidateSongs.size) {
+                                    emptySet()
+                                } else {
+                                    candidateSongs.map { it.id }.toSet()
+                                }
+                            }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.SelectAll,
+                                contentDescription = "Seleccionar todo",
+                                tint = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
+                    }
+                }
+            } else if (isSongSelectionMode) {
                 Surface(
                     color = MaterialTheme.colorScheme.primaryContainer,
                     shape = RoundedCornerShape(16.dp),
@@ -371,7 +464,7 @@ fun LibraryScreen(
             // Tab Content
             when (selectedTabIndex) {
                 0 -> {
-                    if (songs.isEmpty()) {
+                    if (candidateSongs.isEmpty()) {
                         Box(
                             modifier = Modifier.fillMaxSize(),
                             contentAlignment = Alignment.Center
@@ -384,7 +477,7 @@ fun LibraryScreen(
                                     tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
                                 )
                                 Text(
-                                    text = "No se encontraron canciones",
+                                    text = if (isPlaylistAdditionMode) "Todas las canciones ya forman parte de esta playlist" else "No se encontraron canciones",
                                     style = MaterialTheme.typography.titleMedium,
                                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                                 )
@@ -394,11 +487,11 @@ fun LibraryScreen(
                         LazyColumn(
                             modifier = Modifier
                                 .fillMaxSize()
-                                .padding(bottom = if (isSongSelectionMode) 80.dp else 0.dp)
+                                .padding(bottom = if (isSongSelectionMode || isPlaylistAdditionMode) 80.dp else 0.dp)
                         ) {
                             if (showAlbumHeaders) {
                                 // Tauon Style: Group by Album with inline separators
-                                val groupedByAlbum = songs.groupBy { it.album }
+                                val groupedByAlbum = candidateSongs.groupBy { it.album }
                                 groupedByAlbum.forEach { (albumName, albumSongs) ->
                                     item(key = "album_header_$albumName") {
                                         TauonAlbumHeader(
@@ -429,10 +522,10 @@ fun LibraryScreen(
                                         SongListItem(
                                             song = song,
                                             isCurrentPlaying = currentSong?.uriString == song.uriString,
-                                            isSelectionMode = isSongSelectionMode,
+                                            isSelectionMode = isSongSelectionMode || isPlaylistAdditionMode,
                                             isSelected = isSelected,
                                             onClick = {
-                                                if (isSongSelectionMode) {
+                                                if (isSongSelectionMode || isPlaylistAdditionMode) {
                                                     selectedSongIds = if (isSelected) selectedSongIds - song.id else selectedSongIds + song.id
                                                 } else {
                                                     viewModel.playSong(song, songs)
@@ -440,7 +533,7 @@ fun LibraryScreen(
                                                 }
                                             },
                                             onLongClick = {
-                                                if (!isSongSelectionMode) selectedSongIds = setOf(song.id)
+                                                if (!isSongSelectionMode && !isPlaylistAdditionMode) selectedSongIds = setOf(song.id)
                                             },
                                             onToggleSelect = {
                                                 selectedSongIds = if (isSelected) selectedSongIds - song.id else selectedSongIds + song.id
@@ -467,15 +560,15 @@ fun LibraryScreen(
                                 }
                             } else {
                                 // Flat Song List
-                                itemsIndexed(songs, key = { index, song -> "${song.id}_$index" }) { index, song ->
+                                itemsIndexed(candidateSongs, key = { index, song -> "${song.id}_$index" }) { index, song ->
                                     val isSelected = selectedSongIds.contains(song.id)
                                     SongListItem(
                                         song = song,
                                         isCurrentPlaying = currentSong?.uriString == song.uriString,
-                                        isSelectionMode = isSongSelectionMode,
+                                        isSelectionMode = isSongSelectionMode || isPlaylistAdditionMode,
                                         isSelected = isSelected,
                                         onClick = {
-                                            if (isSongSelectionMode) {
+                                            if (isSongSelectionMode || isPlaylistAdditionMode) {
                                                 selectedSongIds = if (isSelected) selectedSongIds - song.id else selectedSongIds + song.id
                                             } else {
                                                 viewModel.playSong(song, songs)
@@ -483,7 +576,7 @@ fun LibraryScreen(
                                             }
                                         },
                                         onLongClick = {
-                                            if (!isSongSelectionMode) selectedSongIds = setOf(song.id)
+                                            if (!isSongSelectionMode && !isPlaylistAdditionMode) selectedSongIds = setOf(song.id)
                                         },
                                         onToggleSelect = {
                                             selectedSongIds = if (isSelected) selectedSongIds - song.id else selectedSongIds + song.id
@@ -1022,8 +1115,50 @@ fun LibraryScreen(
             }
         }
 
-        // Song Multi-Selection Bottom Action Bar
-        if (isSongSelectionMode) {
+        // Playlist Addition Mode Bottom Action Bar
+        if (isPlaylistAdditionMode) {
+            Surface(
+                color = MaterialTheme.colorScheme.primaryContainer,
+                tonalElevation = 8.dp,
+                shadowElevation = 12.dp,
+                shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .align(Alignment.BottomCenter)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Button(
+                        onClick = {
+                            if (selectedSongs.isNotEmpty()) {
+                                viewModel.addSongsToPlaylist(targetPlaylistForAddition!!.id, selectedSongs)
+                            }
+                            selectedSongIds = emptySet()
+                            onCompletePlaylistAddition()
+                        },
+                        enabled = selectedSongs.isNotEmpty(),
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                        shape = RoundedCornerShape(14.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                    ) {
+                        Icon(imageVector = Icons.Default.PlaylistAdd, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Añadir seleccionados a la playlist ${targetPlaylistForAddition!!.name} (${selectedSongs.size})",
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+            }
+        } else if (isSongSelectionMode) {
             Surface(
                 color = MaterialTheme.colorScheme.surfaceVariant,
                 tonalElevation = 8.dp,
@@ -1320,32 +1455,113 @@ fun LibraryScreen(
 
     // Create New Playlist Dialog
     if (showCreatePlaylistDialog) {
+        val imagePickerLauncher = rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.GetContent()
+        ) { uri: Uri? ->
+            uri?.let { newPlaylistCoverUri = it.toString() }
+        }
+
         AlertDialog(
-            onDismissRequest = { showCreatePlaylistDialog = false },
-            title = { Text("Nueva Playlist") },
+            onDismissRequest = {
+                showCreatePlaylistDialog = false
+                newPlaylistName = ""
+                newPlaylistDescription = ""
+                newPlaylistCoverUri = null
+            },
+            title = { Text("Nueva Playlist", fontWeight = FontWeight.Bold) },
             text = {
-                OutlinedTextField(
-                    value = newPlaylistName,
-                    onValueChange = { newPlaylistName = it },
-                    label = { Text("Nombre de la playlist") },
-                    singleLine = true
-                )
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState()),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(100.dp)
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant)
+                            .clickable { imagePickerLauncher.launch("image/*") },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (!newPlaylistCoverUri.isNullOrEmpty()) {
+                            coil.compose.AsyncImage(
+                                model = newPlaylistCoverUri,
+                                contentDescription = "Portada de Playlist",
+                                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        } else {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Icon(
+                                    imageVector = Icons.Default.AddPhotoAlternate,
+                                    contentDescription = "Portada",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(32.dp)
+                                )
+                                Text(
+                                    text = "Portada local",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+
+                    OutlinedTextField(
+                        value = newPlaylistName,
+                        onValueChange = { newPlaylistName = it },
+                        label = { Text("Nombre de la playlist *") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    OutlinedTextField(
+                        value = newPlaylistDescription,
+                        onValueChange = { newPlaylistDescription = it },
+                        label = { Text("Descripción (opcional)") },
+                        maxLines = 3,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
             },
             confirmButton = {
                 Button(
                     onClick = {
                         if (newPlaylistName.isNotBlank()) {
-                            viewModel.createPlaylist(newPlaylistName.trim())
+                            val targets = songsForPlaylist
+                            viewModel.createPlaylist(
+                                name = newPlaylistName.trim(),
+                                description = newPlaylistDescription.trim(),
+                                coverUri = newPlaylistCoverUri
+                            ) { createdId ->
+                                if (targets.isNotEmpty()) {
+                                    viewModel.addSongsToPlaylist(createdId, targets)
+                                }
+                            }
                             newPlaylistName = ""
+                            newPlaylistDescription = ""
+                            newPlaylistCoverUri = null
                             showCreatePlaylistDialog = false
+                            showPlaylistDialog = false
+                            songsForPlaylist = emptyList()
+                            selectedSongIds = emptySet()
+                            selectedAlbumNames = emptySet()
                         }
-                    }
+                    },
+                    enabled = newPlaylistName.isNotBlank()
                 ) {
                     Text("Crear")
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showCreatePlaylistDialog = false }) {
+                TextButton(onClick = {
+                    showCreatePlaylistDialog = false
+                    newPlaylistName = ""
+                    newPlaylistDescription = ""
+                    newPlaylistCoverUri = null
+                }) {
                     Text("Cancelar")
                 }
             }

@@ -133,5 +133,75 @@ sealed class DownloadStatus {
     data class Error(val message: String) : DownloadStatus()
 }
 
+enum class ActiveDownloadSource {
+    CATALOG,
+    LINK,
+    SAVE_WHILE_LISTENING,
+    BATCH
+}
+
+/**
+ * Unified in-memory download job for the Descargas center.
+ * SUCCESS items are removed from the list; UI shows DOWNLOADING and ERROR.
+ */
+data class ActiveDownload(
+    val id: String,
+    val source: ActiveDownloadSource,
+    val displayTitle: String,
+    val displayArtist: String,
+    val artworkUrl: String?,
+    val candidates: List<OnlineCatalogTrack>,
+    val currentCandidateIndex: Int = 0,
+    val state: CandidateDownloadState = CandidateDownloadState.DOWNLOADING,
+    val progressMessage: String? = null,
+    val progressPercent: Int = 0,
+    val errorMessage: String? = null
+) {
+    val currentTrack: OnlineCatalogTrack?
+        get() = candidates.getOrNull(currentCandidateIndex)
+
+    companion object {
+        /** Advance to the next YouTube match; expands via [newCandidates] when the list was a single placeholder. */
+        fun withCycledCandidate(
+            download: ActiveDownload,
+            newCandidates: List<OnlineCatalogTrack>
+        ): ActiveDownload {
+            if (newCandidates.isEmpty()) return download
+            val nextIndex = if (download.candidates.size <= 1 && newCandidates.size > 1) {
+                // Just expanded from search — pick first result that differs from current id if possible
+                val currentId = download.currentTrack?.id
+                val alt = newCandidates.indexOfFirst { it.id != currentId }.takeIf { it >= 0 } ?: 0
+                alt
+            } else {
+                (download.currentCandidateIndex + 1) % newCandidates.size
+            }
+            val next = newCandidates[nextIndex]
+            val preservedAlbum = download.currentTrack?.album
+                ?.takeIf { it.isNotBlank() && !it.equals("YouTube", ignoreCase = true) }
+            val stillFailed = download.state == CandidateDownloadState.ERROR
+            return download.copy(
+                candidates = newCandidates.mapIndexed { i, t ->
+                    if (i == nextIndex) {
+                        t.copy(
+                            album = preservedAlbum ?: t.album,
+                            artworkUrl = t.artworkUrl ?: download.artworkUrl,
+                            title = t.title.ifBlank { download.displayTitle },
+                            artist = t.artist.ifBlank { download.displayArtist }
+                        )
+                    } else t
+                },
+                currentCandidateIndex = nextIndex,
+                displayTitle = next.title.ifBlank { download.displayTitle },
+                displayArtist = next.artist.ifBlank { download.displayArtist },
+                artworkUrl = next.artworkUrl ?: download.artworkUrl,
+                state = if (stillFailed) CandidateDownloadState.ERROR else CandidateDownloadState.IDLE,
+                progressMessage = null,
+                progressPercent = 0,
+                errorMessage = if (stillFailed) "Match actualizado — tocá Reintentar" else null
+            )
+        }
+    }
+}
+
 
 

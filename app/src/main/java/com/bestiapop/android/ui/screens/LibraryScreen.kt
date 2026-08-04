@@ -73,7 +73,8 @@ fun LibraryScreen(
     onCompletePlaylistAddition: () -> Unit = {},
     onCancelPlaylistAddition: () -> Unit = {},
     onSelectFolderClick: () -> Unit,
-    onSongSelect: (Song) -> Unit
+    onSongSelect: (Song) -> Unit,
+    onOpenDownloads: () -> Unit = {}
 ) {
     val songs by viewModel.songsState.collectAsState()
     val albums by viewModel.albumsState.collectAsState()
@@ -580,7 +581,11 @@ fun LibraryScreen(
                 showAddMusicDialog = false
                 onSelectFolderClick()
             },
-            onDismiss = { showAddMusicDialog = false }
+            onDismiss = { showAddMusicDialog = false },
+            onOpenDownloads = {
+                showAddMusicDialog = false
+                onOpenDownloads()
+            }
         )
     }
 }

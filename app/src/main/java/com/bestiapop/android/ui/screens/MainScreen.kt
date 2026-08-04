@@ -6,10 +6,13 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.QueueMusic
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Wifi
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -18,6 +21,7 @@ import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -30,6 +34,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
+import com.bestiapop.android.data.preferences.activeDownloadBadgeCount
 import com.bestiapop.android.ui.MusicPlayerViewModel
 import com.bestiapop.android.ui.components.BottomPlayerBar
 
@@ -47,6 +52,17 @@ fun MainScreen(
     val isPlaying by viewModel.isPlaying.collectAsState()
     val positionMs by viewModel.playbackPositionMs.collectAsState()
     val radioStatusLabel by viewModel.radioStatusLabel.collectAsState()
+    val activeDownloads by viewModel.activeDownloads.collectAsState()
+    val pendingOpenDownloads by viewModel.pendingOpenDownloads.collectAsState()
+    val downloadBadgeCount = activeDownloadBadgeCount(activeDownloads)
+
+    LaunchedEffect(pendingOpenDownloads) {
+        if (pendingOpenDownloads) {
+            selectedNavIndex = 2
+            showFullPlayer = false
+            viewModel.consumeOpenDownloads()
+        }
+    }
 
     var targetPlaylistForAddition by remember { mutableStateOf<com.bestiapop.android.data.model.Playlist?>(null) }
     var selectedPlaylistIdForDetail by remember { mutableStateOf<Long?>(null) }
@@ -60,6 +76,7 @@ fun MainScreen(
     val navItems = listOf(
         NavItem("Biblioteca", Icons.Default.LibraryMusic),
         NavItem("Playlists", Icons.Default.QueueMusic),
+        NavItem("Descargas", Icons.Default.Download),
         NavItem("WiFi Sync", Icons.Default.Wifi),
         NavItem("Ajustes", Icons.Default.Settings)
     )
@@ -100,7 +117,10 @@ fun MainScreen(
                             selectedNavIndex = 1
                         },
                         onSelectFolderClick = onSelectFolderClick,
-                        onSongSelect = { openFullPlayer() }
+                        onSongSelect = { openFullPlayer() },
+                        onOpenDownloads = {
+                            selectedNavIndex = 2
+                        }
                     )
                     1 -> PlaylistsScreen(
                         viewModel = viewModel,
@@ -114,8 +134,9 @@ fun MainScreen(
                             selectedNavIndex = 0
                         }
                     )
-                    2 -> WebServerScreen()
-                    3 -> SettingsScreen(viewModel = viewModel)
+                    2 -> DownloadsScreen(viewModel = viewModel)
+                    3 -> WebServerScreen()
+                    4 -> SettingsScreen(viewModel = viewModel)
                 }
             }
         }
@@ -149,7 +170,23 @@ fun MainScreen(
                             selectedNavIndex = index
                             dismissFullPlayer()
                         },
-                        icon = { Icon(item.icon, contentDescription = item.label) },
+                        icon = {
+                            if (index == 2 && downloadBadgeCount > 0) {
+                                BadgedBox(
+                                    badge = {
+                                        Badge {
+                                            Text(
+                                                if (downloadBadgeCount > 9) "9+" else downloadBadgeCount.toString()
+                                            )
+                                        }
+                                    }
+                                ) {
+                                    Icon(item.icon, contentDescription = item.label)
+                                }
+                            } else {
+                                Icon(item.icon, contentDescription = item.label)
+                            }
+                        },
                         label = { Text(item.label) },
                         colors = NavigationBarItemDefaults.colors(
                             selectedIconColor = MaterialTheme.colorScheme.primary,

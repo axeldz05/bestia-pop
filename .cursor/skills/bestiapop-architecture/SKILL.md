@@ -54,8 +54,9 @@ service/     MusicService (playback), WebServerService (WiFi sync)
 `MainScreen` bottom nav:
 0. Biblioteca (`LibraryScreen` + subviews album/artist/song)
 1. Playlists (`PlaylistsScreen`)
-2. WiFi Sync (`WebServerScreen`)
-3. Temas (`ThemeSettingsScreen`)
+2. Descargas (`DownloadsScreen`)
+3. WiFi Sync (`WebServerScreen`)
+4. Ajustes (`SettingsScreen` / temas / ListenBrainz)
 
 Overlay: `BottomPlayerBar` → `NowPlayingScreen`; cola en `QueueScreen`.
 

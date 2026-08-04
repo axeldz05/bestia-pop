@@ -10,6 +10,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import com.bestiapop.android.service.DownloadNotificationHelper
 import com.bestiapop.android.ui.MusicPlayerViewModel
 import com.bestiapop.android.ui.screens.MainScreen
 import com.bestiapop.android.ui.theme.BestiaPopTheme
@@ -38,6 +39,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         requestRequiredPermissions()
+        handleOpenTabIntent(intent)
 
         setContent {
             val currentTheme by viewModel.currentThemeState.collectAsState(initial = ThemePresets.MidnightDark)
@@ -50,6 +52,20 @@ class MainActivity : ComponentActivity() {
                     }
                 )
             }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleOpenTabIntent(intent)
+    }
+
+    private fun handleOpenTabIntent(intent: Intent?) {
+        val tab = intent?.getStringExtra(DownloadNotificationHelper.EXTRA_OPEN_TAB)
+        if (tab == DownloadNotificationHelper.TAB_DOWNLOADS) {
+            viewModel.requestOpenDownloads()
+            intent?.removeExtra(DownloadNotificationHelper.EXTRA_OPEN_TAB)
         }
     }
 

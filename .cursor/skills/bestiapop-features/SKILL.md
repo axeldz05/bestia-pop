@@ -36,9 +36,12 @@ Archivos: `domain/usecase/PlayCollectionUseCase.kt`, `ui/MusicPlayerViewModel.kt
 | Extraer stream | `YouTubeExtractor.extractAudioStream` / `extractAudioStreamDetailed` |
 | Descargar + persistir | `DownloadAudioTrackUseCase.execute` → `IMusicRepository.downloadAndSaveOnlineTrack` |
 | UI diálogo | `ui/components/AddMusicDialog.kt` |
-| Orquestación VM | `searchCatalog`, `searchOnlineCatalog`, `downloadSingleCandidate`, `downloadSelectedCandidatesBatch`, `downloadFromUrl`, `downloadOnlineTrack` |
+| Centro de descargas | `DownloadsScreen` + `ActiveDownloadRow`; persistencia `ActiveDownloadsStore` / `ActiveDownloadCodec`; notif `DownloadNotificationHelper`; badge `activeDownloadBadgeCount` en tab Descargas (`MainScreen`) |
+| Orquestación VM | `runTrackedDownload` ← `downloadSingleCandidate`, `downloadSelectedCandidatesBatch`, `downloadFromUrl`, `downloadOnlineTrack`, `maybeEnqueueSaveWhileListening`; acciones `retryActiveDownload` / `cycleActiveDownload` / `previewActiveDownload` / `dismissActiveDownload`; deep-link `requestOpenDownloads` / `pendingOpenDownloads` |
 
-Modelo clave: `OnlineCatalogTrack`, `CatalogTrackCandidate`, `DownloadStatus`.
+Modelo clave: `OnlineCatalogTrack`, `CatalogTrackCandidate`, `DownloadStatus` (legacy Idle), `ActiveDownload` / `ActiveDownloadSource`, cola `activeDownloads`.
+
+**Invariante cola:** todas las descargas online se registran en `activeDownloads`; éxito las remueve; fallo deja `ERROR`. Tras kill del proceso, `ActiveDownloadCodec.forPersistence` restaura ERROR/IDLE (DOWNLOADING → “Interrumpida”). Add Music banners leen `activeDownloads` (no `DownloadStatus`).
 
 ## 3. Biblioteca: filtro, orden y vistas
 
@@ -89,7 +92,23 @@ State: `currentThemeState`.
 
 ## 8. WiFi Sync
 
-`WebServerService` (Ktor) + `WebServerScreen`. Sirve para transferir audio al dispositivo en red local.
+`WebServerService` (Ktor) + `WebServerScreen()` (solo servidor; sin cola de descargas).
+
+| Capacidad | Entry point |
+|-----------|-------------|
+| Servidor local | `WebServerService` + toggle en `WebServerScreen` |
+
+Centro de descargas online → sección 2 (`DownloadsScreen`, tab Descargas).
+
+## 8b. Centro de descargas (tab Descargas)
+
+| Capacidad | Entry point |
+|-----------|-------------|
+| UI cola | `DownloadsScreen` + `ActiveDownloadRow` (preview↔reintentar, buscar otro, dismiss) |
+| Persistencia cola | `ActiveDownloadsStore` + `ActiveDownloadCodec` (DataStore JSON) |
+| Notif progreso | `DownloadNotificationHelper` (canal `downloads_channel`; tap → tab Descargas) |
+| Badge tab | `activeDownloadBadgeCount` en `MainScreen` NavigationBar Descargas |
+| Deep-link | `requestOpenDownloads` / `pendingOpenDownloads` / `consumeOpenDownloads` |
 
 ## 9. ListenBrainz (scrobbling + Para Ti)
 
@@ -99,7 +118,7 @@ State: `currentThemeState`.
 - Playlists Discover = `GET /1/user/{user}/playlists/createdfor`; detalle = `GET /1/playlist/{mbid}`.
 - Match local por artist+title normalizado; faltantes = `PlayableItem.Remote`.
 - Reproducción: cola mixta `Local|Remote` vía `playPlayableCollection` (prefetch / 403 retry de stream).
-- **Guardar al escuchar** (`saveWhileListening` + `saveWhileListeningPercent`): al alcanzar ≥N% de la duración (o fin) de un Remote, `downloadAndSaveOnlineTrack` en background sin reemplazar el MediaItem.
+- **Guardar al escuchar** (`saveWhileListening` + `saveWhileListeningPercent`): al alcanzar ≥N% de la duración (o fin) de un Remote, encola en `activeDownloads` vía `runTrackedDownload` (sin reemplazar el MediaItem). Fallo → `ERROR` en el centro + Toast; quita la key de `saveWhileListeningAttempted` para permitir reintento manual/auto.
 
 | Capacidad | Entry point |
 |-----------|-------------|

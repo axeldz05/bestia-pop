@@ -76,7 +76,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
-import com.bestiapop.android.data.model.DownloadStatus
+import com.bestiapop.android.data.model.ActiveDownload
+import com.bestiapop.android.data.model.ActiveDownloadSource
+import com.bestiapop.android.data.model.CandidateDownloadState
 import com.bestiapop.android.data.model.OnlineCatalogTrack
 import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.ui.MusicPlayerViewModel
@@ -87,7 +89,8 @@ import com.bestiapop.android.ui.MusicPlayerViewModel
 fun AddMusicDialog(
     viewModel: MusicPlayerViewModel,
     onSelectFolderClick: () -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onOpenDownloads: () -> Unit = {}
 ) {
     var selectedTab by remember { mutableIntStateOf(0) }
     var linkUrlInput by remember { mutableStateOf("") }
@@ -95,7 +98,7 @@ fun AddMusicDialog(
 
     val catalogResults by viewModel.catalogSearchResults.collectAsState()
     val isSearchingCatalog by viewModel.isSearchingCatalog.collectAsState()
-    val downloadStatus by viewModel.downloadStatus.collectAsState()
+    val activeDownloads by viewModel.activeDownloads.collectAsState()
 
     val catalogCategory by viewModel.catalogCategory.collectAsState()
     val albumSearchResults by viewModel.albumSearchResults.collectAsState()
@@ -214,13 +217,14 @@ fun AddMusicDialog(
                         1 -> LinkDownloaderTab(
                             urlInput = linkUrlInput,
                             onUrlInputChange = { linkUrlInput = it },
-                            downloadStatus = downloadStatus,
+                            linkDownloads = activeDownloads.filter {
+                                it.source == ActiveDownloadSource.LINK &&
+                                    (it.state == CandidateDownloadState.DOWNLOADING ||
+                                        it.state == CandidateDownloadState.ERROR)
+                            },
                             onDownloadClick = { viewModel.downloadFromUrl(linkUrlInput) },
-                            onResetStatus = { viewModel.resetDownloadStatus() },
-                            onPlayDownloaded = { song ->
-                                viewModel.playSong(song)
-                                onDismiss()
-                            }
+                            onRetry = { id -> viewModel.retryActiveDownload(id) },
+                            onOpenDownloads = onOpenDownloads
                         )
                         2 -> OnlineCatalogTab(
                             searchInput = catalogSearchInput,
@@ -234,7 +238,12 @@ fun AddMusicDialog(
                             selectedCollectionTitle = selectedCollectionTitle,
                             activeCandidates = activeTrackCandidates,
                             isLoadingCollection = isLoadingCollection,
-                            downloadStatus = downloadStatus,
+                            catalogDownloads = activeDownloads.filter {
+                                (it.source == ActiveDownloadSource.CATALOG ||
+                                    it.source == ActiveDownloadSource.BATCH) &&
+                                    (it.state == CandidateDownloadState.DOWNLOADING ||
+                                        it.state == CandidateDownloadState.ERROR)
+                            },
                             catalogPreviewKey = catalogPreviewKey,
                             previewItem = (currentItem as? PlayableItem.Remote)?.takeIf { catalogPreviewKey != null },
                             isPreviewPlaying = isPlaying && catalogPreviewKey != null,
@@ -260,10 +269,8 @@ fun AddMusicDialog(
                             onRetryCandidate = { index -> viewModel.downloadSingleCandidate(index) },
                             onDownloadBatch = { viewModel.downloadSelectedCandidatesBatch() },
                             onClearCollection = { viewModel.clearSelectedCollection() },
-                            onPlayDownloaded = { song ->
-                                viewModel.playSong(song)
-                                dismissDialog()
-                            }
+                            onRetryDownload = { id -> viewModel.retryActiveDownload(id) },
+                            onOpenDownloads = onOpenDownloads
                         )
                     }
                 }
@@ -343,11 +350,12 @@ private fun LocalImportTab(onSelectFolderClick: () -> Unit) {
 private fun LinkDownloaderTab(
     urlInput: String,
     onUrlInputChange: (String) -> Unit,
-    downloadStatus: DownloadStatus,
+    linkDownloads: List<ActiveDownload>,
     onDownloadClick: () -> Unit,
-    onResetStatus: () -> Unit,
-    onPlayDownloaded: (com.bestiapop.android.data.model.Song) -> Unit
+    onRetry: (String) -> Unit,
+    onOpenDownloads: () -> Unit
 ) {
+    val isDownloading = linkDownloads.any { it.state == CandidateDownloadState.DOWNLOADING }
     Column(modifier = Modifier.fillMaxSize()) {
         Text(
             text = "Descargar por Enlace Web",
@@ -391,7 +399,7 @@ private fun LinkDownloaderTab(
 
         Button(
             onClick = onDownloadClick,
-            enabled = urlInput.isNotBlank() && downloadStatus !is DownloadStatus.Downloading,
+            enabled = urlInput.isNotBlank() && !isDownloading,
             shape = RoundedCornerShape(14.dp),
             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
             modifier = Modifier.fillMaxWidth()
@@ -403,96 +411,80 @@ private fun LinkDownloaderTab(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Download Status Feedback UI
-        when (downloadStatus) {
-            is DownloadStatus.Downloading -> {
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)),
-                    shape = RoundedCornerShape(16.dp),
+        ActiveDownloadsSummaryBanner(
+            downloads = linkDownloads,
+            onRetry = onRetry,
+            onOpenDownloads = onOpenDownloads
+        )
+    }
+}
+
+@Composable
+private fun ActiveDownloadsSummaryBanner(
+    downloads: List<ActiveDownload>,
+    onRetry: (String) -> Unit,
+    onOpenDownloads: () -> Unit
+) {
+    if (downloads.isEmpty()) return
+    val downloading = downloads.filter { it.state == CandidateDownloadState.DOWNLOADING }
+    val failed = downloads.filter { it.state == CandidateDownloadState.ERROR }
+
+    AnimatedVisibility(visible = downloads.isNotEmpty()) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (downloading.isNotEmpty()) {
+                val latest = downloading.first()
+                Surface(
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(
-                        modifier = Modifier.padding(16.dp),
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(28.dp),
-                            color = MaterialTheme.colorScheme.primary,
-                            strokeWidth = 3.dp
-                        )
-                        Spacer(modifier = Modifier.width(16.dp))
+                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                        Spacer(modifier = Modifier.width(10.dp))
                         Text(
-                            text = downloadStatus.message,
-                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
-                            color = MaterialTheme.colorScheme.onSurface
+                            text = if (downloading.size == 1) {
+                                latest.progressMessage ?: "Descargando «${latest.displayTitle}»…"
+                            } else {
+                                "Descargando ${downloading.size} canciones…"
+                            },
+                            style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
                         )
                     }
                 }
             }
-            is DownloadStatus.Success -> {
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
-                    shape = RoundedCornerShape(16.dp),
+            if (failed.isNotEmpty()) {
+                Surface(
+                    color = MaterialTheme.colorScheme.errorContainer,
+                    shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Default.CheckCircle,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(28.dp)
-                            )
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Text(
-                                text = downloadStatus.message,
-                                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
-                                color = MaterialTheme.colorScheme.onPrimaryContainer
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.height(12.dp))
-
-                        Button(
-                            onClick = { onPlayDownloaded(downloadStatus.song) },
-                            shape = RoundedCornerShape(12.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Icon(imageVector = Icons.Default.PlayArrow, contentDescription = null)
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Reproducir Ahora", fontWeight = FontWeight.Bold)
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Text(
+                            text = if (failed.size == 1) {
+                                failed.first().errorMessage
+                                    ?: "Falló «${failed.first().displayTitle}»"
+                            } else {
+                                "${failed.size} descargas fallaron"
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            TextButton(onClick = { onRetry(failed.first().id) }) {
+                                Text("Reintentar", fontWeight = FontWeight.Bold)
+                            }
+                            TextButton(onClick = onOpenDownloads) {
+                                Text("Ver descargas", fontWeight = FontWeight.Bold)
+                            }
                         }
                     }
                 }
             }
-            is DownloadStatus.Error -> {
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.7f)),
-                    shape = RoundedCornerShape(16.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(
-                        modifier = Modifier.padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Error,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.error,
-                            modifier = Modifier.size(28.dp)
-                        )
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Text(
-                            text = downloadStatus.message,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onErrorContainer,
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-                }
-            }
-            DownloadStatus.Idle -> { /* Nothing */ }
         }
     }
 }
@@ -511,7 +503,7 @@ private fun OnlineCatalogTab(
     selectedCollectionTitle: String?,
     activeCandidates: List<com.bestiapop.android.data.model.CatalogTrackCandidate>,
     isLoadingCollection: Boolean,
-    downloadStatus: DownloadStatus,
+    catalogDownloads: List<ActiveDownload>,
     catalogPreviewKey: String?,
     previewItem: PlayableItem?,
     isPreviewPlaying: Boolean,
@@ -532,7 +524,8 @@ private fun OnlineCatalogTab(
     onRetryCandidate: (Int) -> Unit,
     onDownloadBatch: () -> Unit,
     onClearCollection: () -> Unit,
-    onPlayDownloaded: (com.bestiapop.android.data.model.Song) -> Unit
+    onRetryDownload: (String) -> Unit,
+    onOpenDownloads: () -> Unit
 ) {
     androidx.compose.runtime.LaunchedEffect(Unit) {
         if (songResults.isEmpty() && albumResults.isEmpty() && playlistResults.isEmpty()) {
@@ -546,7 +539,7 @@ private fun OnlineCatalogTab(
             title = selectedCollectionTitle,
             isLoading = isLoadingCollection,
             candidates = activeCandidates,
-            downloadStatus = downloadStatus,
+            batchDownloads = catalogDownloads.filter { it.source == ActiveDownloadSource.BATCH },
             catalogPreviewKey = catalogPreviewKey,
             previewItem = previewItem,
             isPreviewPlaying = isPreviewPlaying,
@@ -559,7 +552,8 @@ private fun OnlineCatalogTab(
             onToggleSelection = onToggleSelection,
             onRetryCandidate = onRetryCandidate,
             onDownloadBatch = onDownloadBatch,
-            onPlayDownloaded = onPlayDownloaded,
+            onRetryDownload = onRetryDownload,
+            onOpenDownloads = onOpenDownloads,
             onTogglePreviewPlayPause = onTogglePreviewPlayPause,
             onStopPreview = onStopPreview
         )
@@ -630,71 +624,11 @@ private fun OnlineCatalogTab(
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // Download Status Indicator
-        AnimatedVisibility(visible = downloadStatus !is DownloadStatus.Idle) {
-            Column(modifier = Modifier.padding(bottom = 12.dp)) {
-                when (downloadStatus) {
-                    is DownloadStatus.Downloading -> {
-                        Surface(
-                            color = MaterialTheme.colorScheme.primaryContainer,
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                                Spacer(modifier = Modifier.width(10.dp))
-                                Text(
-                                    text = downloadStatus.message,
-                                    style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
-                                    color = MaterialTheme.colorScheme.onPrimaryContainer
-                                )
-                            }
-                        }
-                    }
-                    is DownloadStatus.Success -> {
-                        Surface(
-                            color = MaterialTheme.colorScheme.secondaryContainer,
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Text(
-                                    text = downloadStatus.message,
-                                    style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
-                                    color = MaterialTheme.colorScheme.onSecondaryContainer,
-                                    modifier = Modifier.weight(1f)
-                                )
-                                TextButton(onClick = { onPlayDownloaded(downloadStatus.song) }) {
-                                    Text("Reproducir", fontWeight = FontWeight.Bold)
-                                }
-                            }
-                        }
-                    }
-                    is DownloadStatus.Error -> {
-                        Surface(
-                            color = MaterialTheme.colorScheme.errorContainer,
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text(
-                                text = downloadStatus.message,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onErrorContainer,
-                                modifier = Modifier.padding(12.dp)
-                            )
-                        }
-                    }
-                    DownloadStatus.Idle -> {}
-                }
-            }
-        }
+        ActiveDownloadsSummaryBanner(
+            downloads = catalogDownloads.filter { it.source == ActiveDownloadSource.CATALOG },
+            onRetry = onRetryDownload,
+            onOpenDownloads = onOpenDownloads
+        )
 
         // Search Results List based on active category
         Box(modifier = Modifier.weight(1f)) {
@@ -804,7 +738,7 @@ private fun CollectionTrackInspectionView(
     title: String,
     isLoading: Boolean,
     candidates: List<com.bestiapop.android.data.model.CatalogTrackCandidate>,
-    downloadStatus: DownloadStatus,
+    batchDownloads: List<ActiveDownload>,
     catalogPreviewKey: String?,
     previewItem: PlayableItem?,
     isPreviewPlaying: Boolean,
@@ -817,11 +751,13 @@ private fun CollectionTrackInspectionView(
     onToggleSelection: (Int) -> Unit,
     onRetryCandidate: (Int) -> Unit,
     onDownloadBatch: () -> Unit,
-    onPlayDownloaded: (com.bestiapop.android.data.model.Song) -> Unit,
+    onRetryDownload: (String) -> Unit,
+    onOpenDownloads: () -> Unit,
     onTogglePreviewPlayPause: () -> Unit,
     onStopPreview: () -> Unit
 ) {
     val selectedCount = candidates.count { it.isSelected && it.currentTrack != null }
+    val isBatchDownloading = batchDownloads.any { it.state == CandidateDownloadState.DOWNLOADING }
 
     Column(modifier = Modifier.fillMaxSize()) {
         // Back Header
@@ -850,6 +786,12 @@ private fun CollectionTrackInspectionView(
         }
 
         Spacer(modifier = Modifier.height(8.dp))
+
+        ActiveDownloadsSummaryBanner(
+            downloads = batchDownloads,
+            onRetry = onRetryDownload,
+            onOpenDownloads = onOpenDownloads
+        )
 
         if (isLoading) {
             Box(
@@ -895,7 +837,7 @@ private fun CollectionTrackInspectionView(
 
             Button(
                 onClick = onDownloadBatch,
-                enabled = selectedCount > 0 && downloadStatus !is DownloadStatus.Downloading,
+                enabled = selectedCount > 0 && !isBatchDownloading,
                 shape = RoundedCornerShape(16.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
                 modifier = Modifier.fillMaxWidth()

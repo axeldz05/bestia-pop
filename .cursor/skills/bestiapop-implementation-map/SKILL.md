@@ -31,7 +31,8 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 | Ajustes / ListenBrainz | `ui/screens/SettingsScreen.kt`, `ListenBrainzSettingsScreen.kt` |
 | Now playing | `ui/screens/NowPlayingScreen.kt` |
 | Cola | `ui/screens/QueueScreen.kt` |
-| WiFi sync | `ui/screens/WebServerScreen.kt` |
+| WiFi sync | `ui/screens/WebServerScreen.kt` (`WebServerScreen()` solo servidor) |
+| Descargas | `ui/screens/DownloadsScreen.kt` (`DownloadsScreen(viewModel)` + `ActiveDownloadRow`) |
 | Temas | `ui/screens/ThemeSettingsScreen.kt` |
 
 ## UI — components / state / theme
@@ -40,7 +41,8 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 |---------|---------|
 | ViewModel central | `ui/MusicPlayerViewModel.kt` |
 | Mini player | `ui/components/BottomPlayerBar.kt` |
-| Add / download music | `ui/components/AddMusicDialog.kt` |
+| Active download row | `ui/components/ActiveDownloadRow.kt` |
+| Add / download music | `ui/components/AddMusicDialog.kt` (banners vía `activeDownloads` + `ActiveDownloadsSummaryBanner`) |
 | Song row | `ui/components/SongListItem.kt` |
 | Artwork thumb | `ui/components/ArtworkThumbnail.kt` |
 | Multi-select bar | `ui/components/MultiSelectActionBar.kt` |
@@ -70,7 +72,7 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 | Concern | Archivo |
 |---------|---------|
 | Repo impl | `data/repository/MusicRepository.kt` |
-| Modelos dominio UI | `data/model/Models.kt` |
+| Modelos dominio UI | `data/model/Models.kt` (`OnlineCatalogTrack`, `CatalogTrackCandidate`, `DownloadStatus`, `ActiveDownload`, `ActiveDownloadSource`) |
 | Cola Local/Remote | `data/model/PlayableItem.kt` (`PlayableItem`, `ResolvedStream`, `Song.toPlayable`) |
 | Room DB | `data/db/AppDatabase.kt` |
 | DAO | `data/db/MusicDao.kt` |
@@ -80,6 +82,7 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 | YouTube search + stream | `data/network/YouTubeExtractor.kt` |
 | Stream resolve + cache TTL | `data/stream/StreamResolver.kt` |
 | Theme DataStore | `data/preferences/ThemePreferencesRepository.kt` |
+| Active downloads persist | `data/preferences/ActiveDownloadsStore.kt` (`ActiveDownloadCodec`, `activeDownloadBadgeCount`) |
 | ListenBrainz prefs | `data/preferences/ListenBrainzPreferencesRepository.kt` |
 | ListenBrainz API | `data/network/ListenBrainzClient.kt` (`submitListens`, createdfor, playlist, `lookupRecordingMetadata`, `fetchLbRadioArtist`, `fetchRecordingMetadata`) |
 | LB models + sync | `data/listenbrainz/LbPlaylistModels.kt` (`MatchedLbPlaylist.toPlayableItems`, `streamCount`), `LbRadioModels.kt`, `ListenTracker.kt`, `ListenSyncCoordinator.kt` |
@@ -93,6 +96,7 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 |----------|---------|
 | Playback Media3 + UA HTTP | `service/MusicService.kt`, `service/StreamPlaybackTag.kt` |
 | Ktor WiFi server | `service/WebServerService.kt` |
+| Download progress notif | `service/DownloadNotificationHelper.kt` (`EXTRA_OPEN_TAB` / `TAB_DOWNLOADS`) |
 
 ## Tests de referencia
 
@@ -104,6 +108,8 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 | Radio local / engine | `app/src/test/.../RadioEngineTest.kt` |
 | LB radio JSON parse | `app/src/test/.../ListenBrainzRadioParseTest.kt` |
 | LB Para Ti → PlayableItem | `app/src/test/.../MatchedLbPlaylistPlayableTest.kt` |
+| ActiveDownload cycle | `app/src/test/.../ActiveDownloadCycleTest.kt` |
+| ActiveDownload codec / badge | `app/src/test/.../ActiveDownloadCodecTest.kt` |
 | UI functional library | `app/src/androidTest/.../LibraryScreenFunctionalTest.kt` |
 
 ## Símbolos ViewModel frecuentes
@@ -114,7 +120,7 @@ Mantener esta lista alineada con `MusicPlayerViewModel.kt`:
 - Playback: `playSong`, `playCollection`, `playPlayableCollection`, `shuffleCollection`, `enqueueCollection`, `playNextInQueue`, `playNextBatch`, `currentItem`, `currentSong`, `queue`, `resolvingRemote`, `repeatMode`, `isShuffle`
 - Radio: `startRadio` / `stopRadio` / `setRadioPreferredMode` / `setRadioForceOnline`, `radioMode`, `radioForceOnline`, `radioStatusLabel`, `replaceUpcomingWithRadio`, `maybeAutoStartRadioOnQueueEnd`
 - Artwork: `setAlbumArtwork`
-- Online: `searchCatalog`, `searchOnlineCatalog`, `downloadSingleCandidate`, `downloadSelectedCandidatesBatch`, `downloadFromUrl`, `downloadOnlineTrack`, `playOnlineCatalogTrackAsStream`, `cycleSongCatalogResult`, `cycleTrackCandidate`, `catalogPreviewKey`
+- Online: `searchCatalog`, `searchOnlineCatalog`, `downloadSingleCandidate`, `downloadSelectedCandidatesBatch`, `downloadFromUrl`, `downloadOnlineTrack`, `activeDownloads`, `retryActiveDownload`, `cycleActiveDownload`, `previewActiveDownload`, `dismissActiveDownload`, `requestOpenDownloads` / `pendingOpenDownloads`, `playOnlineCatalogTrackAsStream`, `cycleSongCatalogResult`, `cycleTrackCandidate`, `catalogPreviewKey`
 - ListenBrainz: `listenBrainzSettings`, `setListenBrainzEnabled`, `setListenBrainzDiscoverEnabled`, `setListenBrainzSaveWhileListening`, `setListenBrainzSaveWhileListeningPercent`, `refreshListenBrainzDiscoverPlaylists`, `openListenBrainzPlaylist`, `playListenBrainzPlaylist`, `shuffleListenBrainzPlaylist`, `playListenBrainzPlaylistAt`
 
 ## Cómo actualizar este mapa

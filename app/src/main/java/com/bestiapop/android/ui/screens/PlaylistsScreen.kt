@@ -323,7 +323,8 @@ fun PlaylistsScreen(
                 onPlaySong = { song, queue -> viewModel.playSong(song, queue) },
                 currentSongUri = currentSong?.uriString,
                 onPlayNext = { viewModel.playNextInQueue(it) },
-                onAddToQueue = { viewModel.addToQueue(it) }
+                onAddToQueue = { viewModel.addToQueue(it) },
+                onStartRadio = { viewModel.startRadio(seedSong = it) }
             )
         }
 
@@ -453,7 +454,8 @@ private fun LbPlaylistDetailScreen(
     onPlaySong: (Song, List<Song>) -> Unit,
     currentSongUri: String?,
     onPlayNext: (Song) -> Unit,
-    onAddToQueue: (Song) -> Unit
+    onAddToQueue: (Song) -> Unit,
+    onStartRadio: (Song) -> Unit
 ) {
     Surface(
         modifier = Modifier.fillMaxSize(),
@@ -602,7 +604,8 @@ private fun LbPlaylistDetailScreen(
                                         isCurrentPlaying = match.localSong?.uriString == currentSongUri,
                                         onPlaySong = onPlaySong,
                                         onPlayNext = onPlayNext,
-                                        onAddToQueue = onAddToQueue
+                                        onAddToQueue = onAddToQueue,
+                                        onStartRadio = onStartRadio
                                     )
                                 }
                             }
@@ -621,7 +624,8 @@ private fun LbMatchedTrackRow(
     isCurrentPlaying: Boolean,
     onPlaySong: (Song, List<Song>) -> Unit,
     onPlayNext: (Song) -> Unit,
-    onAddToQueue: (Song) -> Unit
+    onAddToQueue: (Song) -> Unit,
+    onStartRadio: (Song) -> Unit
 ) {
     val local = match.localSong
     if (local != null) {
@@ -630,7 +634,8 @@ private fun LbMatchedTrackRow(
             isCurrentPlaying = isCurrentPlaying,
             onClick = { onPlaySong(local, matchedSongs) },
             onPlayNext = { onPlayNext(local) },
-            onAddToQueue = { onAddToQueue(local) }
+            onAddToQueue = { onAddToQueue(local) },
+            onStartRadio = { onStartRadio(local) }
         )
     } else {
         Row(
@@ -956,6 +961,7 @@ private fun PlaylistDetailScreen(
                             onClick = { viewModel.playSong(song, songs) },
                             onPlayNext = { viewModel.playNextInQueue(song) },
                             onAddToQueue = { viewModel.addToQueue(song) },
+                            onStartRadio = { viewModel.startRadio(seedSong = song) },
                             onDelete = { viewModel.removeSongFromPlaylist(playlist.id, song.id) }
                         )
                     }

@@ -31,6 +31,10 @@ import com.bestiapop.android.data.preferences.ListenBrainzSettings
 import com.bestiapop.android.data.preferences.ThemePreferencesRepository
 import com.bestiapop.android.data.repository.MusicRepository
 import com.bestiapop.android.data.stream.StreamResolver
+import com.bestiapop.android.domain.radio.ListenBrainzRadio
+import com.bestiapop.android.domain.radio.LocalMetadataRadio
+import com.bestiapop.android.domain.radio.RadioEngine
+import com.bestiapop.android.domain.radio.RadioMode
 import com.bestiapop.android.domain.usecase.MatchListenBrainzTracksUseCase
 import com.bestiapop.android.service.MusicService
 import com.bestiapop.android.service.StreamPlaybackTag
@@ -60,6 +64,7 @@ import java.util.concurrent.atomic.AtomicInteger
 import android.content.Context
 import android.media.AudioManager
 import android.os.SystemClock
+import android.widget.Toast
 
 enum class SortOption {
     TITLE,
@@ -207,6 +212,21 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private val _resolvingRemote = MutableStateFlow(false)
     val resolvingRemote = _resolvingRemote.asStateFlow()
 
+    private val _radioActive = MutableStateFlow(false)
+    val radioActive = _radioActive.asStateFlow()
+
+    private val _radioLoading = MutableStateFlow(false)
+    val radioLoading = _radioLoading.asStateFlow()
+
+    private val _radioMode = MutableStateFlow(RadioMode.EASY)
+    val radioMode = _radioMode.asStateFlow()
+
+    private val _radioForceOnline = MutableStateFlow(false)
+    val radioForceOnline = _radioForceOnline.asStateFlow()
+
+    private val _radioStatusLabel = MutableStateFlow<String?>(null)
+    val radioStatusLabel = _radioStatusLabel.asStateFlow()
+
     /** Stable key of the catalog track being previewed inside Add Music (null = no catalog preview). */
     private val _catalogPreviewKey = MutableStateFlow<String?>(null)
     val catalogPreviewKey = _catalogPreviewKey.asStateFlow()
@@ -214,6 +234,25 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private var prefetchJob: Job? = null
     private var remoteErrorRetryUsed = false
     private var resolvingTransitionJob: Job? = null
+    private var radioRefillJob: Job? = null
+    private val playedInRadioSession = linkedSetOf<String>()
+    /** Last user-chosen mode (session); auto uses this when not forcing. */
+    private var radioPreferredMode: RadioMode? = null
+
+    private val radioEngine = RadioEngine(
+        localRadio = LocalMetadataRadio(),
+        listenBrainzRadio = ListenBrainzRadio(
+            lookupMetadata = { artist, recording, token ->
+                ListenBrainzClient.lookupRecordingMetadata(artist, recording, token)
+            },
+            fetchLbRadio = { artistMbid, token, mode ->
+                ListenBrainzClient.fetchLbRadioArtist(artistMbid, token, mode = mode)
+            },
+            fetchRecordingMetadata = { mbids, token ->
+                ListenBrainzClient.fetchRecordingMetadata(mbids, token)
+            }
+        )
+    )
 
     /** Bumped on user-initiated track changes so the queue UI can scroll to the current item. */
     private val _queueFocusEpoch = MutableStateFlow(0)
@@ -395,6 +434,12 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 handlePlayerError(error)
             }
 
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                if (playbackState == Player.STATE_ENDED) {
+                    maybeAutoStartRadioOnQueueEnd()
+                }
+            }
+
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                 val controller = mediaController
                 val newIndex = controller?.currentMediaItemIndex ?: -1
@@ -419,6 +464,10 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                         remoteErrorRetryUsed = false
                         ensureRemoteReadyAt(newIndex)
                         prefetchAround(newIndex)
+                        if (_radioActive.value) {
+                            rememberRadioPlayed(playable)
+                            maybeRefillRadio(newIndex)
+                        }
                     } else {
                         listenTracker.onTrackChanged(null)
                     }
@@ -750,8 +799,13 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         playPlayableCollection(targetQueue.toPlayableItems(), index)
     }
 
-    fun playPlayableCollection(items: List<PlayableItem>, startIndex: Int = 0) {
+    fun playPlayableCollection(
+        items: List<PlayableItem>,
+        startIndex: Int = 0,
+        fromRadio: Boolean = false
+    ) {
         if (items.isEmpty()) return
+        if (!fromRadio) clearRadioSession()
         val validIndex = startIndex.coerceIn(0, items.size - 1)
         viewModelScope.launch {
             var working = items.toMutableList()
@@ -782,6 +836,9 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             }
             finishPlayPlayableCollection(working, validIndex)
             prefetchAround(validIndex)
+            if (fromRadio && _radioActive.value) {
+                maybeRefillRadio(validIndex)
+            }
         }
     }
 
@@ -934,13 +991,379 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     fun addToQueueBatch(songs: List<Song>) {
         if (songs.isEmpty()) return
-        val playables = songs.toPlayableItems()
+        addPlayableBatch(songs.toPlayableItems())
+    }
+
+    fun addPlayableBatch(items: List<PlayableItem>) {
+        if (items.isEmpty()) return
         val currentList = _queue.value.toMutableList()
-        currentList.addAll(playables)
+        currentList.addAll(items)
         _queue.value = currentList
 
         mediaController?.let { controller ->
-            controller.addMediaItems(playables.map { playableToMediaItem(it) })
+            controller.addMediaItems(items.map { playableToMediaItem(it) })
+        }
+    }
+
+    fun setRadioPreferredMode(mode: RadioMode) {
+        radioPreferredMode = mode
+        if (mode == RadioMode.EASY) {
+            _radioForceOnline.value = false
+        }
+    }
+
+    fun setRadioForceOnline(force: Boolean) {
+        _radioForceOnline.value = force
+        if (force) {
+            radioPreferredMode = RadioMode.EXPLORE
+        }
+    }
+
+    fun stopRadio() {
+        radioRefillJob?.cancel()
+        radioRefillJob = null
+        _radioActive.value = false
+        _radioForceOnline.value = false
+        playedInRadioSession.clear()
+        _radioMode.value = RadioMode.EASY
+        updateRadioStatusLabel()
+    }
+
+    fun startRadio(
+        seedSong: Song? = null,
+        mode: RadioMode? = null,
+        auto: Boolean = false,
+        announceMode: Boolean = false
+    ) {
+        val seed: PlayableItem = seedSong?.toPlayable()
+            ?: _currentItem.value
+            ?: run {
+                if (!auto) {
+                    Toast.makeText(
+                        getApplication(),
+                        "Necesitás una canción con artista y título para Radio",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+                return
+            }
+        if (seed.artist.isBlank() || seed.title.isBlank()) {
+            if (!auto) {
+                Toast.makeText(
+                    getApplication(),
+                    "Necesitás una canción con artista y título para Radio",
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+            return
+        }
+        if (_radioLoading.value) return
+
+        if (mode != null) {
+            setRadioPreferredMode(mode)
+            if (mode == RadioMode.EXPLORE && !_radioForceOnline.value) {
+                // explicit Online without force
+            }
+        }
+
+        val settings = listenBrainzSettings.value
+        val canUseLb = settings.enabled &&
+            settings.userToken.isNotBlank() &&
+            connectivityObserver.isCurrentlyOnline()
+
+        var force = _radioForceOnline.value
+        var resolvedMode = when {
+            force -> RadioMode.EXPLORE
+            mode != null -> mode
+            radioPreferredMode != null -> radioPreferredMode!!
+            canUseLb -> RadioMode.EXPLORE
+            else -> RadioMode.EASY
+        }
+
+        if (force && !canUseLb) {
+            if (!auto) {
+                Toast.makeText(
+                    getApplication(),
+                    "Radio online no disponible, pasando a offline",
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+            _radioForceOnline.value = false
+            force = false
+            resolvedMode = RadioMode.EASY
+            radioPreferredMode = RadioMode.EASY
+        }
+
+        val keepCurrentPlaying = !auto && shouldKeepCurrentWhenStartingRadio()
+        val toastMode = announceMode
+
+        viewModelScope.launch {
+            _radioLoading.value = true
+            try {
+                val library = rawSongs.first()
+                val exclude = playedInRadioSession.toMutableSet()
+                val seedKey = MatchListenBrainzTracksUseCase.matchKey(seed.artist, seed.title)
+                if (seedKey.isNotEmpty()) exclude.add(seedKey)
+                exclude.add(seed.mediaId)
+                _currentItem.value?.let { current ->
+                    val currentKey = MatchListenBrainzTracksUseCase.matchKey(current.artist, current.title)
+                    if (currentKey.isNotEmpty()) exclude.add(currentKey)
+                    exclude.add(current.mediaId)
+                }
+                if (!keepCurrentPlaying) {
+                    for (item in _queue.value) {
+                        val key = MatchListenBrainzTracksUseCase.matchKey(item.artist, item.title)
+                        if (key.isNotEmpty()) exclude.add(key)
+                        exclude.add(item.mediaId)
+                    }
+                }
+
+                var effectiveMode = resolvedMode
+                var batch = radioEngine.suggest(
+                    seed = seed,
+                    library = library,
+                    mode = effectiveMode,
+                    excludeKeys = exclude,
+                    limit = RADIO_BATCH_SIZE,
+                    lbToken = settings.userToken.takeIf { it.isNotBlank() },
+                    lbAvailable = canUseLb
+                )
+
+                if (force && batch.listenBrainzFailed) {
+                    if (!auto) {
+                        Toast.makeText(
+                            getApplication(),
+                            "Radio online no disponible, pasando a offline",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                    _radioForceOnline.value = false
+                    force = false
+                    effectiveMode = RadioMode.EASY
+                    radioPreferredMode = RadioMode.EASY
+                    batch = radioEngine.suggest(
+                        seed = seed,
+                        library = library,
+                        mode = RadioMode.EASY,
+                        excludeKeys = exclude,
+                        limit = RADIO_BATCH_SIZE,
+                        lbToken = null,
+                        lbAvailable = false
+                    )
+                }
+
+                val suggestions = batch.items
+                if (suggestions.isEmpty()) {
+                    if (!auto) {
+                        Toast.makeText(
+                            getApplication(),
+                            "No encontré canciones parecidas",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                    return@launch
+                }
+
+                val previousPlayed = if (_radioActive.value) playedInRadioSession.toSet() else emptySet()
+                clearRadioSessionKeepPreference()
+                _radioMode.value = effectiveMode
+                _radioForceOnline.value = force
+                playedInRadioSession.addAll(previousPlayed)
+                playedInRadioSession.addAll(exclude)
+                rememberRadioPlayed(seed)
+                _radioActive.value = true
+                updateRadioStatusLabel()
+
+                if (toastMode && !auto) {
+                    val label = if (effectiveMode == RadioMode.EXPLORE) "Radio online" else "Radio offline"
+                    Toast.makeText(getApplication(), label, Toast.LENGTH_SHORT).show()
+                }
+
+                if (keepCurrentPlaying) {
+                    replaceUpcomingWithRadio(suggestions)
+                    Toast.makeText(
+                        getApplication(),
+                        "Se agregaron canciones de la radio a la cola",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                    val idx = mediaController?.currentMediaItemIndex ?: lastMediaItemIndex
+                    if (idx >= 0) prefetchAround(idx)
+                } else {
+                    playPlayableCollection(suggestions, startIndex = 0, fromRadio = true)
+                }
+            } finally {
+                _radioLoading.value = false
+            }
+        }
+    }
+
+    private fun shouldKeepCurrentWhenStartingRadio(): Boolean {
+        val controller = mediaController ?: return false
+        if (_queue.value.isEmpty()) return false
+        val index = controller.currentMediaItemIndex
+        if (index < 0 || index >= _queue.value.size) return false
+        val state = controller.playbackState
+        return state != Player.STATE_ENDED && state != Player.STATE_IDLE
+    }
+
+    /**
+     * Keeps the current track playing; replaces everything after it with [suggestions].
+     */
+    private fun replaceUpcomingWithRadio(suggestions: List<PlayableItem>) {
+        val controller = mediaController
+        val currentIndex = (controller?.currentMediaItemIndex ?: lastMediaItemIndex).coerceAtLeast(0)
+        val currentList = _queue.value
+        if (currentIndex !in currentList.indices) {
+            playPlayableCollection(suggestions, startIndex = 0, fromRadio = true)
+            return
+        }
+
+        val kept = currentList.subList(0, currentIndex + 1).toMutableList()
+        kept.addAll(suggestions)
+        _queue.value = kept
+
+        controller?.let { c ->
+            val nextIndex = currentIndex + 1
+            if (nextIndex < c.mediaItemCount) {
+                c.removeMediaItems(nextIndex, c.mediaItemCount)
+            }
+            c.addMediaItems(suggestions.map { playableToMediaItem(it) })
+        }
+    }
+
+    /**
+     * When the queue finishes naturally and repeat is off, continue with Radio
+     * seeded from the last played item.
+     */
+    private fun maybeAutoStartRadioOnQueueEnd() {
+        if (_repeatMode.value != RepeatMode.OFF) return
+        if (_radioLoading.value) return
+        val seed = _currentItem.value ?: return
+        if (seed.artist.isBlank() || seed.title.isBlank()) return
+        startRadio(auto = true)
+    }
+
+    /** Clears active radio flags but keeps preferred mode for the next start. */
+    private fun clearRadioSessionKeepPreference() {
+        radioRefillJob?.cancel()
+        radioRefillJob = null
+        _radioActive.value = false
+        playedInRadioSession.clear()
+        updateRadioStatusLabel()
+    }
+
+    private fun clearRadioSession() {
+        stopRadio()
+        radioPreferredMode = null
+    }
+
+    private fun updateRadioStatusLabel() {
+        if (!_radioActive.value) {
+            _radioStatusLabel.value = null
+            return
+        }
+        _radioStatusLabel.value = when {
+            _radioForceOnline.value && _radioMode.value == RadioMode.EXPLORE ->
+                "Radio · Online (forzado)"
+            _radioMode.value == RadioMode.EXPLORE ->
+                "Radio · Online"
+            else ->
+                "Radio · Offline"
+        }
+    }
+
+    private fun rememberRadioPlayed(item: PlayableItem) {
+        val key = MatchListenBrainzTracksUseCase.matchKey(item.artist, item.title)
+        if (key.isNotEmpty()) playedInRadioSession.add(key)
+        playedInRadioSession.add(item.mediaId)
+    }
+
+    private fun buildRadioExcludeKeys(seed: PlayableItem): MutableSet<String> {
+        val exclude = playedInRadioSession.toMutableSet()
+        val seedKey = MatchListenBrainzTracksUseCase.matchKey(seed.artist, seed.title)
+        if (seedKey.isNotEmpty()) exclude.add(seedKey)
+        exclude.add(seed.mediaId)
+        for (item in _queue.value) {
+            val key = MatchListenBrainzTracksUseCase.matchKey(item.artist, item.title)
+            if (key.isNotEmpty()) exclude.add(key)
+            exclude.add(item.mediaId)
+        }
+        return exclude
+    }
+
+    private fun maybeRefillRadio(currentIndex: Int) {
+        if (!_radioActive.value) return
+        if (radioRefillJob?.isActive == true) return
+        val remaining = _queue.value.size - currentIndex - 1
+        if (remaining >= RADIO_REFILL_THRESHOLD) return
+        val seed = _currentItem.value ?: return
+
+        radioRefillJob = viewModelScope.launch {
+            val settings = listenBrainzSettings.value
+            val canUseLb = settings.enabled &&
+                settings.userToken.isNotBlank() &&
+                connectivityObserver.isCurrentlyOnline()
+            var force = _radioForceOnline.value
+            var mode = when {
+                force -> RadioMode.EXPLORE
+                else -> _radioMode.value
+            }
+
+            if (force && !canUseLb) {
+                Toast.makeText(
+                    getApplication(),
+                    "Radio online no disponible, pasando a offline",
+                    Toast.LENGTH_SHORT
+                ).show()
+                _radioForceOnline.value = false
+                force = false
+                mode = RadioMode.EASY
+                _radioMode.value = RadioMode.EASY
+                radioPreferredMode = RadioMode.EASY
+                updateRadioStatusLabel()
+            }
+
+            val library = rawSongs.first()
+            val exclude = buildRadioExcludeKeys(seed)
+            var batch = radioEngine.suggest(
+                seed = seed,
+                library = library,
+                mode = mode,
+                excludeKeys = exclude,
+                limit = RADIO_BATCH_SIZE,
+                lbToken = settings.userToken.takeIf { it.isNotBlank() },
+                lbAvailable = canUseLb
+            )
+
+            if (force && batch.listenBrainzFailed) {
+                Toast.makeText(
+                    getApplication(),
+                    "Radio online no disponible, pasando a offline",
+                    Toast.LENGTH_SHORT
+                ).show()
+                _radioForceOnline.value = false
+                mode = RadioMode.EASY
+                _radioMode.value = RadioMode.EASY
+                radioPreferredMode = RadioMode.EASY
+                updateRadioStatusLabel()
+                batch = radioEngine.suggest(
+                    seed = seed,
+                    library = library,
+                    mode = RadioMode.EASY,
+                    excludeKeys = exclude,
+                    limit = RADIO_BATCH_SIZE,
+                    lbToken = null,
+                    lbAvailable = false
+                )
+            }
+
+            if (batch.items.isNotEmpty() && _radioActive.value) {
+                if (mode == RadioMode.EXPLORE) {
+                    _radioMode.value = RadioMode.EXPLORE
+                    updateRadioStatusLabel()
+                }
+                addPlayableBatch(batch.items)
+            }
         }
     }
 
@@ -1555,6 +1978,11 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     override fun onCleared() {
         controllerFuture?.let { MediaController.releaseFuture(it) }
         super.onCleared()
+    }
+
+    companion object {
+        private const val RADIO_BATCH_SIZE = 30
+        private const val RADIO_REFILL_THRESHOLD = 5
     }
 }
 

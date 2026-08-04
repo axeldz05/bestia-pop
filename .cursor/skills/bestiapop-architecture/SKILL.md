@@ -31,12 +31,12 @@ minSdk 26 · target/compileSdk 35 · Java/Kotlin 17 · KSP para Room.
 
 ```
 ui/          Compose screens, components, theme, ViewModel, ui.state
-domain/      use cases + IMusicRepository (puerto)
+domain/      use cases + radio + IMusicRepository (puerto)
 data/        MusicRepository, Room, network, stream, preferences, models, util
 service/     MusicService (playback), WebServerService (WiFi sync)
 ```
 
-**Regla de dependencia:** `ui` → `domain` → (interfaces). `data` implementa `domain.repository`. `ui` puede usar `data.model` y servicios Media3; la lógica de negocio nueva va en `domain/usecase`, no en pantallas.
+**Regla de dependencia:** `ui` → `domain` → (interfaces). `data` implementa `domain.repository`. `ui` puede usar `data.model` y servicios Media3; la lógica de negocio nueva va en `domain/usecase` o `domain/radio`, no en pantallas.
 
 ## Flujo de datos (happy path)
 
@@ -45,7 +45,8 @@ service/     MusicService (playback), WebServerService (WiFi sync)
 3. Screens Compose observan StateFlows y llaman métodos del ViewModel
 4. Reproducción: ViewModel cola `List<PlayableItem>` (`Local` | `Remote`) → `MediaController` → `MusicService` (ExoPlayer)
 5. Stream remoto: `StreamResolver` → `YouTubeExtractor.extractAudioStreamDetailed` → MediaItem HTTPS + `StreamPlaybackTag` (UA) → ExoPlayer
-6. Descarga online: catálogo (`MetadataFetcher` / `YouTubeExtractor`) → `DownloadAudioTrackUseCase` → `repository.downloadAndSaveOnlineTrack` → Room + storage
+6. Radio: `RadioEngine` (local ± LB) → `playPlayableCollection` / refill de cola; remotos reusan stream
+7. Descarga online: catálogo (`MetadataFetcher` / `YouTubeExtractor`) → `DownloadAudioTrackUseCase` → `repository.downloadAndSaveOnlineTrack` → Room + storage
 
 ## Navegación UI
 
@@ -64,6 +65,7 @@ Overlay: `BottomPlayerBar` → `NowPlayingScreen`; cola en `QueueScreen`.
 3. **Álbum vs playlist en portadas** — álbum propaga a canciones; portada de playlist es entidad propia.
 4. **Portadas locales** — copiar a `context.filesDir` (no depender de content URIs temporales).
 5. **Remoto efímero** — `PlayableItem.Remote` + `ResolvedStream` en memoria; nunca persistir URLs CDN en Room.
+6. **Radio** — sesión con seed + providers (`LocalMetadataRadio` / `ListenBrainzRadio`); refill de cola; no pipeline paralelo.
 
 ## Servicios Android
 

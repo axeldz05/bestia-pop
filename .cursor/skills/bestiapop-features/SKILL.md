@@ -4,7 +4,7 @@ description: >-
   Funcionalidades esenciales de BestiaPop con referencias a APIs y archivos.
   Usar al implementar o modificar reproducción por colecciones, biblioteca
   (filtro/orden/vistas), descarga YouTube, portadas álbum/playlist, playlists,
-  temas o WiFi sync. Actualizar este skill cuando cambie el comportamiento.
+  temas, WiFi sync, ListenBrainz o Radio. Actualizar este skill cuando cambie el comportamiento.
 ---
 
 # BestiaPop — Features esenciales
@@ -126,6 +126,27 @@ State: `currentThemeState`.
 | Cola / play | `playPlayableCollection`, `currentItem`, `resolvingRemote` en `MusicPlayerViewModel` |
 | Stream desde catálogo | `playOnlineCatalogTrackAsStream` + preview in-dialog (`CatalogTrackItem` / `CandidateTrackCard` + `CatalogPreviewBar`); `cycleSongCatalogResult` / `cycleTrackCandidate` (“Buscar otro”) |
 | UI player | `BottomPlayerBar` / `NowPlayingScreen` / `QueueScreen` observan `PlayableItem` |
+
+## 11. Radio (similares)
+
+**Invariantes:**
+- Seed = canción elegida (`startRadio(seedSong)` o `currentItem`); entry en menú de canción (“Iniciar radio”) y `NowPlayingScreen`.
+- **Modos UI:** Offline (`EASY`) / Online (`EXPLORE`); label `radioStatusLabel` (“Radio · Offline|Online|Online (forzado)”).
+- **Forzar online:** `radioForceOnline`; ante sin red/token o `listenBrainzFailed` → toast, force off, Offline, sigue con local.
+- Long-press Radio en Now Playing: Offline / Online / Forzar online / Detener radio (`stopRadio` no vacía cola).
+- **Auto:** al llegar a `STATE_ENDED` con `RepeatMode.OFF`, `startRadio(auto = true)` respeta preferred/force.
+- **Durante reproducción:** no saltea el tema actual; `replaceUpcomingWithRadio` + toast “Se agregaron canciones de la radio a la cola”.
+- **EASY:** solo biblioteca; **EXPLORE:** locales del seed primero + LB/remotos; `RadioSuggestResult` indica si LB aportó/falló.
+- Refill cuando quedan < 5 con misma política force/degrade; **no** persistir URLs CDN.
+
+| Capacidad | Entry point |
+|-----------|-------------|
+| Modos | `RadioMode.EASY` / `EXPLORE`; `radioMode` / `radioForceOnline` / `radioStatusLabel` |
+| Motor | `RadioEngine.suggest` → `RadioSuggestResult` |
+| Local | `LocalMetadataRadio.suggest` |
+| LB | `ListenBrainzRadio.suggest` + LB client metadata/lb-radio |
+| Sesión | `startRadio`, `stopRadio`, `setRadioPreferredMode`, `setRadioForceOnline`, `replaceUpcomingWithRadio`, refill/auto |
+| UI | Now Playing (tap/long-press); `BottomPlayerBar.radioStatusLabel`; menú canción “Iniciar radio” |
 
 ## Relacionado
 

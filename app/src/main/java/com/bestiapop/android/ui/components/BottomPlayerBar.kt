@@ -43,13 +43,20 @@ fun BottomPlayerBar(
     progressMs: Long,
     onPlayPauseClick: () -> Unit,
     onNextClick: () -> Unit,
-    onBarClick: () -> Unit
+    onBarClick: () -> Unit,
+    radioStatusLabel: String? = null
 ) {
     if (currentItem == null) return
 
     val progressFraction = if (currentItem.durationMs > 0) {
         (progressMs.toFloat() / currentItem.durationMs.toFloat()).coerceIn(0f, 1f)
     } else 0f
+
+    val subtitle = if (!radioStatusLabel.isNullOrBlank()) {
+        radioStatusLabel
+    } else {
+        currentItem.artist
+    }
 
     Surface(
         color = MaterialTheme.colorScheme.surfaceVariant,
@@ -122,9 +129,13 @@ fun BottomPlayerBar(
                             overflow = TextOverflow.Ellipsis
                         )
                         Text(
-                            text = currentItem.artist,
+                            text = subtitle,
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                            color = if (radioStatusLabel != null) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                            },
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )

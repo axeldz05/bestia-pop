@@ -46,6 +46,7 @@ fun MainScreen(
     val currentItem by viewModel.currentItem.collectAsState()
     val isPlaying by viewModel.isPlaying.collectAsState()
     val positionMs by viewModel.playbackPositionMs.collectAsState()
+    val radioStatusLabel by viewModel.radioStatusLabel.collectAsState()
 
     var targetPlaylistForAddition by remember { mutableStateOf<com.bestiapop.android.data.model.Playlist?>(null) }
     var selectedPlaylistIdForDetail by remember { mutableStateOf<Long?>(null) }
@@ -133,7 +134,8 @@ fun MainScreen(
                 progressMs = positionMs,
                 onPlayPauseClick = { viewModel.togglePlayPause() },
                 onNextClick = { viewModel.skipToNext() },
-                onBarClick = { openFullPlayer() }
+                onBarClick = { openFullPlayer() },
+                radioStatusLabel = radioStatusLabel
             )
 
             NavigationBar(

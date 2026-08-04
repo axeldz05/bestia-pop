@@ -29,13 +29,6 @@ class MatchListenBrainzTracksUseCase {
         return map
     }
 
-    private fun matchKey(artist: String, title: String): String {
-        val a = normalize(artist)
-        val t = normalize(title)
-        if (a.isEmpty() || t.isEmpty()) return ""
-        return "$a|$t"
-    }
-
     companion object {
         fun normalize(value: String): String {
             return value
@@ -43,6 +36,13 @@ class MatchListenBrainzTracksUseCase {
                 .replace(Regex("[\\p{Punct}\\p{IsPunctuation}]"), " ")
                 .replace(Regex("\\s+"), " ")
                 .trim()
+        }
+
+        fun matchKey(artist: String, title: String): String {
+            val a = normalize(artist)
+            val t = normalize(title)
+            if (a.isEmpty() || t.isEmpty()) return ""
+            return "$a|$t"
         }
     }
 }

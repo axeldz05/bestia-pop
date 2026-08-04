@@ -2,8 +2,10 @@ package com.bestiapop.android.ui.screens
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.drag
@@ -42,6 +44,7 @@ import androidx.compose.material.icons.filled.Lyrics
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Radio
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.RepeatOne
@@ -50,6 +53,9 @@ import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -93,6 +99,7 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.data.model.RepeatMode
+import com.bestiapop.android.domain.radio.RadioMode
 import com.bestiapop.android.ui.MusicPlayerViewModel
 import com.bestiapop.android.ui.components.formatDuration
 import kotlinx.coroutines.launch
@@ -121,6 +128,7 @@ private fun parseLrcLyrics(rawLyrics: String): List<LrcLine> {
     return lines.sortedBy { it.timeMs }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun NowPlayingScreen(
     viewModel: MusicPlayerViewModel,
@@ -135,6 +143,10 @@ fun NowPlayingScreen(
     val queueItems by viewModel.queue.collectAsState()
     val queueFocusEpoch by viewModel.queueFocusEpoch.collectAsState()
     val resolvingRemote by viewModel.resolvingRemote.collectAsState()
+    val radioActive by viewModel.radioActive.collectAsState()
+    val radioLoading by viewModel.radioLoading.collectAsState()
+    val radioStatusLabel by viewModel.radioStatusLabel.collectAsState()
+    var radioMenuExpanded by remember { mutableStateOf(false) }
 
     var selectedTab by remember { mutableIntStateOf(0) } // 0 = Portada, 1 = Letra, 2 = Cola
     var isDragging by remember { mutableStateOf(false) }
@@ -323,7 +335,75 @@ fun NowPlayingScreen(
                     color = MaterialTheme.colorScheme.primary
                 )
 
-                Spacer(modifier = Modifier.size(36.dp))
+                Box {
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .combinedClickable(
+                                enabled = !radioLoading,
+                                onClick = { viewModel.startRadio() },
+                                onLongClick = { radioMenuExpanded = true }
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (radioLoading) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(22.dp),
+                                strokeWidth = 2.dp,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Default.Radio,
+                                contentDescription = "Radio (mantener para modos)",
+                                modifier = Modifier.size(28.dp),
+                                tint = if (radioActive) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f)
+                                }
+                            )
+                        }
+                    }
+                    DropdownMenu(
+                        expanded = radioMenuExpanded,
+                        onDismissRequest = { radioMenuExpanded = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Offline") },
+                            onClick = {
+                                radioMenuExpanded = false
+                                viewModel.setRadioForceOnline(false)
+                                viewModel.startRadio(mode = RadioMode.EASY, announceMode = true)
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Online") },
+                            onClick = {
+                                radioMenuExpanded = false
+                                viewModel.setRadioForceOnline(false)
+                                viewModel.startRadio(mode = RadioMode.EXPLORE, announceMode = true)
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Forzar online") },
+                            onClick = {
+                                radioMenuExpanded = false
+                                viewModel.setRadioForceOnline(true)
+                                viewModel.startRadio(mode = RadioMode.EXPLORE, announceMode = true)
+                            }
+                        )
+                        if (radioActive) {
+                            DropdownMenuItem(
+                                text = { Text("Detener radio") },
+                                onClick = {
+                                    radioMenuExpanded = false
+                                    viewModel.stopRadio()
+                                }
+                            )
+                        }
+                    }
+                }
             }
 
             // Tab Selector (Portada / Letra / Cola)
@@ -660,6 +740,20 @@ fun NowPlayingScreen(
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = "Resolviendo stream…",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                } else if (radioLoading) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Armando radio…",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                } else if (radioStatusLabel != null) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = radioStatusLabel!!,
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.primary
                     )

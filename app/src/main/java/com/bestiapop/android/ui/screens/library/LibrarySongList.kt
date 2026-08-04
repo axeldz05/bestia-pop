@@ -56,6 +56,7 @@ fun LibrarySongList(
     onToggleSelect: (Song) -> Unit,
     onPlayNext: (Song) -> Unit,
     onAddToQueue: (Song) -> Unit,
+    onStartRadio: (Song) -> Unit = {},
     onAddToPlaylist: (Song) -> Unit,
     onEditMetadata: (Song) -> Unit,
     onDeleteSong: (Song) -> Unit,
@@ -89,6 +90,7 @@ fun LibrarySongList(
     val onToggleSelectState = rememberUpdatedState(onToggleSelect)
     val onPlayNextState = rememberUpdatedState(onPlayNext)
     val onAddToQueueState = rememberUpdatedState(onAddToQueue)
+    val onStartRadioState = rememberUpdatedState(onStartRadio)
     val onAddToPlaylistState = rememberUpdatedState(onAddToPlaylist)
     val onEditMetadataState = rememberUpdatedState(onEditMetadata)
     val onDeleteSongState = rememberUpdatedState(onDeleteSong)
@@ -159,6 +161,7 @@ fun LibrarySongList(
                         onToggleSelectState = onToggleSelectState,
                         onPlayNextState = onPlayNextState,
                         onAddToQueueState = onAddToQueueState,
+                        onStartRadioState = onStartRadioState,
                         onAddToPlaylistState = onAddToPlaylistState,
                         onEditMetadataState = onEditMetadataState,
                         onDeleteSongState = onDeleteSongState
@@ -211,6 +214,7 @@ private fun LibrarySongRow(
     onToggleSelectState: State<(Song) -> Unit>,
     onPlayNextState: State<(Song) -> Unit>,
     onAddToQueueState: State<(Song) -> Unit>,
+    onStartRadioState: State<(Song) -> Unit>,
     onAddToPlaylistState: State<(Song) -> Unit>,
     onEditMetadataState: State<(Song) -> Unit>,
     onDeleteSongState: State<(Song) -> Unit>
@@ -230,6 +234,9 @@ private fun LibrarySongRow(
     }
     val onAddToQueue = remember(song.id) {
         { onAddToQueueState.value(songState.value) }
+    }
+    val onStartRadio = remember(song.id) {
+        { onStartRadioState.value(songState.value) }
     }
     val onAddToPlaylist = remember(song.id) {
         { onAddToPlaylistState.value(songState.value) }
@@ -262,6 +269,7 @@ private fun LibrarySongRow(
         onToggleSelect = onToggleSelect,
         onPlayNext = onPlayNext,
         onAddToQueue = onAddToQueue,
+        onStartRadio = onStartRadio,
         onAddToPlaylist = onAddToPlaylist,
         onEditMetadata = onEditMetadata,
         onDelete = onDelete

@@ -49,6 +49,7 @@ fun SongListItem(
     onToggleSelect: () -> Unit = {},
     onPlayNext: () -> Unit,
     onAddToQueue: () -> Unit,
+    onStartRadio: (() -> Unit)? = null,
     onAddToPlaylist: () -> Unit = {},
     onEditMetadata: (() -> Unit)? = null,
     onDelete: (() -> Unit)? = null
@@ -149,6 +150,7 @@ fun SongListItem(
                         onDismiss = { menuExpanded = false },
                         onPlayNext = onPlayNext,
                         onAddToQueue = onAddToQueue,
+                        onStartRadio = onStartRadio,
                         onAddToPlaylist = onAddToPlaylist,
                         onEditMetadata = onEditMetadata,
                         onDelete = onDelete
@@ -164,6 +166,7 @@ private fun SongOptionsMenu(
     onDismiss: () -> Unit,
     onPlayNext: () -> Unit,
     onAddToQueue: () -> Unit,
+    onStartRadio: (() -> Unit)?,
     onAddToPlaylist: () -> Unit,
     onEditMetadata: (() -> Unit)?,
     onDelete: (() -> Unit)?
@@ -186,6 +189,15 @@ private fun SongOptionsMenu(
                 onAddToQueue()
             }
         )
+        if (onStartRadio != null) {
+            DropdownMenuItem(
+                text = { Text("Iniciar radio") },
+                onClick = {
+                    onDismiss()
+                    onStartRadio()
+                }
+            )
+        }
         DropdownMenuItem(
             text = { Text("Añadir a playlist") },
             onClick = {

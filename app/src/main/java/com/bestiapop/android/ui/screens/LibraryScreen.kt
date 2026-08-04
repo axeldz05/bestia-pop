@@ -162,6 +162,7 @@ fun LibraryScreen(
 
     val onPlayNext = remember<(Song) -> Unit> { { viewModel.playNextInQueue(it) } }
     val onAddToQueue = remember<(Song) -> Unit> { { viewModel.addToQueue(it) } }
+    val onStartRadio = remember<(Song) -> Unit> { { viewModel.startRadio(seedSong = it) } }
     val onAddToPlaylist = remember<(Song) -> Unit> { { songForPlaylistAddition = it } }
     val onEditMetadata = remember<(Song) -> Unit> { { editingSong = it } }
     val onDeleteSong = remember<(Song) -> Unit> { { songsForDeletion = listOf(it) } }
@@ -375,6 +376,7 @@ fun LibraryScreen(
                         onToggleSelect = toggleSelectSong,
                         onPlayNext = onPlayNext,
                         onAddToQueue = onAddToQueue,
+                        onStartRadio = onStartRadio,
                         onAddToPlaylist = onAddToPlaylist,
                         onEditMetadata = onEditMetadata,
                         onDeleteSong = onDeleteSong,
@@ -407,6 +409,7 @@ fun LibraryScreen(
                         onToggleSelect = toggleSelectSong,
                         onPlayNext = onPlayNext,
                         onAddToQueue = onAddToQueue,
+                        onStartRadio = onStartRadio,
                         onAddToPlaylist = onAddToPlaylist,
                         onEditMetadata = onEditMetadata,
                         onDeleteSong = onDeleteSong,
@@ -445,6 +448,7 @@ fun LibraryScreen(
                         onToggleSelect = toggleSelectSong,
                         onPlayNext = onPlayNext,
                         onAddToQueue = onAddToQueue,
+                        onStartRadio = onStartRadio,
                         onAddToPlaylist = onAddToPlaylist,
                         onEditMetadata = onEditMetadata,
                         onDeleteSong = onDeleteSong,

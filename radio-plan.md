@@ -290,13 +290,13 @@ Actualizar en el mismo cambio de código:
 
 ## Criterios de aceptación globales
 
-- [ ] Radio desde una canción local genera cola y reproduce sin red (2a).
-- [ ] Un track remoto empieza a sonar sin archivo completo en disco (Fase 1).
-- [ ] Al fallar CDN/403, se reintenta extract una vez o se salta al siguiente.
-- [ ] Prefetch evita silencio largo entre tracks remotos en condiciones normales.
+- [x] Radio desde una canción local genera cola y reproduce sin red (2a).
+- [x] Un track remoto empieza a sonar sin archivo completo en disco (Fase 1).
+- [x] Al fallar CDN/403, se reintenta extract una vez o se salta al siguiente.
+- [x] Prefetch evita silencio largo entre tracks remotos en condiciones normales.
 - [ ] Para Ti puede reproducir faltantes por stream (Fase 3).
 - [ ] “Guardar al escuchar” / import no bloquean la reproducción en curso.
-- [ ] Ninguna URL CDN queda persistida en Room.
+- [x] Ninguna URL CDN queda persistida en Room.
 
 ---
 

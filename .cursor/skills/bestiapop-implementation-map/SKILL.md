@@ -58,7 +58,11 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 | `DownloadAudioTrackUseCase` | `domain/usecase/DownloadAudioTrackUseCase.kt` | wrap download Result |
 | `ManageArtworkUseCase` | `domain/usecase/ManageArtworkUseCase.kt` | album artwork propagation |
 | `ManagePlaylistUseCase` | `domain/usecase/ManagePlaylistUseCase.kt` | playlist ops over repo |
-| `MatchListenBrainzTracksUseCase` | `domain/usecase/MatchListenBrainzTracksUseCase.kt` | match LB tracks → local `Song` |
+| `MatchListenBrainzTracksUseCase` | `domain/usecase/MatchListenBrainzTracksUseCase.kt` | match LB tracks → local `Song` (`normalize` / `matchKey`) |
+| `RadioEngine` | `domain/radio/RadioEngine.kt` | orquesta local ± LB; `RadioSuggestResult` |
+| `LocalMetadataRadio` | `domain/radio/LocalMetadataRadio.kt` | score biblioteca (artista/género/año/álbum) |
+| `ListenBrainzRadio` | `domain/radio/ListenBrainzRadio.kt` | lb-radio → Local/Remote |
+| `RadioMode` | `domain/radio/RadioMode.kt` | `EASY` / `EXPLORE` |
 | Puerto | `domain/repository/IMusicRepository.kt` | contrato repositorio |
 
 ## Data
@@ -77,8 +81,8 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 | Stream resolve + cache TTL | `data/stream/StreamResolver.kt` |
 | Theme DataStore | `data/preferences/ThemePreferencesRepository.kt` |
 | ListenBrainz prefs | `data/preferences/ListenBrainzPreferencesRepository.kt` |
-| ListenBrainz API | `data/network/ListenBrainzClient.kt` |
-| LB models + sync | `data/listenbrainz/LbPlaylistModels.kt`, `ListenTracker.kt`, `ListenSyncCoordinator.kt` |
+| ListenBrainz API | `data/network/ListenBrainzClient.kt` (`submitListens`, createdfor, playlist, `lookupRecordingMetadata`, `fetchLbRadioArtist`, `fetchRecordingMetadata`) |
+| LB models + sync | `data/listenbrainz/LbPlaylistModels.kt`, `LbRadioModels.kt`, `ListenTracker.kt`, `ListenSyncCoordinator.kt` |
 | Connectivity | `data/network/ConnectivityObserver.kt` |
 | Pending listens Room | `data/db/PendingListenEntity.kt`, `PendingListenDao.kt` |
 | Storage helpers | `data/util/StorageUtils.kt` |
@@ -97,6 +101,8 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 | Library list items | `app/src/test/.../GetLibrarySongsUseCaseListItemsTest.kt` |
 | YouTube extraction | `app/src/test/.../YouTubeExtractionIntegrationTest.kt` |
 | StreamResolver cache/TTL | `app/src/test/.../StreamResolverTest.kt` |
+| Radio local / engine | `app/src/test/.../RadioEngineTest.kt` |
+| LB radio JSON parse | `app/src/test/.../ListenBrainzRadioParseTest.kt` |
 | UI functional library | `app/src/androidTest/.../LibraryScreenFunctionalTest.kt` |
 
 ## Símbolos ViewModel frecuentes
@@ -105,6 +111,7 @@ Mantener esta lista alineada con `MusicPlayerViewModel.kt`:
 
 - Biblioteca: `songsState`, `albumsState`, `artistsState`, `searchQuery`, `sortOption`, `buildLibraryListItems`
 - Playback: `playSong`, `playCollection`, `playPlayableCollection`, `shuffleCollection`, `enqueueCollection`, `playNextInQueue`, `playNextBatch`, `currentItem`, `currentSong`, `queue`, `resolvingRemote`, `repeatMode`, `isShuffle`
+- Radio: `startRadio` / `stopRadio` / `setRadioPreferredMode` / `setRadioForceOnline`, `radioMode`, `radioForceOnline`, `radioStatusLabel`, `replaceUpcomingWithRadio`, `maybeAutoStartRadioOnQueueEnd`
 - Artwork: `setAlbumArtwork`
 - Online: `searchCatalog`, `searchOnlineCatalog`, `downloadSingleCandidate`, `downloadSelectedCandidatesBatch`, `downloadFromUrl`, `downloadOnlineTrack`, `playOnlineCatalogTrackAsStream`, `cycleSongCatalogResult`, `cycleTrackCandidate`, `catalogPreviewKey`
 - ListenBrainz: `listenBrainzSettings`, `setListenBrainzEnabled`, `setListenBrainzDiscoverEnabled`, `refreshListenBrainzDiscoverPlaylists`, `openListenBrainzPlaylist`, `playListenBrainzPlaylist`, `shuffleListenBrainzPlaylist`

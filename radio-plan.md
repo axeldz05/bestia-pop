@@ -13,7 +13,7 @@ Plan para cubrir lo que quedó **fuera de alcance** de ListenBrainz Para Ti, con
 | Radio / similares | Implementado (`RadioEngine`, modos Offline/Online, refill) |
 | Para Ti mixto Local\|Remote | Implementado (`toPlayableItems` + `playPlayableCollection`; Guardar al escuchar) |
 | Import LB → playlist Room | Implementado (`saveListenBrainzPlaylistAsLocal` / `importListenBrainzPlaylistWithDownloads` → `LB_IMPORT`) |
-| CF recommendations | No existe |
+| CF recommendations | Implementado (`fetchCfRecordingRecommendations` + sección Recomendados + fill Radio EXPLORE) |
 
 **Invariante vigente:** re-extraer URL CDN de YouTube justo antes de usarla (evita HTTP 403).
 
@@ -226,16 +226,18 @@ Archivos: [`PlaylistsScreen.kt`](app/src/main/java/com/bestiapop/android/ui/scre
 
 ---
 
-### Fase 5 — Collaborative filtering (opcional, menor prioridad)
+### Fase 5 — Collaborative filtering
+
+**Estado:** implementado.
 
 **Objetivo:** pool extra de recomendación.
 
-- `GET /1/cf/recommendation/user/{username}/recording`
-- Resolver metadata (título/artista) vía MusicBrainz/LB playlist-like lookup.
-- Emitir `PlayableItem.Remote` / Local si match.
-- UI: sección “Recomendados” bajo Para Ti, **o** alimentar modo Radio exploración.
+- `GET /1/cf/recommendation/user/{username}/recording` → `ListenBrainzClient.fetchCfRecordingRecommendations`
+- Metadata vía `fetchRecordingMetadata`; match Local|Remote (`FetchAndMatchCfRecommendationsUseCase`)
+- UI: sección “Recomendados” bajo Para Ti (`PlaylistsScreen`)
+- Radio EXPLORE: `CfRecommendationsRadio` rellena slots tras local + lb-radio
 
-**ROI:** menor que `createdfor` + Radio local/LB-radio; implementar solo si Fases 1–3 están sólidas.
+**Criterio de hecho:** Recomendados reproduce Local|Remote; Radio EXPLORE puede incluir CF; 204 vacío no rompe UI.
 
 ---
 
@@ -296,6 +298,7 @@ Actualizar en el mismo cambio de código:
 - [x] Para Ti puede reproducir faltantes por stream (Fase 3).
 - [x] “Guardar al escuchar” / import no bloquean la reproducción en curso.
 - [x] Ninguna URL CDN queda persistida en Room.
+- [x] CF Recomendados bajo Para Ti + fill en Radio EXPLORE (Fase 5).
 
 ---
 

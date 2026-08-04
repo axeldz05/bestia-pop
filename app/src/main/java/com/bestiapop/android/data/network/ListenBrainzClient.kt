@@ -1,5 +1,7 @@
 package com.bestiapop.android.data.network
 
+import com.bestiapop.android.data.listenbrainz.CfRecommendationsPayload
+import com.bestiapop.android.data.listenbrainz.CfRecommendedRecording
 import com.bestiapop.android.data.listenbrainz.LbApiResult
 import com.bestiapop.android.data.listenbrainz.LbMetadataLookup
 import com.bestiapop.android.data.listenbrainz.LbPlaylistDetail
@@ -319,6 +321,60 @@ object ListenBrainzClient {
         }
     }
 
+    suspend fun fetchCfRecordingRecommendations(
+        username: String,
+        token: String? = null,
+        count: Int = 50,
+        offset: Int = 0,
+        artistType: String = "top"
+    ): LbApiResult<CfRecommendationsPayload> = withContext(Dispatchers.IO) {
+        if (username.isBlank()) {
+            return@withContext LbApiResult.Failure("Usuario vacío")
+        }
+        try {
+            val utf8 = Charsets.UTF_8.name()
+            val encodedUser = URLEncoder.encode(username.trim(), utf8)
+            val encodedType = URLEncoder.encode(artistType.trim().ifBlank { "top" }, utf8)
+            val url = "$BASE_URL/cf/recommendation/user/$encodedUser/recording" +
+                "?count=$count&offset=$offset&artist_type=$encodedType"
+            val request = buildGetRequest(url, token)
+            client.newCall(request).execute().use { response ->
+                val body = response.body?.string().orEmpty()
+                when {
+                    response.code == 204 -> {
+                        LbApiResult.Success(
+                            CfRecommendationsPayload(
+                                userName = username.trim(),
+                                recordings = emptyList()
+                            )
+                        )
+                    }
+                    !response.isSuccessful -> {
+                        LbApiResult.Failure(
+                            message = errorMessageFromBody(body, response.code)
+                        )
+                    }
+                    body.isBlank() -> {
+                        LbApiResult.Success(
+                            CfRecommendationsPayload(
+                                userName = username.trim(),
+                                recordings = emptyList()
+                            )
+                        )
+                    }
+                    else -> {
+                        LbApiResult.Success(parseCfRecommendations(JSONObject(body), username.trim()))
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            LbApiResult.Failure(
+                message = e.message ?: "Error de red",
+                isNetworkError = true
+            )
+        }
+    }
+
     suspend fun fetchRecordingMetadata(
         recordingMbids: List<String>,
         token: String? = null,
@@ -514,6 +570,40 @@ object ListenBrainzClient {
             }
         }
         return result
+    }
+
+    internal fun parseCfRecommendations(
+        root: JSONObject,
+        fallbackUserName: String
+    ): CfRecommendationsPayload {
+        val payload = root.optJSONObject("payload") ?: root
+        val mbidsArray = payload.optJSONArray("mbids") ?: JSONArray()
+        val recordings = ArrayList<CfRecommendedRecording>(mbidsArray.length())
+        for (i in 0 until mbidsArray.length()) {
+            val obj = mbidsArray.optJSONObject(i) ?: continue
+            val mbid = obj.optString("recording_mbid").orEmpty().trim()
+            if (mbid.isEmpty()) continue
+            recordings.add(
+                CfRecommendedRecording(
+                    recordingMbid = mbid,
+                    score = obj.optDouble("score", 0.0)
+                )
+            )
+        }
+        val userName = payload.optString("user_name").takeIf { it.isNotBlank() }
+            ?: fallbackUserName
+        val lastUpdated = when {
+            payload.has("last_updated") && !payload.isNull("last_updated") ->
+                payload.optLong("last_updated")
+            else -> null
+        }
+        return CfRecommendationsPayload(
+            userName = userName,
+            recordings = recordings,
+            lastUpdatedEpochSec = lastUpdated,
+            totalMbidCount = payload.optInt("total_mbid_count", recordings.size),
+            artistType = payload.optString("type").takeIf { it.isNotBlank() }
+        )
     }
 
     internal fun parseRecordingMetadataMap(root: JSONObject): Map<String, LbRecordingMetadata> {

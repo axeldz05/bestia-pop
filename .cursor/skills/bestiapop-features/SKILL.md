@@ -4,7 +4,7 @@ description: >-
   Funcionalidades esenciales de BestiaPop con referencias a APIs y archivos.
   Usar al implementar o modificar reproducción por colecciones, biblioteca
   (filtro/orden/vistas), descarga YouTube, portadas álbum/playlist, playlists,
-  temas, WiFi sync, ListenBrainz o Radio. Actualizar este skill cuando cambie el comportamiento.
+  temas, WiFi sync, ListenBrainz, Radio o CF. Actualizar este skill cuando cambie el comportamiento.
 ---
 
 # BestiaPop — Features esenciales
@@ -115,8 +115,9 @@ Centro de descargas online → sección 2 (`DownloadsScreen`, tab Descargas).
 
 **Invariantes:**
 - Scrobbling solo si `ListenBrainzSettings.enabled` + token válido; offline encola en `pending_listens`.
-- Sección **Para Ti** en Playlists solo si `showDiscoverPlaylists` (`enabled && discoverEnabled && username`).
+- Sección **Para Ti** / **Recomendados** en Playlists solo si `showDiscoverPlaylists` (`enabled && discoverEnabled && username`).
 - Playlists Discover = `GET /1/user/{user}/playlists/createdfor`; detalle = `GET /1/playlist/{mbid}`.
+- CF Recomendados = `GET /1/cf/recommendation/user/{user}/recording` + metadata → match Local|Remote.
 - Match local por artist+title normalizado; faltantes = `PlayableItem.Remote`.
 - Reproducción: cola mixta `Local|Remote` vía `playPlayableCollection` (prefetch / 403 retry de stream).
 - **Guardar al escuchar** (`saveWhileListening` + `saveWhileListeningPercent`): al alcanzar ≥N% de la duración (o fin) de un Remote, encola en `activeDownloads` vía `runTrackedDownload` (sin reemplazar el MediaItem). Fallo → `ERROR` en el centro + Toast; quita la key de `saveWhileListeningAttempted` para permitir reintento manual/auto.
@@ -133,7 +134,8 @@ Centro de descargas online → sección 2 (`DownloadsScreen`, tab Descargas).
 | Play / shuffle / índice | `playListenBrainzPlaylist` / `shuffleListenBrainzPlaylist` / `playListenBrainzPlaylistAt` |
 | Import locales + pendientes | `saveListenBrainzPlaylistAsLocal` → `ImportListenBrainzPlaylistUseCase.createLocalFromMatched` (+ `PlaylistPendingTrack`) |
 | Import + descarga ya | `importListenBrainzPlaylistWithDownloads` / `downloadPlaylistPendingTracks` → `runTrackedDownload` (`LB_IMPORT`) |
-| UI sección | `PlaylistsScreen` — "Para Ti"; Guardar / Descargar faltantes; detalle local muestra pendientes |
+| CF Recomendados | `ListenBrainzClient.fetchCfRecordingRecommendations` → `FetchAndMatchCfRecommendationsUseCase` → `refreshCfRecommendations` / `openCfRecommendations` / `playCfRecommendations` / `shuffleCfRecommendations` / `playCfAt` |
+| UI sección | `PlaylistsScreen` — "Para Ti" + "Recomendados"; Guardar / Descargar faltantes; detalle local muestra pendientes |
 
 ## 10. Stream remoto (playback sin descarga)
 
@@ -162,7 +164,7 @@ Centro de descargas online → sección 2 (`DownloadsScreen`, tab Descargas).
 - Long-press Radio en Now Playing: Offline / Online / Forzar online / Detener radio (`stopRadio` no vacía cola).
 - **Auto:** al llegar a `STATE_ENDED` con `RepeatMode.OFF`, `startRadio(auto = true)` respeta preferred/force.
 - **Durante reproducción:** no saltea el tema actual; `replaceUpcomingWithRadio` + toast “Se agregaron canciones de la radio a la cola”.
-- **EASY:** solo biblioteca; **EXPLORE:** locales del seed primero + LB/remotos; `RadioSuggestResult` indica si LB aportó/falló.
+- **EASY:** solo biblioteca; **EXPLORE:** locales del seed → lb-radio → CF (`CfRecommendationsRadio`); `RadioSuggestResult` indica si LB/CF aportó/falló.
 - Refill cuando quedan < 5 con misma política force/degrade; **no** persistir URLs CDN.
 
 | Capacidad | Entry point |
@@ -171,6 +173,7 @@ Centro de descargas online → sección 2 (`DownloadsScreen`, tab Descargas).
 | Motor | `RadioEngine.suggest` → `RadioSuggestResult` |
 | Local | `LocalMetadataRadio.suggest` |
 | LB | `ListenBrainzRadio.suggest` + LB client metadata/lb-radio |
+| CF fill | `CfRecommendationsRadio.suggest` (`artist_type=similar`, cache TTL) |
 | Sesión | `startRadio`, `stopRadio`, `setRadioPreferredMode`, `setRadioForceOnline`, `replaceUpcomingWithRadio`, refill/auto |
 | UI | Now Playing (tap/long-press); `BottomPlayerBar.radioStatusLabel`; menú canción “Iniciar radio” |
 

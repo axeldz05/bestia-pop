@@ -20,6 +20,7 @@ import com.bestiapop.android.data.listenbrainz.LbApiResult
 import com.bestiapop.android.data.listenbrainz.LbPlaylistSummary
 import com.bestiapop.android.data.listenbrainz.ListenSyncCoordinator
 import com.bestiapop.android.data.listenbrainz.ListenTracker
+import com.bestiapop.android.data.listenbrainz.MatchedCfRecommendations
 import com.bestiapop.android.data.listenbrainz.MatchedLbPlaylist
 import com.bestiapop.android.data.model.*
 import com.bestiapop.android.data.network.ConnectivityObserver
@@ -34,10 +35,12 @@ import com.bestiapop.android.data.preferences.MIN_SAVE_WHILE_LISTENING_PERCENT
 import com.bestiapop.android.data.preferences.ThemePreferencesRepository
 import com.bestiapop.android.data.repository.MusicRepository
 import com.bestiapop.android.data.stream.StreamResolver
+import com.bestiapop.android.domain.radio.CfRecommendationsRadio
 import com.bestiapop.android.domain.radio.ListenBrainzRadio
 import com.bestiapop.android.domain.radio.LocalMetadataRadio
 import com.bestiapop.android.domain.radio.RadioEngine
 import com.bestiapop.android.domain.radio.RadioMode
+import com.bestiapop.android.domain.usecase.FetchAndMatchCfRecommendationsUseCase
 import com.bestiapop.android.domain.usecase.ImportListenBrainzPlaylistUseCase
 import com.bestiapop.android.domain.usecase.MatchListenBrainzTracksUseCase
 import com.bestiapop.android.service.DownloadNotificationHelper
@@ -103,6 +106,13 @@ sealed class LbPlaylistDetailUiState {
     data class Error(val message: String) : LbPlaylistDetailUiState()
 }
 
+sealed class CfRecommendationsUiState {
+    data object Idle : CfRecommendationsUiState()
+    data object Loading : CfRecommendationsUiState()
+    data object Success : CfRecommendationsUiState()
+    data class Error(val message: String) : CfRecommendationsUiState()
+}
+
 @OptIn(UnstableApi::class, FlowPreview::class)
 class MusicPlayerViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -148,6 +158,20 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     private val matchListenBrainzTracksUseCase = MatchListenBrainzTracksUseCase()
     private val importListenBrainzPlaylistUseCase = ImportListenBrainzPlaylistUseCase(repository)
+    private val fetchAndMatchCfRecommendationsUseCase = FetchAndMatchCfRecommendationsUseCase(
+        fetchCf = { username, token, count, offset, artistType ->
+            ListenBrainzClient.fetchCfRecordingRecommendations(
+                username = username,
+                token = token,
+                count = count,
+                offset = offset,
+                artistType = artistType
+            )
+        },
+        fetchRecordingMetadata = { mbids, token ->
+            ListenBrainzClient.fetchRecordingMetadata(mbids, token)
+        }
+    )
 
     private val _lbDiscoverPlaylists = MutableStateFlow<List<LbPlaylistSummary>>(emptyList())
     val lbDiscoverPlaylists = _lbDiscoverPlaylists.asStateFlow()
@@ -160,6 +184,18 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     private val _lbPlaylistDetailState = MutableStateFlow<LbPlaylistDetailUiState>(LbPlaylistDetailUiState.Idle)
     val lbPlaylistDetailState = _lbPlaylistDetailState.asStateFlow()
+
+    private val _cfRecommendations = MutableStateFlow<MatchedCfRecommendations?>(null)
+    val cfRecommendations = _cfRecommendations.asStateFlow()
+
+    private val _cfListState = MutableStateFlow<CfRecommendationsUiState>(CfRecommendationsUiState.Idle)
+    val cfListState = _cfListState.asStateFlow()
+
+    private val _cfDetailOpen = MutableStateFlow(false)
+    val cfDetailOpen = _cfDetailOpen.asStateFlow()
+
+    private val _cfDetailState = MutableStateFlow<CfRecommendationsUiState>(CfRecommendationsUiState.Idle)
+    val cfDetailState = _cfDetailState.asStateFlow()
 
     // Raw songs & playlists
     val rawSongs = repository.allSongsFlow
@@ -261,6 +297,20 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             },
             fetchLbRadio = { artistMbid, token, mode ->
                 ListenBrainzClient.fetchLbRadioArtist(artistMbid, token, mode = mode)
+            },
+            fetchRecordingMetadata = { mbids, token ->
+                ListenBrainzClient.fetchRecordingMetadata(mbids, token)
+            }
+        ),
+        cfRecommendationsRadio = CfRecommendationsRadio(
+            fetchCf = { username, token, count, offset, artistType ->
+                ListenBrainzClient.fetchCfRecordingRecommendations(
+                    username = username,
+                    token = token,
+                    count = count,
+                    offset = offset,
+                    artistType = artistType
+                )
             },
             fetchRecordingMetadata = { mbids, token ->
                 ListenBrainzClient.fetchRecordingMetadata(mbids, token)
@@ -1257,7 +1307,8 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                     excludeKeys = exclude,
                     limit = RADIO_BATCH_SIZE,
                     lbToken = settings.userToken.takeIf { it.isNotBlank() },
-                    lbAvailable = canUseLb
+                    lbAvailable = canUseLb,
+                    lbUsername = settings.username
                 )
 
                 if (force && batch.listenBrainzFailed) {
@@ -1279,7 +1330,8 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                         excludeKeys = exclude,
                         limit = RADIO_BATCH_SIZE,
                         lbToken = null,
-                        lbAvailable = false
+                        lbAvailable = false,
+                        lbUsername = null
                     )
                 }
 
@@ -1463,7 +1515,8 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 excludeKeys = exclude,
                 limit = RADIO_BATCH_SIZE,
                 lbToken = settings.userToken.takeIf { it.isNotBlank() },
-                lbAvailable = canUseLb
+                lbAvailable = canUseLb,
+                lbUsername = settings.username
             )
 
             if (force && batch.listenBrainzFailed) {
@@ -1484,7 +1537,8 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                     excludeKeys = exclude,
                     limit = RADIO_BATCH_SIZE,
                     lbToken = null,
-                    lbAvailable = false
+                    lbAvailable = false,
+                    lbUsername = null
                 )
             }
 
@@ -1789,7 +1843,95 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                     _lbDiscoverListState.value = LbDiscoverListUiState.Error(result.message)
                 }
             }
+            refreshCfRecommendationsInternal(settings)
         }
+    }
+
+    fun refreshCfRecommendations() {
+        viewModelScope.launch {
+            val settings = listenBrainzPreferences.settingsFlow.first()
+            refreshCfRecommendationsInternal(settings)
+        }
+    }
+
+    private suspend fun refreshCfRecommendationsInternal(settings: ListenBrainzSettings) {
+        if (!settings.showDiscoverPlaylists) {
+            clearCfState()
+            return
+        }
+        val username = settings.username
+        if (username.isNullOrBlank()) {
+            clearCfState()
+            return
+        }
+        _cfListState.value = CfRecommendationsUiState.Loading
+        val library = rawSongs.first()
+        when (
+            val result = fetchAndMatchCfRecommendationsUseCase.execute(
+                username = username,
+                token = settings.userToken.takeIf { it.isNotBlank() },
+                library = library,
+                artistType = FetchAndMatchCfRecommendationsUseCase.ARTIST_TYPE_TOP
+            )
+        ) {
+            is LbApiResult.Success -> {
+                _cfRecommendations.value = result.data
+                _cfListState.value = CfRecommendationsUiState.Success
+                if (_cfDetailOpen.value) {
+                    _cfDetailState.value = CfRecommendationsUiState.Success
+                }
+            }
+            is LbApiResult.Failure -> {
+                _cfListState.value = CfRecommendationsUiState.Error(result.message)
+                if (_cfDetailOpen.value) {
+                    _cfDetailState.value = CfRecommendationsUiState.Error(result.message)
+                }
+            }
+        }
+    }
+
+    fun openCfRecommendations() {
+        _cfDetailOpen.value = true
+        val current = _cfRecommendations.value
+        val listState = _cfListState.value
+        when {
+            current != null && listState is CfRecommendationsUiState.Success -> {
+                _cfDetailState.value = CfRecommendationsUiState.Success
+            }
+            listState is CfRecommendationsUiState.Loading -> {
+                _cfDetailState.value = CfRecommendationsUiState.Loading
+            }
+            listState is CfRecommendationsUiState.Error -> {
+                _cfDetailState.value = CfRecommendationsUiState.Error(listState.message)
+            }
+            else -> {
+                _cfDetailState.value = CfRecommendationsUiState.Loading
+                refreshCfRecommendations()
+            }
+        }
+    }
+
+    fun closeCfRecommendations() {
+        _cfDetailOpen.value = false
+        _cfDetailState.value = CfRecommendationsUiState.Idle
+    }
+
+    fun playCfRecommendations() {
+        val items = _cfRecommendations.value?.toPlayableItems().orEmpty()
+        if (items.isEmpty()) return
+        playPlayableCollection(items, startIndex = 0)
+    }
+
+    fun shuffleCfRecommendations() {
+        val items = _cfRecommendations.value?.toPlayableItems().orEmpty()
+        if (items.isEmpty()) return
+        applyShuffledQueue(items, keepItemFirst = null)
+    }
+
+    fun playCfAt(index: Int) {
+        val items = _cfRecommendations.value?.toPlayableItems().orEmpty()
+        if (items.isEmpty() || index !in items.indices) return
+        playPlayableCollection(items, startIndex = index)
     }
 
     fun openListenBrainzPlaylist(mbid: String) {
@@ -1970,6 +2112,13 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         _lbDiscoverPlaylists.value = emptyList()
         _lbDiscoverListState.value = LbDiscoverListUiState.Idle
         closeListenBrainzPlaylist()
+        clearCfState()
+    }
+
+    private fun clearCfState() {
+        _cfRecommendations.value = null
+        _cfListState.value = CfRecommendationsUiState.Idle
+        closeCfRecommendations()
     }
 
     // Online Catalog & Link Downloader Actions

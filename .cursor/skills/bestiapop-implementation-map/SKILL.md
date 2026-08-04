@@ -62,9 +62,11 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 | `ManagePlaylistUseCase` | `domain/usecase/ManagePlaylistUseCase.kt` | playlist ops over repo |
 | `MatchListenBrainzTracksUseCase` | `domain/usecase/MatchListenBrainzTracksUseCase.kt` | match LB tracks → local `Song` (`normalize` / `matchKey`) |
 | `ImportListenBrainzPlaylistUseCase` | `domain/usecase/ImportListenBrainzPlaylistUseCase.kt` | create Room playlist: matched + `PlaylistPendingTrack` metadata |
-| `RadioEngine` | `domain/radio/RadioEngine.kt` | orquesta local ± LB; `RadioSuggestResult` |
+| `FetchAndMatchCfRecommendationsUseCase` | `domain/usecase/FetchAndMatchCfRecommendationsUseCase.kt` | CF mbids → metadata → Local/Remote |
+| `RadioEngine` | `domain/radio/RadioEngine.kt` | orquesta local → LB → CF; `RadioSuggestResult` |
 | `LocalMetadataRadio` | `domain/radio/LocalMetadataRadio.kt` | score biblioteca (artista/género/año/álbum) |
 | `ListenBrainzRadio` | `domain/radio/ListenBrainzRadio.kt` | lb-radio → Local/Remote |
+| `CfRecommendationsRadio` | `domain/radio/CfRecommendationsRadio.kt` | CF pool cache → Local/Remote (Radio EXPLORE fill) |
 | `RadioMode` | `domain/radio/RadioMode.kt` | `EASY` / `EXPLORE` |
 | Puerto | `domain/repository/IMusicRepository.kt` | contrato repositorio |
 
@@ -85,8 +87,8 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 | Theme DataStore | `data/preferences/ThemePreferencesRepository.kt` |
 | Active downloads persist | `data/preferences/ActiveDownloadsStore.kt` (`ActiveDownloadCodec`, `activeDownloadBadgeCount`) |
 | ListenBrainz prefs | `data/preferences/ListenBrainzPreferencesRepository.kt` |
-| ListenBrainz API | `data/network/ListenBrainzClient.kt` (`submitListens`, createdfor, playlist, `lookupRecordingMetadata`, `fetchLbRadioArtist`, `fetchRecordingMetadata`) |
-| LB models + sync | `data/listenbrainz/LbPlaylistModels.kt` (`MatchedLbPlaylist.toPlayableItems`, `streamCount`), `LbRadioModels.kt`, `ListenTracker.kt`, `ListenSyncCoordinator.kt` |
+| ListenBrainz API | `data/network/ListenBrainzClient.kt` (`submitListens`, createdfor, playlist, `lookupRecordingMetadata`, `fetchLbRadioArtist`, `fetchRecordingMetadata`, `fetchCfRecordingRecommendations`, `parseCfRecommendations`) |
+| LB models + sync | `data/listenbrainz/LbPlaylistModels.kt` (`MatchedLbPlaylist.toPlayableItems`, `streamCount`), `LbRadioModels.kt`, `CfRecommendationModels.kt` (`MatchedCfRecommendations`), `ListenTracker.kt`, `ListenSyncCoordinator.kt` |
 | Connectivity | `data/network/ConnectivityObserver.kt` |
 | Pending listens Room | `data/db/PendingListenEntity.kt`, `PendingListenDao.kt` |
 | Storage helpers | `data/util/StorageUtils.kt` |
@@ -107,8 +109,9 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 | YouTube extraction | `app/src/test/.../YouTubeExtractionIntegrationTest.kt` |
 | StreamResolver cache/TTL | `app/src/test/.../StreamResolverTest.kt` |
 | Radio local / engine | `app/src/test/.../RadioEngineTest.kt` |
-| LB radio JSON parse | `app/src/test/.../ListenBrainzRadioParseTest.kt` |
+| LB radio / CF JSON parse | `app/src/test/.../ListenBrainzRadioParseTest.kt` |
 | LB Para Ti → PlayableItem | `app/src/test/.../MatchedLbPlaylistPlayableTest.kt` |
+| CF match Local|Remote | `app/src/test/.../FetchAndMatchCfRecommendationsUseCaseTest.kt` |
 | ActiveDownload cycle | `app/src/test/.../ActiveDownloadCycleTest.kt` |
 | ActiveDownload codec / badge | `app/src/test/.../ActiveDownloadCodecTest.kt` |
 | Import LB playlist | `app/src/test/.../ImportListenBrainzPlaylistUseCaseTest.kt` |
@@ -123,7 +126,7 @@ Mantener esta lista alineada con `MusicPlayerViewModel.kt`:
 - Radio: `startRadio` / `stopRadio` / `setRadioPreferredMode` / `setRadioForceOnline`, `radioMode`, `radioForceOnline`, `radioStatusLabel`, `replaceUpcomingWithRadio`, `maybeAutoStartRadioOnQueueEnd`
 - Artwork: `setAlbumArtwork`
 - Online: `searchCatalog`, `searchOnlineCatalog`, `downloadSingleCandidate`, `downloadSelectedCandidatesBatch`, `downloadFromUrl`, `downloadOnlineTrack`, `activeDownloads`, `retryActiveDownload`, `cycleActiveDownload`, `previewActiveDownload`, `dismissActiveDownload`, `requestOpenDownloads` / `pendingOpenDownloads`, `playOnlineCatalogTrackAsStream`, `cycleSongCatalogResult`, `cycleTrackCandidate`, `catalogPreviewKey`
-- ListenBrainz: `listenBrainzSettings`, `setListenBrainzEnabled`, `setListenBrainzDiscoverEnabled`, `setListenBrainzSaveWhileListening`, `setListenBrainzSaveWhileListeningPercent`, `refreshListenBrainzDiscoverPlaylists`, `openListenBrainzPlaylist`, `playListenBrainzPlaylist`, `shuffleListenBrainzPlaylist`, `playListenBrainzPlaylistAt`, `saveListenBrainzPlaylistAsLocal`, `importListenBrainzPlaylistWithDownloads`, `downloadPlaylistPendingTracks`, `getPlaylistPendingTracksFlow`
+- ListenBrainz: `listenBrainzSettings`, `setListenBrainzEnabled`, `setListenBrainzDiscoverEnabled`, `setListenBrainzSaveWhileListening`, `setListenBrainzSaveWhileListeningPercent`, `refreshListenBrainzDiscoverPlaylists`, `openListenBrainzPlaylist`, `playListenBrainzPlaylist`, `shuffleListenBrainzPlaylist`, `playListenBrainzPlaylistAt`, `saveListenBrainzPlaylistAsLocal`, `importListenBrainzPlaylistWithDownloads`, `downloadPlaylistPendingTracks`, `getPlaylistPendingTracksFlow`, `refreshCfRecommendations`, `openCfRecommendations`, `closeCfRecommendations`, `playCfRecommendations`, `shuffleCfRecommendations`, `playCfAt`, `cfRecommendations`, `cfListState`, `cfDetailOpen`
 
 ## Cómo actualizar este mapa
 

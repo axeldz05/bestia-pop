@@ -12,12 +12,13 @@ data class RadioSuggestResult(
 )
 
 /**
- * Orchestrates local (+ optional ListenBrainz) radio suggestions into a deduped batch.
- * Seed similarity from library is primary; LB fills remaining slots in EXPLORE mode.
+ * Orchestrates local (+ optional ListenBrainz + CF) radio suggestions into a deduped batch.
+ * Seed similarity from library is primary; LB then CF fill remaining slots in EXPLORE mode.
  */
 class RadioEngine(
     private val localRadio: LocalMetadataRadio = LocalMetadataRadio(),
-    private val listenBrainzRadio: ListenBrainzRadio? = null
+    private val listenBrainzRadio: ListenBrainzRadio? = null,
+    private val cfRecommendationsRadio: CfRecommendationsRadio? = null
 ) {
 
     suspend fun suggest(
@@ -27,7 +28,8 @@ class RadioEngine(
         excludeKeys: Set<String>,
         limit: Int = DEFAULT_LIMIT,
         lbToken: String? = null,
-        lbAvailable: Boolean = false
+        lbAvailable: Boolean = false,
+        lbUsername: String? = null
     ): RadioSuggestResult {
         if (limit <= 0 || seed.artist.isBlank() || seed.title.isBlank()) {
             return RadioSuggestResult(
@@ -96,6 +98,32 @@ class RadioEngine(
                     addAll(lbItems)
                     usedListenBrainz = true
                 }
+            }
+        }
+
+        val useCf = mode == RadioMode.EXPLORE &&
+            lbAvailable &&
+            !lbToken.isNullOrBlank() &&
+            !lbUsername.isNullOrBlank() &&
+            cfRecommendationsRadio != null &&
+            combined.size < limit
+
+        if (useCf) {
+            val cfOutcome = runCatching {
+                cfRecommendationsRadio!!.suggest(
+                    library = library,
+                    excludeKeys = seen,
+                    limit = limit - combined.size,
+                    username = lbUsername!!,
+                    token = lbToken!!
+                )
+            }
+            val cfItems = cfOutcome.getOrDefault(emptyList())
+            if (cfItems.isNotEmpty()) {
+                addAll(cfItems)
+                usedListenBrainz = true
+                // CF rescued online EXPLORE; do not force-degrade to EASY
+                listenBrainzFailed = false
             }
         }
 

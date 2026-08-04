@@ -251,4 +251,95 @@ class RadioEngineTest {
         assertTrue(result.usedListenBrainz)
         assertFalse(result.listenBrainzFailed)
     }
+
+    @Test
+    fun exploreFillsWithCfWhenLocalAndLbInsufficient() = runBlocking {
+        val lb = ListenBrainzRadio(
+            lookupMetadata = { _, _, _ ->
+                com.bestiapop.android.data.listenbrainz.LbApiResult.Success(
+                    com.bestiapop.android.data.listenbrainz.LbMetadataLookup(
+                        artistMbids = listOf("artist-mbid"),
+                        recordingMbid = null,
+                        artistCreditName = "Artist A",
+                        recordingName = "Seed"
+                    )
+                )
+            },
+            fetchLbRadio = { _, _, _ ->
+                com.bestiapop.android.data.listenbrainz.LbApiResult.Success(
+                    listOf(
+                        com.bestiapop.android.data.listenbrainz.LbRadioRecording(
+                            recordingMbid = "lb-rec",
+                            similarArtistMbid = null,
+                            similarArtistName = "LB Artist"
+                        )
+                    )
+                )
+            },
+            fetchRecordingMetadata = { _, _ ->
+                com.bestiapop.android.data.listenbrainz.LbApiResult.Success(
+                    mapOf(
+                        "lb-rec" to com.bestiapop.android.data.listenbrainz.LbRecordingMetadata(
+                            recordingMbid = "lb-rec",
+                            title = "LB Song",
+                            artist = "LB Artist"
+                        )
+                    )
+                )
+            }
+        )
+        val cf = CfRecommendationsRadio(
+            fetchCf = { _, _, _, _, _ ->
+                com.bestiapop.android.data.listenbrainz.LbApiResult.Success(
+                    com.bestiapop.android.data.listenbrainz.CfRecommendationsPayload(
+                        userName = "user",
+                        recordings = listOf(
+                            com.bestiapop.android.data.listenbrainz.CfRecommendedRecording("cf-1", 9.0),
+                            com.bestiapop.android.data.listenbrainz.CfRecommendedRecording("cf-2", 8.0)
+                        )
+                    )
+                )
+            },
+            fetchRecordingMetadata = { _, _ ->
+                com.bestiapop.android.data.listenbrainz.LbApiResult.Success(
+                    mapOf(
+                        "cf-1" to com.bestiapop.android.data.listenbrainz.LbRecordingMetadata(
+                            recordingMbid = "cf-1",
+                            title = "CF One",
+                            artist = "CF Artist"
+                        ),
+                        "cf-2" to com.bestiapop.android.data.listenbrainz.LbRecordingMetadata(
+                            recordingMbid = "cf-2",
+                            title = "CF Two",
+                            artist = "CF Artist"
+                        )
+                    )
+                )
+            }
+        )
+        val engine = RadioEngine(
+            localRadio = LocalMetadataRadio(random = Random(4)),
+            listenBrainzRadio = lb,
+            cfRecommendationsRadio = cf
+        )
+        val seed = song(1, "Seed", "Artist A").toPlayable()
+        // Tiny library so local fill cannot satisfy limit alone
+        val library = listOf(seed.song)
+
+        val result = engine.suggest(
+            seed = seed,
+            library = library,
+            mode = RadioMode.EXPLORE,
+            excludeKeys = emptySet(),
+            limit = 3,
+            lbToken = "token",
+            lbAvailable = true,
+            lbUsername = "user"
+        )
+
+        assertTrue(result.items.any { it is PlayableItem.Remote && it.title == "LB Song" })
+        assertTrue(result.items.any { it is PlayableItem.Remote && it.title.startsWith("CF ") })
+        assertEquals(3, result.items.size)
+        assertTrue(result.usedListenBrainz)
+    }
 }

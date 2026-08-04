@@ -67,6 +67,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.bestiapop.android.data.listenbrainz.LbPlaylistSummary
+import com.bestiapop.android.data.listenbrainz.MatchedCfRecommendations
+import com.bestiapop.android.data.listenbrainz.MatchedCfTrack
 import com.bestiapop.android.data.listenbrainz.MatchedLbPlaylist
 import com.bestiapop.android.data.listenbrainz.MatchedLbTrack
 import com.bestiapop.android.data.model.PlayableItem
@@ -74,12 +76,17 @@ import com.bestiapop.android.data.model.Playlist
 import com.bestiapop.android.data.model.PlaylistPendingTrack
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.domain.usecase.MatchListenBrainzTracksUseCase
+import com.bestiapop.android.ui.CfRecommendationsUiState
 import com.bestiapop.android.ui.LbDiscoverListUiState
 import com.bestiapop.android.ui.LbPlaylistDetailUiState
 import com.bestiapop.android.ui.MusicPlayerViewModel
 import com.bestiapop.android.ui.components.SongListItem
 
+import androidx.compose.material.icons.filled.Recommend
 import androidx.compose.runtime.LaunchedEffect
+import java.text.DateFormat
+import java.util.Date
+import java.util.Locale
 
 @Composable
 fun PlaylistsScreen(
@@ -95,6 +102,10 @@ fun PlaylistsScreen(
     val lbDiscoverListState by viewModel.lbDiscoverListState.collectAsState()
     val selectedLbPlaylist by viewModel.selectedLbPlaylist.collectAsState()
     val lbPlaylistDetailState by viewModel.lbPlaylistDetailState.collectAsState()
+    val cfRecommendations by viewModel.cfRecommendations.collectAsState()
+    val cfListState by viewModel.cfListState.collectAsState()
+    val cfDetailOpen by viewModel.cfDetailOpen.collectAsState()
+    val cfDetailState by viewModel.cfDetailState.collectAsState()
 
     var showCreateDialog by remember { mutableStateOf(false) }
     var selectedPlaylistId by remember { mutableStateOf<Long?>(activeSelectedPlaylistId) }
@@ -108,6 +119,7 @@ fun PlaylistsScreen(
             selectedPlaylistId = activeSelectedPlaylistId
             selectedLbPlaylistMbid = null
             viewModel.closeListenBrainzPlaylist()
+            viewModel.closeCfRecommendations()
         }
     }
 
@@ -117,13 +129,14 @@ fun PlaylistsScreen(
         } else {
             selectedLbPlaylistMbid = null
             viewModel.closeListenBrainzPlaylist()
+            viewModel.closeCfRecommendations()
         }
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
         Scaffold(
             floatingActionButton = {
-                if (selectedPlaylistId == null && selectedLbPlaylistMbid == null) {
+                if (selectedPlaylistId == null && selectedLbPlaylistMbid == null && !cfDetailOpen) {
                     FloatingActionButton(
                         onClick = { showCreateDialog = true },
                         containerColor = MaterialTheme.colorScheme.primary,
@@ -214,8 +227,91 @@ fun PlaylistsScreen(
                                             onClick = {
                                                 selectedPlaylistId = null
                                                 onSelectPlaylistDetail(null)
+                                                viewModel.closeCfRecommendations()
                                                 selectedLbPlaylistMbid = playlist.mbid
                                                 viewModel.openListenBrainzPlaylist(playlist.mbid)
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        item(key = "recomendados-header") {
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "Recomendados",
+                                    style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
+                                    color = MaterialTheme.colorScheme.onBackground,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                IconButton(onClick = { viewModel.refreshCfRecommendations() }) {
+                                    Icon(
+                                        imageVector = Icons.Default.Refresh,
+                                        contentDescription = "Actualizar Recomendados",
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Basado en tu historial ListenBrainz",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                        }
+
+                        when (val cfState = cfListState) {
+                            is CfRecommendationsUiState.Loading -> {
+                                item(key = "recomendados-loading") {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 24.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        CircularProgressIndicator()
+                                    }
+                                }
+                            }
+                            is CfRecommendationsUiState.Error -> {
+                                item(key = "recomendados-error") {
+                                    Text(
+                                        text = cfState.message,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.error,
+                                        modifier = Modifier.padding(vertical = 8.dp)
+                                    )
+                                }
+                            }
+                            is CfRecommendationsUiState.Success, is CfRecommendationsUiState.Idle -> {
+                                val matched = cfRecommendations
+                                if (matched == null || matched.matches.isEmpty()) {
+                                    if (cfState is CfRecommendationsUiState.Success) {
+                                        item(key = "recomendados-empty") {
+                                            Text(
+                                                text = "Aún no hay recomendaciones CF para tu cuenta.",
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                                                modifier = Modifier.padding(vertical = 8.dp)
+                                            )
+                                        }
+                                    }
+                                } else {
+                                    item(key = "recomendados-card") {
+                                        CfRecommendationsCardItem(
+                                            matched = matched,
+                                            onClick = {
+                                                selectedPlaylistId = null
+                                                onSelectPlaylistDetail(null)
+                                                selectedLbPlaylistMbid = null
+                                                viewModel.closeListenBrainzPlaylist()
+                                                viewModel.openCfRecommendations()
                                             }
                                         )
                                     }
@@ -278,6 +374,7 @@ fun PlaylistsScreen(
                                 onClick = {
                                     selectedLbPlaylistMbid = null
                                     viewModel.closeListenBrainzPlaylist()
+                                    viewModel.closeCfRecommendations()
                                     selectedPlaylistId = playlist.id
                                     onSelectPlaylistDetail(playlist.id)
                                 },
@@ -347,6 +444,23 @@ fun PlaylistsScreen(
             )
         }
 
+        // CF Recommendations detail
+        if (cfDetailOpen) {
+            val currentItem by viewModel.currentItem.collectAsState()
+            CfRecommendationsDetailScreen(
+                detailState = cfDetailState,
+                matched = cfRecommendations,
+                onBack = { viewModel.closeCfRecommendations() },
+                onPlay = { viewModel.playCfRecommendations() },
+                onShuffle = { viewModel.shuffleCfRecommendations() },
+                onPlayAt = { index -> viewModel.playCfAt(index) },
+                currentItem = currentItem,
+                onPlayNext = { viewModel.playNextInQueue(it) },
+                onAddToQueue = { viewModel.addToQueue(it) },
+                onStartRadio = { viewModel.startRadio(seedSong = it) }
+            )
+        }
+
         // Create Playlist Dialog
         if (showCreateDialog) {
             PlaylistFormDialog(
@@ -394,6 +508,302 @@ fun PlaylistsScreen(
                         Text("Cancelar")
                     }
                 }
+            )
+        }
+    }
+}
+
+@Composable
+private fun CfRecommendationsCardItem(
+    matched: MatchedCfRecommendations,
+    onClick: () -> Unit
+) {
+    val lastUpdatedLabel = matched.payload.lastUpdatedEpochSec?.let { epochSec ->
+        val formatter = DateFormat.getDateInstance(DateFormat.MEDIUM, Locale.getDefault())
+        " · actualizado ${formatter.format(Date(epochSec * 1000L))}"
+    }.orEmpty()
+
+    Surface(
+        color = MaterialTheme.colorScheme.surface,
+        shape = RoundedCornerShape(14.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(60.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(MaterialTheme.colorScheme.secondaryContainer),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Recommend,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                    modifier = Modifier.size(28.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.width(14.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Recomendados para vos",
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = "${matched.matchedCount} en biblioteca · ${matched.streamCount} en stream",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = "${matched.totalCount} tracks · CF$lastUpdatedLabel",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.9f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun CfRecommendationsDetailScreen(
+    detailState: CfRecommendationsUiState,
+    matched: MatchedCfRecommendations?,
+    onBack: () -> Unit,
+    onPlay: () -> Unit,
+    onShuffle: () -> Unit,
+    onPlayAt: (Int) -> Unit,
+    currentItem: PlayableItem?,
+    onPlayNext: (Song) -> Unit,
+    onAddToQueue: (Song) -> Unit,
+    onStartRadio: (Song) -> Unit
+) {
+    Surface(
+        modifier = Modifier.fillMaxSize(),
+        color = MaterialTheme.colorScheme.background
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(top = 16.dp, start = 16.dp, end = 16.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(onClick = onBack) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "Volver",
+                        tint = MaterialTheme.colorScheme.onBackground
+                    )
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "Recomendados",
+                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                    color = MaterialTheme.colorScheme.onBackground,
+                    modifier = Modifier.weight(1f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            when (detailState) {
+                is CfRecommendationsUiState.Loading, is CfRecommendationsUiState.Idle -> {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator()
+                    }
+                }
+                is CfRecommendationsUiState.Error -> {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = detailState.message,
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
+                }
+                is CfRecommendationsUiState.Success -> {
+                    if (matched == null || matched.matches.isEmpty()) {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "Aún no hay recomendaciones CF para tu cuenta.",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                        }
+                    } else {
+                        Text(
+                            text = "${matched.matchedCount} en biblioteca · ${matched.streamCount} en stream",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                        )
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Button(
+                                onClick = onPlay,
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = MaterialTheme.colorScheme.primary
+                                ),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(imageVector = Icons.Default.PlayArrow, contentDescription = null)
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Reproducir")
+                            }
+
+                            OutlinedButton(
+                                onClick = onShuffle,
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(imageVector = Icons.Default.Shuffle, contentDescription = null)
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Aleatorio")
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        LazyColumn(modifier = Modifier.fillMaxSize()) {
+                            items(
+                                items = matched.matches.withIndex().toList(),
+                                key = { (index, match) ->
+                                    "${index}|${match.recordingMbid}|${match.title}|${match.artist}|${match.localSong?.id}"
+                                }
+                            ) { (index, match) ->
+                                CfMatchedTrackRow(
+                                    match = match,
+                                    isCurrentPlaying = isCfMatchPlaying(match, currentItem),
+                                    onPlayAt = { onPlayAt(index) },
+                                    onPlayNext = onPlayNext,
+                                    onAddToQueue = onAddToQueue,
+                                    onStartRadio = onStartRadio
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun isCfMatchPlaying(match: MatchedCfTrack, currentItem: PlayableItem?): Boolean {
+    if (currentItem == null) return false
+    val local = match.localSong
+    if (local != null && currentItem is PlayableItem.Local) {
+        return currentItem.song.uriString == local.uriString ||
+            currentItem.mediaId == local.uriString
+    }
+    val currentKey = MatchListenBrainzTracksUseCase.matchKey(currentItem.artist, currentItem.title)
+    val matchKey = MatchListenBrainzTracksUseCase.matchKey(match.artist, match.title)
+    return currentKey.isNotEmpty() && currentKey == matchKey
+}
+
+@Composable
+private fun CfMatchedTrackRow(
+    match: MatchedCfTrack,
+    isCurrentPlaying: Boolean,
+    onPlayAt: () -> Unit,
+    onPlayNext: (Song) -> Unit,
+    onAddToQueue: (Song) -> Unit,
+    onStartRadio: (Song) -> Unit
+) {
+    val local = match.localSong
+    if (local != null) {
+        SongListItem(
+            song = local,
+            isCurrentPlaying = isCurrentPlaying,
+            onClick = onPlayAt,
+            onPlayNext = { onPlayNext(local) },
+            onAddToQueue = { onAddToQueue(local) },
+            onStartRadio = { onStartRadio(local) }
+        )
+    } else {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .alpha(0.85f)
+                .clickable(onClick = onPlayAt)
+                .padding(vertical = 10.dp, horizontal = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(
+                        if (isCurrentPlaying) {
+                            MaterialTheme.colorScheme.primaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.surfaceVariant
+                        }
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.PlayArrow,
+                    contentDescription = null,
+                    tint = if (isCurrentPlaying) {
+                        MaterialTheme.colorScheme.onPrimaryContainer
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    }
+                )
+            }
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = match.title,
+                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = match.artist,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            Text(
+                text = "Stream",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.tertiary
             )
         }
     }

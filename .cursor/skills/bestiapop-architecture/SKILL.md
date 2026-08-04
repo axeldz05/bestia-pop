@@ -45,8 +45,8 @@ service/     MusicService (playback), WebServerService (WiFi sync)
 3. Screens Compose observan StateFlows y llaman métodos del ViewModel
 4. Reproducción: ViewModel cola `List<PlayableItem>` (`Local` | `Remote`) → `MediaController` → `MusicService` (ExoPlayer)
 5. Stream remoto: `StreamResolver` → `YouTubeExtractor.extractAudioStreamDetailed` → MediaItem HTTPS + `StreamPlaybackTag` (UA) → ExoPlayer
-6. Radio: `RadioEngine` (local ± LB) → `playPlayableCollection` / refill de cola; remotos reusan stream
-7. Para Ti: `MatchListenBrainzTracksUseCase` → `MatchedLbPlaylist.toPlayableItems` → `playPlayableCollection`; opcional `saveWhileListening` → download background; import Room vía `ImportListenBrainzPlaylistUseCase` + `LB_IMPORT`
+6. Radio: `RadioEngine` (local → LB → CF) → `playPlayableCollection` / refill de cola; remotos reusan stream
+7. Para Ti: `MatchListenBrainzTracksUseCase` → `MatchedLbPlaylist.toPlayableItems` → `playPlayableCollection`; CF: `FetchAndMatchCfRecommendationsUseCase` → `MatchedCfRecommendations.toPlayableItems`; opcional `saveWhileListening` → download background; import Room vía `ImportListenBrainzPlaylistUseCase` + `LB_IMPORT`
 8. Descarga online: siempre vía `runTrackedDownload` → cola `activeDownloads` (tab Descargas) → `DownloadAudioTrackUseCase` → Room + storage
 
 ## Navegación UI
@@ -67,8 +67,8 @@ Overlay: `BottomPlayerBar` → `NowPlayingScreen`; cola en `QueueScreen`.
 3. **Álbum vs playlist en portadas** — álbum propaga a canciones; portada de playlist es entidad propia.
 4. **Portadas locales** — copiar a `context.filesDir` (no depender de content URIs temporales).
 5. **Remoto efímero** — `PlayableItem.Remote` + `ResolvedStream` en memoria; nunca persistir URLs CDN en Room.
-6. **Radio** — sesión con seed + providers (`LocalMetadataRadio` / `ListenBrainzRadio`); refill de cola; no pipeline paralelo.
-7. **Para Ti mixto** — Discover reproduce Local+Remote; “Guardar al escuchar” / import LB no bloquean ni persisten URLs CDN; faltantes de import usan `activeDownloads` (`LB_IMPORT` + `targetPlaylistId`).
+6. **Radio** — sesión con seed + providers (`LocalMetadataRadio` / `ListenBrainzRadio` / `CfRecommendationsRadio`); refill de cola; no pipeline paralelo.
+7. **Para Ti mixto** — Discover + CF Recomendados reproducen Local+Remote; “Guardar al escuchar” / import LB no bloquean ni persisten URLs CDN; faltantes de import usan `activeDownloads` (`LB_IMPORT` + `targetPlaylistId`).
 
 ## Servicios Android
 

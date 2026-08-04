@@ -74,4 +74,60 @@ class ListenBrainzRadioParseTest {
         assertEquals("Portishead", meta.artist)
         assertEquals("Dummy", meta.releaseName)
     }
+
+    @Test
+    fun parseCfRecommendations_readsMbidsAndScores() {
+        val json = JSONObject(
+            """
+            {
+              "payload": {
+                "last_updated": 1588494361,
+                "type": "top",
+                "entity": "recording",
+                "mbids": [
+                  {
+                    "recording_mbid": "526bd613-fddd-4bd6-9137-ab709ac74cab",
+                    "score": 9.345
+                  },
+                  {
+                    "recording_mbid": "a6081bc1-2a76-4984-b21f-38bc3dcca3a5",
+                    "score": 6.998
+                  }
+                ],
+                "user_name": "unclejohn69",
+                "count": 2,
+                "total_mbid_count": 30,
+                "offset": 0
+              }
+            }
+            """.trimIndent()
+        )
+        val payload = ListenBrainzClient.parseCfRecommendations(json, "fallback")
+        assertEquals("unclejohn69", payload.userName)
+        assertEquals(2, payload.recordings.size)
+        assertEquals("526bd613-fddd-4bd6-9137-ab709ac74cab", payload.recordings[0].recordingMbid)
+        assertEquals(9.345, payload.recordings[0].score, 0.001)
+        assertEquals(1588494361L, payload.lastUpdatedEpochSec)
+        assertEquals(30, payload.totalMbidCount)
+        assertEquals("top", payload.artistType)
+    }
+
+    @Test
+    fun parseCfRecommendations_emptyMbids() {
+        val json = JSONObject(
+            """
+            {
+              "payload": {
+                "mbids": [],
+                "user_name": "user",
+                "count": 0,
+                "total_mbid_count": 0
+              }
+            }
+            """.trimIndent()
+        )
+        val payload = ListenBrainzClient.parseCfRecommendations(json, "user")
+        assertTrue(payload.recordings.isEmpty())
+        assertEquals(0, payload.totalMbidCount)
+    }
 }

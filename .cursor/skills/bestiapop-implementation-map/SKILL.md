@@ -82,7 +82,7 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 | Theme DataStore | `data/preferences/ThemePreferencesRepository.kt` |
 | ListenBrainz prefs | `data/preferences/ListenBrainzPreferencesRepository.kt` |
 | ListenBrainz API | `data/network/ListenBrainzClient.kt` (`submitListens`, createdfor, playlist, `lookupRecordingMetadata`, `fetchLbRadioArtist`, `fetchRecordingMetadata`) |
-| LB models + sync | `data/listenbrainz/LbPlaylistModels.kt`, `LbRadioModels.kt`, `ListenTracker.kt`, `ListenSyncCoordinator.kt` |
+| LB models + sync | `data/listenbrainz/LbPlaylistModels.kt` (`MatchedLbPlaylist.toPlayableItems`, `streamCount`), `LbRadioModels.kt`, `ListenTracker.kt`, `ListenSyncCoordinator.kt` |
 | Connectivity | `data/network/ConnectivityObserver.kt` |
 | Pending listens Room | `data/db/PendingListenEntity.kt`, `PendingListenDao.kt` |
 | Storage helpers | `data/util/StorageUtils.kt` |
@@ -103,6 +103,7 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 | StreamResolver cache/TTL | `app/src/test/.../StreamResolverTest.kt` |
 | Radio local / engine | `app/src/test/.../RadioEngineTest.kt` |
 | LB radio JSON parse | `app/src/test/.../ListenBrainzRadioParseTest.kt` |
+| LB Para Ti → PlayableItem | `app/src/test/.../MatchedLbPlaylistPlayableTest.kt` |
 | UI functional library | `app/src/androidTest/.../LibraryScreenFunctionalTest.kt` |
 
 ## Símbolos ViewModel frecuentes
@@ -114,7 +115,7 @@ Mantener esta lista alineada con `MusicPlayerViewModel.kt`:
 - Radio: `startRadio` / `stopRadio` / `setRadioPreferredMode` / `setRadioForceOnline`, `radioMode`, `radioForceOnline`, `radioStatusLabel`, `replaceUpcomingWithRadio`, `maybeAutoStartRadioOnQueueEnd`
 - Artwork: `setAlbumArtwork`
 - Online: `searchCatalog`, `searchOnlineCatalog`, `downloadSingleCandidate`, `downloadSelectedCandidatesBatch`, `downloadFromUrl`, `downloadOnlineTrack`, `playOnlineCatalogTrackAsStream`, `cycleSongCatalogResult`, `cycleTrackCandidate`, `catalogPreviewKey`
-- ListenBrainz: `listenBrainzSettings`, `setListenBrainzEnabled`, `setListenBrainzDiscoverEnabled`, `refreshListenBrainzDiscoverPlaylists`, `openListenBrainzPlaylist`, `playListenBrainzPlaylist`, `shuffleListenBrainzPlaylist`
+- ListenBrainz: `listenBrainzSettings`, `setListenBrainzEnabled`, `setListenBrainzDiscoverEnabled`, `setListenBrainzSaveWhileListening`, `setListenBrainzSaveWhileListeningPercent`, `refreshListenBrainzDiscoverPlaylists`, `openListenBrainzPlaylist`, `playListenBrainzPlaylist`, `shuffleListenBrainzPlaylist`, `playListenBrainzPlaylistAt`
 
 ## Cómo actualizar este mapa
 

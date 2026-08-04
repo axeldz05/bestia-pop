@@ -68,8 +68,10 @@ import coil.compose.AsyncImage
 import com.bestiapop.android.data.listenbrainz.LbPlaylistSummary
 import com.bestiapop.android.data.listenbrainz.MatchedLbPlaylist
 import com.bestiapop.android.data.listenbrainz.MatchedLbTrack
+import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.data.model.Playlist
 import com.bestiapop.android.data.model.Song
+import com.bestiapop.android.domain.usecase.MatchListenBrainzTracksUseCase
 import com.bestiapop.android.ui.LbDiscoverListUiState
 import com.bestiapop.android.ui.LbPlaylistDetailUiState
 import com.bestiapop.android.ui.MusicPlayerViewModel
@@ -310,7 +312,7 @@ fun PlaylistsScreen(
 
         // ListenBrainz Discover playlist detail
         if (selectedLbPlaylistMbid != null) {
-            val currentSong by viewModel.currentSong.collectAsState()
+            val currentItem by viewModel.currentItem.collectAsState()
             LbPlaylistDetailScreen(
                 detailState = lbPlaylistDetailState,
                 matchedPlaylist = selectedLbPlaylist,
@@ -320,8 +322,8 @@ fun PlaylistsScreen(
                 },
                 onPlay = { viewModel.playListenBrainzPlaylist() },
                 onShuffle = { viewModel.shuffleListenBrainzPlaylist() },
-                onPlaySong = { song, queue -> viewModel.playSong(song, queue) },
-                currentSongUri = currentSong?.uriString,
+                onPlayAt = { index -> viewModel.playListenBrainzPlaylistAt(index) },
+                currentItem = currentItem,
                 onPlayNext = { viewModel.playNextInQueue(it) },
                 onAddToQueue = { viewModel.addToQueue(it) },
                 onStartRadio = { viewModel.startRadio(seedSong = it) }
@@ -451,8 +453,8 @@ private fun LbPlaylistDetailScreen(
     onBack: () -> Unit,
     onPlay: () -> Unit,
     onShuffle: () -> Unit,
-    onPlaySong: (Song, List<Song>) -> Unit,
-    currentSongUri: String?,
+    onPlayAt: (Int) -> Unit,
+    currentItem: PlayableItem?,
     onPlayNext: (Song) -> Unit,
     onAddToQueue: (Song) -> Unit,
     onStartRadio: (Song) -> Unit
@@ -526,7 +528,7 @@ private fun LbPlaylistDetailScreen(
                         }
                     } else {
                         val description = matched.detail.summary.description
-                        val matchedSongs = matched.matchedSongs
+                        val hasTracks = matched.matches.isNotEmpty()
 
                         if (!description.isNullOrBlank()) {
                             Text(
@@ -540,12 +542,12 @@ private fun LbPlaylistDetailScreen(
                         }
 
                         Text(
-                            text = "${matched.matchedCount} de ${matched.totalCount} disponibles en tu biblioteca",
+                            text = "${matched.matchedCount} en biblioteca · ${matched.streamCount} en stream",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                         )
 
-                        Spacer(modifier = Modifier.height(16.dp))
+                        Spacer(modifier = Modifier.height(12.dp))
 
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -553,7 +555,7 @@ private fun LbPlaylistDetailScreen(
                         ) {
                             Button(
                                 onClick = onPlay,
-                                enabled = matchedSongs.isNotEmpty(),
+                                enabled = hasTracks,
                                 colors = ButtonDefaults.buttonColors(
                                     containerColor = MaterialTheme.colorScheme.primary
                                 ),
@@ -567,7 +569,7 @@ private fun LbPlaylistDetailScreen(
 
                             OutlinedButton(
                                 onClick = onShuffle,
-                                enabled = matchedSongs.isNotEmpty(),
+                                enabled = hasTracks,
                                 shape = RoundedCornerShape(12.dp),
                                 modifier = Modifier.weight(1f)
                             ) {
@@ -593,16 +595,15 @@ private fun LbPlaylistDetailScreen(
                         } else {
                             LazyColumn(modifier = Modifier.fillMaxSize()) {
                                 items(
-                                    items = matched.matches,
-                                    key = { match ->
-                                        "${match.track.recordingMbid ?: match.track.title}|${match.track.artist}|${match.localSong?.id}"
+                                    items = matched.matches.withIndex().toList(),
+                                    key = { (index, match) ->
+                                        "${index}|${match.track.recordingMbid ?: match.track.title}|${match.track.artist}|${match.localSong?.id}"
                                     }
-                                ) { match ->
+                                ) { (index, match) ->
                                     LbMatchedTrackRow(
                                         match = match,
-                                        matchedSongs = matchedSongs,
-                                        isCurrentPlaying = match.localSong?.uriString == currentSongUri,
-                                        onPlaySong = onPlaySong,
+                                        isCurrentPlaying = isLbMatchPlaying(match, currentItem),
+                                        onPlayAt = { onPlayAt(index) },
                                         onPlayNext = onPlayNext,
                                         onAddToQueue = onAddToQueue,
                                         onStartRadio = onStartRadio
@@ -617,12 +618,23 @@ private fun LbPlaylistDetailScreen(
     }
 }
 
+private fun isLbMatchPlaying(match: MatchedLbTrack, currentItem: PlayableItem?): Boolean {
+    if (currentItem == null) return false
+    val local = match.localSong
+    if (local != null && currentItem is PlayableItem.Local) {
+        return currentItem.song.uriString == local.uriString ||
+            currentItem.mediaId == local.uriString
+    }
+    val currentKey = MatchListenBrainzTracksUseCase.matchKey(currentItem.artist, currentItem.title)
+    val matchKey = MatchListenBrainzTracksUseCase.matchKey(match.track.artist, match.track.title)
+    return currentKey.isNotEmpty() && currentKey == matchKey
+}
+
 @Composable
 private fun LbMatchedTrackRow(
     match: MatchedLbTrack,
-    matchedSongs: List<Song>,
     isCurrentPlaying: Boolean,
-    onPlaySong: (Song, List<Song>) -> Unit,
+    onPlayAt: () -> Unit,
     onPlayNext: (Song) -> Unit,
     onAddToQueue: (Song) -> Unit,
     onStartRadio: (Song) -> Unit
@@ -632,7 +644,7 @@ private fun LbMatchedTrackRow(
         SongListItem(
             song = local,
             isCurrentPlaying = isCurrentPlaying,
-            onClick = { onPlaySong(local, matchedSongs) },
+            onClick = onPlayAt,
             onPlayNext = { onPlayNext(local) },
             onAddToQueue = { onAddToQueue(local) },
             onStartRadio = { onStartRadio(local) }
@@ -641,7 +653,8 @@ private fun LbMatchedTrackRow(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .alpha(0.45f)
+                .alpha(0.85f)
+                .clickable(onClick = onPlayAt)
                 .padding(vertical = 10.dp, horizontal = 4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -649,13 +662,23 @@ private fun LbMatchedTrackRow(
                 modifier = Modifier
                     .size(48.dp)
                     .clip(RoundedCornerShape(8.dp))
-                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                    .background(
+                        if (isCurrentPlaying) {
+                            MaterialTheme.colorScheme.primaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.surfaceVariant
+                        }
+                    ),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
-                    imageVector = Icons.Default.QueueMusic,
+                    imageVector = Icons.Default.PlayArrow,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    tint = if (isCurrentPlaying) {
+                        MaterialTheme.colorScheme.onPrimaryContainer
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    }
                 )
             }
             Spacer(modifier = Modifier.width(12.dp))
@@ -675,9 +698,9 @@ private fun LbMatchedTrackRow(
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    text = "No en biblioteca",
+                    text = "No en biblioteca · stream",
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.9f)
                 )
             }
         }

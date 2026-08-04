@@ -7,10 +7,11 @@ Plan para cubrir lo que quedó **fuera de alcance** de ListenBrainz Para Ti, con
 | Pieza | Estado hoy |
 |-------|------------|
 | Scrobbling ListenBrainz | Implementado (`ListenTracker`, `ListenSyncCoordinator`, `ListenBrainzClient.submitListens`) |
-| Para Ti (Discover `createdfor`) | Implementado: lista + detalle + match local; faltantes = “No en biblioteca” |
+| Para Ti (Discover `createdfor`) | Implementado: lista + detalle + match; mixtos Local\|Remote + stream |
 | Descarga online | **Download-then-play**: `YouTubeExtractor.extractAudioStreamDetailed` → OkHttp baja el archivo completo → Room + `/Music/BestiaPop/` |
-| Reproducción | Media3 ExoPlayer; `songToMediaItem` / `parseToMediaUri` **ya aceptan** `http(s)://`, pero la cola solo recibe paths locales |
-| Radio / similares | No existe |
+| Reproducción | Media3 ExoPlayer; cola `List<PlayableItem>` Local\|Remote (`playPlayableCollection`) |
+| Radio / similares | Implementado (`RadioEngine`, modos Offline/Online, refill) |
+| Para Ti mixto Local\|Remote | Implementado (`toPlayableItems` + `playPlayableCollection`; Guardar al escuchar) |
 | Import LB → playlist Room | No existe |
 | CF recommendations | No existe |
 
@@ -294,8 +295,8 @@ Actualizar en el mismo cambio de código:
 - [x] Un track remoto empieza a sonar sin archivo completo en disco (Fase 1).
 - [x] Al fallar CDN/403, se reintenta extract una vez o se salta al siguiente.
 - [x] Prefetch evita silencio largo entre tracks remotos en condiciones normales.
-- [ ] Para Ti puede reproducir faltantes por stream (Fase 3).
-- [ ] “Guardar al escuchar” / import no bloquean la reproducción en curso.
+- [x] Para Ti puede reproducir faltantes por stream (Fase 3).
+- [x] “Guardar al escuchar” / import no bloquean la reproducción en curso.
 - [x] Ninguna URL CDN queda persistida en Room.
 
 ---

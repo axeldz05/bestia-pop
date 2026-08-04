@@ -1,6 +1,8 @@
 package com.bestiapop.android.data.listenbrainz
 
+import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.data.model.Song
+import com.bestiapop.android.data.model.toPlayable
 
 data class LbPlaylistSummary(
     val mbid: String,
@@ -24,7 +26,22 @@ data class LbPlaylistDetail(
 data class MatchedLbTrack(
     val track: LbPlaylistTrack,
     val localSong: Song?
-)
+) {
+    fun toPlayableItem(): PlayableItem {
+        val local = localSong
+        return if (local != null) {
+            local.toPlayable()
+        } else {
+            PlayableItem.Remote(
+                title = track.title,
+                artist = track.artist,
+                album = track.releaseName,
+                recordingMbid = track.recordingMbid,
+                youtubeQueryOrId = "${track.artist} ${track.title}"
+            )
+        }
+    }
+}
 
 data class MatchedLbPlaylist(
     val detail: LbPlaylistDetail,
@@ -32,7 +49,10 @@ data class MatchedLbPlaylist(
 ) {
     val matchedCount: Int get() = matches.count { it.localSong != null }
     val totalCount: Int get() = matches.size
+    val streamCount: Int get() = totalCount - matchedCount
     val matchedSongs: List<Song> get() = matches.mapNotNull { it.localSong }
+
+    fun toPlayableItems(): List<PlayableItem> = matches.map { it.toPlayableItem() }
 }
 
 sealed class LbApiResult<out T> {

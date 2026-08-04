@@ -28,6 +28,8 @@ import com.bestiapop.android.data.network.MetadataFetcher
 import com.bestiapop.android.data.network.YouTubeExtractor
 import com.bestiapop.android.data.preferences.ListenBrainzPreferencesRepository
 import com.bestiapop.android.data.preferences.ListenBrainzSettings
+import com.bestiapop.android.data.preferences.MAX_SAVE_WHILE_LISTENING_PERCENT
+import com.bestiapop.android.data.preferences.MIN_SAVE_WHILE_LISTENING_PERCENT
 import com.bestiapop.android.data.preferences.ThemePreferencesRepository
 import com.bestiapop.android.data.repository.MusicRepository
 import com.bestiapop.android.data.stream.StreamResolver
@@ -211,6 +213,9 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     private val _resolvingRemote = MutableStateFlow(false)
     val resolvingRemote = _resolvingRemote.asStateFlow()
+
+    /** Keys already attempted for "Guardar al escuchar" in this process (in-flight + done). */
+    private val saveWhileListeningAttempted = mutableSetOf<String>()
 
     private val _radioActive = MutableStateFlow(false)
     val radioActive = _radioActive.asStateFlow()
@@ -436,6 +441,9 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
             override fun onPlaybackStateChanged(playbackState: Int) {
                 if (playbackState == Player.STATE_ENDED) {
+                    (_currentItem.value as? PlayableItem.Remote)?.let { remote ->
+                        maybeEnqueueSaveWhileListening(remote, force = true)
+                    }
                     maybeAutoStartRadioOnQueueEnd()
                 }
             }
@@ -724,6 +732,18 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                                 }
                             }
                         }
+                        (curr as? PlayableItem.Remote)?.let { remote ->
+                            val durationMs = when {
+                                remote.durationMs > 0 -> remote.durationMs
+                                dur > 0 -> dur
+                                else -> controller.duration
+                            }
+                            maybeEnqueueSaveWhileListening(
+                                remote = remote,
+                                force = false,
+                                durationMs = durationMs
+                            )
+                        }
                     }
                     listenTracker.onPlaybackTick(
                         isPlaying = controller.isPlaying,
@@ -732,6 +752,61 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 }
                 delay(200)
             }
+        }
+    }
+
+    /**
+     * Background-download a remote into the library when "Guardar al escuchar" is on.
+     * Does not pause or replace the playing MediaItem.
+     * [force] = track ended → save regardless of percent (still requires pref ON).
+     */
+    private fun maybeEnqueueSaveWhileListening(
+        remote: PlayableItem.Remote,
+        force: Boolean,
+        durationMs: Long = remote.durationMs
+    ) {
+        if (!listenBrainzSettings.value.saveWhileListening) return
+        if (!force) {
+            val knownDuration = durationMs.takeIf { it > 0 } ?: return
+            val percent = listenBrainzSettings.value.saveWhileListeningPercent
+                .coerceIn(MIN_SAVE_WHILE_LISTENING_PERCENT, MAX_SAVE_WHILE_LISTENING_PERCENT)
+            val thresholdMs = knownDuration * percent / 100L
+            if (_playbackPositionMs.value < thresholdMs) return
+        }
+        val key = MatchListenBrainzTracksUseCase.matchKey(remote.artist, remote.title)
+        if (key.isEmpty() || key in saveWhileListeningAttempted) return
+        saveWhileListeningAttempted.add(key)
+
+        val track = OnlineCatalogTrack(
+            id = remote.youtubeQueryOrId?.takeIf { it.isNotBlank() }
+                ?: "${remote.artist} ${remote.title}",
+            title = remote.title,
+            artist = remote.artist,
+            album = remote.album.orEmpty(),
+            artworkUrl = remote.artworkUri,
+            durationMs = remote.durationMs,
+            audioUrl = "",
+            provider = "YouTube"
+        )
+
+        viewModelScope.launch {
+            val result = downloadTrack(track, onProgress = null)
+            result.fold(
+                onSuccess = { song ->
+                    Toast.makeText(
+                        getApplication(),
+                        "«${song.title}» guardada en biblioteca",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                },
+                onFailure = { e ->
+                    Toast.makeText(
+                        getApplication(),
+                        "No se pudo guardar «${remote.title}»: ${e.localizedMessage ?: "error"}",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+            )
         }
     }
 
@@ -1577,6 +1652,18 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
+    fun setListenBrainzSaveWhileListening(enabled: Boolean) {
+        viewModelScope.launch {
+            listenBrainzPreferences.setSaveWhileListening(enabled)
+        }
+    }
+
+    fun setListenBrainzSaveWhileListeningPercent(percent: Int) {
+        viewModelScope.launch {
+            listenBrainzPreferences.setSaveWhileListeningPercent(percent)
+        }
+    }
+
     fun saveListenBrainzToken(token: String) {
         viewModelScope.launch {
             listenBrainzPreferences.setToken(token)
@@ -1675,15 +1762,21 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     fun playListenBrainzPlaylist() {
-        val songs = _selectedLbPlaylist.value?.matchedSongs.orEmpty()
-        if (songs.isEmpty()) return
-        playCollection(songs, startIndex = 0)
+        val items = _selectedLbPlaylist.value?.toPlayableItems().orEmpty()
+        if (items.isEmpty()) return
+        playPlayableCollection(items, startIndex = 0)
     }
 
     fun shuffleListenBrainzPlaylist() {
-        val songs = _selectedLbPlaylist.value?.matchedSongs.orEmpty()
-        if (songs.isEmpty()) return
-        shuffleCollection(songs)
+        val items = _selectedLbPlaylist.value?.toPlayableItems().orEmpty()
+        if (items.isEmpty()) return
+        applyShuffledQueue(items, keepItemFirst = null)
+    }
+
+    fun playListenBrainzPlaylistAt(index: Int) {
+        val items = _selectedLbPlaylist.value?.toPlayableItems().orEmpty()
+        if (items.isEmpty() || index !in items.indices) return
+        playPlayableCollection(items, startIndex = index)
     }
 
     private fun clearDiscoverState() {

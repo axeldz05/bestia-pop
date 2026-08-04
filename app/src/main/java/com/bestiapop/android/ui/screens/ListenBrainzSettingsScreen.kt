@@ -22,12 +22,14 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -38,6 +40,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import com.bestiapop.android.data.preferences.MAX_SAVE_WHILE_LISTENING_PERCENT
+import com.bestiapop.android.data.preferences.MIN_SAVE_WHILE_LISTENING_PERCENT
 import com.bestiapop.android.ui.MusicPlayerViewModel
 import com.bestiapop.android.ui.TokenValidationUiState
 import java.text.DateFormat
@@ -201,6 +205,41 @@ fun ListenBrainzSettingsScreen(viewModel: MusicPlayerViewModel) {
             )
         }
 
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
+                Text(
+                    text = "Guardar al escuchar",
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+                Text(
+                    text = "Descargar a la biblioteca en segundo plano los temas en stream (Para Ti / Radio) al alcanzar un porcentaje de reproducción.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Switch(
+                checked = settings.saveWhileListening,
+                onCheckedChange = { viewModel.setListenBrainzSaveWhileListening(it) },
+                enabled = canEnableDiscover
+            )
+        }
+
+        if (settings.saveWhileListening) {
+            Spacer(modifier = Modifier.height(12.dp))
+            SaveWhileListeningPercentSlider(
+                percent = settings.saveWhileListeningPercent,
+                enabled = canEnableDiscover,
+                onPercentChange = { viewModel.setListenBrainzSaveWhileListeningPercent(it) }
+            )
+        }
+
         Spacer(modifier = Modifier.height(24.dp))
 
         Text(
@@ -226,6 +265,52 @@ fun ListenBrainzSettingsScreen(viewModel: MusicPlayerViewModel) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
+    }
+}
+
+@Composable
+private fun SaveWhileListeningPercentSlider(
+    percent: Int,
+    enabled: Boolean,
+    onPercentChange: (Int) -> Unit
+) {
+    val min = MIN_SAVE_WHILE_LISTENING_PERCENT.toFloat()
+    val max = MAX_SAVE_WHILE_LISTENING_PERCENT.toFloat()
+    var sliderValue by remember(percent) { mutableFloatStateOf(percent.toFloat()) }
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Empezar a descargar al",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onBackground
+            )
+            Text(
+                text = "${sliderValue.toInt()}%",
+                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                color = MaterialTheme.colorScheme.primary
+            )
+        }
+        Spacer(modifier = Modifier.height(4.dp))
+        Slider(
+            value = sliderValue.coerceIn(min, max),
+            onValueChange = { if (enabled) sliderValue = it },
+            valueRange = min..max,
+            steps = ((max - min) / 5f).toInt() - 1,
+            enabled = enabled,
+            onValueChangeFinished = {
+                onPercentChange(sliderValue.toInt())
+            }
+        )
+        Text(
+            text = "Porcentaje del tema reproducido antes de guardar en biblioteca. Al terminar el tema también se guarda.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 

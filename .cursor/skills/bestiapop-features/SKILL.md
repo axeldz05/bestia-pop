@@ -97,17 +97,20 @@ State: `currentThemeState`.
 - Scrobbling solo si `ListenBrainzSettings.enabled` + token válido; offline encola en `pending_listens`.
 - Sección **Para Ti** en Playlists solo si `showDiscoverPlaylists` (`enabled && discoverEnabled && username`).
 - Playlists Discover = `GET /1/user/{user}/playlists/createdfor`; detalle = `GET /1/playlist/{mbid}`.
-- Reproducción: solo tracks matcheados a biblioteca local (artist+title normalizado); pipeline `playCollection` / `shuffleCollection`.
+- Match local por artist+title normalizado; faltantes = `PlayableItem.Remote`.
+- Reproducción: cola mixta `Local|Remote` vía `playPlayableCollection` (prefetch / 403 retry de stream).
+- **Guardar al escuchar** (`saveWhileListening` + `saveWhileListeningPercent`): al alcanzar ≥N% de la duración (o fin) de un Remote, `downloadAndSaveOnlineTrack` en background sin reemplazar el MediaItem.
 
 | Capacidad | Entry point |
 |-----------|-------------|
-| Prefs | `ListenBrainzPreferencesRepository` / `ListenBrainzSettings` |
-| Settings UI | `ListenBrainzSettingsScreen` — toggle registrar + **Mostrar Para Ti** |
+| Prefs | `ListenBrainzPreferencesRepository` / `ListenBrainzSettings` (`saveWhileListening`, `saveWhileListeningPercent`) |
+| Settings UI | `ListenBrainzSettingsScreen` — registrar + **Mostrar Para Ti** + **Guardar al escuchar** (+ slider %) |
 | Submit listens | `ListenBrainzClient.submitListens`, `ListenTracker`, `ListenSyncCoordinator` |
 | List Discover | `ListenBrainzClient.fetchCreatedForPlaylists` → `MusicPlayerViewModel.refreshListenBrainzDiscoverPlaylists` |
 | Abrir playlist | `openListenBrainzPlaylist` + `MatchListenBrainzTracksUseCase` |
-| Play / shuffle | `playListenBrainzPlaylist` / `shuffleListenBrainzPlaylist` |
-| UI sección | `PlaylistsScreen` — sección "Para Ti" + detalle read-only |
+| Map a cola | `MatchedLbPlaylist.toPlayableItems` / `MatchedLbTrack.toPlayableItem` |
+| Play / shuffle / índice | `playListenBrainzPlaylist` / `shuffleListenBrainzPlaylist` / `playListenBrainzPlaylistAt` |
+| UI sección | `PlaylistsScreen` — "Para Ti"; badge `N en biblioteca · M en stream`; filas remotas clickeables |
 
 ## 10. Stream remoto (playback sin descarga)
 

@@ -190,6 +190,7 @@ private fun buildSubtitle(download: ActiveDownload): String {
         ActiveDownloadSource.LINK -> "Enlace"
         ActiveDownloadSource.SAVE_WHILE_LISTENING -> "Guardar al escuchar"
         ActiveDownloadSource.BATCH -> "Lote"
+        ActiveDownloadSource.LB_IMPORT -> "Import Para Ti"
     }
     return when (download.state) {
         CandidateDownloadState.DOWNLOADING -> {

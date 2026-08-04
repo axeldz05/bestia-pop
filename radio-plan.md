@@ -12,7 +12,7 @@ Plan para cubrir lo que quedó **fuera de alcance** de ListenBrainz Para Ti, con
 | Reproducción | Media3 ExoPlayer; cola `List<PlayableItem>` Local\|Remote (`playPlayableCollection`) |
 | Radio / similares | Implementado (`RadioEngine`, modos Offline/Online, refill) |
 | Para Ti mixto Local\|Remote | Implementado (`toPlayableItems` + `playPlayableCollection`; Guardar al escuchar) |
-| Import LB → playlist Room | No existe |
+| Import LB → playlist Room | Implementado (`saveListenBrainzPlaylistAsLocal` / `importListenBrainzPlaylistWithDownloads` → `LB_IMPORT`) |
 | CF recommendations | No existe |
 
 **Invariante vigente:** re-extraer URL CDN de YouTube justo antes de usarla (evita HTTP 403).
@@ -218,13 +218,11 @@ Archivos: [`PlaylistsScreen.kt`](app/src/main/java/com/bestiapop/android/ui/scre
 
 **Objetivo:** “Guardar como playlist local” desde una Discover.
 
-1. Acción en detalle LB: crear `Playlist` + cross-refs solo para `PlayableItem.Local` actuales.
-2. Remotos:
-   - Opción A (simple): no se importan hasta que el usuario los haya guardado (Fase 3 toggle) o elija “Descargar faltantes” (batch download-then-play, progreso UI).
-   - Opción B: import async — encolar descargas y `addSongToPlaylist` al completar.
+1. Acción en detalle LB: crear `Playlist` + cross-refs matched + filas `playlist_pending_tracks` para faltantes (`saveListenBrainzPlaylistAsLocal`).
+2. Remotos: “Descargar faltantes” / detalle local `downloadPlaylistPendingTracks` → cola `activeDownloads` (`LB_IMPORT` + `targetPlaylistId`); al éxito quita pending.
 3. Nunca persistir `audioUrl` CDN en `SongEntity`.
 
-**Recomendación:** Opción A + botón explícito “Descargar faltantes e importar” para no sorprender con tráfico/almacenamiento.
+**Estado:** implementado (metadata pendiente + descarga bajo demanda vía cola central).
 
 ---
 

@@ -23,16 +23,17 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.AddPhotoAlternate
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.QueueMusic
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Shuffle
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AddPhotoAlternate
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -70,6 +71,7 @@ import com.bestiapop.android.data.listenbrainz.MatchedLbPlaylist
 import com.bestiapop.android.data.listenbrainz.MatchedLbTrack
 import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.data.model.Playlist
+import com.bestiapop.android.data.model.PlaylistPendingTrack
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.domain.usecase.MatchListenBrainzTracksUseCase
 import com.bestiapop.android.ui.LbDiscoverListUiState
@@ -295,9 +297,12 @@ fun PlaylistsScreen(
             detailsState?.let { pair ->
                 val playlist = pair.first
                 val songsInPlaylist = pair.second
+                val pendingTracks by viewModel.getPlaylistPendingTracksFlow(playlistId)
+                    .collectAsState(initial = emptyList())
                 PlaylistDetailScreen(
                     playlist = playlist,
                     songs = songsInPlaylist,
+                    pendingTracks = pendingTracks,
                     allSongs = allSongs,
                     onBack = {
                         selectedPlaylistId = null
@@ -305,7 +310,8 @@ fun PlaylistsScreen(
                     },
                     viewModel = viewModel,
                     onAddSongsRequest = { onAddSongsRequest(it) },
-                    onDeletePlaylist = { playlistToDelete = playlist }
+                    onDeletePlaylist = { playlistToDelete = playlist },
+                    onDownloadPending = { viewModel.downloadPlaylistPendingTracks(playlistId) }
                 )
             }
         }
@@ -323,6 +329,17 @@ fun PlaylistsScreen(
                 onPlay = { viewModel.playListenBrainzPlaylist() },
                 onShuffle = { viewModel.shuffleListenBrainzPlaylist() },
                 onPlayAt = { index -> viewModel.playListenBrainzPlaylistAt(index) },
+                onSaveAsLocal = {
+                    viewModel.saveListenBrainzPlaylistAsLocal { newId ->
+                        selectedLbPlaylistMbid = null
+                        viewModel.closeListenBrainzPlaylist()
+                        selectedPlaylistId = newId
+                        onSelectPlaylistDetail(newId)
+                    }
+                },
+                onImportWithDownloads = {
+                    viewModel.importListenBrainzPlaylistWithDownloads()
+                },
                 currentItem = currentItem,
                 onPlayNext = { viewModel.playNextInQueue(it) },
                 onAddToQueue = { viewModel.addToQueue(it) },
@@ -454,6 +471,8 @@ private fun LbPlaylistDetailScreen(
     onPlay: () -> Unit,
     onShuffle: () -> Unit,
     onPlayAt: (Int) -> Unit,
+    onSaveAsLocal: () -> Unit,
+    onImportWithDownloads: () -> Unit,
     currentItem: PlayableItem?,
     onPlayNext: (Song) -> Unit,
     onAddToQueue: (Song) -> Unit,
@@ -529,6 +548,8 @@ private fun LbPlaylistDetailScreen(
                     } else {
                         val description = matched.detail.summary.description
                         val hasTracks = matched.matches.isNotEmpty()
+                        val hasMatched = matched.matchedCount > 0
+                        val hasUnmatched = matched.streamCount > 0
 
                         if (!description.isNullOrBlank()) {
                             Text(
@@ -576,6 +597,45 @@ private fun LbPlaylistDetailScreen(
                                 Icon(imageVector = Icons.Default.Shuffle, contentDescription = null)
                                 Spacer(modifier = Modifier.width(4.dp))
                                 Text("Aleatorio")
+                            }
+                        }
+
+                        if (hasMatched || hasUnmatched) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                OutlinedButton(
+                                    onClick = onSaveAsLocal,
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.PlaylistAdd,
+                                        contentDescription = null
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Guardar", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                }
+                                if (hasUnmatched) {
+                                    OutlinedButton(
+                                        onClick = onImportWithDownloads,
+                                        shape = RoundedCornerShape(12.dp),
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Download,
+                                            contentDescription = null
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(
+                                            "Descargar faltantes",
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                }
                             }
                         }
 
@@ -789,13 +849,16 @@ private fun PlaylistCardItem(
 private fun PlaylistDetailScreen(
     playlist: Playlist,
     songs: List<Song>,
+    pendingTracks: List<PlaylistPendingTrack>,
     allSongs: List<Song>,
     onBack: () -> Unit,
     viewModel: MusicPlayerViewModel,
     onAddSongsRequest: (Playlist) -> Unit,
-    onDeletePlaylist: () -> Unit
+    onDeletePlaylist: () -> Unit,
+    onDownloadPending: () -> Unit
 ) {
     var showEditDialog by remember { mutableStateOf(false) }
+    val totalCount = songs.size + pendingTracks.size
 
     Surface(
         modifier = Modifier.fillMaxSize(),
@@ -892,7 +955,11 @@ private fun PlaylistDetailScreen(
                     }
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "${songs.size} canciones",
+                        text = if (pendingTracks.isEmpty()) {
+                            "${songs.size} canciones"
+                        } else {
+                            "${songs.size} descargadas · ${pendingTracks.size} pendientes"
+                        },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                     )
@@ -949,10 +1016,23 @@ private fun PlaylistDetailScreen(
                 }
             }
 
+            if (pendingTracks.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedButton(
+                    onClick = onDownloadPending,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(imageVector = Icons.Default.Download, contentDescription = null)
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Descargar ${pendingTracks.size} pendientes")
+                }
+            }
+
             Spacer(modifier = Modifier.height(16.dp))
 
             // Songs List in Playlist
-            if (songs.isEmpty()) {
+            if (totalCount == 0) {
                 Box(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
@@ -975,7 +1055,7 @@ private fun PlaylistDetailScreen(
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
                     items(
                         items = songs,
-                        key = { it.id },
+                        key = { "song-${it.id}" },
                         contentType = { "song" }
                     ) { song ->
                         SongListItem(
@@ -987,6 +1067,13 @@ private fun PlaylistDetailScreen(
                             onStartRadio = { viewModel.startRadio(seedSong = song) },
                             onDelete = { viewModel.removeSongFromPlaylist(playlist.id, song.id) }
                         )
+                    }
+                    items(
+                        items = pendingTracks,
+                        key = { "pending-${it.id}" },
+                        contentType = { "pending" }
+                    ) { pending ->
+                        PlaylistPendingTrackRow(pending = pending)
                     }
                 }
             }
@@ -1005,6 +1092,53 @@ private fun PlaylistDetailScreen(
                     viewModel.updatePlaylist(playlist.id, newName, newDesc, newCoverUri)
                     showEditDialog = false
                 }
+            )
+        }
+    }
+}
+
+@Composable
+private fun PlaylistPendingTrackRow(pending: PlaylistPendingTrack) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .alpha(0.55f)
+            .padding(vertical = 10.dp, horizontal = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(48.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = Icons.Default.Download,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Spacer(modifier = Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = pending.title,
+                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = pending.artist,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = "Pendiente de descarga",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
     }

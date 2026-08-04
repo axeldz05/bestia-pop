@@ -61,6 +61,7 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 | `ManageArtworkUseCase` | `domain/usecase/ManageArtworkUseCase.kt` | album artwork propagation |
 | `ManagePlaylistUseCase` | `domain/usecase/ManagePlaylistUseCase.kt` | playlist ops over repo |
 | `MatchListenBrainzTracksUseCase` | `domain/usecase/MatchListenBrainzTracksUseCase.kt` | match LB tracks → local `Song` (`normalize` / `matchKey`) |
+| `ImportListenBrainzPlaylistUseCase` | `domain/usecase/ImportListenBrainzPlaylistUseCase.kt` | create Room playlist: matched + `PlaylistPendingTrack` metadata |
 | `RadioEngine` | `domain/radio/RadioEngine.kt` | orquesta local ± LB; `RadioSuggestResult` |
 | `LocalMetadataRadio` | `domain/radio/LocalMetadataRadio.kt` | score biblioteca (artista/género/año/álbum) |
 | `ListenBrainzRadio` | `domain/radio/ListenBrainzRadio.kt` | lb-radio → Local/Remote |
@@ -72,12 +73,12 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 | Concern | Archivo |
 |---------|---------|
 | Repo impl | `data/repository/MusicRepository.kt` |
-| Modelos dominio UI | `data/model/Models.kt` (`OnlineCatalogTrack`, `CatalogTrackCandidate`, `DownloadStatus`, `ActiveDownload`, `ActiveDownloadSource`) |
+| Modelos dominio UI | `data/model/Models.kt` (`OnlineCatalogTrack`, `CatalogTrackCandidate`, `DownloadStatus`, `ActiveDownload` + `targetPlaylistId`, `ActiveDownloadSource` incl. `LB_IMPORT`, `PlaylistPendingTrack`) |
 | Cola Local/Remote | `data/model/PlayableItem.kt` (`PlayableItem`, `ResolvedStream`, `Song.toPlayable`) |
 | Room DB | `data/db/AppDatabase.kt` |
 | DAO | `data/db/MusicDao.kt` |
 | Song entity + mappers | `data/db/SongEntity.kt` |
-| Playlist entities | `data/db/PlaylistEntities.kt` |
+| Playlist entities | `data/db/PlaylistEntities.kt` (`PlaylistPendingTrackEntity`) |
 | Catálogo / lyrics / covers web | `data/network/MetadataFetcher.kt` |
 | YouTube search + stream | `data/network/YouTubeExtractor.kt` |
 | Stream resolve + cache TTL | `data/stream/StreamResolver.kt` |
@@ -110,6 +111,7 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 | LB Para Ti → PlayableItem | `app/src/test/.../MatchedLbPlaylistPlayableTest.kt` |
 | ActiveDownload cycle | `app/src/test/.../ActiveDownloadCycleTest.kt` |
 | ActiveDownload codec / badge | `app/src/test/.../ActiveDownloadCodecTest.kt` |
+| Import LB playlist | `app/src/test/.../ImportListenBrainzPlaylistUseCaseTest.kt` |
 | UI functional library | `app/src/androidTest/.../LibraryScreenFunctionalTest.kt` |
 
 ## Símbolos ViewModel frecuentes
@@ -121,7 +123,7 @@ Mantener esta lista alineada con `MusicPlayerViewModel.kt`:
 - Radio: `startRadio` / `stopRadio` / `setRadioPreferredMode` / `setRadioForceOnline`, `radioMode`, `radioForceOnline`, `radioStatusLabel`, `replaceUpcomingWithRadio`, `maybeAutoStartRadioOnQueueEnd`
 - Artwork: `setAlbumArtwork`
 - Online: `searchCatalog`, `searchOnlineCatalog`, `downloadSingleCandidate`, `downloadSelectedCandidatesBatch`, `downloadFromUrl`, `downloadOnlineTrack`, `activeDownloads`, `retryActiveDownload`, `cycleActiveDownload`, `previewActiveDownload`, `dismissActiveDownload`, `requestOpenDownloads` / `pendingOpenDownloads`, `playOnlineCatalogTrackAsStream`, `cycleSongCatalogResult`, `cycleTrackCandidate`, `catalogPreviewKey`
-- ListenBrainz: `listenBrainzSettings`, `setListenBrainzEnabled`, `setListenBrainzDiscoverEnabled`, `setListenBrainzSaveWhileListening`, `setListenBrainzSaveWhileListeningPercent`, `refreshListenBrainzDiscoverPlaylists`, `openListenBrainzPlaylist`, `playListenBrainzPlaylist`, `shuffleListenBrainzPlaylist`, `playListenBrainzPlaylistAt`
+- ListenBrainz: `listenBrainzSettings`, `setListenBrainzEnabled`, `setListenBrainzDiscoverEnabled`, `setListenBrainzSaveWhileListening`, `setListenBrainzSaveWhileListeningPercent`, `refreshListenBrainzDiscoverPlaylists`, `openListenBrainzPlaylist`, `playListenBrainzPlaylist`, `shuffleListenBrainzPlaylist`, `playListenBrainzPlaylistAt`, `saveListenBrainzPlaylistAsLocal`, `importListenBrainzPlaylistWithDownloads`, `downloadPlaylistPendingTracks`, `getPlaylistPendingTracksFlow`
 
 ## Cómo actualizar este mapa
 

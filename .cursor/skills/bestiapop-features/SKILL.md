@@ -39,9 +39,9 @@ Archivos: `domain/usecase/PlayCollectionUseCase.kt`, `ui/MusicPlayerViewModel.kt
 | Centro de descargas | `DownloadsScreen` + `ActiveDownloadRow`; persistencia `ActiveDownloadsStore` / `ActiveDownloadCodec`; notif `DownloadNotificationHelper`; badge `activeDownloadBadgeCount` en tab Descargas (`MainScreen`) |
 | Orquestación VM | `runTrackedDownload` ← `downloadSingleCandidate`, `downloadSelectedCandidatesBatch`, `downloadFromUrl`, `downloadOnlineTrack`, `maybeEnqueueSaveWhileListening`; acciones `retryActiveDownload` / `cycleActiveDownload` / `previewActiveDownload` / `dismissActiveDownload`; deep-link `requestOpenDownloads` / `pendingOpenDownloads` |
 
-Modelo clave: `OnlineCatalogTrack`, `CatalogTrackCandidate`, `DownloadStatus` (legacy Idle), `ActiveDownload` / `ActiveDownloadSource`, cola `activeDownloads`.
+Modelo clave: `OnlineCatalogTrack`, `CatalogTrackCandidate`, `DownloadStatus` (legacy Idle), `ActiveDownload` / `ActiveDownloadSource` (`CATALOG`, `LINK`, `SAVE_WHILE_LISTENING`, `BATCH`, `LB_IMPORT`), cola `activeDownloads` (+ `targetPlaylistId` opcional).
 
-**Invariante cola:** todas las descargas online se registran en `activeDownloads`; éxito las remueve; fallo deja `ERROR`. Tras kill del proceso, `ActiveDownloadCodec.forPersistence` restaura ERROR/IDLE (DOWNLOADING → “Interrumpida”). Add Music banners leen `activeDownloads` (no `DownloadStatus`).
+**Invariante cola:** todas las descargas online se registran en `activeDownloads`; éxito las remueve; fallo deja `ERROR`. Tras kill del proceso, `ActiveDownloadCodec.forPersistence` restaura ERROR/IDLE (DOWNLOADING → “Interrumpida”). Add Music banners leen `activeDownloads` (no `DownloadStatus`). `LB_IMPORT` añade a playlist al éxito vía `targetPlaylistId`.
 
 ## 3. Biblioteca: filtro, orden y vistas
 
@@ -72,6 +72,7 @@ Herencia visual en lista: `GetLibrarySongsUseCase.execute` unifica artwork falta
 
 CRUD + membresía vía `IMusicRepository` / `ManagePlaylistUseCase`:
 `createPlaylist`, `updatePlaylist`, `deletePlaylist`, `addSongToPlaylist`, `removeSongFromPlaylist`.
+Import LB: matched + `PlaylistPendingTrack` (`getPlaylistPendingTracksFlow` / `downloadPlaylistPendingTracks`).
 Flows: `playlistsFlow`, `getPlaylistSongsFlow`, `getPlaylistDetailsFlow`.
 UI: `PlaylistsScreen`.
 
@@ -119,6 +120,7 @@ Centro de descargas online → sección 2 (`DownloadsScreen`, tab Descargas).
 - Match local por artist+title normalizado; faltantes = `PlayableItem.Remote`.
 - Reproducción: cola mixta `Local|Remote` vía `playPlayableCollection` (prefetch / 403 retry de stream).
 - **Guardar al escuchar** (`saveWhileListening` + `saveWhileListeningPercent`): al alcanzar ≥N% de la duración (o fin) de un Remote, encola en `activeDownloads` vía `runTrackedDownload` (sin reemplazar el MediaItem). Fallo → `ERROR` en el centro + Toast; quita la key de `saveWhileListeningAttempted` para permitir reintento manual/auto.
+- **Import a Room:** “Guardar” crea playlist local con matched + metadata pendiente de faltantes (`playlist_pending_tracks`); “Descargar faltantes” / detalle local encola vía `runTrackedDownload` (`LB_IMPORT` + `targetPlaylistId`). Progreso en tab Descargas; nunca CDN en Room.
 
 | Capacidad | Entry point |
 |-----------|-------------|
@@ -129,7 +131,9 @@ Centro de descargas online → sección 2 (`DownloadsScreen`, tab Descargas).
 | Abrir playlist | `openListenBrainzPlaylist` + `MatchListenBrainzTracksUseCase` |
 | Map a cola | `MatchedLbPlaylist.toPlayableItems` / `MatchedLbTrack.toPlayableItem` |
 | Play / shuffle / índice | `playListenBrainzPlaylist` / `shuffleListenBrainzPlaylist` / `playListenBrainzPlaylistAt` |
-| UI sección | `PlaylistsScreen` — "Para Ti"; badge `N en biblioteca · M en stream`; filas remotas clickeables |
+| Import locales + pendientes | `saveListenBrainzPlaylistAsLocal` → `ImportListenBrainzPlaylistUseCase.createLocalFromMatched` (+ `PlaylistPendingTrack`) |
+| Import + descarga ya | `importListenBrainzPlaylistWithDownloads` / `downloadPlaylistPendingTracks` → `runTrackedDownload` (`LB_IMPORT`) |
+| UI sección | `PlaylistsScreen` — "Para Ti"; Guardar / Descargar faltantes; detalle local muestra pendientes |
 
 ## 10. Stream remoto (playback sin descarga)
 

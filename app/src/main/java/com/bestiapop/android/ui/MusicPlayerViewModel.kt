@@ -38,6 +38,7 @@ import com.bestiapop.android.domain.radio.ListenBrainzRadio
 import com.bestiapop.android.domain.radio.LocalMetadataRadio
 import com.bestiapop.android.domain.radio.RadioEngine
 import com.bestiapop.android.domain.radio.RadioMode
+import com.bestiapop.android.domain.usecase.ImportListenBrainzPlaylistUseCase
 import com.bestiapop.android.domain.usecase.MatchListenBrainzTracksUseCase
 import com.bestiapop.android.service.DownloadNotificationHelper
 import com.bestiapop.android.service.MusicService
@@ -63,6 +64,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import java.util.concurrent.atomic.AtomicInteger
@@ -145,6 +147,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     val tokenValidationState = _tokenValidationState.asStateFlow()
 
     private val matchListenBrainzTracksUseCase = MatchListenBrainzTracksUseCase()
+    private val importListenBrainzPlaylistUseCase = ImportListenBrainzPlaylistUseCase(repository)
 
     private val _lbDiscoverPlaylists = MutableStateFlow<List<LbPlaylistSummary>>(emptyList())
     val lbDiscoverPlaylists = _lbDiscoverPlaylists.asStateFlow()
@@ -1631,6 +1634,10 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         return repository.getPlaylistDetailsFlow(playlistId)
     }
 
+    fun getPlaylistPendingTracksFlow(playlistId: Long): Flow<List<PlaylistPendingTrack>> {
+        return repository.getPlaylistPendingTracksFlow(playlistId)
+    }
+
     fun createPlaylist(
         name: String,
         description: String? = null,
@@ -1830,6 +1837,133 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         val items = _selectedLbPlaylist.value?.toPlayableItems().orEmpty()
         if (items.isEmpty() || index !in items.indices) return
         playPlayableCollection(items, startIndex = index)
+    }
+
+    /** Saves matched locals + unmatched as pending metadata (no download yet). */
+    fun saveListenBrainzPlaylistAsLocal(onCreated: ((Long) -> Unit)? = null) {
+        val matched = _selectedLbPlaylist.value ?: return
+        if (matched.matchedCount == 0 && matched.streamCount == 0) return
+        viewModelScope.launch {
+            val playlistId = importListenBrainzPlaylistUseCase.createLocalFromMatched(matched)
+                ?: return@launch
+            val pending = matched.streamCount
+            val msg = if (pending > 0) {
+                "Playlist guardada (${matched.matchedCount} en lib · $pending pendientes)"
+            } else {
+                "Playlist guardada (${matched.matchedCount} canciones)"
+            }
+            Toast.makeText(getApplication(), msg, Toast.LENGTH_SHORT).show()
+            onCreated?.invoke(playlistId)
+        }
+    }
+
+    /**
+     * Creates a local playlist with matched + pending metadata, then enqueues unmatched
+     * downloads via [runTrackedDownload] ([ActiveDownloadSource.LB_IMPORT]).
+     */
+    fun importListenBrainzPlaylistWithDownloads(onCreated: ((Long) -> Unit)? = null) {
+        val matched = _selectedLbPlaylist.value ?: return
+        val unmatched = importListenBrainzPlaylistUseCase.unmatchedCatalogTracks(matched)
+        if (unmatched.isEmpty() && matched.matchedCount == 0) return
+
+        viewModelScope.launch {
+            val playlistId = importListenBrainzPlaylistUseCase.createLocalFromMatched(
+                matched = matched,
+                allowEmpty = unmatched.isNotEmpty()
+            ) ?: return@launch
+
+            onCreated?.invoke(playlistId)
+
+            if (unmatched.isEmpty()) {
+                Toast.makeText(
+                    getApplication(),
+                    "Playlist guardada (${matched.matchedCount} canciones)",
+                    Toast.LENGTH_SHORT
+                ).show()
+                return@launch
+            }
+
+            enqueuePendingDownloads(
+                playlistId = playlistId,
+                tracks = unmatched,
+                toastQueued = true
+            )
+        }
+    }
+
+    /** Downloads pending metadata tracks for an already-saved local playlist. */
+    fun downloadPlaylistPendingTracks(playlistId: Long) {
+        if (playlistId <= 0L) return
+        viewModelScope.launch {
+            val pending = repository.getPlaylistPendingTracksFlow(playlistId).first()
+            if (pending.isEmpty()) {
+                Toast.makeText(
+                    getApplication(),
+                    "No hay canciones pendientes",
+                    Toast.LENGTH_SHORT
+                ).show()
+                return@launch
+            }
+            enqueuePendingDownloads(
+                playlistId = playlistId,
+                tracks = pending.map { it.toOnlineCatalogTrack() },
+                toastQueued = true
+            )
+        }
+    }
+
+    private suspend fun enqueuePendingDownloads(
+        playlistId: Long,
+        tracks: List<OnlineCatalogTrack>,
+        toastQueued: Boolean
+    ) {
+        if (tracks.isEmpty()) return
+        if (toastQueued) {
+            Toast.makeText(
+                getApplication(),
+                "${tracks.size} descargas en cola — ver Descargas",
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+
+        val total = tracks.size
+        val successCount = AtomicInteger(0)
+        val semaphore = Semaphore(3)
+
+        coroutineScope {
+            val jobs = tracks.map { track ->
+                async {
+                    semaphore.withPermit {
+                        val downloadId = ImportListenBrainzPlaylistUseCase.downloadIdFor(
+                            track.artist,
+                            track.title
+                        )
+                        if (downloadId.isEmpty()) return@withPermit
+                        val existing = _activeDownloads.value.find { it.id == downloadId }
+                        if (existing != null && existing.state == CandidateDownloadState.DOWNLOADING) {
+                            return@withPermit
+                        }
+                        val result = runTrackedDownload(
+                            downloadId = downloadId,
+                            source = ActiveDownloadSource.LB_IMPORT,
+                            track = track,
+                            displayTitle = track.title,
+                            displayArtist = track.artist,
+                            artworkUrl = track.artworkUrl,
+                            targetPlaylistId = playlistId
+                        )
+                        if (result.isSuccess) successCount.incrementAndGet()
+                    }
+                }
+            }
+            jobs.awaitAll()
+        }
+
+        Toast.makeText(
+            getApplication(),
+            "¡${successCount.get()} de $total canciones procesadas!",
+            Toast.LENGTH_SHORT
+        ).show()
     }
 
     private fun clearDiscoverState() {
@@ -2033,6 +2167,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     /**
      * Registers/updates [ActiveDownload] and runs the download.
      * On success the job is removed from [activeDownloads]; on failure it stays as ERROR.
+     * When [targetPlaylistId] is set, the saved song is added to that playlist.
      */
     private suspend fun runTrackedDownload(
         downloadId: String,
@@ -2043,7 +2178,8 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         artworkUrl: String? = track.artworkUrl,
         existingCandidates: List<OnlineCatalogTrack>? = null,
         currentCandidateIndex: Int = 0,
-        mirrorCandidateTitle: String? = null
+        mirrorCandidateTitle: String? = null,
+        targetPlaylistId: Long? = null
     ): Result<Song> {
         val candidates = existingCandidates?.takeIf { it.isNotEmpty() } ?: listOf(track)
         val safeIndex = currentCandidateIndex.coerceIn(0, (candidates.size - 1).coerceAtLeast(0))
@@ -2059,7 +2195,8 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 state = CandidateDownloadState.DOWNLOADING,
                 progressMessage = "Iniciando descarga...",
                 progressPercent = 20,
-                errorMessage = null
+                errorMessage = null,
+                targetPlaylistId = targetPlaylistId
             )
         )
         if (mirrorCandidateTitle != null) {
@@ -2093,6 +2230,15 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 if (mirrorCandidateTitle != null) {
                     updateCandidateState(mirrorCandidateTitle, CandidateDownloadState.SUCCESS, percent = 100)
                 }
+                if (targetPlaylistId != null) {
+                    repository.addSongToPlaylist(targetPlaylistId, song.id)
+                    repository.removePlaylistPendingTrack(
+                        targetPlaylistId,
+                        activeTrack.artist,
+                        activeTrack.title
+                    )
+                    rematchSelectedLbPlaylist(extraSong = song)
+                }
                 if (source == ActiveDownloadSource.CATALOG || source == ActiveDownloadSource.LINK) {
                     Toast.makeText(
                         getApplication(),
@@ -2125,6 +2271,15 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         return result
     }
 
+    private suspend fun rematchSelectedLbPlaylist(extraSong: Song? = null) {
+        val current = _selectedLbPlaylist.value ?: return
+        val library = rawSongs.first().let { list ->
+            if (extraSong == null || list.any { it.id == extraSong.id }) list
+            else list + extraSong
+        }
+        _selectedLbPlaylist.value = matchListenBrainzTracksUseCase.execute(current.detail, library)
+    }
+
     fun retryActiveDownload(id: String) {
         val download = _activeDownloads.value.find { it.id == id } ?: return
         val track = download.currentTrack ?: return
@@ -2140,7 +2295,8 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 displayArtist = download.displayArtist,
                 artworkUrl = download.artworkUrl,
                 existingCandidates = download.candidates,
-                currentCandidateIndex = download.currentCandidateIndex
+                currentCandidateIndex = download.currentCandidateIndex,
+                targetPlaylistId = download.targetPlaylistId
             )
             if (result.isFailure && download.source == ActiveDownloadSource.SAVE_WHILE_LISTENING) {
                 saveWhileListeningAttempted.remove(id)

@@ -84,4 +84,34 @@ class ActiveDownloadCodecTest {
         )
         assertEquals(2, activeDownloadBadgeCount(list))
     }
+
+    @Test
+    fun roundTrip_preservesLbImportAndTargetPlaylistId() {
+        val original = listOf(
+            download(CandidateDownloadState.ERROR).copy(
+                source = ActiveDownloadSource.LB_IMPORT,
+                targetPlaylistId = 42L
+            )
+        )
+        val restored = ActiveDownloadCodec.decode(ActiveDownloadCodec.encode(original))
+        assertEquals(1, restored.size)
+        assertEquals(ActiveDownloadSource.LB_IMPORT, restored[0].source)
+        assertEquals(42L, restored[0].targetPlaylistId)
+    }
+
+    @Test
+    fun forPersistence_keepsTargetPlaylistIdWhenInterrupted() {
+        val persisted = ActiveDownloadCodec.forPersistence(
+            listOf(
+                download(CandidateDownloadState.DOWNLOADING).copy(
+                    source = ActiveDownloadSource.LB_IMPORT,
+                    targetPlaylistId = 7L
+                )
+            )
+        )
+        assertEquals(1, persisted.size)
+        assertEquals(CandidateDownloadState.ERROR, persisted[0].state)
+        assertEquals(7L, persisted[0].targetPlaylistId)
+        assertEquals(ActiveDownloadSource.LB_IMPORT, persisted[0].source)
+    }
 }

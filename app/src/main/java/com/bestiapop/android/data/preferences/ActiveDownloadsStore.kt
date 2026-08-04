@@ -81,6 +81,11 @@ object ActiveDownloadCodec {
             put("currentCandidateIndex", download.currentCandidateIndex)
             put("state", download.state.name)
             put("errorMessage", download.errorMessage ?: JSONObject.NULL)
+            if (download.targetPlaylistId != null) {
+                put("targetPlaylistId", download.targetPlaylistId)
+            } else {
+                put("targetPlaylistId", JSONObject.NULL)
+            }
             val candidates = JSONArray()
             for (track in download.candidates) {
                 candidates.put(encodeTrack(track))
@@ -115,6 +120,11 @@ object ActiveDownloadCodec {
             val state = runCatching {
                 CandidateDownloadState.valueOf(obj.getString("state"))
             }.getOrDefault(CandidateDownloadState.ERROR)
+            val targetPlaylistId = if (obj.has("targetPlaylistId") && !obj.isNull("targetPlaylistId")) {
+                obj.optLong("targetPlaylistId").takeIf { it > 0L }
+            } else {
+                null
+            }
             ActiveDownload(
                 id = obj.getString("id"),
                 source = source,
@@ -127,7 +137,8 @@ object ActiveDownloadCodec {
                 state = state,
                 progressMessage = null,
                 progressPercent = 0,
-                errorMessage = obj.optNullableString("errorMessage")
+                errorMessage = obj.optNullableString("errorMessage"),
+                targetPlaylistId = targetPlaylistId
             )
         } catch (_: Exception) {
             null

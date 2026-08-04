@@ -20,7 +20,7 @@ Módulo único Gradle: `:app`. Nombre del proyecto: **BestiaPop**.
 | Estado UI | `MusicPlayerViewModel` (AndroidViewModel) + StateFlow |
 | Reproducción | Media3 ExoPlayer + `MediaLibraryService` (`MusicService`) |
 | Persistencia | Room (`bestiapop_music_db`, v3) |
-| Preferencias | DataStore (`ThemePreferencesRepository`, `ListenBrainzPreferencesRepository`) |
+| Preferencias | DataStore (`ThemePreferencesRepository`, `ListenBrainzPreferencesRepository`, `ActiveDownloadsStore`) |
 | Red / catálogo | OkHttp + `MetadataFetcher` (iTunes/Deezer) + `YouTubeExtractor` + `ListenBrainzClient` |
 | Sync WiFi | Ktor CIO embebido (`WebServerService`) |
 | Imágenes | Coil |
@@ -46,8 +46,8 @@ service/     MusicService (playback), WebServerService (WiFi sync)
 4. Reproducción: ViewModel cola `List<PlayableItem>` (`Local` | `Remote`) → `MediaController` → `MusicService` (ExoPlayer)
 5. Stream remoto: `StreamResolver` → `YouTubeExtractor.extractAudioStreamDetailed` → MediaItem HTTPS + `StreamPlaybackTag` (UA) → ExoPlayer
 6. Radio: `RadioEngine` (local ± LB) → `playPlayableCollection` / refill de cola; remotos reusan stream
-7. Para Ti: `MatchListenBrainzTracksUseCase` → `MatchedLbPlaylist.toPlayableItems` → `playPlayableCollection`; opcional `saveWhileListening` → download background
-8. Descarga online: catálogo (`MetadataFetcher` / `YouTubeExtractor`) → `DownloadAudioTrackUseCase` → `repository.downloadAndSaveOnlineTrack` → Room + storage
+7. Para Ti: `MatchListenBrainzTracksUseCase` → `MatchedLbPlaylist.toPlayableItems` → `playPlayableCollection`; opcional `saveWhileListening` → download background; import Room vía `ImportListenBrainzPlaylistUseCase` + `LB_IMPORT`
+8. Descarga online: siempre vía `runTrackedDownload` → cola `activeDownloads` (tab Descargas) → `DownloadAudioTrackUseCase` → Room + storage
 
 ## Navegación UI
 
@@ -68,7 +68,7 @@ Overlay: `BottomPlayerBar` → `NowPlayingScreen`; cola en `QueueScreen`.
 4. **Portadas locales** — copiar a `context.filesDir` (no depender de content URIs temporales).
 5. **Remoto efímero** — `PlayableItem.Remote` + `ResolvedStream` en memoria; nunca persistir URLs CDN en Room.
 6. **Radio** — sesión con seed + providers (`LocalMetadataRadio` / `ListenBrainzRadio`); refill de cola; no pipeline paralelo.
-7. **Para Ti mixto** — Discover reproduce Local+Remote; “Guardar al escuchar” no bloquea ni persiste URLs CDN.
+7. **Para Ti mixto** — Discover reproduce Local+Remote; “Guardar al escuchar” / import LB no bloquean ni persisten URLs CDN; faltantes de import usan `activeDownloads` (`LB_IMPORT` + `targetPlaylistId`).
 
 ## Servicios Android
 

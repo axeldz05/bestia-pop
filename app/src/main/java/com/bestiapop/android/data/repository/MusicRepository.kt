@@ -8,6 +8,7 @@ import android.provider.MediaStore
 import androidx.documentfile.provider.DocumentFile
 import com.bestiapop.android.data.db.AppDatabase
 import com.bestiapop.android.data.db.PlaylistEntity
+import com.bestiapop.android.data.db.PlaylistPendingTrackEntity
 import com.bestiapop.android.data.db.PlaylistSongCrossRef
 import com.bestiapop.android.data.db.SongEntity
 import com.bestiapop.android.data.db.toEntity
@@ -16,6 +17,7 @@ import com.bestiapop.android.data.model.Album
 import com.bestiapop.android.data.model.Artist
 import com.bestiapop.android.data.model.OnlineCatalogTrack
 import com.bestiapop.android.data.model.Playlist
+import com.bestiapop.android.data.model.PlaylistPendingTrack
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.data.network.MetadataFetcher
 import kotlinx.coroutines.Dispatchers
@@ -27,6 +29,26 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 import com.bestiapop.android.domain.repository.IMusicRepository
+
+private fun PlaylistPendingTrackEntity.toPendingTrack() = PlaylistPendingTrack(
+    id = id,
+    playlistId = playlistId,
+    title = title,
+    artist = artist,
+    releaseName = releaseName,
+    recordingMbid = recordingMbid,
+    position = position
+)
+
+private fun PlaylistPendingTrack.toEntity() = PlaylistPendingTrackEntity(
+    id = id,
+    playlistId = playlistId,
+    title = title,
+    artist = artist,
+    releaseName = releaseName,
+    recordingMbid = recordingMbid,
+    position = position
+)
 
 class MusicRepository(private val context: Context) : IMusicRepository {
 
@@ -468,6 +490,7 @@ class MusicRepository(private val context: Context) : IMusicRepository {
 
     override suspend fun deletePlaylist(id: Long) = withContext(Dispatchers.IO) {
         musicDao.clearPlaylistSongs(id)
+        musicDao.clearPlaylistPendingTracks(id)
         musicDao.deletePlaylist(id)
     }
 
@@ -478,6 +501,22 @@ class MusicRepository(private val context: Context) : IMusicRepository {
     override suspend fun removeSongFromPlaylist(playlistId: Long, songId: Long) = withContext(Dispatchers.IO) {
         musicDao.removeSongFromPlaylist(playlistId, songId)
     }
+
+    override fun getPlaylistPendingTracksFlow(playlistId: Long): Flow<List<PlaylistPendingTrack>> =
+        musicDao.getPlaylistPendingTracksFlow(playlistId).map { list ->
+            list.map { it.toPendingTrack() }
+        }
+
+    override suspend fun addPlaylistPendingTracks(tracks: List<PlaylistPendingTrack>) =
+        withContext(Dispatchers.IO) {
+            if (tracks.isEmpty()) return@withContext
+            musicDao.insertPlaylistPendingTracks(tracks.map { it.toEntity() })
+        }
+
+    override suspend fun removePlaylistPendingTrack(playlistId: Long, artist: String, title: String) =
+        withContext(Dispatchers.IO) {
+            musicDao.deletePlaylistPendingTrackByArtistTitle(playlistId, artist, title)
+        }
 
     override suspend fun downloadAndSaveOnlineTrack(
         track: OnlineCatalogTrack,

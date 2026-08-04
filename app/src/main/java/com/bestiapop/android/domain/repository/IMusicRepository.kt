@@ -4,6 +4,7 @@ import android.net.Uri
 import com.bestiapop.android.data.db.SongEntity
 import com.bestiapop.android.data.model.OnlineCatalogTrack
 import com.bestiapop.android.data.model.Playlist
+import com.bestiapop.android.data.model.PlaylistPendingTrack
 import com.bestiapop.android.data.model.Song
 import kotlinx.coroutines.flow.Flow
 
@@ -37,6 +38,10 @@ interface IMusicRepository {
     suspend fun deletePlaylist(id: Long)
     suspend fun addSongToPlaylist(playlistId: Long, songId: Long)
     suspend fun removeSongFromPlaylist(playlistId: Long, songId: Long)
+
+    fun getPlaylistPendingTracksFlow(playlistId: Long): Flow<List<PlaylistPendingTrack>>
+    suspend fun addPlaylistPendingTracks(tracks: List<PlaylistPendingTrack>)
+    suspend fun removePlaylistPendingTrack(playlistId: Long, artist: String, title: String)
 
     suspend fun downloadAndSaveOnlineTrack(
         track: OnlineCatalogTrack,

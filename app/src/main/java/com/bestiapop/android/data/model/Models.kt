@@ -49,6 +49,28 @@ data class Playlist(
     val createdAt: Long = System.currentTimeMillis()
 )
 
+/** Metadata-only playlist member awaiting download (no audio file / no CDN URL). */
+data class PlaylistPendingTrack(
+    val id: Long = 0,
+    val playlistId: Long,
+    val title: String,
+    val artist: String,
+    val releaseName: String? = null,
+    val recordingMbid: String? = null,
+    val position: Int = 0
+) {
+    fun toOnlineCatalogTrack(): OnlineCatalogTrack = OnlineCatalogTrack(
+        id = "${artist} ${title}".trim(),
+        title = title,
+        artist = artist,
+        album = releaseName.orEmpty(),
+        artworkUrl = null,
+        durationMs = 0L,
+        audioUrl = "",
+        provider = "ListenBrainz"
+    )
+}
+
 data class ColorSchemeData(
     val primary: Long,
     val onPrimary: Long,
@@ -137,12 +159,14 @@ enum class ActiveDownloadSource {
     CATALOG,
     LINK,
     SAVE_WHILE_LISTENING,
-    BATCH
+    BATCH,
+    LB_IMPORT
 }
 
 /**
  * Unified in-memory download job for the Descargas center.
  * SUCCESS items are removed from the list; UI shows DOWNLOADING and ERROR.
+ * [targetPlaylistId] — when set (e.g. LB_IMPORT), success adds the song to that playlist.
  */
 data class ActiveDownload(
     val id: String,
@@ -155,7 +179,8 @@ data class ActiveDownload(
     val state: CandidateDownloadState = CandidateDownloadState.DOWNLOADING,
     val progressMessage: String? = null,
     val progressPercent: Int = 0,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val targetPlaylistId: Long? = null
 ) {
     val currentTrack: OnlineCatalogTrack?
         get() = candidates.getOrNull(currentCandidateIndex)

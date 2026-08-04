@@ -87,4 +87,31 @@ interface MusicDao {
     @Transaction
     @Query("SELECT * FROM playlists WHERE playlistId = :playlistId")
     fun getPlaylistWithSongsFlow(playlistId: Long): Flow<PlaylistWithSongs?>
+
+    // Pending playlist tracks (metadata until download)
+    @Query("SELECT * FROM playlist_pending_tracks WHERE playlistId = :playlistId ORDER BY position ASC, id ASC")
+    fun getPlaylistPendingTracksFlow(playlistId: Long): Flow<List<PlaylistPendingTrackEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertPlaylistPendingTracks(tracks: List<PlaylistPendingTrackEntity>)
+
+    @Query("DELETE FROM playlist_pending_tracks WHERE playlistId = :playlistId")
+    suspend fun clearPlaylistPendingTracks(playlistId: Long)
+
+    @Query(
+        """
+        DELETE FROM playlist_pending_tracks
+        WHERE playlistId = :playlistId
+          AND lower(artist) = lower(:artist)
+          AND lower(title) = lower(:title)
+        """
+    )
+    suspend fun deletePlaylistPendingTrackByArtistTitle(
+        playlistId: Long,
+        artist: String,
+        title: String
+    )
+
+    @Query("DELETE FROM playlist_pending_tracks WHERE id = :id")
+    suspend fun deletePlaylistPendingTrackById(id: Long)
 }

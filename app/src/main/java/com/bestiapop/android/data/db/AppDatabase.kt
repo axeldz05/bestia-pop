@@ -12,9 +12,10 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         SongEntity::class,
         PlaylistEntity::class,
         PlaylistSongCrossRef::class,
+        PlaylistPendingTrackEntity::class,
         PendingListenEntity::class
     ],
-    version = 4,
+    version = 5,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -62,6 +63,30 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `playlist_pending_tracks` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `playlistId` INTEGER NOT NULL,
+                        `title` TEXT NOT NULL,
+                        `artist` TEXT NOT NULL,
+                        `releaseName` TEXT,
+                        `recordingMbid` TEXT,
+                        `position` INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_playlist_pending_tracks_playlistId` ON `playlist_pending_tracks` (`playlistId`)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_playlist_pending_tracks_playlistId_artist_title` ON `playlist_pending_tracks` (`playlistId`, `artist`, `title`)"
+                )
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -69,7 +94,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "bestiapop_music_db"
                 )
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                 .fallbackToDestructiveMigrationOnDowngrade()
                 .build()
 

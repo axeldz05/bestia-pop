@@ -151,7 +151,7 @@ object MetadataFetcher {
 
                             tracks.add(
                                 com.bestiapop.android.data.model.OnlineCatalogTrack(
-                                    id = "$artistName $title",
+                                    id = obj.optString("id").ifBlank { "$artistName $title#$i" },
                                     title = title,
                                     artist = artistName,
                                     album = albumTitle,
@@ -191,7 +191,9 @@ object MetadataFetcher {
 
                                 tracks.add(
                                     com.bestiapop.android.data.model.OnlineCatalogTrack(
-                                        id = "$artistName $title",
+                                        id = obj.optString("trackId").ifBlank {
+                                            "$artistName $title#${obj.optString("collectionId", "$i")}"
+                                        },
                                         title = title,
                                         artist = artistName,
                                         album = albumTitle,

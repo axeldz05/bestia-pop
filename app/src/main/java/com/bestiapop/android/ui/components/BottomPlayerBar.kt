@@ -34,21 +34,21 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
-import com.bestiapop.android.data.model.Song
+import com.bestiapop.android.data.model.PlayableItem
 
 @Composable
 fun BottomPlayerBar(
-    currentSong: Song?,
+    currentItem: PlayableItem?,
     isPlaying: Boolean,
     progressMs: Long,
     onPlayPauseClick: () -> Unit,
     onNextClick: () -> Unit,
     onBarClick: () -> Unit
 ) {
-    if (currentSong == null) return
+    if (currentItem == null) return
 
-    val progressFraction = if (currentSong.durationMs > 0) {
-        (progressMs.toFloat() / currentSong.durationMs.toFloat()).coerceIn(0f, 1f)
+    val progressFraction = if (currentItem.durationMs > 0) {
+        (progressMs.toFloat() / currentItem.durationMs.toFloat()).coerceIn(0f, 1f)
     } else 0f
 
     Surface(
@@ -61,7 +61,6 @@ fun BottomPlayerBar(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Artwork, title, artist, and progress — opens Now Playing
             Column(
                 modifier = Modifier
                     .weight(1f)
@@ -89,10 +88,10 @@ fun BottomPlayerBar(
                             .clip(RoundedCornerShape(8.dp)),
                         contentAlignment = Alignment.Center
                     ) {
-                        if (!currentSong.artworkUri.isNullOrEmpty()) {
+                        if (!currentItem.artworkUri.isNullOrEmpty()) {
                             AsyncImage(
-                                model = currentSong.artworkUri,
-                                contentDescription = currentSong.title,
+                                model = currentItem.artworkUri,
+                                contentDescription = currentItem.title,
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier.size(44.dp)
                             )
@@ -116,14 +115,14 @@ fun BottomPlayerBar(
 
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = currentSong.title,
+                            text = currentItem.title,
                             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
                             color = MaterialTheme.colorScheme.onSurface,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
                         Text(
-                            text = currentSong.artist,
+                            text = currentItem.artist,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
                             maxLines = 1,
@@ -133,7 +132,6 @@ fun BottomPlayerBar(
                 }
             }
 
-            // Playback controls — do not open Now Playing
             IconButton(onClick = onPlayPauseClick) {
                 Icon(
                     imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,

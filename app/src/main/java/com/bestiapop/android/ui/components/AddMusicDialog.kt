@@ -30,11 +30,13 @@ import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.QueueMusic
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -47,6 +49,7 @@ import androidx.compose.material3.Icon
 import com.bestiapop.android.data.model.CatalogCategory
 
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -75,6 +78,7 @@ import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
 import com.bestiapop.android.data.model.DownloadStatus
 import com.bestiapop.android.data.model.OnlineCatalogTrack
+import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.ui.MusicPlayerViewModel
 
 
@@ -100,12 +104,21 @@ fun AddMusicDialog(
     val activeTrackCandidates by viewModel.activeTrackCandidates.collectAsState()
     val isLoadingCollection by viewModel.isLoadingCollection.collectAsState()
 
+    val catalogPreviewKey by viewModel.catalogPreviewKey.collectAsState()
+    val currentItem by viewModel.currentItem.collectAsState()
+    val isPlaying by viewModel.isPlaying.collectAsState()
+    val resolvingRemote by viewModel.resolvingRemote.collectAsState()
+    val playbackPositionMs by viewModel.playbackPositionMs.collectAsState()
+
+    fun dismissDialog() {
+        viewModel.resetDownloadStatus()
+        viewModel.clearSelectedCollection()
+        viewModel.clearCatalogPreview()
+        onDismiss()
+    }
+
     Dialog(
-        onDismissRequest = {
-            viewModel.resetDownloadStatus()
-            viewModel.clearSelectedCollection()
-            onDismiss()
-        },
+        onDismissRequest = { dismissDialog() },
         properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
         Surface(
@@ -156,13 +169,7 @@ fun AddMusicDialog(
                         }
                     }
 
-                    IconButton(
-                        onClick = {
-                            viewModel.resetDownloadStatus()
-                            viewModel.clearSelectedCollection()
-                            onDismiss()
-                        }
-                    ) {
+                    IconButton(onClick = { dismissDialog() }) {
                         Icon(imageVector = Icons.Default.Close, contentDescription = "Cerrar")
                     }
                 }
@@ -228,18 +235,34 @@ fun AddMusicDialog(
                             activeCandidates = activeTrackCandidates,
                             isLoadingCollection = isLoadingCollection,
                             downloadStatus = downloadStatus,
+                            catalogPreviewKey = catalogPreviewKey,
+                            previewItem = (currentItem as? PlayableItem.Remote)?.takeIf { catalogPreviewKey != null },
+                            isPreviewPlaying = isPlaying && catalogPreviewKey != null,
+                            isPreviewResolving = resolvingRemote && catalogPreviewKey != null,
+                            previewPositionMs = playbackPositionMs,
+                            previewKeyFor = { track -> viewModel.catalogPreviewKeyFor(track) },
                             onSearch = { viewModel.searchCatalog(catalogSearchInput) },
                             onAddTrack = { track -> viewModel.downloadOnlineTrack(track) },
+                            onStreamTrack = { track -> viewModel.playOnlineCatalogTrackAsStream(track) },
+                            onCycleSong = { index -> viewModel.cycleSongCatalogResult(index) },
+                            onTogglePreviewPlayPause = { viewModel.togglePlayPause() },
+                            onStopPreview = {
+                                if (isPlaying) viewModel.togglePlayPause()
+                                viewModel.clearCatalogPreview()
+                            },
                             onSelectAlbum = { album -> viewModel.selectAlbumForInspection(album) },
                             onSelectPlaylist = { playlist -> viewModel.selectPlaylistForInspection(playlist) },
                             onCycleCandidate = { index -> viewModel.cycleTrackCandidate(index) },
+                            onStreamCandidate = { candidate ->
+                                candidate.currentTrack?.let { viewModel.playOnlineCatalogTrackAsStream(it) }
+                            },
                             onToggleSelection = { index -> viewModel.toggleTrackSelection(index) },
                             onRetryCandidate = { index -> viewModel.downloadSingleCandidate(index) },
                             onDownloadBatch = { viewModel.downloadSelectedCandidatesBatch() },
                             onClearCollection = { viewModel.clearSelectedCollection() },
                             onPlayDownloaded = { song ->
                                 viewModel.playSong(song)
-                                onDismiss()
+                                dismissDialog()
                             }
                         )
                     }
@@ -489,11 +512,22 @@ private fun OnlineCatalogTab(
     activeCandidates: List<com.bestiapop.android.data.model.CatalogTrackCandidate>,
     isLoadingCollection: Boolean,
     downloadStatus: DownloadStatus,
+    catalogPreviewKey: String?,
+    previewItem: PlayableItem?,
+    isPreviewPlaying: Boolean,
+    isPreviewResolving: Boolean,
+    previewPositionMs: Long,
+    previewKeyFor: (OnlineCatalogTrack) -> String,
     onSearch: () -> Unit,
     onAddTrack: (OnlineCatalogTrack) -> Unit,
+    onStreamTrack: (OnlineCatalogTrack) -> Unit,
+    onCycleSong: (Int) -> Unit,
+    onTogglePreviewPlayPause: () -> Unit,
+    onStopPreview: () -> Unit,
     onSelectAlbum: (com.bestiapop.android.data.model.CatalogAlbum) -> Unit,
     onSelectPlaylist: (com.bestiapop.android.data.model.CatalogPlaylist) -> Unit,
     onCycleCandidate: (Int) -> Unit,
+    onStreamCandidate: (com.bestiapop.android.data.model.CatalogTrackCandidate) -> Unit,
     onToggleSelection: (Int) -> Unit,
     onRetryCandidate: (Int) -> Unit,
     onDownloadBatch: () -> Unit,
@@ -513,12 +547,21 @@ private fun OnlineCatalogTab(
             isLoading = isLoadingCollection,
             candidates = activeCandidates,
             downloadStatus = downloadStatus,
+            catalogPreviewKey = catalogPreviewKey,
+            previewItem = previewItem,
+            isPreviewPlaying = isPreviewPlaying,
+            isPreviewResolving = isPreviewResolving,
+            previewPositionMs = previewPositionMs,
+            previewKeyFor = previewKeyFor,
             onBack = onClearCollection,
             onCycleCandidate = onCycleCandidate,
+            onStreamCandidate = onStreamCandidate,
             onToggleSelection = onToggleSelection,
             onRetryCandidate = onRetryCandidate,
             onDownloadBatch = onDownloadBatch,
-            onPlayDownloaded = onPlayDownloaded
+            onPlayDownloaded = onPlayDownloaded,
+            onTogglePreviewPlayPause = onTogglePreviewPlayPause,
+            onStopPreview = onStopPreview
         )
         return
     }
@@ -654,58 +697,90 @@ private fun OnlineCatalogTab(
         }
 
         // Search Results List based on active category
-        if (isSearching) {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
-            ) {
-                CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+        Box(modifier = Modifier.weight(1f)) {
+            if (isSearching) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                }
+            } else {
+                when (category) {
+                    CatalogCategory.SONGS -> {
+                        if (songResults.isEmpty()) {
+                            EmptyResultText("No se encontraron canciones en el catálogo")
+                        } else {
+                            LazyColumn(modifier = Modifier.fillMaxSize()) {
+                                itemsIndexed(
+                                    items = songResults,
+                                    key = { index, track -> "${track.provider}:${track.id}:$index" }
+                                ) { index, track ->
+                                    val trackKey = previewKeyFor(track)
+                                    val isThisPreview = catalogPreviewKey == trackKey
+                                    CatalogTrackItem(
+                                        track = track,
+                                        isPreviewing = isThisPreview,
+                                        isPlaying = isThisPreview && isPreviewPlaying,
+                                        isResolving = isThisPreview && isPreviewResolving,
+                                        progressMs = if (isThisPreview) previewPositionMs else 0L,
+                                        onStreamClick = { onStreamTrack(track) },
+                                        onCycleClick = { onCycleSong(index) },
+                                        onAddClick = { onAddTrack(track) }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    CatalogCategory.ALBUMS -> {
+                        if (albumResults.isEmpty()) {
+                            EmptyResultText("No se encontraron álbumes")
+                        } else {
+                            LazyColumn(modifier = Modifier.fillMaxSize()) {
+                                items(albumResults, key = { album -> album.id }) { album ->
+                                    CatalogAlbumItem(
+                                        album = album,
+                                        onClick = { onSelectAlbum(album) }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    CatalogCategory.PLAYLISTS -> {
+                        if (playlistResults.isEmpty()) {
+                            EmptyResultText("No se encontraron playlists")
+                        } else {
+                            LazyColumn(modifier = Modifier.fillMaxSize()) {
+                                items(playlistResults, key = { playlist -> playlist.id }) { playlist ->
+                                    CatalogPlaylistItem(
+                                        playlist = playlist,
+                                        onClick = { onSelectPlaylist(playlist) }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
             }
-        } else {
-            when (category) {
-                CatalogCategory.SONGS -> {
-                    if (songResults.isEmpty()) {
-                        EmptyResultText("No se encontraron canciones en el catálogo")
-                    } else {
-                        LazyColumn(modifier = Modifier.fillMaxSize()) {
-                            items(songResults, key = { track -> track.id }) { track ->
-                                CatalogTrackItem(
-                                    track = track,
-                                    onAddClick = { onAddTrack(track) }
-                                )
-                            }
-                        }
-                    }
-                }
-                CatalogCategory.ALBUMS -> {
-                    if (albumResults.isEmpty()) {
-                        EmptyResultText("No se encontraron álbumes")
-                    } else {
-                        LazyColumn(modifier = Modifier.fillMaxSize()) {
-                            items(albumResults, key = { album -> album.id }) { album ->
-                                CatalogAlbumItem(
-                                    album = album,
-                                    onClick = { onSelectAlbum(album) }
-                                )
-                            }
-                        }
-                    }
-                }
-                CatalogCategory.PLAYLISTS -> {
-                    if (playlistResults.isEmpty()) {
-                        EmptyResultText("No se encontraron playlists")
-                    } else {
-                        LazyColumn(modifier = Modifier.fillMaxSize()) {
-                            items(playlistResults, key = { playlist -> playlist.id }) { playlist ->
-                                CatalogPlaylistItem(
-                                    playlist = playlist,
-                                    onClick = { onSelectPlaylist(playlist) }
-                                )
-                            }
-                        }
-                    }
-                }
-            }
+        }
+
+        val previewTrack = remember(catalogPreviewKey, songResults) {
+            songResults.find { previewKeyFor(it) == catalogPreviewKey }
+        }
+        AnimatedVisibility(visible = catalogPreviewKey != null) {
+            CatalogPreviewBar(
+                title = previewItem?.title ?: previewTrack?.title ?: "Preview",
+                artist = previewItem?.artist ?: previewTrack?.artist ?: "",
+                artworkUri = previewItem?.artworkUri ?: previewTrack?.artworkUrl,
+                durationMs = previewItem?.durationMs?.takeIf { it > 0 }
+                    ?: previewTrack?.durationMs
+                    ?: 0L,
+                positionMs = previewPositionMs,
+                isPlaying = isPreviewPlaying,
+                isResolving = isPreviewResolving,
+                onPlayPause = onTogglePreviewPlayPause,
+                onStop = onStopPreview
+            )
         }
     }
 }
@@ -730,12 +805,21 @@ private fun CollectionTrackInspectionView(
     isLoading: Boolean,
     candidates: List<com.bestiapop.android.data.model.CatalogTrackCandidate>,
     downloadStatus: DownloadStatus,
+    catalogPreviewKey: String?,
+    previewItem: PlayableItem?,
+    isPreviewPlaying: Boolean,
+    isPreviewResolving: Boolean,
+    previewPositionMs: Long,
+    previewKeyFor: (OnlineCatalogTrack) -> String,
     onBack: () -> Unit,
     onCycleCandidate: (Int) -> Unit,
+    onStreamCandidate: (com.bestiapop.android.data.model.CatalogTrackCandidate) -> Unit,
     onToggleSelection: (Int) -> Unit,
     onRetryCandidate: (Int) -> Unit,
     onDownloadBatch: () -> Unit,
-    onPlayDownloaded: (com.bestiapop.android.data.model.Song) -> Unit
+    onPlayDownloaded: (com.bestiapop.android.data.model.Song) -> Unit,
+    onTogglePreviewPlayPause: () -> Unit,
+    onStopPreview: () -> Unit
 ) {
     val selectedCount = candidates.count { it.isSelected && it.currentTrack != null }
 
@@ -787,11 +871,21 @@ private fun CollectionTrackInspectionView(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                itemsIndexed(candidates) { index, item ->
+                itemsIndexed(
+                    candidates,
+                    key = { index, item -> "${item.trackTitle}:${item.artist}:$index" }
+                ) { index, item ->
+                    val currentYt = item.currentTrack
+                    val isThisPreview = currentYt != null && catalogPreviewKey == previewKeyFor(currentYt)
                     CandidateTrackCard(
                         item = item,
+                        isPreviewing = isThisPreview,
+                        isPlaying = isThisPreview && isPreviewPlaying,
+                        isResolving = isThisPreview && isPreviewResolving,
+                        progressMs = if (isThisPreview) previewPositionMs else 0L,
                         onToggleSelect = { onToggleSelection(index) },
                         onCycleCandidate = { onCycleCandidate(index) },
+                        onStreamClick = { onStreamCandidate(item) },
                         onRetryDownload = { onRetryCandidate(index) }
                     )
                 }
@@ -813,6 +907,30 @@ private fun CollectionTrackInspectionView(
                     fontWeight = FontWeight.Bold
                 )
             }
+
+            val previewCandidate = remember(catalogPreviewKey, candidates) {
+                candidates.find { c ->
+                    val t = c.currentTrack ?: return@find false
+                    previewKeyFor(t) == catalogPreviewKey
+                }
+            }
+            AnimatedVisibility(visible = catalogPreviewKey != null) {
+                CatalogPreviewBar(
+                    title = previewItem?.title ?: previewCandidate?.trackTitle ?: "Preview",
+                    artist = previewItem?.artist ?: previewCandidate?.artist ?: "",
+                    artworkUri = previewItem?.artworkUri
+                        ?: previewCandidate?.currentTrack?.artworkUrl
+                        ?: previewCandidate?.coverUrl,
+                    durationMs = previewItem?.durationMs?.takeIf { it > 0 }
+                        ?: previewCandidate?.currentTrack?.durationMs
+                        ?: 0L,
+                    positionMs = previewPositionMs,
+                    isPlaying = isPreviewPlaying,
+                    isResolving = isPreviewResolving,
+                    onPlayPause = onTogglePreviewPlayPause,
+                    onStop = onStopPreview
+                )
+            }
         }
     }
 }
@@ -820,145 +938,242 @@ private fun CollectionTrackInspectionView(
 @Composable
 private fun CandidateTrackCard(
     item: com.bestiapop.android.data.model.CatalogTrackCandidate,
+    isPreviewing: Boolean,
+    isPlaying: Boolean,
+    isResolving: Boolean,
+    progressMs: Long,
     onToggleSelect: () -> Unit,
     onCycleCandidate: () -> Unit,
+    onStreamClick: () -> Unit,
     onRetryDownload: () -> Unit
 ) {
     val currentYt = item.currentTrack
+    val durationMs = currentYt?.durationMs ?: 0L
+    val progressFraction = if (durationMs > 0) {
+        (progressMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f)
+    } else if (isPreviewing && progressMs > 0) {
+        0.05f
+    } else {
+        0f
+    }
 
     Card(
         colors = CardDefaults.cardColors(
-            containerColor = if (item.isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+            containerColor = when {
+                isPreviewing -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f)
+                item.isSelected -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f)
+                else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+            }
         ),
         shape = RoundedCornerShape(14.dp),
         modifier = Modifier.fillMaxWidth()
     ) {
-        Row(
-            modifier = Modifier.padding(10.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Checkbox(
-                checked = item.isSelected,
-                onCheckedChange = { onToggleSelect() }
-            )
-
-            Spacer(modifier = Modifier.width(6.dp))
-
-            Box(
-                modifier = Modifier
-                    .size(50.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(MaterialTheme.colorScheme.secondaryContainer),
-                contentAlignment = Alignment.Center
-            ) {
-                val thumb = currentYt?.artworkUrl ?: item.coverUrl
-                if (!thumb.isNullOrEmpty()) {
-                    AsyncImage(
-                        model = thumb,
-                        contentDescription = item.trackTitle,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize()
-                    )
-                } else {
-                    Icon(Icons.Default.MusicNote, contentDescription = null)
-                }
+        Column {
+            if (isPreviewing) {
+                LinearProgressIndicator(
+                    progress = { if (isResolving) 0f else progressFraction },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(3.dp),
+                    color = MaterialTheme.colorScheme.primary,
+                    trackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+                )
             }
 
-            Spacer(modifier = Modifier.width(10.dp))
+            Row(
+                modifier = Modifier.padding(10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Checkbox(
+                    checked = item.isSelected,
+                    onCheckedChange = { onToggleSelect() }
+                )
 
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = item.trackTitle,
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                val statusSubtext = when (item.downloadState) {
-                    com.bestiapop.android.data.model.CandidateDownloadState.IDLE -> "${item.artist} • YouTube: ${currentYt?.title ?: "No encontrado"}"
-                    com.bestiapop.android.data.model.CandidateDownloadState.DOWNLOADING -> "${item.artist} • Descargando audio..."
-                    com.bestiapop.android.data.model.CandidateDownloadState.SUCCESS -> "${item.artist} • ¡Guardado en biblioteca!"
-                    com.bestiapop.android.data.model.CandidateDownloadState.ERROR -> "${item.artist} • Error"
+                Spacer(modifier = Modifier.width(6.dp))
+
+                Box(
+                    modifier = Modifier
+                        .size(50.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(MaterialTheme.colorScheme.secondaryContainer),
+                    contentAlignment = Alignment.Center
+                ) {
+                    val thumb = currentYt?.artworkUrl ?: item.coverUrl
+                    if (!thumb.isNullOrEmpty()) {
+                        AsyncImage(
+                            model = thumb,
+                            contentDescription = item.trackTitle,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    } else {
+                        Icon(Icons.Default.MusicNote, contentDescription = null)
+                    }
                 }
-                Text(
-                    text = statusSubtext,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = if (item.downloadState == com.bestiapop.android.data.model.CandidateDownloadState.ERROR) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                if (item.downloadState == com.bestiapop.android.data.model.CandidateDownloadState.ERROR && !item.errorMessage.isNullOrEmpty()) {
-                    Spacer(modifier = Modifier.height(2.dp))
+
+                Spacer(modifier = Modifier.width(10.dp))
+
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = item.errorMessage,
-                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
-                        color = MaterialTheme.colorScheme.error,
-                        maxLines = 2,
+                        text = item.trackTitle,
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                        color = if (isPreviewing) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurface
+                        },
+                        maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
-                }
-            }
-
-            Spacer(modifier = Modifier.width(6.dp))
-
-            when (item.downloadState) {
-                com.bestiapop.android.data.model.CandidateDownloadState.IDLE -> {
-                    OutlinedButton(
-                        onClick = onCycleCandidate,
-                        shape = RoundedCornerShape(12.dp),
-                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                    val statusSubtext = when {
+                        isResolving -> "${item.artist} • Resolviendo stream…"
+                        isPreviewing && isPlaying -> "${item.artist} • Reproduciendo preview"
+                        isPreviewing -> "${item.artist} • Preview en pausa"
+                        item.downloadState == com.bestiapop.android.data.model.CandidateDownloadState.IDLE ->
+                            "${item.artist} • YouTube: ${currentYt?.title ?: "No encontrado"}"
+                        item.downloadState == com.bestiapop.android.data.model.CandidateDownloadState.DOWNLOADING ->
+                            "${item.artist} • Descargando audio..."
+                        item.downloadState == com.bestiapop.android.data.model.CandidateDownloadState.SUCCESS ->
+                            "${item.artist} • ¡Guardado en biblioteca!"
+                        else -> "${item.artist} • Error"
+                    }
+                    Text(
+                        text = statusSubtext,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (item.downloadState == com.bestiapop.android.data.model.CandidateDownloadState.ERROR) {
+                            MaterialTheme.colorScheme.error
+                        } else {
+                            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                        },
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    if (item.downloadState == com.bestiapop.android.data.model.CandidateDownloadState.ERROR &&
+                        !item.errorMessage.isNullOrEmpty()
                     ) {
-                        Icon(Icons.Default.Refresh, contentDescription = "Buscar otro", modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Buscar otro", style = MaterialTheme.typography.labelSmall)
-                    }
-                }
-                com.bestiapop.android.data.model.CandidateDownloadState.DOWNLOADING -> {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(20.dp),
-                            strokeWidth = 2.dp,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
+                        Spacer(modifier = Modifier.height(2.dp))
                         Text(
-                            text = "${item.downloadProgressPercent}%",
-                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                            color = MaterialTheme.colorScheme.primary
+                            text = item.errorMessage,
+                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                            color = MaterialTheme.colorScheme.error,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 }
-                com.bestiapop.android.data.model.CandidateDownloadState.SUCCESS -> {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Default.CheckCircle,
-                            contentDescription = "Descargado",
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(22.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = "Listo",
-                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                }
-                com.bestiapop.android.data.model.CandidateDownloadState.ERROR -> {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        OutlinedButton(
-                            onClick = onRetryDownload,
-                            shape = RoundedCornerShape(12.dp),
-                            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.primary),
-                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 4.dp)
-                        ) {
-                            Icon(Icons.Default.Refresh, contentDescription = "Reintentar", modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Reintentar", style = MaterialTheme.typography.labelSmall)
+
+                Spacer(modifier = Modifier.width(4.dp))
+
+                if (item.downloadState == com.bestiapop.android.data.model.CandidateDownloadState.IDLE ||
+                    item.downloadState == com.bestiapop.android.data.model.CandidateDownloadState.ERROR
+                ) {
+                    IconButton(
+                        onClick = onStreamClick,
+                        enabled = currentYt != null
+                    ) {
+                        when {
+                            isResolving -> CircularProgressIndicator(
+                                modifier = Modifier.size(22.dp),
+                                strokeWidth = 2.dp,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            isPlaying -> Icon(
+                                imageVector = Icons.Default.Pause,
+                                contentDescription = "Pausar preview",
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                            else -> Icon(
+                                imageVector = Icons.Default.PlayArrow,
+                                contentDescription = "Preview",
+                                tint = if (currentYt != null) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f)
+                                }
+                            )
                         }
-                        Spacer(modifier = Modifier.width(4.dp))
-                        IconButton(onClick = onCycleCandidate) {
-                            Icon(Icons.Default.Search, contentDescription = "Buscar otro", tint = MaterialTheme.colorScheme.primary)
+                    }
+                }
+
+                when (item.downloadState) {
+                    com.bestiapop.android.data.model.CandidateDownloadState.IDLE -> {
+                        OutlinedButton(
+                            onClick = onCycleCandidate,
+                            shape = RoundedCornerShape(12.dp),
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                                horizontal = 10.dp,
+                                vertical = 4.dp
+                            )
+                        ) {
+                            Icon(
+                                Icons.Default.Refresh,
+                                contentDescription = "Buscar otro",
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Buscar otro", style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
+                    com.bestiapop.android.data.model.CandidateDownloadState.DOWNLOADING -> {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp),
+                                strokeWidth = 2.dp,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "${item.downloadProgressPercent}%",
+                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+                    com.bestiapop.android.data.model.CandidateDownloadState.SUCCESS -> {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.CheckCircle,
+                                contentDescription = "Descargado",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(22.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "Listo",
+                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+                    com.bestiapop.android.data.model.CandidateDownloadState.ERROR -> {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            OutlinedButton(
+                                onClick = onRetryDownload,
+                                shape = RoundedCornerShape(12.dp),
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    contentColor = MaterialTheme.colorScheme.primary
+                                ),
+                                contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                                    horizontal = 8.dp,
+                                    vertical = 4.dp
+                                )
+                            ) {
+                                Icon(
+                                    Icons.Default.Refresh,
+                                    contentDescription = "Reintentar",
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Reintentar", style = MaterialTheme.typography.labelSmall)
+                            }
+                            Spacer(modifier = Modifier.width(4.dp))
+                            IconButton(onClick = onCycleCandidate) {
+                                Icon(
+                                    Icons.Default.Search,
+                                    contentDescription = "Buscar otro",
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                            }
                         }
                     }
                 }
@@ -1103,78 +1318,284 @@ private fun CatalogPlaylistItem(
 @Composable
 private fun CatalogTrackItem(
     track: OnlineCatalogTrack,
+    isPreviewing: Boolean,
+    isPlaying: Boolean,
+    isResolving: Boolean,
+    progressMs: Long,
+    onStreamClick: () -> Unit,
+    onCycleClick: () -> Unit,
     onAddClick: () -> Unit
 ) {
+    val progressFraction = if (track.durationMs > 0) {
+        (progressMs.toFloat() / track.durationMs.toFloat()).coerceIn(0f, 1f)
+    } else if (isPreviewing && progressMs > 0) {
+        0.05f
+    } else {
+        0f
+    }
+
     Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isPreviewing) {
+                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f)
+            } else {
+                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+            }
+        ),
         shape = RoundedCornerShape(14.dp),
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 4.dp)
     ) {
-        Row(
-            modifier = Modifier.padding(10.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(50.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(MaterialTheme.colorScheme.primaryContainer),
-                contentAlignment = Alignment.Center
+        Column {
+            if (isPreviewing) {
+                LinearProgressIndicator(
+                    progress = {
+                        when {
+                            isResolving -> 0f
+                            else -> progressFraction
+                        }
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(3.dp),
+                    color = MaterialTheme.colorScheme.primary,
+                    trackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+                )
+            }
+
+            Row(
+                modifier = Modifier.padding(10.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                if (!track.artworkUrl.isNullOrEmpty()) {
-                    AsyncImage(
-                        model = track.artworkUrl,
-                        contentDescription = track.title,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize()
+                Box(
+                    modifier = Modifier
+                        .size(50.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(MaterialTheme.colorScheme.primaryContainer),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (!track.artworkUrl.isNullOrEmpty()) {
+                        AsyncImage(
+                            model = track.artworkUrl,
+                            contentDescription = track.title,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Default.MusicNote,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.width(12.dp))
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = track.title,
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                        color = if (isPreviewing) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurface
+                        },
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
-                } else {
-                    Icon(
-                        imageVector = Icons.Default.MusicNote,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onPrimaryContainer
+                    Text(
+                        text = when {
+                            isResolving -> "Resolviendo stream…"
+                            isPreviewing && isPlaying -> "Reproduciendo preview"
+                            isPreviewing -> "Preview en pausa"
+                            else -> "${track.artist} • ${track.album}"
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
+
+                Spacer(modifier = Modifier.width(2.dp))
+
+                IconButton(onClick = onStreamClick) {
+                    when {
+                        isResolving -> {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(22.dp),
+                                strokeWidth = 2.dp,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                        isPlaying -> {
+                            Icon(
+                                imageVector = Icons.Default.Pause,
+                                contentDescription = "Pausar preview",
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                        else -> {
+                            Icon(
+                                imageVector = Icons.Default.PlayArrow,
+                                contentDescription = "Reproducir en stream",
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+                }
+
+                IconButton(onClick = onCycleClick) {
+                    Icon(
+                        imageVector = Icons.Default.Refresh,
+                        contentDescription = "Buscar otro",
+                        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f)
+                    )
+                }
+
+                Button(
+                    onClick = onAddClick,
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                    ),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                        horizontal = 10.dp,
+                        vertical = 6.dp
+                    )
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = "Agregar",
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Agregar", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium)
+                }
             }
+        }
+    }
+}
 
-            Spacer(modifier = Modifier.width(12.dp))
+@Composable
+private fun CatalogPreviewBar(
+    title: String,
+    artist: String,
+    artworkUri: String?,
+    durationMs: Long,
+    positionMs: Long,
+    isPlaying: Boolean,
+    isResolving: Boolean,
+    onPlayPause: () -> Unit,
+    onStop: () -> Unit
+) {
+    val progressFraction = if (durationMs > 0) {
+        (positionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f)
+    } else 0f
 
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = track.title,
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = "${track.artist} • ${track.album}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        shape = RoundedCornerShape(16.dp),
+        tonalElevation = 4.dp,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 10.dp)
+    ) {
+        Column {
+            LinearProgressIndicator(
+                progress = { if (isResolving) 0f else progressFraction },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(3.dp),
+                color = MaterialTheme.colorScheme.primary,
+                trackColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
+            )
 
-            Spacer(modifier = Modifier.width(8.dp))
-
-            Button(
-                onClick = onAddClick,
-                shape = RoundedCornerShape(12.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer
-                )
+            Row(
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(
-                    imageVector = Icons.Default.Add,
-                    contentDescription = "Agregar",
-                    modifier = Modifier.size(16.dp)
-                )
-                Spacer(modifier = Modifier.width(4.dp))
-                Text("Agregar", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium)
+                Box(
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(MaterialTheme.colorScheme.primaryContainer),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (!artworkUri.isNullOrEmpty()) {
+                        AsyncImage(
+                            model = artworkUri,
+                            contentDescription = title,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Default.MusicNote,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.width(10.dp))
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = if (isResolving) "Resolviendo…" else title,
+                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = buildString {
+                            append(artist)
+                            append(" · ")
+                            if (isResolving) {
+                                append("stream")
+                            } else {
+                                append(formatDuration(positionMs))
+                                if (durationMs > 0) {
+                                    append(" / ")
+                                    append(formatDuration(durationMs))
+                                }
+                            }
+                        },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
+                if (isResolving) {
+                    CircularProgressIndicator(
+                        modifier = Modifier
+                            .padding(end = 4.dp)
+                            .size(22.dp),
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    IconButton(onClick = onPlayPause) {
+                        Icon(
+                            imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                            contentDescription = if (isPlaying) "Pausar" else "Reproducir",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+
+                IconButton(onClick = onStop) {
+                    Icon(
+                        imageVector = Icons.Default.Stop,
+                        contentDescription = "Detener preview",
+                        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                    )
+                }
             }
         }
     }

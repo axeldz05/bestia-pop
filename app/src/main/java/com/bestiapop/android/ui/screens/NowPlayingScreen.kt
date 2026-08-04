@@ -91,6 +91,7 @@ import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.data.model.RepeatMode
 import com.bestiapop.android.ui.MusicPlayerViewModel
 import com.bestiapop.android.ui.components.formatDuration
@@ -125,7 +126,7 @@ fun NowPlayingScreen(
     viewModel: MusicPlayerViewModel,
     onDismiss: () -> Unit
 ) {
-    val currentSong by viewModel.currentSong.collectAsState()
+    val currentItem by viewModel.currentItem.collectAsState()
     val isPlaying by viewModel.isPlaying.collectAsState()
     val positionMs by viewModel.playbackPositionMs.collectAsState()
     val repeatMode by viewModel.repeatMode.collectAsState()
@@ -133,13 +134,19 @@ fun NowPlayingScreen(
     val volumeLevel by viewModel.volumeLevel.collectAsState()
     val queueItems by viewModel.queue.collectAsState()
     val queueFocusEpoch by viewModel.queueFocusEpoch.collectAsState()
+    val resolvingRemote by viewModel.resolvingRemote.collectAsState()
 
     var selectedTab by remember { mutableIntStateOf(0) } // 0 = Portada, 1 = Letra, 2 = Cola
     var isDragging by remember { mutableStateOf(false) }
     var dragPosition by remember { mutableFloatStateOf(0f) }
     val queueListState = rememberLazyListState()
 
-    val song = currentSong ?: return
+    val item = currentItem ?: return
+    val localSong = (item as? PlayableItem.Local)?.song
+    val albumLabel = when (item) {
+        is PlayableItem.Local -> item.song.album
+        is PlayableItem.Remote -> item.album?.takeIf { it.isNotBlank() } ?: "Stream"
+    }
     val currentPosition = if (isDragging) dragPosition.toLong() else positionMs
 
     // Swipe-to-dismiss: Portada uses nested scroll; Letra/Cola dismiss only outside the
@@ -255,8 +262,8 @@ fun NowPlayingScreen(
         }
     }
 
-    val currentQueueIndex = remember(queueItems, song.id, song.uriString) {
-        queueItems.indexOfFirst { it.id == song.id || it.uriString == song.uriString }
+    val currentQueueIndex = remember(queueItems, item.mediaId) {
+        queueItems.indexOfFirst { it.mediaId == item.mediaId }
     }
 
     // Scroll queue to current song only when entering Cola or on user-initiated track change
@@ -376,10 +383,10 @@ fun NowPlayingScreen(
                             .background(MaterialTheme.colorScheme.surfaceVariant),
                         contentAlignment = Alignment.Center
                     ) {
-                        if (!song.artworkUri.isNullOrEmpty()) {
+                        if (!item.artworkUri.isNullOrEmpty()) {
                             AsyncImage(
-                                model = song.artworkUri,
-                                contentDescription = song.title,
+                                model = item.artworkUri,
+                                contentDescription = item.title,
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier.fillMaxSize()
                             )
@@ -404,7 +411,7 @@ fun NowPlayingScreen(
                             .padding(16.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        val rawLyrics = song.lyrics
+                        val rawLyrics = localSong?.lyrics
                         if (!rawLyrics.isNullOrEmpty()) {
                             val parsedLrc = remember(rawLyrics) { parseLrcLyrics(rawLyrics) }
 
@@ -452,19 +459,25 @@ fun NowPlayingScreen(
                                 verticalArrangement = Arrangement.Center
                             ) {
                                 Text(
-                                    text = "Sin letra disponible",
+                                    text = if (localSong == null) {
+                                        "Letra no disponible en stream"
+                                    } else {
+                                        "Sin letra disponible"
+                                    },
                                     style = MaterialTheme.typography.titleMedium,
                                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                                 )
+                                if (localSong != null) {
                                 Spacer(modifier = Modifier.height(12.dp))
                                 Button(
-                                    onClick = { viewModel.retryFetchLyrics(song) },
+                                    onClick = { viewModel.retryFetchLyrics(localSong) },
                                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
                                     shape = RoundedCornerShape(12.dp)
                                 ) {
                                     Icon(imageVector = Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
                                     Spacer(modifier = Modifier.width(6.dp))
                                     Text("Buscar en línea", color = MaterialTheme.colorScheme.onPrimaryContainer)
+                                }
                                 }
                             }
                         }
@@ -505,7 +518,7 @@ fun NowPlayingScreen(
                                 state = queueListState,
                                 modifier = Modifier.fillMaxSize()
                             ) {
-                                itemsIndexed(queueItems, key = { idx, s -> "${s.id}_$idx" }) { index, queueSong ->
+                                itemsIndexed(queueItems, key = { idx, s -> "${s.mediaId}_$idx" }) { index, queueSong ->
                                     val isCurrent = index == currentIndex
                                     val bgColor = if (isCurrent)
                                         MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
@@ -625,7 +638,7 @@ fun NowPlayingScreen(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(
-                    text = song.title,
+                    text = item.title,
                     style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
                     color = MaterialTheme.colorScheme.onBackground,
                     maxLines = 1,
@@ -635,7 +648,7 @@ fun NowPlayingScreen(
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "${song.artist} • ${song.album}",
+                    text = "${item.artist} • $albumLabel",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
                     maxLines = 1,
@@ -643,13 +656,21 @@ fun NowPlayingScreen(
                     textAlign = TextAlign.Center,
                     modifier = Modifier.fillMaxWidth()
                 )
+                if (resolvingRemote) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Resolviendo stream…",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.height(20.dp))
 
             // Interactive Time Scrubber Slider Bar
             Column(modifier = Modifier.fillMaxWidth()) {
-                val maxDuration = song.durationMs.toFloat().coerceAtLeast(1f)
+                val maxDuration = item.durationMs.toFloat().coerceAtLeast(1f)
                 val sliderValue = if (isDragging) dragPosition else currentPosition.toFloat().coerceIn(0f, maxDuration)
 
                 Slider(
@@ -683,7 +704,7 @@ fun NowPlayingScreen(
                         color = MaterialTheme.colorScheme.primary
                     )
                     Text(
-                        text = formatDuration(song.durationMs),
+                        text = formatDuration(item.durationMs),
                         style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
                         color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
                     )

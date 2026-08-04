@@ -8,31 +8,40 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.QueueMusic
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import coil.compose.AsyncImage
+import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.ui.MusicPlayerViewModel
-import com.bestiapop.android.ui.components.SongListItem
 
 @Composable
 fun QueueScreen(
     viewModel: MusicPlayerViewModel
 ) {
     val queue by viewModel.queue.collectAsState()
-    val currentSong by viewModel.currentSong.collectAsState()
+    val currentItem by viewModel.currentItem.collectAsState()
 
     Column(
         modifier = Modifier
@@ -84,25 +93,22 @@ fun QueueScreen(
                 }
             }
         } else {
-            val currentSongId = currentSong?.id
+            val currentMediaId = currentItem?.mediaId
             LazyColumn(modifier = Modifier.fillMaxSize()) {
                 itemsIndexed(
                     items = queue,
-                    key = { _, song -> song.id },
-                    contentType = { _, _ -> "song" }
-                ) { index, song ->
+                    key = { index, item -> "${item.mediaId}_$index" },
+                    contentType = { _, _ -> "playable" }
+                ) { index, item ->
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Box(modifier = Modifier.weight(1f)) {
-                            SongListItem(
-                                song = song,
-                                isCurrentPlaying = currentSongId == song.id,
-                                onClick = { viewModel.playSong(song, queue) },
-                                onPlayNext = { viewModel.playNextInQueue(song) },
-                                onAddToQueue = { viewModel.addToQueue(song) },
-                                onAddToPlaylist = { }
+                            PlayableQueueRow(
+                                item = item,
+                                isCurrentPlaying = currentMediaId == item.mediaId,
+                                onClick = { viewModel.skipToQueueIndex(index) }
                             )
                         }
 
@@ -115,6 +121,73 @@ fun QueueScreen(
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PlayableQueueRow(
+    item: PlayableItem,
+    isCurrentPlaying: Boolean,
+    onClick: () -> Unit
+) {
+    Surface(
+        onClick = onClick,
+        color = if (isCurrentPlaying) {
+            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
+        } else {
+            MaterialTheme.colorScheme.surface
+        },
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .clip(RoundedCornerShape(8.dp)),
+                contentAlignment = Alignment.Center
+            ) {
+                if (!item.artworkUri.isNullOrEmpty()) {
+                    AsyncImage(
+                        model = item.artworkUri,
+                        contentDescription = item.title,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.size(48.dp)
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Default.MusicNote,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = item.title,
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = buildString {
+                        append(item.artist)
+                        if (item is PlayableItem.Remote) append(" · stream")
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
         }
     }

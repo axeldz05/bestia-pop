@@ -43,7 +43,7 @@ fun MainScreen(
     /** Ignores only the same-gesture UP after mid-drag dismiss lands on the mini bar. */
     var suppressBarOpenUntilElapsedRealtime by remember { mutableLongStateOf(0L) }
 
-    val currentSong by viewModel.currentSong.collectAsState()
+    val currentItem by viewModel.currentItem.collectAsState()
     val isPlaying by viewModel.isPlaying.collectAsState()
     val positionMs by viewModel.playbackPositionMs.collectAsState()
 
@@ -128,7 +128,7 @@ fun MainScreen(
                 .onGloballyPositioned { bottomChromeHeightPx = it.size.height }
         ) {
             BottomPlayerBar(
-                currentSong = currentSong,
+                currentItem = currentItem,
                 isPlaying = isPlaying,
                 progressMs = positionMs,
                 onPlayPauseClick = { viewModel.togglePlayPause() },

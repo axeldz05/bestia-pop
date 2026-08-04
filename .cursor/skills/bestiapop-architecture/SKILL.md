@@ -32,7 +32,7 @@ minSdk 26 · target/compileSdk 35 · Java/Kotlin 17 · KSP para Room.
 ```
 ui/          Compose screens, components, theme, ViewModel, ui.state
 domain/      use cases + IMusicRepository (puerto)
-data/        MusicRepository, Room, network, preferences, models, util
+data/        MusicRepository, Room, network, stream, preferences, models, util
 service/     MusicService (playback), WebServerService (WiFi sync)
 ```
 
@@ -43,8 +43,9 @@ service/     MusicService (playback), WebServerService (WiFi sync)
 1. Room / MediaStore → `MusicRepository` → `Flow<List<Song>>`
 2. ViewModel combina flows + search/sort → `songsState` / `albumsState` / `artistsState`
 3. Screens Compose observan StateFlows y llaman métodos del ViewModel
-4. Reproducción: ViewModel → `MediaController` → `MusicService` (ExoPlayer)
-5. Descarga online: catálogo (`MetadataFetcher` / `YouTubeExtractor`) → `DownloadAudioTrackUseCase` → `repository.downloadAndSaveOnlineTrack` → Room + storage
+4. Reproducción: ViewModel cola `List<PlayableItem>` (`Local` | `Remote`) → `MediaController` → `MusicService` (ExoPlayer)
+5. Stream remoto: `StreamResolver` → `YouTubeExtractor.extractAudioStreamDetailed` → MediaItem HTTPS + `StreamPlaybackTag` (UA) → ExoPlayer
+6. Descarga online: catálogo (`MetadataFetcher` / `YouTubeExtractor`) → `DownloadAudioTrackUseCase` → `repository.downloadAndSaveOnlineTrack` → Room + storage
 
 ## Navegación UI
 
@@ -58,16 +59,17 @@ Overlay: `BottomPlayerBar` → `NowPlayingScreen`; cola en `QueueScreen`.
 
 ## Principios estructurales (invariantes)
 
-1. **Todo es colección** — play/shuffle/enqueue pasan por pipeline unificado (`PlayCollectionUseCase` + ViewModel).
-2. **Catálogo ≠ audio** — metadatos de iTunes/Deezer; bytes de audio vía YouTube (re-extraer URL antes de descargar por CDN 403).
+1. **Todo es colección** — play/shuffle/enqueue pasan por pipeline unificado (`PlayCollectionUseCase` + ViewModel); cola interna es `PlayableItem`.
+2. **Catálogo ≠ audio** — metadatos de iTunes/Deezer; bytes de audio vía YouTube (re-extraer URL antes de descargar/stream por CDN 403).
 3. **Álbum vs playlist en portadas** — álbum propaga a canciones; portada de playlist es entidad propia.
 4. **Portadas locales** — copiar a `context.filesDir` (no depender de content URIs temporales).
+5. **Remoto efímero** — `PlayableItem.Remote` + `ResolvedStream` en memoria; nunca persistir URLs CDN en Room.
 
 ## Servicios Android
 
 | Servicio | Rol |
 |----------|-----|
-| `MusicService` | `MediaLibraryService` + ExoPlayer foreground playback |
+| `MusicService` | `MediaLibraryService` + ExoPlayer; `UserAgentMediaSourceFactory` lee UA de `StreamPlaybackTag` |
 | `WebServerService` | Servidor Ktor local para sync/upload por WiFi |
 
 ## Base de datos

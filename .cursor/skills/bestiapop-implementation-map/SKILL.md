@@ -67,12 +67,14 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 |---------|---------|
 | Repo impl | `data/repository/MusicRepository.kt` |
 | Modelos dominio UI | `data/model/Models.kt` |
+| Cola Local/Remote | `data/model/PlayableItem.kt` (`PlayableItem`, `ResolvedStream`, `Song.toPlayable`) |
 | Room DB | `data/db/AppDatabase.kt` |
 | DAO | `data/db/MusicDao.kt` |
 | Song entity + mappers | `data/db/SongEntity.kt` |
 | Playlist entities | `data/db/PlaylistEntities.kt` |
 | Catálogo / lyrics / covers web | `data/network/MetadataFetcher.kt` |
 | YouTube search + stream | `data/network/YouTubeExtractor.kt` |
+| Stream resolve + cache TTL | `data/stream/StreamResolver.kt` |
 | Theme DataStore | `data/preferences/ThemePreferencesRepository.kt` |
 | ListenBrainz prefs | `data/preferences/ListenBrainzPreferencesRepository.kt` |
 | ListenBrainz API | `data/network/ListenBrainzClient.kt` |
@@ -85,7 +87,7 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 
 | Servicio | Archivo |
 |----------|---------|
-| Playback Media3 | `service/MusicService.kt` |
+| Playback Media3 + UA HTTP | `service/MusicService.kt`, `service/StreamPlaybackTag.kt` |
 | Ktor WiFi server | `service/WebServerService.kt` |
 
 ## Tests de referencia
@@ -94,6 +96,7 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 |------|---------|
 | Library list items | `app/src/test/.../GetLibrarySongsUseCaseListItemsTest.kt` |
 | YouTube extraction | `app/src/test/.../YouTubeExtractionIntegrationTest.kt` |
+| StreamResolver cache/TTL | `app/src/test/.../StreamResolverTest.kt` |
 | UI functional library | `app/src/androidTest/.../LibraryScreenFunctionalTest.kt` |
 
 ## Símbolos ViewModel frecuentes
@@ -101,9 +104,9 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 Mantener esta lista alineada con `MusicPlayerViewModel.kt`:
 
 - Biblioteca: `songsState`, `albumsState`, `artistsState`, `searchQuery`, `sortOption`, `buildLibraryListItems`
-- Playback: `playSong`, `playCollection`, `shuffleCollection`, `enqueueCollection`, `playNextInQueue`, `playNextBatch`, `currentSong`, `queue`, `repeatMode`, `isShuffle`
+- Playback: `playSong`, `playCollection`, `playPlayableCollection`, `shuffleCollection`, `enqueueCollection`, `playNextInQueue`, `playNextBatch`, `currentItem`, `currentSong`, `queue`, `resolvingRemote`, `repeatMode`, `isShuffle`
 - Artwork: `setAlbumArtwork`
-- Online: `searchCatalog`, `searchOnlineCatalog`, `downloadSingleCandidate`, `downloadSelectedCandidatesBatch`, `downloadFromUrl`, `downloadOnlineTrack`
+- Online: `searchCatalog`, `searchOnlineCatalog`, `downloadSingleCandidate`, `downloadSelectedCandidatesBatch`, `downloadFromUrl`, `downloadOnlineTrack`, `playOnlineCatalogTrackAsStream`, `cycleSongCatalogResult`, `cycleTrackCandidate`, `catalogPreviewKey`
 - ListenBrainz: `listenBrainzSettings`, `setListenBrainzEnabled`, `setListenBrainzDiscoverEnabled`, `refreshListenBrainzDiscoverPlaylists`, `openListenBrainzPlaylist`, `playListenBrainzPlaylist`, `shuffleListenBrainzPlaylist`
 
 ## Cómo actualizar este mapa

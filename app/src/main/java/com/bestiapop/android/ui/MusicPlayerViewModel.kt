@@ -8,6 +8,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaController
@@ -21,20 +22,23 @@ import com.bestiapop.android.data.listenbrainz.ListenSyncCoordinator
 import com.bestiapop.android.data.listenbrainz.ListenTracker
 import com.bestiapop.android.data.listenbrainz.MatchedLbPlaylist
 import com.bestiapop.android.data.model.*
-
 import com.bestiapop.android.data.network.ConnectivityObserver
 import com.bestiapop.android.data.network.ListenBrainzClient
 import com.bestiapop.android.data.network.MetadataFetcher
+import com.bestiapop.android.data.network.YouTubeExtractor
 import com.bestiapop.android.data.preferences.ListenBrainzPreferencesRepository
 import com.bestiapop.android.data.preferences.ListenBrainzSettings
 import com.bestiapop.android.data.preferences.ThemePreferencesRepository
 import com.bestiapop.android.data.repository.MusicRepository
+import com.bestiapop.android.data.stream.StreamResolver
 import com.bestiapop.android.domain.usecase.MatchListenBrainzTracksUseCase
 import com.bestiapop.android.service.MusicService
+import com.bestiapop.android.service.StreamPlaybackTag
 import com.bestiapop.android.ui.state.LibraryListItem
 import com.bestiapop.android.ui.state.LibraryViewMode
 import com.bestiapop.android.ui.theme.ThemePresets
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -86,6 +90,7 @@ sealed class LbPlaylistDetailUiState {
     data class Error(val message: String) : LbPlaylistDetailUiState()
 }
 
+@OptIn(UnstableApi::class)
 class MusicPlayerViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository = MusicRepository(application)
@@ -176,6 +181,11 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     // Player State
+    private val streamResolver = StreamResolver()
+
+    private val _currentItem = MutableStateFlow<PlayableItem?>(null)
+    val currentItem = _currentItem.asStateFlow()
+
     private val _currentSong = MutableStateFlow<Song?>(null)
     val currentSong = _currentSong.asStateFlow()
 
@@ -191,8 +201,19 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private val _isShuffle = MutableStateFlow(false)
     val isShuffle = _isShuffle.asStateFlow()
 
-    private val _queue = MutableStateFlow<List<Song>>(emptyList())
+    private val _queue = MutableStateFlow<List<PlayableItem>>(emptyList())
     val queue = _queue.asStateFlow()
+
+    private val _resolvingRemote = MutableStateFlow(false)
+    val resolvingRemote = _resolvingRemote.asStateFlow()
+
+    /** Stable key of the catalog track being previewed inside Add Music (null = no catalog preview). */
+    private val _catalogPreviewKey = MutableStateFlow<String?>(null)
+    val catalogPreviewKey = _catalogPreviewKey.asStateFlow()
+
+    private var prefetchJob: Job? = null
+    private var remoteErrorRetryUsed = false
+    private var resolvingTransitionJob: Job? = null
 
     /** Bumped on user-initiated track changes so the queue UI can scroll to the current item. */
     private val _queueFocusEpoch = MutableStateFlow(0)
@@ -298,9 +319,21 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
         viewModelScope.launch {
             songsState.collect { songs ->
-                _currentSong.value?.let { current ->
-                    songs.find { it.uriString == current.uriString }?.let { updated ->
-                        _currentSong.value = updated
+                _currentItem.value?.let { current ->
+                    if (current is PlayableItem.Local) {
+                        songs.find { it.uriString == current.song.uriString }?.let { updated ->
+                            setCurrentItem(PlayableItem.Local(updated))
+                        }
+                    }
+                }
+                val q = _queue.value
+                if (q.any { it is PlayableItem.Local }) {
+                    _queue.value = q.map { item ->
+                        if (item is PlayableItem.Local) {
+                            songs.find { it.uriString == item.song.uriString }?.toPlayable() ?: item
+                        } else {
+                            item
+                        }
                     }
                 }
             }
@@ -337,6 +370,18 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private var lastMediaItemIndex: Int = -1
     private var suppressShuffleWrapDetection: Boolean = false
 
+    private fun setCurrentItem(item: PlayableItem?) {
+        _currentItem.value = item
+        val localSong = (item as? PlayableItem.Local)?.song
+        _currentSong.value = localSong
+        if (localSong != null) {
+            listenTracker.onTrackChanged(localSong)
+            requestMetadataEnhancement(localSong)
+        } else {
+            listenTracker.onTrackChanged(null)
+        }
+    }
+
     private fun setupPlayerListener() {
         mediaController?.addListener(object : Player.Listener {
             override fun onIsPlayingChanged(isPlayingNow: Boolean) {
@@ -344,6 +389,10 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 if (!isPlayingNow) {
                     listenTracker.onStopped()
                 }
+            }
+
+            override fun onPlayerError(error: PlaybackException) {
+                handlePlayerError(error)
             }
 
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
@@ -360,12 +409,16 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
                 mediaItem?.let { item ->
                     val idOrUri = item.mediaId
-                    val song = _queue.value.find { it.uriString == idOrUri || it.id.toString() == idOrUri }
-                        ?: songsState.value.find { it.uriString == idOrUri || it.id.toString() == idOrUri }
-                    if (song != null) {
-                        _currentSong.value = song
-                        listenTracker.onTrackChanged(song)
-                        requestMetadataEnhancement(song)
+                    val playable = _queue.value.find { it.mediaId == idOrUri }
+                        ?: _queue.value.find {
+                            it is PlayableItem.Local &&
+                                (it.song.uriString == idOrUri || it.song.id.toString() == idOrUri)
+                        }
+                    if (playable != null) {
+                        setCurrentItem(playable)
+                        remoteErrorRetryUsed = false
+                        ensureRemoteReadyAt(newIndex)
+                        prefetchAround(newIndex)
                     } else {
                         listenTracker.onTrackChanged(null)
                     }
@@ -374,8 +427,8 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 if (wrappedShuffleCycle) {
                     val avoid = _queue.value.getOrNull(lastMediaItemIndex)
                     applyShuffledQueue(
-                        songs = _queue.value,
-                        keepSongFirst = null,
+                        items = _queue.value,
+                        keepItemFirst = null,
                         avoidStartingWith = avoid,
                         startPlaying = true
                     )
@@ -401,58 +454,198 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             .build()
     }
 
+    private fun playableToMediaItem(item: PlayableItem): MediaItem {
+        return when (item) {
+            is PlayableItem.Local -> songToMediaItem(item.song)
+            is PlayableItem.Remote -> {
+                val resolved = item.resolved
+                val uri = if (resolved != null) {
+                    parseToMediaUri(resolved.audioUrl)
+                } else {
+                    Uri.EMPTY
+                }
+                val builder = MediaItem.Builder()
+                    .setMediaId(item.mediaId)
+                    .setUri(uri)
+                    .setMediaMetadata(
+                        MediaMetadata.Builder()
+                            .setTitle(item.title)
+                            .setArtist(item.artist)
+                            .setAlbumTitle(item.album)
+                            .setArtworkUri(parseToArtworkUri(item.artworkUri))
+                            .build()
+                    )
+                if (resolved != null) {
+                    builder.setTag(StreamPlaybackTag(resolved.userAgent, resolved.videoId))
+                }
+                builder.build()
+            }
+        }
+    }
+
+    private fun remoteNeedsResolve(item: PlayableItem.Remote): Boolean {
+        val resolved = item.resolved ?: return true
+        return !streamResolver.isFresh(resolved)
+    }
+
+    private suspend fun resolveRemote(item: PlayableItem.Remote): PlayableItem.Remote? {
+        val resolved = streamResolver.resolve(item).getOrNull() ?: return null
+        return item.copy(resolved = resolved)
+    }
+
+    private fun updateQueueItem(index: Int, item: PlayableItem) {
+        val list = _queue.value.toMutableList()
+        if (index !in list.indices) return
+        list[index] = item
+        _queue.value = list
+        if (_currentItem.value?.mediaId == item.mediaId ||
+            (index == (mediaController?.currentMediaItemIndex ?: -1))
+        ) {
+            setCurrentItem(item)
+        }
+    }
+
+    private fun ensureRemoteReadyAt(index: Int) {
+        val item = _queue.value.getOrNull(index) as? PlayableItem.Remote ?: return
+        if (!remoteNeedsResolve(item)) return
+        resolvingTransitionJob?.cancel()
+        resolvingTransitionJob = viewModelScope.launch {
+            _resolvingRemote.value = true
+            try {
+                val resolvedItem = resolveRemote(item)
+                if (resolvedItem == null) {
+                    mediaController?.seekToNextMediaItem()
+                    return@launch
+                }
+                updateQueueItem(index, resolvedItem)
+                mediaController?.replaceMediaItem(index, playableToMediaItem(resolvedItem))
+                mediaController?.prepare()
+                mediaController?.play()
+            } finally {
+                _resolvingRemote.value = false
+            }
+        }
+    }
+
+    private fun prefetchAround(index: Int) {
+        prefetchJob?.cancel()
+        prefetchJob = viewModelScope.launch {
+            val queue = _queue.value
+            val targets = listOfNotNull(
+                queue.getOrNull(index + 1),
+                queue.getOrNull(index + 2)
+            ).filterIsInstance<PlayableItem.Remote>()
+                .filter { remoteNeedsResolve(it) }
+            if (targets.isEmpty()) return@launch
+
+            for (remote in targets) {
+                val resolved = resolveRemote(remote) ?: continue
+                val qi = _queue.value.indexOfFirst { it.mediaId == remote.mediaId }
+                if (qi >= 0) {
+                    updateQueueItem(qi, resolved)
+                    // Keep player timeline in sync if this slot already exists
+                    if (qi < (mediaController?.mediaItemCount ?: 0)) {
+                        mediaController?.replaceMediaItem(qi, playableToMediaItem(resolved))
+                    }
+                }
+            }
+        }
+    }
+
+    private fun handlePlayerError(error: PlaybackException) {
+        val index = mediaController?.currentMediaItemIndex ?: return
+        val item = _queue.value.getOrNull(index) as? PlayableItem.Remote
+        if (item == null) return
+
+        val isHttpFailure = error.errorCode == PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS ||
+            error.errorCode == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED ||
+            error.errorCode == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT ||
+            error.errorCode == PlaybackException.ERROR_CODE_IO_UNSPECIFIED
+
+        if (!isHttpFailure) {
+            mediaController?.seekToNextMediaItem()
+            return
+        }
+
+        if (remoteErrorRetryUsed) {
+            remoteErrorRetryUsed = false
+            mediaController?.seekToNextMediaItem()
+            return
+        }
+
+        remoteErrorRetryUsed = true
+        viewModelScope.launch {
+            _resolvingRemote.value = true
+            try {
+                item.resolved?.videoId?.let { streamResolver.invalidate(it) }
+                val refreshed = resolveRemote(item.copy(resolved = null))
+                if (refreshed == null) {
+                    mediaController?.seekToNextMediaItem()
+                    return@launch
+                }
+                updateQueueItem(index, refreshed)
+                mediaController?.replaceMediaItem(index, playableToMediaItem(refreshed))
+                mediaController?.prepare()
+                mediaController?.play()
+            } finally {
+                _resolvingRemote.value = false
+            }
+        }
+    }
+
     /**
-     * Builds a shuffled queue permutation. Optionally pins [keepSongFirst] at index 0,
+     * Builds a shuffled queue permutation. Optionally pins [keepItemFirst] at index 0,
      * or avoids starting with [avoidStartingWith] after a full cycle.
      */
     private fun applyShuffledQueue(
-        songs: List<Song>,
-        keepSongFirst: Song?,
-        avoidStartingWith: Song? = null,
+        items: List<PlayableItem>,
+        keepItemFirst: PlayableItem?,
+        avoidStartingWith: PlayableItem? = null,
         startPlaying: Boolean = true
     ) {
-        if (songs.isEmpty()) return
-        val shuffled = when {
-            keepSongFirst != null -> {
-                val rest = songs.filter {
-                    it.id != keepSongFirst.id && it.uriString != keepSongFirst.uriString
-                }.shuffled()
-                listOf(keepSongFirst) + rest
+        if (items.isEmpty()) return
+        fun sameItem(a: PlayableItem, b: PlayableItem): Boolean {
+            if (a.mediaId == b.mediaId) return true
+            if (a is PlayableItem.Local && b is PlayableItem.Local) {
+                return a.song.id == b.song.id || a.song.uriString == b.song.uriString
             }
-            avoidStartingWith != null && songs.size > 1 -> {
-                var attempt = songs.shuffled()
+            return false
+        }
+        val shuffled = when {
+            keepItemFirst != null -> {
+                val rest = items.filter { !sameItem(it, keepItemFirst) }.shuffled()
+                listOf(keepItemFirst) + rest
+            }
+            avoidStartingWith != null && items.size > 1 -> {
+                var attempt = items.shuffled()
                 var tries = 0
-                while (
-                    tries < 5 &&
-                    (attempt.first().id == avoidStartingWith.id ||
-                        attempt.first().uriString == avoidStartingWith.uriString)
-                ) {
-                    attempt = songs.shuffled()
+                while (tries < 5 && sameItem(attempt.first(), avoidStartingWith)) {
+                    attempt = items.shuffled()
                     tries++
                 }
                 attempt
             }
-            else -> songs.shuffled()
+            else -> items.shuffled()
         }
 
         suppressShuffleWrapDetection = true
         try {
             _queue.value = shuffled
-            _currentSong.value = shuffled.first()
-            listenTracker.onTrackChanged(shuffled.first())
+            setCurrentItem(shuffled.first())
             _isShuffle.value = true
             lastMediaItemIndex = 0
             mediaController?.let { controller ->
-                val resumePosition = if (keepSongFirst != null) {
+                val resumePosition = if (keepItemFirst != null) {
                     controller.currentPosition.coerceAtLeast(0L)
                 } else {
                     0L
                 }
                 controller.shuffleModeEnabled = false
-                controller.setMediaItems(shuffled.map { songToMediaItem(it) }, 0, resumePosition)
+                controller.setMediaItems(shuffled.map { playableToMediaItem(it) }, 0, resumePosition)
                 controller.prepare()
                 if (startPlaying) controller.play()
             }
+            prefetchAround(0)
         } finally {
             suppressShuffleWrapDetection = false
         }
@@ -467,10 +660,20 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                     if (controller.isPlaying && System.currentTimeMillis() - lastSeekTimestamp > 600) {
                         _playbackPositionMs.value = controller.currentPosition.coerceAtLeast(0L)
                         val dur = controller.duration
-                        val curr = _currentSong.value
+                        val curr = _currentItem.value
                         if (dur > 0 && curr != null && curr.durationMs <= 0) {
-                            updateSongDuration(curr.id, dur)
-                            listenTracker.onDurationKnown(curr.id, dur)
+                            when (curr) {
+                                is PlayableItem.Local -> {
+                                    updateSongDuration(curr.song.id, dur)
+                                    listenTracker.onDurationKnown(curr.song.id, dur)
+                                }
+                                is PlayableItem.Remote -> {
+                                    val idx = controller.currentMediaItemIndex
+                                    if (idx in _queue.value.indices) {
+                                        updateQueueItem(idx, curr.copy(durationMs = dur))
+                                    }
+                                }
+                            }
                         }
                     }
                     listenTracker.onPlaybackTick(
@@ -538,32 +741,99 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
 
     fun playSong(song: Song, playlistOrQueue: List<Song> = emptyList()) {
+        _catalogPreviewKey.value = null
         val baseList = if (playlistOrQueue.isNotEmpty()) playlistOrQueue else songsState.value
         val indexInBase = baseList.indexOfFirst { it.id == song.id || it.uriString == song.uriString }
 
         val targetQueue = if (indexInBase != -1) baseList else listOf(song)
         val index = if (indexInBase != -1) indexInBase else 0
+        playPlayableCollection(targetQueue.toPlayableItems(), index)
+    }
 
-        _queue.value = targetQueue
-        _currentSong.value = targetQueue[index]
-        listenTracker.onTrackChanged(targetQueue[index])
+    fun playPlayableCollection(items: List<PlayableItem>, startIndex: Int = 0) {
+        if (items.isEmpty()) return
+        val validIndex = startIndex.coerceIn(0, items.size - 1)
+        viewModelScope.launch {
+            var working = items.toMutableList()
+            val startItem = working[validIndex]
+            if (startItem is PlayableItem.Remote && remoteNeedsResolve(startItem)) {
+                _resolvingRemote.value = true
+                try {
+                    val resolved = resolveRemote(startItem)
+                    if (resolved == null) {
+                        // Try next items
+                        val nextRemote = working.withIndex()
+                            .filter { it.index != validIndex && it.value is PlayableItem.Remote }
+                        var played = false
+                        for ((idx, remote) in nextRemote) {
+                            val r = resolveRemote(remote as PlayableItem.Remote) ?: continue
+                            working[idx] = r
+                            finishPlayPlayableCollection(working, idx)
+                            played = true
+                            break
+                        }
+                        if (!played) return@launch
+                        return@launch
+                    }
+                    working[validIndex] = resolved
+                } finally {
+                    _resolvingRemote.value = false
+                }
+            }
+            finishPlayPlayableCollection(working, validIndex)
+            prefetchAround(validIndex)
+        }
+    }
+
+    private fun finishPlayPlayableCollection(items: List<PlayableItem>, index: Int) {
+        _queue.value = items
+        setCurrentItem(items[index])
         lastMediaItemIndex = index
         _isShuffle.value = false
+        remoteErrorRetryUsed = false
         bumpQueueFocus()
 
         mediaController?.let { controller ->
             controller.shuffleModeEnabled = false
-            controller.setMediaItems(targetQueue.map { songToMediaItem(it) }, index, 0L)
+            controller.setMediaItems(items.map { playableToMediaItem(it) }, index, 0L)
             controller.prepare()
             controller.play()
         }
-
-        requestMetadataEnhancement(targetQueue[index])
     }
 
+    fun catalogPreviewKeyFor(track: OnlineCatalogTrack): String {
+        return track.id.takeIf { it.isNotBlank() }
+            ?: "${track.artist.trim().lowercase()}|${track.title.trim().lowercase()}"
+    }
 
+    fun playOnlineCatalogTrackAsStream(track: OnlineCatalogTrack) {
+        val key = catalogPreviewKeyFor(track)
+        if (_catalogPreviewKey.value == key && _currentItem.value != null) {
+            togglePlayPause()
+            return
+        }
+        _catalogPreviewKey.value = key
+        val queryOrId = track.id.takeIf { it.isNotBlank() }
+            ?: track.audioUrl.takeIf {
+                it.contains("youtube", ignoreCase = true) ||
+                    it.contains("youtu.be", ignoreCase = true) ||
+                    it.length == 11
+            }
+            ?: "${track.artist} ${track.title}".trim()
+        val remote = PlayableItem.Remote(
+            title = track.title,
+            artist = track.artist,
+            album = track.album,
+            artworkUri = track.artworkUrl,
+            durationMs = track.durationMs,
+            youtubeQueryOrId = queryOrId
+        )
+        playPlayableCollection(listOf(remote), 0)
+    }
 
-
+    fun clearCatalogPreview() {
+        _catalogPreviewKey.value = null
+    }
 
     // Unified Collection / Group Pipeline ("Everything is a Playlist")
     fun playCollection(songs: List<Song>, startIndex: Int = 0) {
@@ -588,7 +858,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     fun shuffleCollection(songs: List<Song>) {
         if (songs.isEmpty()) return
-        applyShuffledQueue(songs, keepSongFirst = null)
+        applyShuffledQueue(songs.toPlayableItems(), keepItemFirst = null)
         bumpQueueFocus()
     }
 
@@ -643,13 +913,13 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         val newShuffle = !_isShuffle.value
         if (newShuffle) {
             val queue = _queue.value
-            val current = _currentSong.value
+            val current = _currentItem.value
             if (queue.isEmpty()) {
                 _isShuffle.value = true
                 mediaController?.shuffleModeEnabled = false
                 return
             }
-            applyShuffledQueue(queue, keepSongFirst = current)
+            applyShuffledQueue(queue, keepItemFirst = current)
             bumpQueueFocus()
         } else {
             _isShuffle.value = false
@@ -664,14 +934,14 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     fun addToQueueBatch(songs: List<Song>) {
         if (songs.isEmpty()) return
+        val playables = songs.toPlayableItems()
         val currentList = _queue.value.toMutableList()
-        currentList.addAll(songs)
+        currentList.addAll(playables)
         _queue.value = currentList
 
         mediaController?.let { controller ->
-            controller.addMediaItems(songs.map { songToMediaItem(it) })
+            controller.addMediaItems(playables.map { playableToMediaItem(it) })
         }
-
     }
 
     fun playNextInQueue(song: Song) {
@@ -680,17 +950,17 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     fun playNextBatch(songs: List<Song>) {
         if (songs.isEmpty()) return
+        val playables = songs.toPlayableItems()
         val currentList = _queue.value.toMutableList()
         val currentIndex = (mediaController?.currentMediaItemIndex ?: 0).coerceAtLeast(0)
         val insertIndex = (currentIndex + 1).coerceAtMost(currentList.size)
 
-        currentList.addAll(insertIndex, songs)
+        currentList.addAll(insertIndex, playables)
         _queue.value = currentList
 
         mediaController?.let { controller ->
-            controller.addMediaItems(insertIndex, songs.map { songToMediaItem(it) })
+            controller.addMediaItems(insertIndex, playables.map { playableToMediaItem(it) })
         }
-
     }
 
     fun addSongsToPlaylist(playlistId: Long, songs: List<Song>) {
@@ -757,7 +1027,30 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         if (index in 0 until _queue.value.size) {
             bumpQueueFocus()
             lastMediaItemIndex = index
-            mediaController?.seekTo(index, 0L)
+            val item = _queue.value[index]
+            if (item is PlayableItem.Remote && remoteNeedsResolve(item)) {
+                viewModelScope.launch {
+                    _resolvingRemote.value = true
+                    try {
+                        val resolved = resolveRemote(item)
+                        if (resolved == null) {
+                            mediaController?.seekToNextMediaItem()
+                            return@launch
+                        }
+                        updateQueueItem(index, resolved)
+                        mediaController?.replaceMediaItem(index, playableToMediaItem(resolved))
+                        mediaController?.seekTo(index, 0L)
+                        mediaController?.prepare()
+                        mediaController?.play()
+                        prefetchAround(index)
+                    } finally {
+                        _resolvingRemote.value = false
+                    }
+                }
+            } else {
+                mediaController?.seekTo(index, 0L)
+                prefetchAround(index)
+            }
         }
     }
 
@@ -1033,21 +1326,59 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         val list = _activeTrackCandidates.value.toMutableList()
         if (index in list.indices) {
             val item = list[index]
+            val wasPreviewing = isPreviewingCandidate(item)
             viewModelScope.launch {
                 var candidatesList = item.candidates
                 if (candidatesList.size <= 1) {
-                    val searchResults = com.bestiapop.android.data.network.YouTubeExtractor.searchYouTube("${item.artist} ${item.trackTitle}")
+                    val searchResults = YouTubeExtractor.searchYouTube("${item.artist} ${item.trackTitle}")
                     if (searchResults.isNotEmpty()) {
                         candidatesList = searchResults
                     }
                 }
                 if (candidatesList.isNotEmpty()) {
                     val nextIndex = (item.currentCandidateIndex + 1) % candidatesList.size
-                    list[index] = item.copy(candidates = candidatesList, currentCandidateIndex = nextIndex)
+                    val updated = item.copy(candidates = candidatesList, currentCandidateIndex = nextIndex)
+                    list[index] = updated
                     _activeTrackCandidates.value = list
+                    if (wasPreviewing) {
+                        updated.currentTrack?.let { playOnlineCatalogTrackAsStream(it) }
+                    }
                 }
             }
         }
+    }
+
+    /** Cycle YouTube match for a song result in the catalog songs list ("Buscar otro"). */
+    fun cycleSongCatalogResult(index: Int) {
+        val list = _catalogSearchResults.value.toMutableList()
+        if (index !in list.indices) return
+        val current = list[index]
+        val wasPreviewing = _catalogPreviewKey.value == catalogPreviewKeyFor(current)
+        viewModelScope.launch {
+            val query = "${current.artist} ${current.title}".trim().ifBlank { current.title }
+            val searchResults = YouTubeExtractor.searchYouTube(query)
+            if (searchResults.isEmpty()) return@launch
+
+            val currentIdx = searchResults.indexOfFirst { it.id == current.id }
+            val next = searchResults[(currentIdx + 1).coerceAtLeast(0) % searchResults.size]
+            // Keep catalog album metadata when YouTube only says "YouTube"
+            list[index] = next.copy(
+                album = current.album.takeIf { it.isNotBlank() && !it.equals("YouTube", ignoreCase = true) }
+                    ?: next.album,
+                artworkUrl = next.artworkUrl ?: current.artworkUrl
+            )
+            _catalogSearchResults.value = list
+            if (wasPreviewing) {
+                playOnlineCatalogTrackAsStream(list[index])
+            }
+        }
+    }
+
+    private fun isPreviewingCandidate(item: CatalogTrackCandidate): Boolean {
+        val key = _catalogPreviewKey.value ?: return false
+        val current = item.currentTrack ?: return false
+        if (catalogPreviewKeyFor(current) == key) return true
+        return item.candidates.any { catalogPreviewKeyFor(it) == key }
     }
 
     fun toggleTrackSelection(index: Int) {

@@ -18,6 +18,7 @@ Cada feature lista **invariantes** + **entry points**. Si el código diverge, ac
 | Acción | ViewModel | Use case |
 |--------|-----------|----------|
 | Reproducir colección | `playCollection(songs, startIndex)` / `playCollection(songs, startSong)` | `PlayCollectionUseCase.playCollection` |
+| Reproducir Local\|Remote | `playPlayableCollection(items, startIndex)` | (ViewModel + `StreamResolver`) |
 | Shuffle | `shuffleCollection(songs)` | `PlayCollectionUseCase.shuffleCollection` |
 | Encolar | `enqueueCollection(songs)` | `PlayCollectionUseCase.prepareQueueAppend` |
 | Una canción | `playSong(song, playlistOrQueue)` | (arma cola + MediaController) |
@@ -107,6 +108,24 @@ State: `currentThemeState`.
 | Abrir playlist | `openListenBrainzPlaylist` + `MatchListenBrainzTracksUseCase` |
 | Play / shuffle | `playListenBrainzPlaylist` / `shuffleListenBrainzPlaylist` |
 | UI sección | `PlaylistsScreen` — sección "Para Ti" + detalle read-only |
+
+## 10. Stream remoto (playback sin descarga)
+
+**Invariantes:**
+- Cola unificada `List<PlayableItem>` (`Local` | `Remote`); APIs `Song` se adaptan con `Song.toPlayable()`.
+- Re-extraer stream YouTube just-in-time (`StreamResolver` → `YouTubeExtractor`); cache memoria TTL ~4 min; **no** guardar `audioUrl` CDN en Room.
+- ExoPlayer usa UA del extract vía `StreamPlaybackTag` en `MusicService`.
+- Prefetch índices N+1 / N+2; un reintento en 403/IO luego `seekToNext`.
+- Descarga explícita (“Agregar”) sigue download-then-play; stream no la reemplaza.
+
+| Capacidad | Entry point |
+|-----------|-------------|
+| Modelo | `PlayableItem`, `ResolvedStream` en `data/model/PlayableItem.kt` |
+| Resolver | `StreamResolver.resolve` / `prefetch` en `data/stream/StreamResolver.kt` |
+| UA ExoPlayer | `StreamPlaybackTag` + `MusicService` `UserAgentMediaSourceFactory` |
+| Cola / play | `playPlayableCollection`, `currentItem`, `resolvingRemote` en `MusicPlayerViewModel` |
+| Stream desde catálogo | `playOnlineCatalogTrackAsStream` + preview in-dialog (`CatalogTrackItem` / `CandidateTrackCard` + `CatalogPreviewBar`); `cycleSongCatalogResult` / `cycleTrackCandidate` (“Buscar otro”) |
+| UI player | `BottomPlayerBar` / `NowPlayingScreen` / `QueueScreen` observan `PlayableItem` |
 
 ## Relacionado
 

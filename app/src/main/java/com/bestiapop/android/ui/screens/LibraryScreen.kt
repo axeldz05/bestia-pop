@@ -1,5 +1,6 @@
 package com.bestiapop.android.ui.screens
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -159,6 +160,24 @@ fun LibraryScreen(
 
     val clearSelection = remember {
         { selectedSongIds = emptySet() }
+    }
+
+    val hasNestedBack = isMultiSelectMode ||
+        isPlaylistAdditionMode ||
+        selectedAlbumName != null ||
+        selectedArtistName != null ||
+        searchQuery.isNotEmpty()
+
+    BackHandler(enabled = hasNestedBack) {
+        when {
+            isMultiSelectMode -> clearSelection()
+            isPlaylistAdditionMode -> onCancelPlaylistAddition()
+            selectedAlbumName != null || selectedArtistName != null -> {
+                selectedAlbumName = null
+                selectedArtistName = null
+            }
+            searchQuery.isNotEmpty() -> viewModel.setSearchQuery("")
+        }
     }
 
     val onPlayNext = remember<(Song) -> Unit> { { viewModel.playNextInQueue(it) } }

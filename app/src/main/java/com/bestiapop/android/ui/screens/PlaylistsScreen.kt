@@ -1,6 +1,7 @@
 package com.bestiapop.android.ui.screens
 
 import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -130,6 +131,21 @@ fun PlaylistsScreen(
             selectedLbPlaylistMbid = null
             viewModel.closeListenBrainzPlaylist()
             viewModel.closeCfRecommendations()
+        }
+    }
+
+    val hasNestedBack = cfDetailOpen || selectedLbPlaylistMbid != null || selectedPlaylistId != null
+    BackHandler(enabled = hasNestedBack) {
+        when {
+            cfDetailOpen -> viewModel.closeCfRecommendations()
+            selectedLbPlaylistMbid != null -> {
+                selectedLbPlaylistMbid = null
+                viewModel.closeListenBrainzPlaylist()
+            }
+            selectedPlaylistId != null -> {
+                selectedPlaylistId = null
+                onSelectPlaylistDetail(null)
+            }
         }
     }
 

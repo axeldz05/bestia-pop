@@ -1,5 +1,6 @@
 package com.bestiapop.android.ui.screens
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -134,6 +135,8 @@ fun NowPlayingScreen(
     viewModel: MusicPlayerViewModel,
     onDismiss: () -> Unit
 ) {
+    BackHandler { onDismiss() }
+
     val currentItem by viewModel.currentItem.collectAsState()
     val isPlaying by viewModel.isPlaying.collectAsState()
     val positionMs by viewModel.playbackPositionMs.collectAsState()

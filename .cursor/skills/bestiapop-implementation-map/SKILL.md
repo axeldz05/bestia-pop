@@ -25,11 +25,12 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 | Pantalla | Archivo |
 |----------|---------|
 | Shell + bottom nav | `ui/screens/MainScreen.kt` |
-| Biblioteca | `ui/screens/LibraryScreen.kt` |
+| System back (exit doble + orquestación) | `MainScreen` `BackHandler` + `SnackbarHost`; nested en screens abajo |
+| Biblioteca | `ui/screens/LibraryScreen.kt` (`BackHandler`: multi-select / addition / album-artist / search) |
 | Lista canciones / álbumes / artistas | `ui/screens/library/LibrarySongList.kt`, `LibraryAlbumGrid.kt`, `LibraryArtistList.kt`, `LibraryDialogs.kt` |
-| Playlists | `ui/screens/PlaylistsScreen.kt` |
-| Ajustes / ListenBrainz | `ui/screens/SettingsScreen.kt`, `ListenBrainzSettingsScreen.kt` |
-| Now playing | `ui/screens/NowPlayingScreen.kt` |
+| Playlists | `ui/screens/PlaylistsScreen.kt` (`BackHandler`: CF → LB → local detail) |
+| Ajustes / ListenBrainz | `ui/screens/SettingsScreen.kt` (`BackHandler` sección), `ListenBrainzSettingsScreen.kt` |
+| Now playing | `ui/screens/NowPlayingScreen.kt` (`BackHandler` → `onDismiss`) |
 | Cola | `ui/screens/QueueScreen.kt` |
 | WiFi sync | `ui/screens/WebServerScreen.kt` (`WebServerScreen()` solo servidor) |
 | Descargas | `ui/screens/DownloadsScreen.kt` (`DownloadsScreen(viewModel)` + `ActiveDownloadRow`) |
@@ -43,7 +44,7 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 | Mini player | `ui/components/BottomPlayerBar.kt` (`statusLabel`, Previous/Next/Play) |
 | Active download row | `ui/components/ActiveDownloadRow.kt` |
 | Download conflict dialog | `ui/components/DownloadConflictDialog.kt` |
-| Add / download music | `ui/components/AddMusicDialog.kt` (banners vía `activeDownloads` + `ActiveDownloadsSummaryBanner`) |
+| Add / download music | `ui/components/AddMusicDialog.kt` (banners vía `activeDownloads` + `ActiveDownloadsSummaryBanner`; `BackHandler` step-back colección) |
 | Song row | `ui/components/SongListItem.kt` |
 | Artwork thumb | `ui/components/ArtworkThumbnail.kt` |
 | Multi-select bar | `ui/components/MultiSelectActionBar.kt` |

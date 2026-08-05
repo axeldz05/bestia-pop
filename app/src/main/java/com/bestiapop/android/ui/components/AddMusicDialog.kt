@@ -59,6 +59,7 @@ import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -121,9 +122,19 @@ fun AddMusicDialog(
     }
 
     Dialog(
-        onDismissRequest = { dismissDialog() },
+        onDismissRequest = {
+            if (selectedCollectionTitle != null) {
+                viewModel.clearSelectedCollection()
+            } else {
+                dismissDialog()
+            }
+        },
         properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
+        BackHandler(enabled = selectedCollectionTitle != null) {
+            viewModel.clearSelectedCollection()
+        }
+
         Surface(
             modifier = Modifier
                 .fillMaxWidth(0.94f)

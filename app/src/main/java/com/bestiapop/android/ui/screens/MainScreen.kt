@@ -1,5 +1,7 @@
 package com.bestiapop.android.ui.screens
 
+import android.app.Activity
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -19,6 +21,8 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -28,15 +32,20 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import com.bestiapop.android.data.preferences.activeDownloadBadgeCount
 import com.bestiapop.android.ui.MusicPlayerViewModel
 import com.bestiapop.android.ui.components.BottomPlayerBar
+import kotlinx.coroutines.launch
+
+private const val EXIT_CONFIRM_WINDOW_MS = 2_000L
 
 @Composable
 fun MainScreen(
@@ -47,6 +56,11 @@ fun MainScreen(
     var showFullPlayer by remember { mutableStateOf(false) }
     /** Ignores only the same-gesture UP after mid-drag dismiss lands on the mini bar. */
     var suppressBarOpenUntilElapsedRealtime by remember { mutableLongStateOf(0L) }
+    var lastExitBackAtMs by remember { mutableLongStateOf(0L) }
+
+    val context = LocalContext.current
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
 
     val currentItem by viewModel.currentItem.collectAsState()
     val isPlaying by viewModel.isPlaying.collectAsState()
@@ -65,10 +79,15 @@ fun MainScreen(
         else -> radioStatusLabel
     }
 
+    fun clearPendingExit() {
+        lastExitBackAtMs = 0L
+    }
+
     LaunchedEffect(pendingOpenDownloads) {
         if (pendingOpenDownloads) {
             selectedNavIndex = 2
             showFullPlayer = false
+            clearPendingExit()
             viewModel.consumeOpenDownloads()
         }
     }
@@ -93,12 +112,26 @@ fun MainScreen(
     fun openFullPlayer() {
         if (android.os.SystemClock.elapsedRealtime() < suppressBarOpenUntilElapsedRealtime) return
         showFullPlayer = true
+        clearPendingExit()
     }
 
     fun dismissFullPlayer() {
         showFullPlayer = false
         // Brief enough to drop the same swipe's UP, not a deliberate follow-up tap.
         suppressBarOpenUntilElapsedRealtime = android.os.SystemClock.elapsedRealtime() + 50L
+    }
+
+    // Root-tab exit only: nested screens / Now Playing register their own BackHandlers above this.
+    BackHandler {
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (lastExitBackAtMs > 0L && now - lastExitBackAtMs <= EXIT_CONFIRM_WINDOW_MS) {
+            (context as? Activity)?.finish()
+        } else {
+            lastExitBackAtMs = now
+            scope.launch {
+                snackbarHostState.showSnackbar("Pulsa otra vez para salir")
+            }
+        }
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -119,16 +152,19 @@ fun MainScreen(
                             selectedPlaylistIdForDetail = targetPlaylistForAddition?.id
                             targetPlaylistForAddition = null
                             selectedNavIndex = 1
+                            clearPendingExit()
                         },
                         onCancelPlaylistAddition = {
                             selectedPlaylistIdForDetail = targetPlaylistForAddition?.id
                             targetPlaylistForAddition = null
                             selectedNavIndex = 1
+                            clearPendingExit()
                         },
                         onSelectFolderClick = onSelectFolderClick,
                         onSongSelect = { openFullPlayer() },
                         onOpenDownloads = {
                             selectedNavIndex = 2
+                            clearPendingExit()
                         }
                     )
                     1 -> PlaylistsScreen(
@@ -136,11 +172,13 @@ fun MainScreen(
                         activeSelectedPlaylistId = selectedPlaylistIdForDetail,
                         onSelectPlaylistDetail = { id ->
                             selectedPlaylistIdForDetail = id
+                            clearPendingExit()
                         },
                         onAddSongsRequest = { playlist ->
                             selectedPlaylistIdForDetail = playlist.id
                             targetPlaylistForAddition = playlist
                             selectedNavIndex = 0
+                            clearPendingExit()
                         }
                     )
                     2 -> DownloadsScreen(viewModel = viewModel)
@@ -179,6 +217,7 @@ fun MainScreen(
                         onClick = {
                             selectedNavIndex = index
                             dismissFullPlayer()
+                            clearPendingExit()
                         },
                         icon = {
                             if (index == 2 && downloadBadgeCount > 0) {
@@ -207,6 +246,13 @@ fun MainScreen(
                 }
             }
         }
+
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = bottomChromePadding + 8.dp)
+        )
 
         if (showFullPlayer) {
             NowPlayingScreen(

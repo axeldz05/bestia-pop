@@ -1,5 +1,6 @@
 package com.bestiapop.android.ui.screens
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -43,6 +44,10 @@ private enum class SettingsSection {
 @Composable
 fun SettingsScreen(viewModel: MusicPlayerViewModel) {
     var section by remember { mutableStateOf<SettingsSection?>(null) }
+
+    BackHandler(enabled = section != null) {
+        section = null
+    }
 
     when (section) {
         null -> SettingsHome(

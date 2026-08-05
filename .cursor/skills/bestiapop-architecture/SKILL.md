@@ -61,6 +61,8 @@ service/     MusicService (playback), WebServerService (WiFi sync)
 Overlay: `BottomPlayerBar` → `NowPlayingScreen`; cola en `QueueScreen`.
 Mini player se rehidrata desde `MediaController` (sesión viva) o `PlaybackSessionStore` / seed idle (ver features §10b).
 
+**System back:** un paso por gesto en la jerarquía UI (`BackHandler` anidados; sin Navigation Compose). Prioridad: diálogos/menús → Now Playing → nested del tab → doble atrás para salir en raíz (`MainScreen`). Ver features §12.
+
 ## Principios estructurales (invariantes)
 
 1. **Todo es colección** — play/shuffle/enqueue pasan por pipeline unificado (`PlayCollectionUseCase` + ViewModel); cola interna es `PlayableItem`.

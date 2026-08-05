@@ -203,6 +203,22 @@ Centro de descargas online → sección 2 (`DownloadsScreen`, tab Descargas).
 | Sesión | `startRadio`, `stopRadio`, `setRadioPreferredMode`, `setRadioForceOnline`, `replaceUpcomingWithRadio`, refill/auto |
 | UI | Now Playing (tap/long-press); mini bar `statusLabel` (radio / resolving); menú canción “Iniciar radio” |
 
+## 12. System back (jerarquía UI)
+
+**Invariante:** un gesto atrás = un paso atrás. Paridad con ArrowBack / chevron / Cancel. No detiene reproducción. Sin Navigation Compose: `BackHandler` por capa.
+
+| Prioridad | Comportamiento | Entry point |
+|-----------|----------------|-------------|
+| Diálogos / menús | Framework `onDismissRequest` | `Dialog` / `AlertDialog` / `DropdownMenu` |
+| Add Music colección | `clearSelectedCollection` antes de cerrar | `AddMusicDialog` `BackHandler` + `onDismissRequest` |
+| Now Playing | `dismissFullPlayer` | `NowPlayingScreen` `BackHandler` |
+| Library nested | multi-select → cancel addition → album/artist → clear search | `LibraryScreen` `BackHandler` |
+| Playlists nested | CF → LB Discover → playlist local | `PlaylistsScreen` `BackHandler` |
+| Settings nested | Temas / LB → home | `SettingsScreen` `BackHandler` |
+| Raíz de tab | Doble atrás (~2s) + snackbar “Pulsa otra vez para salir” | `MainScreen` `BackHandler` + `SnackbarHost` |
+
+Manifest: `android:enableOnBackInvokedCallback="true"` en `MainActivity`.
+
 ## Relacionado
 
 - Capas y stack → `bestiapop-architecture`

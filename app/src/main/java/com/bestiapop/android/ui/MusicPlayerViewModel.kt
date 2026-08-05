@@ -1334,13 +1334,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             return
         }
         _catalogPreviewKey.value = key
-        val queryOrId = track.id.takeIf { it.isNotBlank() }
-            ?: track.audioUrl.takeIf {
-                it.contains("youtube", ignoreCase = true) ||
-                    it.contains("youtu.be", ignoreCase = true) ||
-                    it.length == 11
-            }
-            ?: "${track.artist} ${track.title}".trim()
+        val queryOrId = YouTubeExtractor.resolveYouTubeQueryOrId(track)
         val remote = PlayableItem.Remote(
             title = track.title,
             artist = track.artist,

@@ -85,7 +85,7 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 | Album overrides | `data/db/AlbumOverrideEntity.kt` |
 | Playlist entities | `data/db/PlaylistEntities.kt` (`PlaylistPendingTrackEntity`) |
 | Catálogo / lyrics / covers web | `data/network/MetadataFetcher.kt` |
-| YouTube search + stream | `data/network/YouTubeExtractor.kt` (`searchYouTube`, `parseSearchContents`) |
+| YouTube search + stream | `data/network/YouTubeExtractor.kt` (`searchYouTube`, `parseSearchContents`, `audioPreferenceScore`, `rankByAudioPreference`, `resolveYouTubeQueryOrId`) |
 | Stream resolve + cache TTL | `data/stream/StreamResolver.kt` |
 | Theme DataStore | `data/preferences/ThemePreferencesRepository.kt` |
 | Playback / sonido | `data/preferences/PlaybackPreferencesRepository.kt` (`PlaybackSettings`, `MAX_VOLUME_BOOST_GAIN_MB`, `stereoLeftGain` / `stereoRightGain`) |
@@ -116,6 +116,7 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 |------|---------|
 | Library list items | `app/src/test/.../GetLibrarySongsUseCaseListItemsTest.kt` |
 | YouTube extraction | `app/src/test/.../YouTubeExtractionIntegrationTest.kt` |
+| YouTube audio preference | `app/src/test/.../YouTubeAudioPreferenceTest.kt` |
 | StreamResolver cache/TTL | `app/src/test/.../StreamResolverTest.kt` |
 | Radio local / engine | `app/src/test/.../RadioEngineTest.kt` |
 | LB radio / CF JSON parse | `app/src/test/.../ListenBrainzRadioParseTest.kt` |

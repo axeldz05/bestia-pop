@@ -669,7 +669,7 @@ class MusicRepository(private val context: Context) : IMusicRepository {
         var finalArtwork = track.artworkUrl
         var finalDurationMs = track.durationMs
 
-        val queryOrId = track.id.ifBlank { track.audioUrl }
+        val queryOrId = com.bestiapop.android.data.network.YouTubeExtractor.resolveYouTubeQueryOrId(track)
         val extractRes = com.bestiapop.android.data.network.YouTubeExtractor.extractAudioStreamDetailed(queryOrId)
 
         if (extractRes is com.bestiapop.android.data.network.YouTubeExtractResult.Success) {

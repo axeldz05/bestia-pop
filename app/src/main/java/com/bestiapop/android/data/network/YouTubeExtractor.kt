@@ -93,6 +93,19 @@ object YouTubeExtractor {
 
     private val AUDIO_CLIENTS = listOf(TV_EMBED, ANDROID_VR, ANDROID_MUSIC, ANDROID_MAIN)
 
+    private val AUDIO_ONLY_TITLE = Regex(
+        """(?i)(?:\b(?:official\s+)?audio\b|\baudio\s+oficial\b|\báudio\s+oficial\b)"""
+    )
+    private val LYRICS_TITLE = Regex("""(?i)\b(?:lyrics?|letra(?:s)?)\b""")
+    private val VISUALIZER_TITLE = Regex("""(?i)\bvisuali[sz]er\b""")
+    private val MUSIC_VIDEO_TITLE = Regex(
+        """(?i)(?:official\s+(?:music\s+)?video|music\s*video|\bm\s*/\s*v\b|\bmv\b|\(video\)|\[video\])"""
+    )
+    private val LIVE_TITLE = Regex("""(?i)\b(?:live|concert|performance|session)\b""")
+    private val COVER_OR_NOISE_TITLE = Regex(
+        """(?i)\b(?:cover|karaoke|react(?:ion)?s?|mashup)\b"""
+    )
+
     fun extractYouTubeId(urlOrId: String): String? {
         val trimmed = urlOrId.trim()
         if (trimmed.length == 11 && Pattern.matches("^[a-zA-Z0-9_-]{11}$", trimmed)) {
@@ -129,8 +142,69 @@ object YouTubeExtractor {
         return Pair(cleanTitle, artist.ifEmpty { "YouTube Artist" })
     }
 
+    /**
+     * Higher = better match for downloading/streaming the song itself (not a music video).
+     * Uses raw YouTube title/channel before [formatTitleAndArtist] stripping.
+     */
+    internal fun audioPreferenceScore(rawTitle: String, rawAuthor: String): Int {
+        val title = rawTitle.lowercase()
+        val author = rawAuthor.lowercase()
+        var score = 0
+
+        // YouTube Music auto-generated uploads are typically album/single audio only.
+        if (author.endsWith(" - topic") || author.contains(" - topic")) score += 100
+
+        if (AUDIO_ONLY_TITLE.containsMatchIn(title)) score += 80
+        if (LYRICS_TITLE.containsMatchIn(title) && !MUSIC_VIDEO_TITLE.containsMatchIn(title)) score += 40
+        if (VISUALIZER_TITLE.containsMatchIn(title)) score += 25
+
+        if (MUSIC_VIDEO_TITLE.containsMatchIn(title)) score -= 80
+        if (author.contains("vevo")) score -= 25
+        if (LIVE_TITLE.containsMatchIn(title)) score -= 45
+        if (COVER_OR_NOISE_TITLE.containsMatchIn(title)) score -= 50
+
+        return score
+    }
+
+    /** Prefer audio-oriented uploads while keeping relative YouTube order among equal scores. */
+    internal fun <T> rankByAudioPreference(
+        items: List<T>,
+        rawTitle: (T) -> String,
+        rawAuthor: (T) -> String
+    ): List<T> {
+        if (items.size <= 1) return items
+        return items
+            .mapIndexed { index, item ->
+                Triple(audioPreferenceScore(rawTitle(item), rawAuthor(item)), index, item)
+            }
+            .sortedWith(compareByDescending<Triple<Int, Int, T>> { it.first }.thenBy { it.second })
+            .map { it.third }
+    }
+
+    /**
+     * Resolve a catalog track to a YouTube video id or search query.
+     * Catalog providers (Deezer/iTunes) store numeric ids — those must not be sent to YouTube search.
+     */
+    fun resolveYouTubeQueryOrId(track: OnlineCatalogTrack): String {
+        extractYouTubeId(track.id)?.let { return it }
+        extractYouTubeId(track.audioUrl)?.let { return track.audioUrl.trim() }
+        val audioHint = track.audioUrl.trim()
+        if (audioHint.isNotBlank() && !audioHint.startsWith("http", ignoreCase = true) &&
+            audioHint.any { it.isLetter() }
+        ) {
+            return audioHint
+        }
+        return "${track.artist} ${track.title}".trim().ifBlank { track.id }
+    }
+
     internal fun parseSearchContents(contents: JSONArray): List<OnlineCatalogTrack> {
-        val results = mutableListOf<OnlineCatalogTrack>()
+        data class ParsedHit(
+            val rawTitle: String,
+            val rawAuthor: String,
+            val track: OnlineCatalogTrack
+        )
+
+        val hits = mutableListOf<ParsedHit>()
         for (i in 0 until contents.length()) {
             val section = contents.optJSONObject(i)?.optJSONObject("itemSectionRenderer") ?: continue
             val items = section.optJSONArray("contents") ?: continue
@@ -166,23 +240,31 @@ object YouTubeExtractor {
                     video.optJSONObject("lengthText")?.optString("simpleText", "").orEmpty()
                 )
 
-                results.add(
-                    OnlineCatalogTrack(
-                        id = videoId,
-                        title = title,
-                        artist = artist,
-                        album = "YouTube",
-                        artworkUrl = artworkUrl,
-                        durationMs = durationMs,
-                        audioUrl = "https://www.youtube.com/watch?v=$videoId",
-                        provider = "YouTube"
+                hits.add(
+                    ParsedHit(
+                        rawTitle = rawTitle,
+                        rawAuthor = rawAuthor,
+                        track = OnlineCatalogTrack(
+                            id = videoId,
+                            title = title,
+                            artist = artist,
+                            album = "YouTube",
+                            artworkUrl = artworkUrl,
+                            durationMs = durationMs,
+                            audioUrl = "https://www.youtube.com/watch?v=$videoId",
+                            provider = "YouTube"
+                        )
                     )
                 )
-                if (results.size >= 25) return results
+                if (hits.size >= 25) {
+                    return rankByAudioPreference(hits, { it.rawTitle }, { it.rawAuthor }).map { it.track }
+                }
             }
-            if (results.isNotEmpty()) return results
+            if (hits.isNotEmpty()) {
+                return rankByAudioPreference(hits, { it.rawTitle }, { it.rawAuthor }).map { it.track }
+            }
         }
-        return results
+        return rankByAudioPreference(hits, { it.rawTitle }, { it.rawAuthor }).map { it.track }
     }
 
     suspend fun searchYouTube(query: String): List<OnlineCatalogTrack> = withContext(Dispatchers.IO) {

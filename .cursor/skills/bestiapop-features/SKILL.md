@@ -31,7 +31,8 @@ Archivos: `ui/MusicPlayerViewModel.kt` (`playPlayableCollection` / `applyShuffle
 
 | Paso | Dónde |
 |------|--------|
-| Search catálogo tracks | `MetadataFetcher.searchOnlineCatalog` / `YouTubeExtractor.searchYouTube` (`parseSearchContents` comparte parse InnerTube/HTML) |
+| Search catálogo tracks | `MetadataFetcher.searchOnlineCatalog` / `YouTubeExtractor.searchYouTube` (`parseSearchContents` + `audioPreferenceScore` / `rankByAudioPreference`: prioriza Topic / Official Audio sobre music video) |
+| Query YT desde catálogo | `YouTubeExtractor.resolveYouTubeQueryOrId` (ignora ids Deezer/iTunes; usa `audioUrl` o `artist title`) |
 | Álbumes / playlists online | `MetadataFetcher.searchAlbums` / `searchPlaylists` + `fetchAlbumTrackCandidates` / `fetchPlaylistTrackCandidates` |
 | Extraer stream | `YouTubeExtractor.extractAudioStream` / `extractAudioStreamDetailed` |
 | Descargar + persistir | `DownloadAudioTrackUseCase.execute` → `IMusicRepository.downloadAndSaveOnlineTrack` |

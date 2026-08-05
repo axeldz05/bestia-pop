@@ -69,16 +69,14 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.bestiapop.android.data.listenbrainz.LbPlaylistSummary
 import com.bestiapop.android.data.listenbrainz.MatchedCfRecommendations
-import com.bestiapop.android.data.listenbrainz.MatchedCfTrack
 import com.bestiapop.android.data.listenbrainz.MatchedLbPlaylist
-import com.bestiapop.android.data.listenbrainz.MatchedLbTrack
 import com.bestiapop.android.data.model.ActiveDownload
 import com.bestiapop.android.data.model.CandidateDownloadState
 import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.data.model.Playlist
 import com.bestiapop.android.data.model.PlaylistPendingTrack
 import com.bestiapop.android.data.model.Song
-import com.bestiapop.android.domain.usecase.MatchListenBrainzTracksUseCase
+import com.bestiapop.android.domain.usecase.ImportListenBrainzPlaylistUseCase
 import com.bestiapop.android.ui.CfRecommendationsUiState
 import com.bestiapop.android.ui.LbDiscoverListUiState
 import com.bestiapop.android.ui.LbPlaylistDetailUiState
@@ -89,6 +87,7 @@ import com.bestiapop.android.ui.components.LabeledPlayShuffleButtons
 import com.bestiapop.android.ui.components.MatchedTrackRow
 import com.bestiapop.android.ui.components.RemoteTrackPlaceholderRow
 import com.bestiapop.android.ui.components.SongListItem
+import com.bestiapop.android.ui.components.SongQueueActions
 import com.bestiapop.android.ui.components.isMatchedTrackPlaying
 import com.bestiapop.android.ui.components.rememberImagePicker
 import com.bestiapop.android.ui.components.rememberSongQueueActions
@@ -472,9 +471,7 @@ fun PlaylistsScreen(
                 currentItem = currentItem,
                 activeDownloads = activeDownloads,
                 onDownloadRemote = { viewModel.downloadRemoteItem(it) },
-                onPlayNext = songActions.onPlayNext,
-                onAddToQueue = songActions.onAddToQueue,
-                onStartRadio = songActions.onStartRadio
+                queueActions = songActions
             )
         }
 
@@ -492,9 +489,7 @@ fun PlaylistsScreen(
                 currentItem = currentItem,
                 activeDownloads = activeDownloads,
                 onDownloadRemote = { viewModel.downloadRemoteItem(it) },
-                onPlayNext = songActions.onPlayNext,
-                onAddToQueue = songActions.onAddToQueue,
-                onStartRadio = songActions.onStartRadio
+                queueActions = songActions
             )
         }
 
@@ -616,12 +611,15 @@ fun PlaylistSurfaceCard(
     }
 }
 
+private fun unmatchedRemote(localSong: Song?, playable: PlayableItem): PlayableItem.Remote? =
+    if (localSong == null) playable as PlayableItem.Remote else null
+
 private fun isRemoteDownloadBusy(
     artist: String,
     title: String,
     activeDownloads: List<ActiveDownload>
 ): Boolean {
-    val key = MatchListenBrainzTracksUseCase.matchKey(artist, title)
+    val key = ImportListenBrainzPlaylistUseCase.downloadIdFor(artist, title)
     if (key.isEmpty()) return false
     return activeDownloads.any { download ->
         download.id == key &&
@@ -731,9 +729,7 @@ private fun CfRecommendationsDetailScreen(
     currentItem: PlayableItem?,
     activeDownloads: List<ActiveDownload>,
     onDownloadRemote: (PlayableItem.Remote) -> Unit,
-    onPlayNext: (Song) -> Unit,
-    onAddToQueue: (Song) -> Unit,
-    onStartRadio: (Song) -> Unit
+    queueActions: SongQueueActions
 ) {
     MatchedPlaylistDetailScaffold(
         title = "Recomendados",
@@ -773,59 +769,31 @@ private fun CfRecommendationsDetailScreen(
                         "${index}|${match.recordingMbid}|${match.title}|${match.artist}|${match.localSong?.id}"
                     }
                 ) { (index, match) ->
-                    CfMatchedTrackRow(
-                        match = match,
-                        isCurrentPlaying = isCfMatchPlaying(match, currentItem),
-                        onPlayAt = { onPlayAt(index) },
+                    MatchedTrackRow(
+                        localSong = match.localSong,
+                        title = match.title,
+                        artist = match.artist,
+                        remoteBadge = "Stream",
+                        isCurrentPlaying = isMatchedTrackPlaying(
+                            match.localSong,
+                            match.artist,
+                            match.title,
+                            currentItem
+                        ),
+                        remote = unmatchedRemote(match.localSong, match.toPlayableItem()),
                         downloadBusy = isRemoteDownloadBusy(
                             match.artist,
                             match.title,
                             activeDownloads
                         ),
+                        onPlayAt = { onPlayAt(index) },
                         onDownloadRemote = onDownloadRemote,
-                        onPlayNext = onPlayNext,
-                        onAddToQueue = onAddToQueue,
-                        onStartRadio = onStartRadio
+                        queueActions = queueActions
                     )
                 }
             }
         }
     }
-}
-
-private fun isCfMatchPlaying(match: MatchedCfTrack, currentItem: PlayableItem?): Boolean =
-    isMatchedTrackPlaying(match.localSong, match.artist, match.title, currentItem)
-
-@Composable
-private fun CfMatchedTrackRow(
-    match: MatchedCfTrack,
-    isCurrentPlaying: Boolean,
-    onPlayAt: () -> Unit,
-    downloadBusy: Boolean,
-    onDownloadRemote: (PlayableItem.Remote) -> Unit,
-    onPlayNext: (Song) -> Unit,
-    onAddToQueue: (Song) -> Unit,
-    onStartRadio: (Song) -> Unit
-) {
-    val remote = if (match.localSong == null) {
-        match.toPlayableItem() as PlayableItem.Remote
-    } else {
-        null
-    }
-    MatchedTrackRow(
-        localSong = match.localSong,
-        title = match.title,
-        artist = match.artist,
-        remoteBadge = "Stream",
-        isCurrentPlaying = isCurrentPlaying,
-        remote = remote,
-        downloadBusy = downloadBusy,
-        onPlayAt = onPlayAt,
-        onDownloadRemote = onDownloadRemote,
-        onPlayNext = onPlayNext,
-        onAddToQueue = onAddToQueue,
-        onStartRadio = onStartRadio
-    )
 }
 
 @Composable
@@ -888,9 +856,7 @@ private fun LbPlaylistDetailScreen(
     currentItem: PlayableItem?,
     activeDownloads: List<ActiveDownload>,
     onDownloadRemote: (PlayableItem.Remote) -> Unit,
-    onPlayNext: (Song) -> Unit,
-    onAddToQueue: (Song) -> Unit,
-    onStartRadio: (Song) -> Unit
+    queueActions: SongQueueActions
 ) {
     MatchedPlaylistDetailScaffold(
         title = matchedPlaylist?.detail?.summary?.title ?: "Para Ti",
@@ -996,59 +962,31 @@ private fun LbPlaylistDetailScreen(
                         "${index}|${match.track.recordingMbid ?: match.track.title}|${match.track.artist}|${match.localSong?.id}"
                     }
                 ) { (index, match) ->
-                    LbMatchedTrackRow(
-                        match = match,
-                        isCurrentPlaying = isLbMatchPlaying(match, currentItem),
-                        onPlayAt = { onPlayAt(index) },
+                    MatchedTrackRow(
+                        localSong = match.localSong,
+                        title = match.track.title,
+                        artist = match.track.artist,
+                        remoteBadge = "No en biblioteca · stream",
+                        isCurrentPlaying = isMatchedTrackPlaying(
+                            match.localSong,
+                            match.track.artist,
+                            match.track.title,
+                            currentItem
+                        ),
+                        remote = unmatchedRemote(match.localSong, match.toPlayableItem()),
                         downloadBusy = isRemoteDownloadBusy(
                             match.track.artist,
                             match.track.title,
                             activeDownloads
                         ),
+                        onPlayAt = { onPlayAt(index) },
                         onDownloadRemote = onDownloadRemote,
-                        onPlayNext = onPlayNext,
-                        onAddToQueue = onAddToQueue,
-                        onStartRadio = onStartRadio
+                        queueActions = queueActions
                     )
                 }
             }
         }
     }
-}
-
-private fun isLbMatchPlaying(match: MatchedLbTrack, currentItem: PlayableItem?): Boolean =
-    isMatchedTrackPlaying(match.localSong, match.track.artist, match.track.title, currentItem)
-
-@Composable
-private fun LbMatchedTrackRow(
-    match: MatchedLbTrack,
-    isCurrentPlaying: Boolean,
-    onPlayAt: () -> Unit,
-    downloadBusy: Boolean,
-    onDownloadRemote: (PlayableItem.Remote) -> Unit,
-    onPlayNext: (Song) -> Unit,
-    onAddToQueue: (Song) -> Unit,
-    onStartRadio: (Song) -> Unit
-) {
-    val remote = if (match.localSong == null) {
-        match.toPlayableItem() as PlayableItem.Remote
-    } else {
-        null
-    }
-    MatchedTrackRow(
-        localSong = match.localSong,
-        title = match.track.title,
-        artist = match.track.artist,
-        remoteBadge = "No en biblioteca · stream",
-        isCurrentPlaying = isCurrentPlaying,
-        remote = remote,
-        downloadBusy = downloadBusy,
-        onPlayAt = onPlayAt,
-        onDownloadRemote = onDownloadRemote,
-        onPlayNext = onPlayNext,
-        onAddToQueue = onAddToQueue,
-        onStartRadio = onStartRadio
-    )
 }
 
 @Composable

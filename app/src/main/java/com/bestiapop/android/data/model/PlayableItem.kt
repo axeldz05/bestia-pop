@@ -76,6 +76,29 @@ sealed class PlayableItem {
                 resolved = resolved
             )
         }
+
+        /** L2: library hit → Local; else ephemeral Remote (default YT query). */
+        fun fromLibraryOrRemote(
+            local: Song?,
+            artist: String,
+            title: String,
+            album: String? = null,
+            artworkUri: String? = null,
+            recordingMbid: String? = null
+        ): PlayableItem {
+            val song = local
+            return if (song != null) {
+                song.toPlayable()
+            } else {
+                remoteFrom(
+                    artist = artist,
+                    title = title,
+                    album = album,
+                    artworkUri = artworkUri,
+                    recordingMbid = recordingMbid
+                )
+            }
+        }
     }
 }
 

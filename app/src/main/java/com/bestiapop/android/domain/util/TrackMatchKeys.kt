@@ -21,6 +21,9 @@ object TrackMatchKeys {
         return "$a|$t"
     }
 
+    /** L2: stable [ActiveDownload] / queue id from artist+title (empty if either blank). */
+    fun downloadIdFor(artist: String, title: String): String = matchKey(artist, title)
+
     fun buildLibraryIndex(library: List<Song>): Map<String, Song> {
         val map = HashMap<String, Song>(library.size)
         for (song in library) {

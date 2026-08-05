@@ -17,7 +17,7 @@ class GetLibrarySongsUseCase {
     ): List<Song> {
         // Build map of album artwork for fallback inheritance
         val albumArtMap = songs.groupBy { it.album }.mapValues { (_, albumSongs) ->
-            albumSongs.firstOrNull { !it.artworkUri.isNullOrEmpty() }?.artworkUri
+            firstArtwork(albumSongs)
         }
 
         // Inherit album artwork across songs belonging to the same album
@@ -72,7 +72,7 @@ class GetLibrarySongsUseCase {
                     items += LibraryListItem.AlbumHeader(
                         albumName = albumName,
                         artistName = albumSongs.firstOrNull()?.artist ?: "Artista desconocido",
-                        artworkUri = albumSongs.firstOrNull { !it.artworkUri.isNullOrEmpty() }?.artworkUri,
+                        artworkUri = firstArtwork(albumSongs),
                         songCount = albumSongs.size,
                         albumSongs = albumSongs
                     )
@@ -94,7 +94,7 @@ class GetLibrarySongsUseCase {
     ): List<Album> {
         return songs.groupBy { it.album }.map { (albumName, albumSongs) ->
             val override = overrides[albumName]
-            val firstArt = albumSongs.firstOrNull { !it.artworkUri.isNullOrEmpty() }?.artworkUri
+            val firstArt = firstArtwork(albumSongs)
             val artistName = albumSongs.firstOrNull()?.artist ?: "Unknown Artist"
             val derivedYear = albumSongs.map { it.year }.firstOrNull { it > 0 } ?: 0
             Album(
@@ -125,6 +125,9 @@ class GetLibrarySongsUseCase {
             )
         }.sortedBy { it.name.lowercase() }
     }
+
+    private fun firstArtwork(songs: List<Song>): String? =
+        songs.firstOrNull { !it.artworkUri.isNullOrEmpty() }?.artworkUri
 
     private fun dominantGenre(genres: List<String>): String? {
         if (genres.isEmpty()) return null

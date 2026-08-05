@@ -6,7 +6,6 @@ import com.bestiapop.android.data.listenbrainz.LbRadioRecording
 import com.bestiapop.android.data.listenbrainz.LbRecordingMetadata
 import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.data.model.Song
-import com.bestiapop.android.data.model.toPlayable
 import com.bestiapop.android.domain.usecase.MatchListenBrainzTracksUseCase
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -82,18 +81,15 @@ class ListenBrainzRadio(
             localSeen.add(key)
 
             val local = libraryIndex[key]
-            if (local != null) {
-                results.add(local.toPlayable())
-            } else {
-                results.add(
-                    PlayableItem.remoteFrom(
-                        artist = artist,
-                        title = title,
-                        album = meta?.releaseName,
-                        recordingMbid = rec.recordingMbid
-                    )
+            results.add(
+                PlayableItem.fromLibraryOrRemote(
+                    local = local,
+                    artist = artist,
+                    title = title,
+                    album = meta?.releaseName,
+                    recordingMbid = rec.recordingMbid
                 )
-            }
+            )
         }
         return results
     }

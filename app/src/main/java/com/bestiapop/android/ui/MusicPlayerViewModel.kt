@@ -50,6 +50,7 @@ import com.bestiapop.android.domain.radio.RadioSuggestResult
 import com.bestiapop.android.domain.usecase.FetchAndMatchCfRecommendationsUseCase
 import com.bestiapop.android.domain.usecase.ImportListenBrainzPlaylistUseCase
 import com.bestiapop.android.domain.usecase.MatchListenBrainzTracksUseCase
+import com.bestiapop.android.domain.util.TrackMatchKeys
 import com.bestiapop.android.service.DownloadNotificationHelper
 import com.bestiapop.android.service.MusicService
 import com.bestiapop.android.service.StreamPlaybackTag
@@ -1155,7 +1156,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             val thresholdMs = knownDuration * percent / 100L
             if (_playbackPositionMs.value < thresholdMs) return
         }
-        val key = MatchListenBrainzTracksUseCase.matchKey(remote.artist, remote.title)
+        val key = TrackMatchKeys.downloadIdFor(remote.artist, remote.title)
         if (key.isEmpty() || key in saveWhileListeningAttempted) return
         // Block auto re-enqueue while downloading or already succeeded this session.
         // ERROR clears the key so background can try again later; manual retry always works.
@@ -1180,11 +1181,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 },
                 onFailure = { e ->
                     saveWhileListeningAttempted.remove(key)
-                    Toast.makeText(
-                        getApplication(),
-                        "No se pudo guardar «${remote.title}»: ${e.localizedMessage ?: "error"}",
-                        Toast.LENGTH_SHORT
-                    ).show()
+                    toast("No se pudo guardar «${remote.title}»: ${e.localizedMessage ?: "error"}")
                 }
             )
         }
@@ -1525,23 +1522,11 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         val seed: PlayableItem = seedSong?.toPlayable()
             ?: _currentItem.value
             ?: run {
-                if (!auto) {
-                    Toast.makeText(
-                        getApplication(),
-                        "Necesitás una canción con artista y título para Radio",
-                        Toast.LENGTH_SHORT
-                    ).show()
-                }
+                if (!auto) toastRadioNeedsSeed()
                 return
             }
         if (seed.artist.isBlank() || seed.title.isBlank()) {
-            if (!auto) {
-                Toast.makeText(
-                    getApplication(),
-                    "Necesitás una canción con artista y título para Radio",
-                    Toast.LENGTH_SHORT
-                ).show()
-            }
+            if (!auto) toastRadioNeedsSeed()
             return
         }
         if (_radioLoading.value) return
@@ -1604,7 +1589,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                                 "Radio online no disponible"
                             else -> "No encontré canciones parecidas"
                         }
-                        Toast.makeText(getApplication(), emptyMsg, Toast.LENGTH_SHORT).show()
+                        toast(emptyMsg)
                     }
                     return@launch
                 }
@@ -1619,20 +1604,12 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 updateRadioStatusLabel()
 
                 if (toastMode && !auto) {
-                    Toast.makeText(
-                        getApplication(),
-                        radioModeLabel(effectiveMode),
-                        Toast.LENGTH_SHORT
-                    ).show()
+                    toast(radioModeLabel(effectiveMode))
                 }
 
                 if (keepCurrentPlaying) {
                     replaceUpcomingWithRadio(suggestions)
-                    Toast.makeText(
-                        getApplication(),
-                        "Se agregaron canciones de la radio a la cola",
-                        Toast.LENGTH_SHORT
-                    ).show()
+                    toast("Se agregaron canciones de la radio a la cola")
                     val idx = mediaController?.currentMediaItemIndex ?: lastMediaItemIndex
                     if (idx >= 0) prefetchAround(idx)
                 } else {
@@ -2250,13 +2227,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         viewModelScope.launch {
             val playlistId = importListenBrainzPlaylistUseCase.createLocalFromMatched(matched)
                 ?: return@launch
-            val pending = matched.streamCount
-            val msg = if (pending > 0) {
-                "Playlist guardada (${matched.matchedCount} en lib · $pending pendientes)"
-            } else {
-                "Playlist guardada (${matched.matchedCount} canciones)"
-            }
-            Toast.makeText(getApplication(), msg, Toast.LENGTH_SHORT).show()
+            toastPlaylistSaved(matched.matchedCount, pending = matched.streamCount)
             onCreated?.invoke(playlistId)
         }
     }
@@ -2279,11 +2250,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             onCreated?.invoke(playlistId)
 
             if (unmatched.isEmpty()) {
-                Toast.makeText(
-                    getApplication(),
-                    "Playlist guardada (${matched.matchedCount} canciones)",
-                    Toast.LENGTH_SHORT
-                ).show()
+                toastPlaylistSaved(matched.matchedCount)
                 return@launch
             }
 
@@ -2301,11 +2268,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         viewModelScope.launch {
             val pending = repository.getPlaylistPendingTracksFlow(playlistId).first()
             if (pending.isEmpty()) {
-                Toast.makeText(
-                    getApplication(),
-                    "No hay canciones pendientes",
-                    Toast.LENGTH_SHORT
-                ).show()
+                toast("No hay canciones pendientes")
                 return@launch
             }
             enqueuePendingDownloads(
@@ -2318,13 +2281,17 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     private enum class LibraryToastKind { SAVED, ADDED, ALREADY }
 
+    private fun toast(message: String) {
+        Toast.makeText(getApplication(), message, Toast.LENGTH_SHORT).show()
+    }
+
     private fun toastSongInLibrary(title: String, kind: LibraryToastKind) {
         val message = when (kind) {
             LibraryToastKind.SAVED -> "«$title» guardada en biblioteca"
             LibraryToastKind.ADDED -> "¡$title agregada a la biblioteca!"
             LibraryToastKind.ALREADY -> "«$title» ya está en la biblioteca"
         }
-        Toast.makeText(getApplication(), message, Toast.LENGTH_SHORT).show()
+        toast(message)
     }
 
     private fun toastDownloadsQueued(count: Int? = null, alreadyQueued: Boolean = false) {
@@ -2333,7 +2300,20 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             count != null -> "$count descargas en cola — ver Descargas"
             else -> "Descarga en cola — ver Descargas"
         }
-        Toast.makeText(getApplication(), message, Toast.LENGTH_SHORT).show()
+        toast(message)
+    }
+
+    private fun toastPlaylistSaved(matchedCount: Int, pending: Int = 0) {
+        val message = if (pending > 0) {
+            "Playlist guardada ($matchedCount en lib · $pending pendientes)"
+        } else {
+            "Playlist guardada ($matchedCount canciones)"
+        }
+        toast(message)
+    }
+
+    private fun toastRadioNeedsSeed() {
+        toast("Necesitás una canción con artista y título para Radio")
     }
 
     private data class TrackedBatchItem(
@@ -2414,11 +2394,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             }.awaitAll()
         }
 
-        Toast.makeText(
-            getApplication(),
-            "¡${successCount.get()} de ${items.size} canciones procesadas!",
-            Toast.LENGTH_SHORT
-        ).show()
+        toast("¡${successCount.get()} de ${items.size} canciones procesadas!")
     }
 
     private suspend fun enqueuePendingDownloads(
@@ -2709,7 +2685,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         explicitId: String? = null
     ): String {
         explicitId?.takeIf { it.isNotBlank() }?.let { return it }
-        val match = MatchListenBrainzTracksUseCase.matchKey(track.artist, track.title)
+        val match = TrackMatchKeys.downloadIdFor(track.artist, track.title)
         if (match.isNotEmpty()) return match
         return catalogPreviewKeyFor(track).ifBlank { track.audioUrl.ifBlank { track.id } }
     }
@@ -2815,6 +2791,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     ): Result<Song> {
         val candidates = existingCandidates?.takeIf { it.isNotEmpty() } ?: listOf(track)
         val safeIndex = currentCandidateIndex.coerceIn(0, (candidates.size - 1).coerceAtLeast(0))
+        val resolvedTitle = displayTitle.ifBlank { track.title }.ifBlank { "Descarga" }
 
         val existing = _activeDownloads.value.find { it.id == downloadId }
         if (existing == null ||
@@ -2824,7 +2801,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 ActiveDownload.queued(
                     id = downloadId,
                     source = source,
-                    displayTitle = displayTitle.ifBlank { track.title }.ifBlank { "Descarga" },
+                    displayTitle = resolvedTitle,
                     displayArtist = displayArtist,
                     artworkUrl = artworkUrl,
                     candidates = candidates,
@@ -2843,7 +2820,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 downloadId = downloadId,
                 source = source,
                 track = track,
-                displayTitle = displayTitle,
+                displayTitle = resolvedTitle,
                 displayArtist = displayArtist,
                 artworkUrl = artworkUrl,
                 candidates = candidates,
@@ -2904,7 +2881,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                     ActiveDownload.conflict(
                         id = downloadId,
                         source = source,
-                        displayTitle = displayTitle.ifBlank { track.title }.ifBlank { "Descarga" },
+                        displayTitle = displayTitle,
                         displayArtist = displayArtist,
                         artworkUrl = artworkUrl,
                         candidates = candidates,
@@ -2922,7 +2899,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             ActiveDownload.downloading(
                 id = downloadId,
                 source = source,
-                displayTitle = displayTitle.ifBlank { track.title }.ifBlank { "Descarga" },
+                displayTitle = displayTitle,
                 displayArtist = displayArtist,
                 artworkUrl = artworkUrl,
                 candidates = candidates,
@@ -2983,7 +2960,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 ActiveDownload.conflict(
                     id = downloadId,
                     source = source,
-                    displayTitle = displayTitle.ifBlank { duplicate.track.title }.ifBlank { "Descarga" },
+                    displayTitle = displayTitle,
                     displayArtist = displayArtist,
                     artworkUrl = artworkUrl,
                     candidates = candidates,
@@ -3085,13 +3062,9 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
      * Enqueues via [runTrackedDownload] ([ActiveDownloadSource.DISCOVER]); progress in Descargas.
      */
     fun downloadRemoteItem(remote: PlayableItem.Remote) {
-        val key = MatchListenBrainzTracksUseCase.matchKey(remote.artist, remote.title)
+        val key = TrackMatchKeys.downloadIdFor(remote.artist, remote.title)
         if (key.isEmpty()) {
-            Toast.makeText(
-                getApplication(),
-                "No se puede descargar: faltan artista o título",
-                Toast.LENGTH_SHORT
-            ).show()
+            toast("No se puede descargar: faltan artista o título")
             return
         }
         val existing = _activeDownloads.value.find { it.id == key }

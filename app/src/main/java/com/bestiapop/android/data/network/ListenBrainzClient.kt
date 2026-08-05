@@ -186,26 +186,9 @@ object ListenBrainzClient {
         if (username.isBlank()) {
             return@withContext LbApiResult.Failure("Usuario vacío")
         }
-        try {
-            val encodedUser = URLEncoder.encode(username.trim(), Charsets.UTF_8.name())
-            val url = "$BASE_URL/user/$encodedUser/playlists/createdfor?count=$count&offset=$offset"
-            val request = buildGetRequest(url, token)
-            client.newCall(request).execute().use { response ->
-                val body = response.body?.string().orEmpty()
-                if (!response.isSuccessful) {
-                    return@withContext LbApiResult.Failure(
-                        message = errorMessageFromBody(body, response.code)
-                    )
-                }
-                val playlists = parsePlaylistSummaries(JSONObject(body))
-                LbApiResult.Success(playlists)
-            }
-        } catch (e: Exception) {
-            LbApiResult.Failure(
-                message = e.message ?: "Error de red",
-                isNetworkError = true
-            )
-        }
+        val encodedUser = URLEncoder.encode(username.trim(), Charsets.UTF_8.name())
+        val url = "$BASE_URL/user/$encodedUser/playlists/createdfor?count=$count&offset=$offset"
+        lbGet(url, token) { body -> parsePlaylistSummaries(JSONObject(body)) }
     }
 
     suspend fun fetchPlaylist(
@@ -215,26 +198,16 @@ object ListenBrainzClient {
         if (playlistMbid.isBlank()) {
             return@withContext LbApiResult.Failure("Playlist inválida")
         }
-        try {
-            val encodedMbid = URLEncoder.encode(playlistMbid.trim(), Charsets.UTF_8.name())
-            val url = "$BASE_URL/playlist/$encodedMbid"
-            val request = buildGetRequest(url, token)
-            client.newCall(request).execute().use { response ->
-                val body = response.body?.string().orEmpty()
-                if (!response.isSuccessful) {
-                    return@withContext LbApiResult.Failure(
-                        message = errorMessageFromBody(body, response.code)
-                    )
-                }
+        val encodedMbid = URLEncoder.encode(playlistMbid.trim(), Charsets.UTF_8.name())
+        val url = "$BASE_URL/playlist/$encodedMbid"
+        lbCall(buildGetRequest(url, token)) { code, body ->
+            if (code !in 200..299) {
+                LbApiResult.Failure(message = errorMessageFromBody(body, code))
+            } else {
                 val detail = parsePlaylistDetail(JSONObject(body), playlistMbid.trim())
-                    ?: return@withContext LbApiResult.Failure("Respuesta de playlist inválida")
+                    ?: return@lbCall LbApiResult.Failure("Respuesta de playlist inválida")
                 LbApiResult.Success(detail)
             }
-        } catch (e: Exception) {
-            LbApiResult.Failure(
-                message = e.message ?: "Error de red",
-                isNetworkError = true
-            )
         }
     }
 
@@ -250,32 +223,16 @@ object ListenBrainzClient {
         if (artistName.isBlank() || recordingName.isBlank()) {
             return@withContext LbApiResult.Failure("Artista o título vacío")
         }
-        try {
-            val utf8 = Charsets.UTF_8.name()
-            val params = buildString {
-                append("artist_name=").append(URLEncoder.encode(artistName.trim(), utf8))
-                append("&recording_name=").append(URLEncoder.encode(recordingName.trim(), utf8))
-                if (!releaseName.isNullOrBlank()) {
-                    append("&release_name=").append(URLEncoder.encode(releaseName.trim(), utf8))
-                }
+        val utf8 = Charsets.UTF_8.name()
+        val params = buildString {
+            append("artist_name=").append(URLEncoder.encode(artistName.trim(), utf8))
+            append("&recording_name=").append(URLEncoder.encode(recordingName.trim(), utf8))
+            if (!releaseName.isNullOrBlank()) {
+                append("&release_name=").append(URLEncoder.encode(releaseName.trim(), utf8))
             }
-            val url = "$BASE_URL/metadata/lookup/?$params"
-            val request = buildGetRequest(url, token)
-            client.newCall(request).execute().use { response ->
-                val body = response.body?.string().orEmpty()
-                if (!response.isSuccessful) {
-                    return@withContext LbApiResult.Failure(
-                        message = errorMessageFromBody(body, response.code)
-                    )
-                }
-                LbApiResult.Success(parseMetadataLookup(JSONObject(body)))
-            }
-        } catch (e: Exception) {
-            LbApiResult.Failure(
-                message = e.message ?: "Error de red",
-                isNetworkError = true
-            )
         }
+        val url = "$BASE_URL/metadata/lookup/?$params"
+        lbGet(url, token) { body -> parseMetadataLookup(JSONObject(body)) }
     }
 
     suspend fun fetchLbRadioArtist(
@@ -293,32 +250,16 @@ object ListenBrainzClient {
         if (artistMbid.isBlank()) {
             return@withContext LbApiResult.Failure("Artist MBID vacío")
         }
-        try {
-            val utf8 = Charsets.UTF_8.name()
-            val encodedMbid = URLEncoder.encode(artistMbid.trim(), utf8)
-            val encodedMode = URLEncoder.encode(mode.trim().ifBlank { "medium" }, utf8)
-            val url = "$BASE_URL/lb-radio/artist/$encodedMbid" +
-                "?mode=$encodedMode" +
-                "&max_similar_artists=$maxSimilarArtists" +
-                "&max_recordings_per_artist=$maxRecordingsPerArtist" +
-                "&pop_begin=$popBegin" +
-                "&pop_end=$popEnd"
-            val request = buildGetRequest(url, token)
-            client.newCall(request).execute().use { response ->
-                val body = response.body?.string().orEmpty()
-                if (!response.isSuccessful) {
-                    return@withContext LbApiResult.Failure(
-                        message = errorMessageFromBody(body, response.code)
-                    )
-                }
-                LbApiResult.Success(parseLbRadioArtist(JSONObject(body)))
-            }
-        } catch (e: Exception) {
-            LbApiResult.Failure(
-                message = e.message ?: "Error de red",
-                isNetworkError = true
-            )
-        }
+        val utf8 = Charsets.UTF_8.name()
+        val encodedMbid = URLEncoder.encode(artistMbid.trim(), utf8)
+        val encodedMode = URLEncoder.encode(mode.trim().ifBlank { "medium" }, utf8)
+        val url = "$BASE_URL/lb-radio/artist/$encodedMbid" +
+            "?mode=$encodedMode" +
+            "&max_similar_artists=$maxSimilarArtists" +
+            "&max_recordings_per_artist=$maxRecordingsPerArtist" +
+            "&pop_begin=$popBegin" +
+            "&pop_end=$popEnd"
+        lbGet(url, token) { body -> parseLbRadioArtist(JSONObject(body)) }
     }
 
     suspend fun fetchCfRecordingRecommendations(
@@ -331,47 +272,18 @@ object ListenBrainzClient {
         if (username.isBlank()) {
             return@withContext LbApiResult.Failure("Usuario vacío")
         }
-        try {
-            val utf8 = Charsets.UTF_8.name()
-            val encodedUser = URLEncoder.encode(username.trim(), utf8)
-            val encodedType = URLEncoder.encode(artistType.trim().ifBlank { "top" }, utf8)
-            val url = "$BASE_URL/cf/recommendation/user/$encodedUser/recording" +
-                "?count=$count&offset=$offset&artist_type=$encodedType"
-            val request = buildGetRequest(url, token)
-            client.newCall(request).execute().use { response ->
-                val body = response.body?.string().orEmpty()
-                when {
-                    response.code == 204 -> {
-                        LbApiResult.Success(
-                            CfRecommendationsPayload(
-                                userName = username.trim(),
-                                recordings = emptyList()
-                            )
-                        )
-                    }
-                    !response.isSuccessful -> {
-                        LbApiResult.Failure(
-                            message = errorMessageFromBody(body, response.code)
-                        )
-                    }
-                    body.isBlank() -> {
-                        LbApiResult.Success(
-                            CfRecommendationsPayload(
-                                userName = username.trim(),
-                                recordings = emptyList()
-                            )
-                        )
-                    }
-                    else -> {
-                        LbApiResult.Success(parseCfRecommendations(JSONObject(body), username.trim()))
-                    }
-                }
+        val utf8 = Charsets.UTF_8.name()
+        val encodedUser = URLEncoder.encode(username.trim(), utf8)
+        val encodedType = URLEncoder.encode(artistType.trim().ifBlank { "top" }, utf8)
+        val url = "$BASE_URL/cf/recommendation/user/$encodedUser/recording" +
+            "?count=$count&offset=$offset&artist_type=$encodedType"
+        val empty = CfRecommendationsPayload(userName = username.trim(), recordings = emptyList())
+        lbCall(buildGetRequest(url, token)) { code, body ->
+            when {
+                code == 204 || body.isBlank() -> LbApiResult.Success(empty)
+                code !in 200..299 -> LbApiResult.Failure(message = errorMessageFromBody(body, code))
+                else -> LbApiResult.Success(parseCfRecommendations(JSONObject(body), username.trim()))
             }
-        } catch (e: Exception) {
-            LbApiResult.Failure(
-                message = e.message ?: "Error de red",
-                isNetworkError = true
-            )
         }
     }
 
@@ -384,32 +296,53 @@ object ListenBrainzClient {
         if (mbids.isEmpty()) {
             return@withContext LbApiResult.Success(emptyMap())
         }
-        try {
-            // POST avoids URL length limits for larger batches
-            val payload = JSONObject().apply {
-                put("recording_mbids", JSONArray(mbids))
-                put("inc", inc)
-            }
-            val builder = Request.Builder()
-                .url("$BASE_URL/metadata/recording/")
-                .post(payload.toString().toRequestBody(JSON))
-            if (!token.isNullOrBlank()) {
-                builder.header("Authorization", "Token ${token.trim()}")
-            }
-            client.newCall(builder.build()).execute().use { response ->
-                val body = response.body?.string().orEmpty()
-                if (!response.isSuccessful) {
-                    return@withContext LbApiResult.Failure(
-                        message = errorMessageFromBody(body, response.code)
-                    )
-                }
+        // POST avoids URL length limits for larger batches
+        val payload = JSONObject().apply {
+            put("recording_mbids", JSONArray(mbids))
+            put("inc", inc)
+        }
+        val builder = Request.Builder()
+            .url("$BASE_URL/metadata/recording/")
+            .post(payload.toString().toRequestBody(JSON))
+        if (!token.isNullOrBlank()) {
+            builder.header("Authorization", "Token ${token.trim()}")
+        }
+        lbCall(builder.build()) { code, body ->
+            if (code !in 200..299) {
+                LbApiResult.Failure(message = errorMessageFromBody(body, code))
+            } else {
                 LbApiResult.Success(parseRecordingMetadataMap(JSONObject(body)))
+            }
+        }
+    }
+
+
+    private inline fun <T> lbCall(
+        request: Request,
+        parse: (code: Int, body: String) -> LbApiResult<T>
+    ): LbApiResult<T> {
+        return try {
+            client.newCall(request).execute().use { response ->
+                val body = response.body?.string().orEmpty()
+                parse(response.code, body)
             }
         } catch (e: Exception) {
             LbApiResult.Failure(
                 message = e.message ?: "Error de red",
                 isNetworkError = true
             )
+        }
+    }
+
+    private inline fun <T> lbGet(
+        url: String,
+        token: String?,
+        parse: (body: String) -> T
+    ): LbApiResult<T> = lbCall(buildGetRequest(url, token)) { code, body ->
+        if (code !in 200..299) {
+            LbApiResult.Failure(message = errorMessageFromBody(body, code))
+        } else {
+            LbApiResult.Success(parse(body))
         }
     }
 

@@ -2,7 +2,6 @@ package com.bestiapop.android.data.listenbrainz
 
 import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.data.model.Song
-import com.bestiapop.android.data.model.toPlayable
 
 data class CfRecommendedRecording(
     val recordingMbid: String,
@@ -25,19 +24,13 @@ data class MatchedCfTrack(
     val score: Double = 0.0,
     val localSong: Song?
 ) {
-    fun toPlayableItem(): PlayableItem {
-        val local = localSong
-        return if (local != null) {
-            local.toPlayable()
-        } else {
-            PlayableItem.remoteFrom(
-                artist = artist,
-                title = title,
-                album = album,
-                recordingMbid = recordingMbid
-            )
-        }
-    }
+    fun toPlayableItem(): PlayableItem = PlayableItem.fromLibraryOrRemote(
+        local = localSong,
+        artist = artist,
+        title = title,
+        album = album,
+        recordingMbid = recordingMbid
+    )
 }
 
 data class MatchedCfRecommendations(

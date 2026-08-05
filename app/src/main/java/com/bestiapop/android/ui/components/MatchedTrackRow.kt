@@ -41,9 +41,7 @@ fun MatchedTrackRow(
     downloadBusy: Boolean,
     onPlayAt: () -> Unit,
     onDownloadRemote: (PlayableItem.Remote) -> Unit,
-    onPlayNext: (Song) -> Unit,
-    onAddToQueue: (Song) -> Unit,
-    onStartRadio: (Song) -> Unit,
+    queueActions: SongQueueActions,
     leadingIcon: ImageVector = Icons.Default.PlayArrow
 ) {
     val local = localSong
@@ -52,9 +50,9 @@ fun MatchedTrackRow(
             song = local,
             isCurrentPlaying = isCurrentPlaying,
             onClick = onPlayAt,
-            onPlayNext = { onPlayNext(local) },
-            onAddToQueue = { onAddToQueue(local) },
-            onStartRadio = { onStartRadio(local) }
+            onPlayNext = { queueActions.onPlayNext(local) },
+            onAddToQueue = { queueActions.onAddToQueue(local) },
+            onStartRadio = { queueActions.onStartRadio(local) }
         )
     } else if (remote != null) {
         RemoteTrackPlaceholderRow(

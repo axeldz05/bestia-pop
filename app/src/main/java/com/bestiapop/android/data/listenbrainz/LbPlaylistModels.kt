@@ -2,7 +2,6 @@ package com.bestiapop.android.data.listenbrainz
 
 import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.data.model.Song
-import com.bestiapop.android.data.model.toPlayable
 
 data class LbPlaylistSummary(
     val mbid: String,
@@ -27,19 +26,13 @@ data class MatchedLbTrack(
     val track: LbPlaylistTrack,
     val localSong: Song?
 ) {
-    fun toPlayableItem(): PlayableItem {
-        val local = localSong
-        return if (local != null) {
-            local.toPlayable()
-        } else {
-            PlayableItem.remoteFrom(
-                artist = track.artist,
-                title = track.title,
-                album = track.releaseName,
-                recordingMbid = track.recordingMbid
-            )
-        }
-    }
+    fun toPlayableItem(): PlayableItem = PlayableItem.fromLibraryOrRemote(
+        local = localSong,
+        artist = track.artist,
+        title = track.title,
+        album = track.releaseName,
+        recordingMbid = track.recordingMbid
+    )
 }
 
 data class MatchedLbPlaylist(

@@ -5,6 +5,7 @@ import com.bestiapop.android.data.model.OnlineCatalogTrack
 import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.data.model.PlaylistPendingTrack
 import com.bestiapop.android.domain.repository.IMusicRepository
+import com.bestiapop.android.domain.util.TrackMatchKeys
 
 /**
  * Creates a local Room playlist from an LB Discover playlist:
@@ -72,6 +73,6 @@ class ImportListenBrainzPlaylistUseCase(
 
     companion object {
         fun downloadIdFor(artist: String, title: String): String =
-            MatchListenBrainzTracksUseCase.matchKey(artist, title)
+            TrackMatchKeys.downloadIdFor(artist, title)
     }
 }

@@ -13,8 +13,6 @@ import com.bestiapop.android.data.db.PlaylistSongCrossRef
 import com.bestiapop.android.data.db.SongEntity
 import com.bestiapop.android.data.db.toEntity
 import com.bestiapop.android.data.db.toSongEntity
-import com.bestiapop.android.data.migration.DedupResult
-import com.bestiapop.android.data.migration.LibraryDedupMigrator
 import com.bestiapop.android.data.model.Album
 import com.bestiapop.android.data.model.Artist
 import com.bestiapop.android.data.model.DownloadConflictPolicy
@@ -24,7 +22,6 @@ import com.bestiapop.android.data.model.Playlist
 import com.bestiapop.android.data.model.PlaylistPendingTrack
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.data.network.MetadataFetcher
-import com.bestiapop.android.data.preferences.LibraryDedupPreferences
 import com.bestiapop.android.data.util.SongPathNormalizer
 import com.bestiapop.android.domain.usecase.MatchListenBrainzTracksUseCase
 import kotlinx.coroutines.Dispatchers
@@ -61,7 +58,6 @@ class MusicRepository(private val context: Context) : IMusicRepository {
 
     private val db = AppDatabase.getDatabase(context)
     private val musicDao = db.musicDao()
-    private val libraryDedupPreferences = LibraryDedupPreferences(context)
 
     private val sharedDownloadClient = okhttp3.OkHttpClient.Builder()
         .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
@@ -172,13 +168,6 @@ class MusicRepository(private val context: Context) : IMusicRepository {
         if (scannedEntities.isNotEmpty()) {
             musicDao.insertSongs(scannedEntities)
         }
-    }
-
-    override suspend fun runLibraryDedupIfNeeded(): DedupResult? = withContext(Dispatchers.IO) {
-        if (libraryDedupPreferences.isDedupV1Done()) return@withContext null
-        val result = LibraryDedupMigrator(musicDao).run()
-        libraryDedupPreferences.setDedupV1Done(true)
-        result
     }
 
     override suspend fun findSongByArtistTitle(artist: String, title: String): Song? =

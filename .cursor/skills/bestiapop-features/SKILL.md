@@ -82,12 +82,11 @@ UI: `PlaylistsScreen`.
 - Unicidad lógica por `matchKey(artist, title)` (además del índice Room `uriString`).
 - `Music/BestiaPop` es app-managed: `scanMediaStore` **no** reinserta esos archivos (evita duplicar `file:`/path vs `content://`).
 - URIs de descarga/upload se guardan como **path absoluto**.
-- One-shot: `runLibraryDedupIfNeeded()` → `LibraryDedupMigrator` (flag `library_dedup_v1_done`); keeper app-owned, remap playlists, borra filas y archivos extras seguros.
 - Descarga con conflicto → `DuplicateSongException` / `DownloadConflict` → diálogo Sobrescribir | Crear nueva | Cancelar (`DownloadConflictPolicy`).
+- One-shot migrator histórico: branch `archive/library-dedup-v1-migrator` (no compila en LB).
 
 | Acción | API |
 |--------|-----|
-| Dedup one-shot | `IMusicRepository.runLibraryDedupIfNeeded` / `LibraryDedupMigrator` |
 | Scan MediaStore | `scanMediaStore()` (skip BestiaPop + path/matchKey conocidos) |
 | Scan carpeta SAF | `scanFolderUri(treeUri)` |
 | Upload WiFi → DB | `saveUploadedSong` (`absolutePath`; merge por matchKey) |

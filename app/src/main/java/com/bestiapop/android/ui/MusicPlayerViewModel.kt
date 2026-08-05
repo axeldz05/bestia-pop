@@ -414,7 +414,6 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         startPositionTracker()
         viewModelScope.launch {
             withContext(Dispatchers.IO) {
-                repository.runLibraryDedupIfNeeded()
                 repository.scanMediaStore()
             }
         }

@@ -27,9 +27,6 @@ interface MusicDao {
     @Query("SELECT * FROM songs WHERE id = :id")
     suspend fun getSongById(id: Long): SongEntity?
 
-    @Query("SELECT * FROM playlist_song_cross_ref WHERE songId = :songId")
-    suspend fun getPlaylistRefsForSong(songId: Long): List<PlaylistSongCrossRef>
-
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertSong(song: SongEntity): Long
 

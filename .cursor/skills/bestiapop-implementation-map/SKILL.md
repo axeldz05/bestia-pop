@@ -94,8 +94,8 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 | Connectivity | `data/network/ConnectivityObserver.kt` |
 | Pending listens Room | `data/db/PendingListenEntity.kt`, `PendingListenDao.kt` |
 | Storage helpers | `data/util/StorageUtils.kt`, `data/util/SongPathNormalizer.kt` |
-| Library dedup | `data/migration/LibraryDedupLogic.kt`, `LibraryDedupMigrator.kt`; flag `data/preferences/LibraryDedupPreferences.kt` |
 | Download conflict models | `data/model/Models.kt` (`DownloadConflictPolicy`, `DuplicateSongException`, `DownloadConflict`) |
+| One-shot dedup archive | branch `archive/library-dedup-v1-migrator` (`LibraryDedupMigrator` / `LibraryDedupLogic` / prefs; not on LB) |
 
 ## Services
 
@@ -120,7 +120,7 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 | ActiveDownload codec / badge | `app/src/test/.../ActiveDownloadCodecTest.kt` |
 | Last-played / idle hydration | `app/src/test/.../PlaybackSessionStoreTest.kt` |
 | Import LB playlist | `app/src/test/.../ImportListenBrainzPlaylistUseCaseTest.kt` |
-| Path normalize / dedup keeper | `app/src/test/.../SongPathNormalizerTest.kt`, `LibraryDedupLogicTest.kt` |
+| Path normalize | `app/src/test/.../SongPathNormalizerTest.kt` |
 | UI functional library | `app/src/androidTest/.../LibraryScreenFunctionalTest.kt` |
 
 ## Símbolos ViewModel frecuentes

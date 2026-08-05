@@ -1009,32 +1009,12 @@ private fun CandidateTrackCard(
                 if (item.downloadState == com.bestiapop.android.data.model.CandidateDownloadState.IDLE ||
                     item.downloadState == com.bestiapop.android.data.model.CandidateDownloadState.ERROR
                 ) {
-                    IconButton(
+                    PreviewPlayPauseButton(
+                        isResolving = isResolving,
+                        isPlaying = isPlaying,
                         onClick = onStreamClick,
                         enabled = currentYt != null
-                    ) {
-                        when {
-                            isResolving -> CircularProgressIndicator(
-                                modifier = Modifier.size(22.dp),
-                                strokeWidth = 2.dp,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                            isPlaying -> Icon(
-                                imageVector = Icons.Default.Pause,
-                                contentDescription = "Pausar preview",
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                            else -> Icon(
-                                imageVector = Icons.Default.PlayArrow,
-                                contentDescription = "Preview",
-                                tint = if (currentYt != null) {
-                                    MaterialTheme.colorScheme.primary
-                                } else {
-                                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f)
-                                }
-                            )
-                        }
-                    }
+                    )
                 }
 
                 when (item.downloadState) {
@@ -1255,31 +1235,11 @@ private fun CatalogTrackItem(
 
                 Spacer(modifier = Modifier.width(2.dp))
 
-                IconButton(onClick = onStreamClick) {
-                    when {
-                        isResolving -> {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(22.dp),
-                                strokeWidth = 2.dp,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                        isPlaying -> {
-                            Icon(
-                                imageVector = Icons.Default.Pause,
-                                contentDescription = "Pausar preview",
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                        else -> {
-                            Icon(
-                                imageVector = Icons.Default.PlayArrow,
-                                contentDescription = "Reproducir en stream",
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                    }
-                }
+                PreviewPlayPauseButton(
+                    isResolving = isResolving,
+                    isPlaying = isPlaying,
+                    onClick = onStreamClick
+                )
 
                 IconButton(onClick = onCycleClick) {
                     Icon(

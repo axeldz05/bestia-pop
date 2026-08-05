@@ -39,6 +39,7 @@ import com.bestiapop.android.data.preferences.PlaybackSessionStore
 import com.bestiapop.android.data.preferences.ThemePreferencesRepository
 import com.bestiapop.android.data.repository.MusicRepository
 import com.bestiapop.android.data.stream.StreamResolver
+import com.bestiapop.android.data.util.SongPathNormalizer
 import com.bestiapop.android.domain.radio.CfRecommendationsRadio
 import com.bestiapop.android.domain.radio.DeezerSimilarRadio
 import com.bestiapop.android.domain.radio.ListenBrainzRadio
@@ -618,7 +619,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         viewModelScope.launch(Dispatchers.IO) {
             songsState.collect { songs ->
                 val unenhanced = songs.filter {
-                    it.artworkUri.isNullOrEmpty() || it.artworkUri?.startsWith("content://") == true
+                    !SongPathNormalizer.hasUsableArtwork(it.artworkUri)
                 }
                 for (song in unenhanced.take(20)) {
                     repository.enhanceSongMetadataAndLyrics(song)
@@ -1175,11 +1176,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             )
             result.fold(
                 onSuccess = { song ->
-                    Toast.makeText(
-                        getApplication(),
-                        "«${song.title}» guardada en biblioteca",
-                        Toast.LENGTH_SHORT
-                    ).show()
+                    toastSongInLibrary(song.title, LibraryToastKind.SAVED)
                 },
                 onFailure = { e ->
                     saveWhileListeningAttempted.remove(key)
@@ -1208,7 +1205,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     private fun songNeedsMetadataEnhancement(song: Song): Boolean {
-        val artMissing = song.artworkUri.isNullOrEmpty() || song.artworkUri?.startsWith("content://") == true
+        val artMissing = !SongPathNormalizer.hasUsableArtwork(song.artworkUri)
         val lyricsMissing = song.lyrics.isNullOrEmpty()
         val durationMissing = song.durationMs <= 0
         return artMissing || lyricsMissing || durationMissing
@@ -1624,7 +1621,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 if (toastMode && !auto) {
                     Toast.makeText(
                         getApplication(),
-                        radioModeAnnounceLabel(effectiveMode),
+                        radioModeLabel(effectiveMode),
                         Toast.LENGTH_SHORT
                     ).show()
                 }
@@ -1767,14 +1764,10 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             _radioStatusLabel.value = null
             return
         }
-        _radioStatusLabel.value = when (_radioMode.value) {
-            RadioMode.KNOWN -> "Radio · Solo conocidos"
-            RadioMode.NEW -> "Radio · Solo nuevos"
-            RadioMode.BOTH -> "Radio · Ambos"
-        }
+        _radioStatusLabel.value = radioModeLabel(_radioMode.value)
     }
 
-    private fun radioModeAnnounceLabel(mode: RadioMode): String = when (mode) {
+    private fun radioModeLabel(mode: RadioMode): String = when (mode) {
         RadioMode.KNOWN -> "Radio · Solo conocidos"
         RadioMode.NEW -> "Radio · Solo nuevos"
         RadioMode.BOTH -> "Radio · Ambos"
@@ -2323,6 +2316,26 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
+    private enum class LibraryToastKind { SAVED, ADDED, ALREADY }
+
+    private fun toastSongInLibrary(title: String, kind: LibraryToastKind) {
+        val message = when (kind) {
+            LibraryToastKind.SAVED -> "«$title» guardada en biblioteca"
+            LibraryToastKind.ADDED -> "¡$title agregada a la biblioteca!"
+            LibraryToastKind.ALREADY -> "«$title» ya está en la biblioteca"
+        }
+        Toast.makeText(getApplication(), message, Toast.LENGTH_SHORT).show()
+    }
+
+    private fun toastDownloadsQueued(count: Int? = null, alreadyQueued: Boolean = false) {
+        val message = when {
+            alreadyQueued -> "Ya está en cola — ver Descargas"
+            count != null -> "$count descargas en cola — ver Descargas"
+            else -> "Descarga en cola — ver Descargas"
+        }
+        Toast.makeText(getApplication(), message, Toast.LENGTH_SHORT).show()
+    }
+
     private data class TrackedBatchItem(
         val track: OnlineCatalogTrack,
         val displayTitle: String = track.title,
@@ -2344,11 +2357,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     ) {
         if (items.isEmpty()) return
         if (toastQueued) {
-            Toast.makeText(
-                getApplication(),
-                "${items.size} descargas en cola — ver Descargas",
-                Toast.LENGTH_SHORT
-            ).show()
+            toastDownloadsQueued(count = items.size)
         }
 
         val queued = items.mapNotNull { item ->
@@ -2505,26 +2514,40 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         return YouTubeExtractor.searchYouTube(query).ifEmpty { current }
     }
 
+    /**
+     * Shared "Buscar otro" skeleton: expand YT matches → apply mutation → optional re-preview.
+     * Callers keep domain-specific list updates in [apply].
+     */
+    private fun launchCycleYouTubeMatch(
+        query: String,
+        current: List<OnlineCatalogTrack>,
+        wasPreviewing: Boolean,
+        apply: suspend (expanded: List<OnlineCatalogTrack>) -> OnlineCatalogTrack?
+    ) {
+        viewModelScope.launch {
+            val expanded = expandCandidates(query, current)
+            if (expanded.isEmpty()) return@launch
+            val previewTrack = apply(expanded)
+            if (wasPreviewing && previewTrack != null) {
+                playOnlineCatalogTrackAsStream(previewTrack)
+            }
+        }
+    }
+
     fun cycleTrackCandidate(index: Int) {
         val list = _activeTrackCandidates.value.toMutableList()
-        if (index in list.indices) {
-            val item = list[index]
-            val wasPreviewing = isPreviewingCandidate(item)
-            viewModelScope.launch {
-                val candidatesList = expandCandidates(
-                    query = "${item.artist} ${item.trackTitle}".trim(),
-                    current = item.candidates
-                )
-                if (candidatesList.isNotEmpty()) {
-                    val nextIndex = (item.currentCandidateIndex + 1) % candidatesList.size
-                    val updated = item.copy(candidates = candidatesList, currentCandidateIndex = nextIndex)
-                    list[index] = updated
-                    _activeTrackCandidates.value = list
-                    if (wasPreviewing) {
-                        updated.currentTrack?.let { playOnlineCatalogTrackAsStream(it) }
-                    }
-                }
-            }
+        if (index !in list.indices) return
+        val item = list[index]
+        launchCycleYouTubeMatch(
+            query = "${item.artist} ${item.trackTitle}".trim(),
+            current = item.candidates,
+            wasPreviewing = isPreviewingCandidate(item)
+        ) { candidatesList ->
+            val nextIndex = (item.currentCandidateIndex + 1) % candidatesList.size
+            val updated = item.copy(candidates = candidatesList, currentCandidateIndex = nextIndex)
+            list[index] = updated
+            _activeTrackCandidates.value = list
+            updated.currentTrack
         }
     }
 
@@ -2534,10 +2557,12 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         if (index !in list.indices) return
         val current = list[index]
         val wasPreviewing = _catalogPreviewKey.value == catalogPreviewKeyFor(current)
-        viewModelScope.launch {
-            val query = "${current.artist} ${current.title}".trim().ifBlank { current.title }
-            val searchResults = expandCandidates(query, listOf(current))
-            if (searchResults.size == 1 && searchResults.first().id == current.id) return@launch
+        launchCycleYouTubeMatch(
+            query = "${current.artist} ${current.title}".trim().ifBlank { current.title },
+            current = listOf(current),
+            wasPreviewing = wasPreviewing
+        ) { searchResults ->
+            if (searchResults.size == 1 && searchResults.first().id == current.id) return@launchCycleYouTubeMatch null
 
             val currentIdx = searchResults.indexOfFirst { it.id == current.id }
             val next = searchResults[(currentIdx + 1).coerceAtLeast(0) % searchResults.size]
@@ -2548,9 +2573,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 artworkUrl = next.artworkUrl ?: current.artworkUrl
             )
             _catalogSearchResults.value = list
-            if (wasPreviewing) {
-                playOnlineCatalogTrackAsStream(list[index])
-            }
+            list[index]
         }
     }
 
@@ -2956,14 +2979,18 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 mirrorCandidateTitle = mirrorCandidateTitle,
                 targetPlaylistId = targetPlaylistId
             )
-            updateActiveDownload(downloadId) {
-                it.copy(
-                    state = CandidateDownloadState.IDLE,
-                    progressMessage = "Conflicto: ya está en la biblioteca",
-                    progressPercent = 0,
-                    errorMessage = null
+            upsertActiveDownload(
+                ActiveDownload.conflict(
+                    id = downloadId,
+                    source = source,
+                    displayTitle = displayTitle.ifBlank { duplicate.track.title }.ifBlank { "Descarga" },
+                    displayArtist = displayArtist,
+                    artworkUrl = artworkUrl,
+                    candidates = candidates,
+                    currentCandidateIndex = safeIndex,
+                    targetPlaylistId = targetPlaylistId
                 )
-            }
+            )
             return result
         }
 
@@ -2999,11 +3026,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                     source == ActiveDownloadSource.LINK ||
                     source == ActiveDownloadSource.DISCOVER
                 ) {
-                    Toast.makeText(
-                        getApplication(),
-                        "¡${song.title} agregada a la biblioteca!",
-                        Toast.LENGTH_SHORT
-                    ).show()
+                    toastSongInLibrary(song.title, LibraryToastKind.ADDED)
                 }
             },
             onFailure = { e ->
@@ -3075,19 +3098,11 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         when (existing?.state) {
             CandidateDownloadState.QUEUED,
             CandidateDownloadState.DOWNLOADING -> {
-                Toast.makeText(
-                    getApplication(),
-                    "Ya está en cola — ver Descargas",
-                    Toast.LENGTH_SHORT
-                ).show()
+                toastDownloadsQueued(alreadyQueued = true)
                 return
             }
             CandidateDownloadState.SUCCESS -> {
-                Toast.makeText(
-                    getApplication(),
-                    "«${remote.title}» ya está en la biblioteca",
-                    Toast.LENGTH_SHORT
-                ).show()
+                toastSongInLibrary(remote.title, LibraryToastKind.ALREADY)
                 viewModelScope.launch {
                     rematchSelectedLbPlaylist()
                     rematchCfRecommendations()
@@ -3100,11 +3115,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         val track = remote.toOnlineCatalogTrack(provider = "YouTube")
 
         viewModelScope.launch {
-            Toast.makeText(
-                getApplication(),
-                "Descarga en cola — ver Descargas",
-                Toast.LENGTH_SHORT
-            ).show()
+            toastDownloadsQueued()
             runTrackedDownload(
                 downloadId = key,
                 source = ActiveDownloadSource.DISCOVER,
@@ -3145,20 +3156,19 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         val current = download.currentTrack ?: return
         val wasPreviewing = _catalogPreviewKey.value == catalogPreviewKeyFor(current) ||
             download.candidates.any { catalogPreviewKeyFor(it) == _catalogPreviewKey.value }
-        viewModelScope.launch {
-            val query = "${download.displayArtist} ${download.displayTitle}".trim()
-                .ifBlank { current.title.trim() }
-                .ifBlank { current.id.ifBlank { current.audioUrl } }
-            if (query.isBlank()) return@launch
+        val query = "${download.displayArtist} ${download.displayTitle}".trim()
+            .ifBlank { current.title.trim() }
+            .ifBlank { current.id.ifBlank { current.audioUrl } }
+        if (query.isBlank()) return
 
-            val candidatesList = expandCandidates(query, download.candidates)
-            if (candidatesList.isEmpty()) return@launch
-
+        launchCycleYouTubeMatch(
+            query = query,
+            current = download.candidates,
+            wasPreviewing = wasPreviewing
+        ) { candidatesList ->
             val cycled = ActiveDownload.withCycledCandidate(download, candidatesList)
             upsertActiveDownload(cycled)
-            if (wasPreviewing) {
-                cycled.currentTrack?.let { playOnlineCatalogTrackAsStream(it) }
-            }
+            cycled.currentTrack
         }
     }
 
@@ -3311,6 +3321,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     companion object {
+        const val RADIO_LOADING_LABEL = "Armando radio…"
         private const val RADIO_BATCH_SIZE = 30
         private const val RADIO_REFILL_THRESHOLD = 5
         /** How long Solo nuevos keeps retrying LB/CF before giving up. */

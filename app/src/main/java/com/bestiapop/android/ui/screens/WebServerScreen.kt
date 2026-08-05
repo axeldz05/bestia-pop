@@ -58,6 +58,7 @@ import com.bestiapop.android.service.WebServerService
 import com.bestiapop.android.ui.MusicPlayerViewModel
 import com.bestiapop.android.ui.components.ArtworkThumbnail
 import com.bestiapop.android.ui.components.SongListItem
+import com.bestiapop.android.ui.components.rememberSongQueueActions
 import com.bestiapop.android.ui.screens.library.SongActionDialogsHost
 
 @Composable
@@ -74,6 +75,7 @@ fun WebServerScreen(viewModel: MusicPlayerViewModel) {
     var songForPlaylist by remember { mutableStateOf<Song?>(null) }
     var songsForDeletion by remember { mutableStateOf<List<Song>?>(null) }
 
+    val songActions = rememberSongQueueActions(viewModel)
     val songsById = remember(songs) { songs.associateBy { it.id } }
 
     Column(
@@ -301,9 +303,9 @@ fun WebServerScreen(viewModel: MusicPlayerViewModel) {
                         onClick = {
                             viewModel.playSong(doneSong)
                         },
-                        onPlayNext = { viewModel.playNextInQueue(doneSong) },
-                        onAddToQueue = { viewModel.playNextBatch(listOf(doneSong)) },
-                        onStartRadio = { viewModel.startRadio(doneSong) },
+                        onPlayNext = { songActions.onPlayNext(doneSong) },
+                        onAddToQueue = { songActions.onAddToQueue(doneSong) },
+                        onStartRadio = { songActions.onStartRadio(doneSong) },
                         onAddToPlaylist = { songForPlaylist = doneSong },
                         onEditMetadata = { editingSong = doneSong },
                         onDelete = { songsForDeletion = listOf(doneSong) }

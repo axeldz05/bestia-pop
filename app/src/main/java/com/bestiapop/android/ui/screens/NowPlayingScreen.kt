@@ -547,7 +547,7 @@ fun NowPlayingScreen(
                 } else if (radioLoading) {
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "Armando radio…",
+                        text = MusicPlayerViewModel.RADIO_LOADING_LABEL,
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.primary
                     )

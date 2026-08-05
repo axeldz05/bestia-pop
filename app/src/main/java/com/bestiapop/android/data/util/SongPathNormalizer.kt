@@ -69,4 +69,8 @@ object SongPathNormalizer {
         if (uriString.startsWith("content://", ignoreCase = true)) return false
         return isUnderBestiaPop(uriString) || isUnderBestiaPop(folderPath)
     }
+
+    /** File/http artwork is usable; null/empty and MediaStore content:// albumart stubs are not. */
+    fun hasUsableArtwork(artworkUri: String?): Boolean =
+        !artworkUri.isNullOrEmpty() && !artworkUri.startsWith("content://")
 }

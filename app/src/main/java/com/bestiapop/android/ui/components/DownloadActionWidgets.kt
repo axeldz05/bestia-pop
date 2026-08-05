@@ -112,9 +112,15 @@ fun RetryCycleDismissActions(
 fun PreviewPlayPauseButton(
     isResolving: Boolean,
     isPlaying: Boolean,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    enabled: Boolean = true
 ) {
-    IconButton(onClick = onClick) {
+    val playTint = if (enabled) {
+        MaterialTheme.colorScheme.primary
+    } else {
+        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f)
+    }
+    IconButton(onClick = onClick, enabled = enabled) {
         when {
             isResolving -> CircularProgressIndicator(
                 modifier = Modifier.size(22.dp),
@@ -129,7 +135,7 @@ fun PreviewPlayPauseButton(
             else -> Icon(
                 imageVector = Icons.Default.PlayArrow,
                 contentDescription = "Preview",
-                tint = MaterialTheme.colorScheme.primary
+                tint = playTint
             )
         }
     }

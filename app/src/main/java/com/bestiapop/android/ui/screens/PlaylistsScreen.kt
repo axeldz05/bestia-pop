@@ -91,12 +91,16 @@ import com.bestiapop.android.ui.components.RemoteTrackPlaceholderRow
 import com.bestiapop.android.ui.components.SongListItem
 import com.bestiapop.android.ui.components.isMatchedTrackPlaying
 import com.bestiapop.android.ui.components.rememberImagePicker
+import com.bestiapop.android.ui.components.rememberSongQueueActions
 
 import androidx.compose.material.icons.filled.Recommend
 import androidx.compose.runtime.LaunchedEffect
 import java.text.DateFormat
 import java.util.Date
 import java.util.Locale
+
+fun matchedStreamCountLabel(matched: Int, stream: Int): String =
+    "$matched en biblioteca · $stream en stream"
 
 @Composable
 fun PlaylistsScreen(
@@ -121,6 +125,8 @@ fun PlaylistsScreen(
     var selectedPlaylistId by remember { mutableStateOf<Long?>(activeSelectedPlaylistId) }
     var selectedLbPlaylistMbid by remember { mutableStateOf<String?>(null) }
     var playlistToDelete by remember { mutableStateOf<Playlist?>(null) }
+
+    val songActions = rememberSongQueueActions(viewModel)
 
     val showDiscover = lbSettings.showDiscoverPlaylists
 
@@ -466,9 +472,9 @@ fun PlaylistsScreen(
                 currentItem = currentItem,
                 activeDownloads = activeDownloads,
                 onDownloadRemote = { viewModel.downloadRemoteItem(it) },
-                onPlayNext = { viewModel.playNextInQueue(it) },
-                onAddToQueue = { viewModel.addToQueue(it) },
-                onStartRadio = { viewModel.startRadio(seedSong = it) }
+                onPlayNext = songActions.onPlayNext,
+                onAddToQueue = songActions.onAddToQueue,
+                onStartRadio = songActions.onStartRadio
             )
         }
 
@@ -486,9 +492,9 @@ fun PlaylistsScreen(
                 currentItem = currentItem,
                 activeDownloads = activeDownloads,
                 onDownloadRemote = { viewModel.downloadRemoteItem(it) },
-                onPlayNext = { viewModel.playNextInQueue(it) },
-                onAddToQueue = { viewModel.addToQueue(it) },
-                onStartRadio = { viewModel.startRadio(seedSong = it) }
+                onPlayNext = songActions.onPlayNext,
+                onAddToQueue = songActions.onAddToQueue,
+                onStartRadio = songActions.onStartRadio
             )
         }
 
@@ -697,7 +703,7 @@ private fun CfRecommendationsCardItem(
         },
         lines = {
             Text(
-                text = "${matched.matchedCount} en biblioteca · ${matched.streamCount} en stream",
+                text = matchedStreamCountLabel(matched.matchedCount, matched.streamCount),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
                 maxLines = 1,
@@ -749,7 +755,7 @@ private fun CfRecommendationsDetailScreen(
             }
         } else {
             Text(
-                text = "${matched.matchedCount} en biblioteca · ${matched.streamCount} en stream",
+                text = matchedStreamCountLabel(matched.matchedCount, matched.streamCount),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
             )
@@ -924,7 +930,7 @@ private fun LbPlaylistDetailScreen(
         }
 
         Text(
-            text = "${matched.matchedCount} en biblioteca · ${matched.streamCount} en stream",
+            text = matchedStreamCountLabel(matched.matchedCount, matched.streamCount),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
         )
@@ -1105,6 +1111,7 @@ private fun PlaylistDetailScreen(
 ) {
     var showEditDialog by remember { mutableStateOf(false) }
     val totalCount = songs.size + pendingTracks.size
+    val songActions = rememberSongQueueActions(viewModel)
 
     Surface(
         modifier = Modifier.fillMaxSize(),
@@ -1263,9 +1270,9 @@ private fun PlaylistDetailScreen(
                             song = song,
                             isCurrentPlaying = viewModel.currentSong.collectAsState().value?.uriString == song.uriString,
                             onClick = { viewModel.playSong(song, songs) },
-                            onPlayNext = { viewModel.playNextInQueue(song) },
-                            onAddToQueue = { viewModel.addToQueue(song) },
-                            onStartRadio = { viewModel.startRadio(seedSong = song) },
+                            onPlayNext = { songActions.onPlayNext(song) },
+                            onAddToQueue = { songActions.onAddToQueue(song) },
+                            onStartRadio = { songActions.onStartRadio(song) },
                             onDelete = { viewModel.removeSongFromPlaylist(playlist.id, song.id) }
                         )
                     }

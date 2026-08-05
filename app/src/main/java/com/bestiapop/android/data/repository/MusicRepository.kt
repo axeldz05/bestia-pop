@@ -371,7 +371,7 @@ class MusicRepository(private val context: Context) : IMusicRepository {
         SongPathNormalizer.toAbsolutePath(uriString) ?: uriString
 
     private fun hasUsableArtwork(artworkUri: String?): Boolean =
-        !artworkUri.isNullOrEmpty() && !artworkUri.startsWith("content://")
+        SongPathNormalizer.hasUsableArtwork(artworkUri)
 
     override suspend fun enhanceSongMetadataAndLyrics(song: Song) = withContext(Dispatchers.IO) {
         val hasUsableArt = hasUsableArtwork(song.artworkUri)
@@ -384,7 +384,7 @@ class MusicRepository(private val context: Context) : IMusicRepository {
 
         var artUrl = if (hasUsableArt) song.artworkUri else existingAlbumArt
 
-        if (artUrl.isNullOrEmpty() || artUrl.startsWith("content://")) {
+        if (!hasUsableArtwork(artUrl)) {
             val cleanPath = cleanFilePath(song.uriString)
             val embedded = extractAndSaveEmbeddedArtwork(cleanPath, "${song.artist}_${albumName}")
             if (!embedded.isNullOrEmpty()) {

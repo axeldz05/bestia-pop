@@ -75,7 +75,7 @@ fun MainScreen(
 
     val miniPlayerStatusLabel = when {
         resolvingRemote -> "Resolviendo stream…"
-        radioLoading -> "Armando radio…"
+        radioLoading -> MusicPlayerViewModel.RADIO_LOADING_LABEL
         else -> radioStatusLabel
     }
 

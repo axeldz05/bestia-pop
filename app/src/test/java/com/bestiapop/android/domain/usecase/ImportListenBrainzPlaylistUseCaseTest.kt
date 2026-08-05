@@ -191,6 +191,8 @@ class ImportListenBrainzPlaylistUseCaseTest {
 
         override suspend fun removeSongFromPlaylist(playlistId: Long, songId: Long) = Unit
 
+        override suspend fun getCoPlaylistSongIds(songId: Long): Set<Long> = emptySet()
+
         override fun getPlaylistPendingTracksFlow(playlistId: Long): Flow<List<PlaylistPendingTrack>> =
             emptyFlow()
 

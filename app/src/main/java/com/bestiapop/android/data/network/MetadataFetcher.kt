@@ -234,6 +234,109 @@ object MetadataFetcher {
         return@withContext pickCoverUrl(item.optString("picture_xl"), item.optString("picture_big"))
     }
 
+    /** Deezer artist id for radio / related lookups. */
+    suspend fun resolveDeezerArtistId(artist: String): Long? = withContext(Dispatchers.IO) {
+        val cleanArtistName = cleanArtist(artist)
+        if (cleanArtistName.isEmpty()) return@withContext null
+        val url = "https://api.deezer.com/search/artist?q=${encodeQuery(cleanArtistName)}&limit=1"
+        val json = getJson(url) ?: return@withContext null
+        val data = json.optJSONArray("data") ?: return@withContext null
+        if (data.length() == 0) return@withContext null
+        val id = data.getJSONObject(0).optLong("id", 0L)
+        return@withContext id.takeIf { it > 0L }
+    }
+
+    /** Tracks from Deezer artist radio mix. */
+    suspend fun fetchDeezerArtistRadio(artistId: Long): List<CatalogSongHint> = withContext(Dispatchers.IO) {
+        if (artistId <= 0L) return@withContext emptyList()
+        val url = "https://api.deezer.com/artist/$artistId/radio"
+        val json = getJson(url) ?: return@withContext emptyList()
+        return@withContext parseDeezerTrackArray(json.optJSONArray("data"))
+    }
+
+    /** Related Deezer artist ids (for diversity). */
+    suspend fun fetchDeezerRelatedArtistIds(artistId: Long, limit: Int = 5): List<Long> =
+        withContext(Dispatchers.IO) {
+            if (artistId <= 0L || limit <= 0) return@withContext emptyList()
+            val url = "https://api.deezer.com/artist/$artistId/related?limit=$limit"
+            val json = getJson(url) ?: return@withContext emptyList()
+            val data = json.optJSONArray("data") ?: return@withContext emptyList()
+            val ids = ArrayList<Long>(minOf(limit, data.length()))
+            for (i in 0 until data.length()) {
+                if (ids.size >= limit) break
+                val id = data.getJSONObject(i).optLong("id", 0L)
+                if (id > 0L) ids.add(id)
+            }
+            ids
+        }
+
+    /** Top tracks for a Deezer artist. */
+    suspend fun fetchDeezerArtistTop(artistId: Long, limit: Int = 5): List<CatalogSongHint> =
+        withContext(Dispatchers.IO) {
+            if (artistId <= 0L || limit <= 0) return@withContext emptyList()
+            val url = "https://api.deezer.com/artist/$artistId/top?limit=$limit"
+            val json = getJson(url) ?: return@withContext emptyList()
+            return@withContext parseDeezerTrackArray(json.optJSONArray("data"))
+        }
+
+    /**
+     * Same-artist songs from iTunes (secondary fill when Deezer remotes are short).
+     */
+    suspend fun fetchItunesArtistSongs(artist: String, limit: Int = 25): List<CatalogSongHint> =
+        withContext(Dispatchers.IO) {
+            val cleanArtistName = cleanArtist(artist)
+            if (cleanArtistName.isEmpty() || limit <= 0) return@withContext emptyList()
+            val url =
+                "https://itunes.apple.com/search?term=${encodeQuery(cleanArtistName)}&entity=song&limit=$limit"
+            val json = getJson(url) ?: return@withContext emptyList()
+            val results = json.optJSONArray("results") ?: return@withContext emptyList()
+            val out = ArrayList<CatalogSongHint>(minOf(limit, results.length()))
+            for (i in 0 until results.length()) {
+                if (out.size >= limit) break
+                val obj = results.getJSONObject(i)
+                val title = obj.optString("trackName").takeIf { it.isNotBlank() } ?: continue
+                val artistName = obj.optString("artistName").ifBlank { cleanArtistName }
+                out.add(
+                    CatalogSongHint(
+                        title = title,
+                        artist = artistName,
+                        album = obj.optString("collectionName").ifBlank { null },
+                        artworkUrl = normalizeItunesArtwork(obj.optString("artworkUrl100")),
+                        durationMs = obj.optLong("trackTimeMillis", 0L)
+                    )
+                )
+            }
+            out
+        }
+
+    private fun parseDeezerTrackArray(data: JSONArray?): List<CatalogSongHint> {
+        if (data == null || data.length() == 0) return emptyList()
+        val out = ArrayList<CatalogSongHint>(data.length())
+        for (i in 0 until data.length()) {
+            val obj = data.getJSONObject(i)
+            val title = obj.optString("title").ifBlank { null } ?: continue
+            val artistObj = obj.optJSONObject("artist")
+            val artistName = artistObj?.optString("name")?.ifBlank { null } ?: continue
+            val albumObj = obj.optJSONObject("album")
+            val albumTitle = albumObj?.optString("title")?.ifBlank { null }
+            val cover = pickCoverUrl(
+                albumObj?.optString("cover_xl"),
+                albumObj?.optString("cover_big")
+            )
+            val durationSec = obj.optLong("duration", 0L)
+            out.add(
+                CatalogSongHint(
+                    title = title,
+                    artist = artistName,
+                    album = albumTitle,
+                    artworkUrl = cover,
+                    durationMs = if (durationSec > 0) durationSec * 1000L else 0L
+                )
+            )
+        }
+        return out
+    }
+
     suspend fun fetchAlbumArtUrl(artist: String, titleOrAlbum: String): String? = withContext(Dispatchers.IO) {
         val queryText = buildQueryText(artist, titleOrAlbum) ?: return@withContext null
         searchDeezerAlbumArt(queryText)?.let { return@withContext it }

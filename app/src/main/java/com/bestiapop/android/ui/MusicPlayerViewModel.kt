@@ -40,6 +40,7 @@ import com.bestiapop.android.data.preferences.ThemePreferencesRepository
 import com.bestiapop.android.data.repository.MusicRepository
 import com.bestiapop.android.data.stream.StreamResolver
 import com.bestiapop.android.domain.radio.CfRecommendationsRadio
+import com.bestiapop.android.domain.radio.DeezerSimilarRadio
 import com.bestiapop.android.domain.radio.ListenBrainzRadio
 import com.bestiapop.android.domain.radio.LocalMetadataRadio
 import com.bestiapop.android.domain.radio.RadioEngine
@@ -351,6 +352,19 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             fetchRecordingMetadata = { mbids, token ->
                 ListenBrainzClient.fetchRecordingMetadata(mbids, token)
             }
+        ),
+        similarProviders = listOf(
+            DeezerSimilarRadio(
+                resolveArtistId = { MetadataFetcher.resolveDeezerArtistId(it) },
+                fetchArtistRadio = { MetadataFetcher.fetchDeezerArtistRadio(it) },
+                fetchRelatedArtistIds = { id, limit ->
+                    MetadataFetcher.fetchDeezerRelatedArtistIds(id, limit)
+                },
+                fetchArtistTop = { id, limit -> MetadataFetcher.fetchDeezerArtistTop(id, limit) },
+                fetchItunesArtistSongs = { artist, limit ->
+                    MetadataFetcher.fetchItunesArtistSongs(artist, limit)
+                }
+            )
         )
     )
 
@@ -1550,25 +1564,14 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         }
 
         val settings = listenBrainzSettings.value
-        val hasLbCredentials = settings.enabled && settings.userToken.isNotBlank()
+        val networkOnline = connectivityObserver.isCurrentlyOnline()
 
-        var resolvedMode = when {
+        val resolvedMode = when {
             mode != null -> mode
             radioPreferredMode != null -> radioPreferredMode!!
-            hasLbCredentials && connectivityObserver.isCurrentlyOnline() -> RadioMode.BOTH
+            // Online usable = network (Deezer) and/or LB; no token required for BOTH default
+            networkOnline -> RadioMode.BOTH
             else -> RadioMode.KNOWN
-        }
-
-        // Solo nuevos needs LB configured; network may come back later — we retry below.
-        if (resolvedMode == RadioMode.NEW && !hasLbCredentials) {
-            if (!auto) {
-                Toast.makeText(
-                    getApplication(),
-                    "Radio online no disponible",
-                    Toast.LENGTH_SHORT
-                ).show()
-            }
-            return
         }
 
         val keepCurrentPlaying = !auto && shouldKeepCurrentWhenStartingRadio()
@@ -1596,12 +1599,14 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 }
 
                 val effectiveMode = resolvedMode
+                val coPlaylistIds = resolveCoPlaylistSongIds(seed)
                 val batch = suggestRadioWithRetry(
                     seed = seed,
                     library = library,
                     mode = effectiveMode,
                     excludeKeys = exclude,
-                    settings = settings
+                    settings = settings,
+                    coPlaylistSongIds = coPlaylistIds
                 )
 
                 val suggestions = batch.items
@@ -1653,7 +1658,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     /**
-     * For [RadioMode.NEW], retries LB/CF until we get Remotes or [RADIO_ONLINE_RETRY_TIMEOUT_MS].
+     * For [RadioMode.NEW], retries online providers (LB/CF/Deezer) until Remotes or timeout.
      * Other modes run once (BOTH already falls back to locales).
      */
     private suspend fun suggestRadioWithRetry(
@@ -1662,12 +1667,15 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         mode: RadioMode,
         excludeKeys: Set<String>,
         settings: ListenBrainzSettings,
-        timeoutMs: Long = RADIO_ONLINE_RETRY_TIMEOUT_MS
+        timeoutMs: Long = RADIO_ONLINE_RETRY_TIMEOUT_MS,
+        coPlaylistSongIds: Set<Long> = emptySet()
     ): RadioSuggestResult {
+        fun networkNow(): Boolean = connectivityObserver.isCurrentlyOnline()
+
         fun canUseLbNow(): Boolean =
             settings.enabled &&
                 settings.userToken.isNotBlank() &&
-                connectivityObserver.isCurrentlyOnline()
+                networkNow()
 
         suspend fun once() = radioEngine.suggest(
             seed = seed,
@@ -1677,7 +1685,9 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             limit = RADIO_BATCH_SIZE,
             lbToken = settings.userToken.takeIf { it.isNotBlank() },
             lbAvailable = canUseLbNow(),
-            lbUsername = settings.username
+            lbUsername = settings.username,
+            networkAvailable = networkNow(),
+            coPlaylistSongIds = coPlaylistSongIds
         )
 
         if (mode != RadioMode.NEW) {
@@ -1694,6 +1704,12 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             last = once()
         }
         return last
+    }
+
+    private suspend fun resolveCoPlaylistSongIds(seed: PlayableItem): Set<Long> {
+        val local = seed as? PlayableItem.Local ?: return emptySet()
+        return runCatching { repository.getCoPlaylistSongIds(local.song.id) }
+            .getOrDefault(emptySet())
     }
 
     private fun shouldKeepCurrentWhenStartingRadio(): Boolean {
@@ -1802,22 +1818,18 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
         radioRefillJob = viewModelScope.launch {
             val settings = listenBrainzSettings.value
-            val hasLbCredentials = settings.enabled && settings.userToken.isNotBlank()
             val mode = _radioMode.value
-
-            if (mode == RadioMode.NEW && !hasLbCredentials) {
-                return@launch
-            }
-
             val library = rawSongs.first()
             val exclude = buildRadioExcludeKeys(seed)
+            val coPlaylistIds = resolveCoPlaylistSongIds(seed)
             val batch = suggestRadioWithRetry(
                 seed = seed,
                 library = library,
                 mode = mode,
                 excludeKeys = exclude,
                 settings = settings,
-                timeoutMs = RADIO_ONLINE_REFILL_RETRY_TIMEOUT_MS
+                timeoutMs = RADIO_ONLINE_REFILL_RETRY_TIMEOUT_MS,
+                coPlaylistSongIds = coPlaylistIds
             )
 
             if (batch.items.isNotEmpty() && _radioActive.value) {

@@ -6,22 +6,25 @@ import com.bestiapop.android.domain.usecase.MatchListenBrainzTracksUseCase
 
 data class RadioSuggestResult(
     val items: List<PlayableItem>,
-    val usedListenBrainz: Boolean,
-    /** True when NEW/BOTH attempted LB/CF and neither contributed usable Remotes. */
-    val listenBrainzFailed: Boolean
+    val usedOnlineDiscovery: Boolean,
+    /** True when NEW/BOTH attempted online fills and none contributed usable Remotes. */
+    val onlineDiscoveryFailed: Boolean
 )
 
 /**
- * Orchestrates local and/or ListenBrainz + CF radio suggestions into a deduped batch.
+ * Orchestrates local and online radio suggestions into a deduped batch.
+ *
+ * Remote fill order: ListenBrainz → CF → [SimilarTracksProvider] (Deezer + iTunes fill).
  *
  * - [RadioMode.KNOWN]: library similarity only
- * - [RadioMode.NEW]: Remotes only (LB then CF); library matches from LB/CF are skipped
+ * - [RadioMode.NEW]: Remotes only; library matches from providers are skipped
  * - [RadioMode.BOTH]: interleave Remote, Local, Remote, Local…; fill from the other side if one runs out
  */
 class RadioEngine(
     private val localRadio: LocalMetadataRadio = LocalMetadataRadio(),
     private val listenBrainzRadio: ListenBrainzRadio? = null,
-    private val cfRecommendationsRadio: CfRecommendationsRadio? = null
+    private val cfRecommendationsRadio: CfRecommendationsRadio? = null,
+    private val similarProviders: List<SimilarTracksProvider> = emptyList()
 ) {
 
     suspend fun suggest(
@@ -32,13 +35,15 @@ class RadioEngine(
         limit: Int = DEFAULT_LIMIT,
         lbToken: String? = null,
         lbAvailable: Boolean = false,
-        lbUsername: String? = null
+        lbUsername: String? = null,
+        networkAvailable: Boolean = false,
+        coPlaylistSongIds: Set<Long> = emptySet()
     ): RadioSuggestResult {
         if (limit <= 0 || seed.artist.isBlank() || seed.title.isBlank()) {
             return RadioSuggestResult(
                 items = emptyList(),
-                usedListenBrainz = false,
-                listenBrainzFailed = false
+                usedOnlineDiscovery = false,
+                onlineDiscoveryFailed = false
             )
         }
 
@@ -47,7 +52,13 @@ class RadioEngine(
         if (seedKey.isNotEmpty()) baseSeen.add(seedKey)
 
         return when (mode) {
-            RadioMode.KNOWN -> suggestKnown(seed, library, baseSeen, limit)
+            RadioMode.KNOWN -> suggestKnown(
+                seed = seed,
+                library = library,
+                excludeKeys = baseSeen,
+                limit = limit,
+                coPlaylistSongIds = coPlaylistSongIds
+            )
             RadioMode.NEW -> suggestNew(
                 seed = seed,
                 library = library,
@@ -55,7 +66,8 @@ class RadioEngine(
                 limit = limit,
                 lbToken = lbToken,
                 lbAvailable = lbAvailable,
-                lbUsername = lbUsername
+                lbUsername = lbUsername,
+                networkAvailable = networkAvailable
             )
             RadioMode.BOTH -> suggestBoth(
                 seed = seed,
@@ -64,7 +76,9 @@ class RadioEngine(
                 limit = limit,
                 lbToken = lbToken,
                 lbAvailable = lbAvailable,
-                lbUsername = lbUsername
+                lbUsername = lbUsername,
+                networkAvailable = networkAvailable,
+                coPlaylistSongIds = coPlaylistSongIds
             )
         }
     }
@@ -73,18 +87,20 @@ class RadioEngine(
         seed: PlayableItem,
         library: List<Song>,
         excludeKeys: Set<String>,
-        limit: Int
+        limit: Int,
+        coPlaylistSongIds: Set<Long>
     ): RadioSuggestResult {
         val items = localRadio.suggest(
             seed = seed,
             library = library,
             excludeKeys = excludeKeys,
-            limit = limit
+            limit = limit,
+            coPlaylistSongIds = coPlaylistSongIds
         )
         return RadioSuggestResult(
             items = items,
-            usedListenBrainz = false,
-            listenBrainzFailed = false
+            usedOnlineDiscovery = false,
+            onlineDiscoveryFailed = false
         )
     }
 
@@ -95,7 +111,8 @@ class RadioEngine(
         limit: Int,
         lbToken: String?,
         lbAvailable: Boolean,
-        lbUsername: String?
+        lbUsername: String?,
+        networkAvailable: Boolean
     ): RadioSuggestResult {
         val remote = fetchRemotes(
             seed = seed,
@@ -104,12 +121,13 @@ class RadioEngine(
             limit = limit,
             lbToken = lbToken,
             lbAvailable = lbAvailable,
-            lbUsername = lbUsername
+            lbUsername = lbUsername,
+            networkAvailable = networkAvailable
         )
         return RadioSuggestResult(
             items = remote.items,
-            usedListenBrainz = remote.usedListenBrainz,
-            listenBrainzFailed = remote.listenBrainzFailed
+            usedOnlineDiscovery = remote.usedOnlineDiscovery,
+            onlineDiscoveryFailed = remote.onlineDiscoveryFailed
         )
     }
 
@@ -120,13 +138,16 @@ class RadioEngine(
         limit: Int,
         lbToken: String?,
         lbAvailable: Boolean,
-        lbUsername: String?
+        lbUsername: String?,
+        networkAvailable: Boolean,
+        coPlaylistSongIds: Set<Long>
     ): RadioSuggestResult {
         val localItems = localRadio.suggest(
             seed = seed,
             library = library,
             excludeKeys = excludeKeys,
-            limit = limit
+            limit = limit,
+            coPlaylistSongIds = coPlaylistSongIds
         )
         val remote = fetchRemotes(
             seed = seed,
@@ -135,20 +156,21 @@ class RadioEngine(
             limit = limit,
             lbToken = lbToken,
             lbAvailable = lbAvailable,
-            lbUsername = lbUsername
+            lbUsername = lbUsername,
+            networkAvailable = networkAvailable
         )
         val interleaved = interleaveEquitable(remote.items, localItems, limit)
         return RadioSuggestResult(
             items = interleaved,
-            usedListenBrainz = remote.usedListenBrainz,
-            listenBrainzFailed = remote.listenBrainzFailed && localItems.isEmpty()
+            usedOnlineDiscovery = remote.usedOnlineDiscovery,
+            onlineDiscoveryFailed = remote.onlineDiscoveryFailed && localItems.isEmpty()
         )
     }
 
     private data class RemoteFetch(
         val items: List<PlayableItem.Remote>,
-        val usedListenBrainz: Boolean,
-        val listenBrainzFailed: Boolean
+        val usedOnlineDiscovery: Boolean,
+        val onlineDiscoveryFailed: Boolean
     )
 
     private suspend fun fetchRemotes(
@@ -158,16 +180,16 @@ class RadioEngine(
         limit: Int,
         lbToken: String?,
         lbAvailable: Boolean,
-        lbUsername: String?
+        lbUsername: String?,
+        networkAvailable: Boolean
     ): RemoteFetch {
         if (limit <= 0) {
-            return RemoteFetch(emptyList(), usedListenBrainz = false, listenBrainzFailed = false)
+            return RemoteFetch(emptyList(), usedOnlineDiscovery = false, onlineDiscoveryFailed = false)
         }
 
         val seen = excludeKeys.toMutableSet()
         val remotes = ArrayList<PlayableItem.Remote>(limit)
-        var usedListenBrainz = false
-        var listenBrainzFailed = false
+        var usedOnlineDiscovery = false
 
         fun addRemotes(items: List<PlayableItem>): Int {
             var added = 0
@@ -186,11 +208,11 @@ class RadioEngine(
             return added
         }
 
-        val canUseOnline = lbAvailable && !lbToken.isNullOrBlank()
+        val canUseLb = lbAvailable && !lbToken.isNullOrBlank()
         val lbRadio = listenBrainzRadio
         val token = lbToken
 
-        if (canUseOnline && lbRadio != null && token != null) {
+        if (canUseLb && lbRadio != null && token != null) {
             val lbOutcome = runCatching {
                 lbRadio.suggest(
                     seed = seed,
@@ -200,27 +222,16 @@ class RadioEngine(
                     token = token
                 )
             }
-            if (lbOutcome.isFailure) {
-                listenBrainzFailed = true
-            } else {
+            if (lbOutcome.isSuccess) {
                 val lbItems = lbOutcome.getOrDefault(emptyList())
-                val added = addRemotes(lbItems)
-                if (added > 0) {
-                    usedListenBrainz = true
-                } else if (lbItems.isEmpty()) {
-                    listenBrainzFailed = true
-                }
-                // Non-empty LB but all Local matches → treat as no usable nuevos for this fill
-                else if (remotes.isEmpty()) {
-                    listenBrainzFailed = true
+                if (addRemotes(lbItems) > 0) {
+                    usedOnlineDiscovery = true
                 }
             }
-        } else if (!canUseOnline) {
-            listenBrainzFailed = true
         }
 
         val cfRadio = cfRecommendationsRadio
-        if (canUseOnline &&
+        if (canUseLb &&
             token != null &&
             !lbUsername.isNullOrBlank() &&
             cfRadio != null &&
@@ -237,19 +248,34 @@ class RadioEngine(
             }
             val cfItems = cfOutcome.getOrDefault(emptyList())
             if (addRemotes(cfItems) > 0) {
-                usedListenBrainz = true
-                listenBrainzFailed = false
+                usedOnlineDiscovery = true
             }
         }
 
-        if (remotes.isEmpty() && canUseOnline) {
-            listenBrainzFailed = true
+        if (networkAvailable && remotes.size < limit) {
+            for (provider in similarProviders) {
+                if (remotes.size >= limit) break
+                val outcome = runCatching {
+                    provider.suggest(
+                        seed = seed,
+                        library = library,
+                        excludeKeys = seen,
+                        limit = limit - remotes.size
+                    )
+                }
+                val items = outcome.getOrDefault(emptyList())
+                if (addRemotes(items) > 0) {
+                    usedOnlineDiscovery = true
+                }
+            }
         }
+
+        val onlineDiscoveryFailed = remotes.isEmpty() && networkAvailable
 
         return RemoteFetch(
             items = remotes,
-            usedListenBrainz = usedListenBrainz,
-            listenBrainzFailed = listenBrainzFailed
+            usedOnlineDiscovery = usedOnlineDiscovery,
+            onlineDiscoveryFailed = onlineDiscoveryFailed
         )
     }
 

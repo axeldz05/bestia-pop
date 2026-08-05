@@ -197,12 +197,12 @@ class RadioEngineTest {
         assertEquals(0, lbCalls)
         assertTrue(result.items.isNotEmpty())
         assertTrue(result.items.all { it is PlayableItem.Local })
-        assertFalse(result.usedListenBrainz)
-        assertFalse(result.listenBrainzFailed)
+        assertFalse(result.usedOnlineDiscovery)
+        assertFalse(result.onlineDiscoveryFailed)
     }
 
     @Test
-    fun newModeReturnsEmptyWhenLbFails() = runBlocking {
+    fun newModeReturnsEmptyWhenOnlineProvidersFail() = runBlocking {
         val engine = RadioEngine(
             localRadio = LocalMetadataRadio(random = Random(2)),
             listenBrainzRadio = failingLb()
@@ -217,12 +217,13 @@ class RadioEngineTest {
             excludeKeys = emptySet(),
             limit = 5,
             lbToken = "token",
-            lbAvailable = true
+            lbAvailable = true,
+            networkAvailable = true
         )
 
         assertTrue(result.items.isEmpty())
-        assertFalse(result.usedListenBrainz)
-        assertTrue(result.listenBrainzFailed)
+        assertFalse(result.usedOnlineDiscovery)
+        assertTrue(result.onlineDiscoveryFailed)
     }
 
     @Test
@@ -241,14 +242,15 @@ class RadioEngineTest {
             excludeKeys = emptySet(),
             limit = 10,
             lbToken = "token",
-            lbAvailable = true
+            lbAvailable = true,
+            networkAvailable = true
         )
 
         assertTrue(result.items.all { it is PlayableItem.Remote })
         assertFalse(result.items.any { it.title == "B" })
         assertTrue(result.items.any { it.title == "Remote Song" })
-        assertTrue(result.usedListenBrainz)
-        assertFalse(result.listenBrainzFailed)
+        assertTrue(result.usedOnlineDiscovery)
+        assertFalse(result.onlineDiscoveryFailed)
     }
 
     @Test
@@ -267,7 +269,8 @@ class RadioEngineTest {
             excludeKeys = emptySet(),
             limit = 4,
             lbToken = "token",
-            lbAvailable = true
+            lbAvailable = true,
+            networkAvailable = true
         )
 
         assertTrue(result.items.size >= 2)
@@ -280,11 +283,11 @@ class RadioEngineTest {
             assertTrue(types[0])
             assertFalse(types[1])
         }
-        assertTrue(result.usedListenBrainz)
+        assertTrue(result.usedOnlineDiscovery)
     }
 
     @Test
-    fun bothFallsBackToLocalWhenLbFails() = runBlocking {
+    fun bothFallsBackToLocalWhenOnlineFails() = runBlocking {
         val engine = RadioEngine(
             localRadio = LocalMetadataRadio(random = Random(2)),
             listenBrainzRadio = failingLb()
@@ -299,13 +302,14 @@ class RadioEngineTest {
             excludeKeys = emptySet(),
             limit = 5,
             lbToken = "token",
-            lbAvailable = true
+            lbAvailable = true,
+            networkAvailable = true
         )
 
         assertEquals(1, result.items.size)
         assertEquals("B", result.items.single().title)
         assertTrue(result.items.all { it is PlayableItem.Local })
-        assertFalse(result.usedListenBrainz)
+        assertFalse(result.usedOnlineDiscovery)
     }
 
     @Test
@@ -389,14 +393,128 @@ class RadioEngineTest {
             limit = 3,
             lbToken = "token",
             lbAvailable = true,
-            lbUsername = "user"
+            lbUsername = "user",
+            networkAvailable = true
         )
 
         assertTrue(result.items.all { it is PlayableItem.Remote })
         assertTrue(result.items.any { it.title == "LB Song" })
         assertTrue(result.items.any { it.title.startsWith("CF ") })
         assertEquals(3, result.items.size)
-        assertTrue(result.usedListenBrainz)
+        assertTrue(result.usedOnlineDiscovery)
+    }
+
+    @Test
+    fun newWithoutLbFillsWithDeezer() = runBlocking {
+        val deezer = DeezerSimilarRadio(
+            resolveArtistId = { 7L },
+            fetchArtistRadio = {
+                listOf(
+                    com.bestiapop.android.data.network.CatalogSongHint("Deezer Hit", "Neighbor")
+                )
+            },
+            fetchRelatedArtistIds = { _, _ -> emptyList() },
+            fetchArtistTop = { _, _ -> emptyList() },
+            fetchItunesArtistSongs = { _, _ -> emptyList() }
+        )
+        val engine = RadioEngine(
+            localRadio = LocalMetadataRadio(random = Random(5)),
+            listenBrainzRadio = failingLb(),
+            similarProviders = listOf(deezer)
+        )
+        val seed = song(1, "Seed", "Artist A").toPlayable()
+        val library = listOf(seed.song, song(2, "Local Only", "Artist A"))
+
+        val result = engine.suggest(
+            seed = seed,
+            library = library,
+            mode = RadioMode.NEW,
+            excludeKeys = emptySet(),
+            limit = 5,
+            lbToken = null,
+            lbAvailable = false,
+            networkAvailable = true
+        )
+
+        assertTrue(result.items.all { it is PlayableItem.Remote })
+        assertTrue(result.items.any { it.title == "Deezer Hit" })
+        assertTrue(result.usedOnlineDiscovery)
+        assertFalse(result.onlineDiscoveryFailed)
+    }
+
+    @Test
+    fun newOmitsDeezerTracksAlreadyInLibrary() = runBlocking {
+        val deezer = DeezerSimilarRadio(
+            resolveArtistId = { 1L },
+            fetchArtistRadio = {
+                listOf(
+                    com.bestiapop.android.data.network.CatalogSongHint("In Library", "Artist A"),
+                    com.bestiapop.android.data.network.CatalogSongHint("Brand New", "Artist B")
+                )
+            },
+            fetchRelatedArtistIds = { _, _ -> emptyList() },
+            fetchArtistTop = { _, _ -> emptyList() },
+            fetchItunesArtistSongs = { _, _ -> emptyList() }
+        )
+        val engine = RadioEngine(
+            similarProviders = listOf(deezer)
+        )
+        val seed = song(1, "Seed", "Artist A").toPlayable()
+        val library = listOf(seed.song, song(2, "In Library", "Artist A"))
+
+        val result = engine.suggest(
+            seed = seed,
+            library = library,
+            mode = RadioMode.NEW,
+            excludeKeys = emptySet(),
+            limit = 5,
+            networkAvailable = true
+        )
+
+        assertEquals(listOf("Brand New"), result.items.map { it.title })
+    }
+
+    @Test
+    fun coPlaylistBoostRanksCohortHigher() {
+        val seedSong = Song(
+            id = 1,
+            uriString = "file:///song/1",
+            title = "Seed",
+            artist = "Artist A",
+            album = "Album",
+            genre = "Rock",
+            year = 2000,
+            durationMs = 180_000L
+        )
+        val cohort = Song(
+            id = 2,
+            uriString = "file:///song/2",
+            title = "Cohort",
+            artist = "Other Artist",
+            album = "X",
+            genre = "Jazz",
+            year = 1990,
+            durationMs = 180_000L
+        )
+        val sameGenre = Song(
+            id = 3,
+            uriString = "file:///song/3",
+            title = "GenreMate",
+            artist = "Other",
+            album = "Y",
+            genre = "Rock",
+            year = 1990,
+            durationMs = 180_000L
+        )
+        val radio = LocalMetadataRadio(random = Random(0))
+        val result = radio.suggest(
+            seed = seedSong.toPlayable(),
+            library = listOf(seedSong, cohort, sameGenre),
+            excludeKeys = emptySet(),
+            limit = 2,
+            coPlaylistSongIds = setOf(2L)
+        )
+        assertEquals("Cohort", result.first().title)
     }
 
     @Test

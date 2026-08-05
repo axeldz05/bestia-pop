@@ -45,7 +45,7 @@ service/     MusicService (playback), WebServerService (WiFi sync)
 3. Screens Compose observan StateFlows y llaman métodos del ViewModel
 4. Reproducción: ViewModel cola `List<PlayableItem>` (`Local` | `Remote`) → `MediaController` → `MusicService` (ExoPlayer)
 5. Stream remoto: `StreamResolver` → `YouTubeExtractor.extractAudioStreamDetailed` → MediaItem HTTPS + `StreamPlaybackTag` (UA) → ExoPlayer
-6. Radio: `RadioEngine` (KNOWN / NEW / BOTH) → `playPlayableCollection` / refill de cola; remotos reusan stream
+6. Radio: `RadioEngine` (KNOWN / NEW / BOTH; fill LB→CF→Deezer) → `playPlayableCollection` / refill de cola; remotos reusan stream
 7. Para Ti: `MatchListenBrainzTracksUseCase` → `MatchedLbPlaylist.toPlayableItems` → `playPlayableCollection`; CF: `FetchAndMatchCfRecommendationsUseCase` → `MatchedCfRecommendations.toPlayableItems`; descarga manual `downloadRemoteItem` (`DISCOVER`); opcional `saveWhileListening` → download background; import Room vía `ImportListenBrainzPlaylistUseCase` + `LB_IMPORT`
 8. Descarga online: siempre vía `runTrackedDownload` → cola `activeDownloads` (tab Descargas) → `DownloadAudioTrackUseCase` → Room + storage
 
@@ -70,7 +70,7 @@ Mini player se rehidrata desde `MediaController` (sesión viva) o `PlaybackSessi
 3. **Álbum vs playlist en portadas/metadata** — álbum tiene `album_overrides` (guardar solo álbum vs álbum+canciones); portada de playlist es entidad propia; editar canción no reescribe álbum.
 4. **Portadas locales** — copiar a `context.filesDir` (no depender de content URIs temporales).
 5. **Remoto efímero** — `PlayableItem.Remote` + `ResolvedStream` en memoria; nunca persistir URLs CDN en Room.
-6. **Radio** — sesión con seed + providers (`LocalMetadataRadio` / `ListenBrainzRadio` / `CfRecommendationsRadio`); refill de cola; no pipeline paralelo.
+6. **Radio** — sesión con seed + providers (`LocalMetadataRadio` / `ListenBrainzRadio` / `CfRecommendationsRadio` / `DeezerSimilarRadio` via `SimilarTracksProvider`); fill NEW/BOTH sin exigir token LB (red + Deezer); refill de cola; no pipeline paralelo.
 7. **Para Ti mixto** — Discover + CF Recomendados reproducen Local+Remote; descarga manual por track (`DISCOVER`) / “Guardar al escuchar” / import LB no bloquean ni persisten URLs CDN; faltantes de import usan `activeDownloads` (`LB_IMPORT` + `targetPlaylistId`).
 8. **Cola de descargas** — `QUEUED`/`SUCCESS` visibles; máx. 3 concurrentes; playlist del catálogo crea playlist local.
 

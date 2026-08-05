@@ -8,7 +8,7 @@ import kotlin.math.abs
 import kotlin.random.Random
 
 /**
- * Suggests similar library tracks from metadata (artist / genre / year / album).
+ * Suggests similar library tracks from metadata (artist / genre / year / album / co-playlist).
  */
 class LocalMetadataRadio(
     private val random: Random = Random.Default,
@@ -19,7 +19,8 @@ class LocalMetadataRadio(
         seed: PlayableItem,
         library: List<Song>,
         excludeKeys: Set<String>,
-        limit: Int
+        limit: Int,
+        coPlaylistSongIds: Set<Long> = emptySet()
     ): List<PlayableItem.Local> {
         if (limit <= 0 || library.isEmpty()) return emptyList()
 
@@ -53,6 +54,9 @@ class LocalMetadataRadio(
             val albumNorm = MatchListenBrainzTracksUseCase.normalize(song.album)
             if (seedAlbum.isNotEmpty() && albumNorm == seedAlbum) {
                 score += SCORE_SAME_ALBUM
+            }
+            if (coPlaylistSongIds.isNotEmpty() && song.id in coPlaylistSongIds) {
+                score += SCORE_CO_PLAYLIST
             }
 
             if (score > 0) {
@@ -121,10 +125,12 @@ class LocalMetadataRadio(
     private data class ScoredSong(val song: Song, val score: Int)
 
     companion object {
-        const val SCORE_SAME_ARTIST = 100
+        /** Prefer same artist over same album (diversity across albums). */
+        const val SCORE_SAME_ARTIST = 120
+        const val SCORE_CO_PLAYLIST = 55
         const val SCORE_SAME_GENRE = 40
         const val SCORE_YEAR_NEAR = 25
-        const val SCORE_SAME_ALBUM = 10
+        const val SCORE_SAME_ALBUM = 5
         const val YEAR_WINDOW = 5
         const val DEFAULT_MAX_PER_ALBUM = 2
 

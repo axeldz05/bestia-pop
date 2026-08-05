@@ -214,18 +214,21 @@ Centro de descargas online → sección 2 (`DownloadsScreen`, tab Descargas).
 - Seed = canción elegida (`startRadio(seedSong)` o `currentItem`); entry en menú de canción (“Iniciar radio”) y `NowPlayingScreen`.
 - **Modos UI:** Solo conocidos (`KNOWN`) / Solo nuevos (`NEW`) / Ambos (`BOTH`); label `radioStatusLabel` (“Radio · Solo conocidos|Solo nuevos|Ambos”).
 - Long-press Radio en Now Playing: Solo conocidos / Solo nuevos / Ambos / Detener radio (`stopRadio` no vacía cola).
-- **Auto:** al llegar a `STATE_ENDED` con `RepeatMode.OFF`, `startRadio(auto = true)` respeta preferred; default sin preferred = `BOTH` si hay LB, si no `KNOWN`.
+- **Auto:** al llegar a `STATE_ENDED` con `RepeatMode.OFF`, `startRadio(auto = true)` respeta preferred; default sin preferred = `BOTH` si hay red (Deezer usable sin token LB), si no `KNOWN`.
 - **Durante reproducción:** no saltea el tema actual; `replaceUpcomingWithRadio` + toast “Se agregaron canciones de la radio a la cola”.
-- **KNOWN:** solo biblioteca (`LocalMetadataRadio`). **NEW:** solo `PlayableItem.Remote` vía LB → CF (matches de biblioteca se omiten); reintenta con backoff hasta ~45s (`suggestRadioWithRetry`) y solo entonces toast si sigue vacío; sin credenciales LB → toast inmediato. **BOTH:** intercala Remote, Local, Remote… (`RadioEngine.interleaveEquitable`); sin online sigue con conocidos (sin toast).
+- **KNOWN:** solo biblioteca (`LocalMetadataRadio` + boost co-playlist). **NEW:** solo `PlayableItem.Remote` vía LB → CF → Deezer (+ iTunes fill); matches de biblioteca se omiten; reintenta con backoff hasta ~45s (`suggestRadioWithRetry`); toast “Radio online no disponible” solo si tras timeout no hay Remotes. **BOTH:** intercala Remote, Local… (`RadioEngine.interleaveEquitable`); sin red sigue con conocidos (sin toast).
+- Fill remoto: `SimilarTracksProvider` (Deezer); LB/CF siguen cableados en `RadioEngine` con credenciales.
 - Refill con el mismo modo; **NEW** reintenta online ~20s; **no** persistir URLs CDN.
 
 | Capacidad | Entry point |
 |-----------|-------------|
 | Modos | `RadioMode.KNOWN` / `NEW` / `BOTH`; `radioMode` / `radioStatusLabel` |
-| Motor | `RadioEngine.suggest` → `RadioSuggestResult`; `interleaveEquitable` |
-| Local | `LocalMetadataRadio.suggest` |
+| Motor | `RadioEngine.suggest` → `RadioSuggestResult` (`usedOnlineDiscovery`); `interleaveEquitable` |
+| Contrato fill | `SimilarTracksProvider` |
+| Local | `LocalMetadataRadio.suggest` (+ `coPlaylistSongIds` vía `IMusicRepository.getCoPlaylistSongIds`) |
 | LB | `ListenBrainzRadio.suggest` + LB client metadata/lb-radio |
 | CF fill | `CfRecommendationsRadio.suggest` (`artist_type=similar`, cache TTL) |
+| Deezer fill | `DeezerSimilarRadio.suggest` + `MetadataFetcher.resolveDeezerArtistId` / `fetchDeezerArtistRadio` / `fetchDeezerRelatedArtistIds` / `fetchDeezerArtistTop` / `fetchItunesArtistSongs` |
 | Sesión | `startRadio`, `stopRadio`, `setRadioPreferredMode`, `suggestRadioWithRetry`, `replaceUpcomingWithRadio`, refill/auto |
 | UI | Now Playing (tap/long-press); mini bar `statusLabel` (radio / resolving); menú canción “Iniciar radio” |
 

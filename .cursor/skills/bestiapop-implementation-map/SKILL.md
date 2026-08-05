@@ -65,12 +65,14 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 | `MatchListenBrainzTracksUseCase` | `domain/usecase/MatchListenBrainzTracksUseCase.kt` | match LB tracks → local `Song` (`normalize` / `matchKey` / `buildLibraryIndex`) |
 | `ImportListenBrainzPlaylistUseCase` | `domain/usecase/ImportListenBrainzPlaylistUseCase.kt` | create Room playlist: matched + `PlaylistPendingTrack` metadata |
 | `FetchAndMatchCfRecommendationsUseCase` | `domain/usecase/FetchAndMatchCfRecommendationsUseCase.kt` | CF mbids → metadata → Local/Remote |
-| `RadioEngine` | `domain/radio/RadioEngine.kt` | orquesta KNOWN / NEW / BOTH; `interleaveEquitable`; `RadioSuggestResult` |
-| `LocalMetadataRadio` | `domain/radio/LocalMetadataRadio.kt` | score biblioteca (artista/género/año/álbum) |
+| `RadioEngine` | `domain/radio/RadioEngine.kt` | orquesta KNOWN / NEW / BOTH; fill LB→CF→`SimilarTracksProvider`; `interleaveEquitable`; `RadioSuggestResult` |
+| `SimilarTracksProvider` | `domain/radio/SimilarTracksProvider.kt` | contrato de fill remoto (Deezer, futuros) |
+| `LocalMetadataRadio` | `domain/radio/LocalMetadataRadio.kt` | score biblioteca (artista/género/año/álbum/co-playlist) |
 | `ListenBrainzRadio` | `domain/radio/ListenBrainzRadio.kt` | lb-radio → Local/Remote |
 | `CfRecommendationsRadio` | `domain/radio/CfRecommendationsRadio.kt` | CF pool cache → Local/Remote (fill Radio NEW/BOTH) |
+| `DeezerSimilarRadio` | `domain/radio/DeezerSimilarRadio.kt` | Deezer radio/related + iTunes same-artist fill → Remote |
 | `RadioMode` | `domain/radio/RadioMode.kt` | `KNOWN` / `NEW` / `BOTH` |
-| Puerto | `domain/repository/IMusicRepository.kt` | contrato repositorio |
+| Puerto | `domain/repository/IMusicRepository.kt` | contrato repositorio (`getCoPlaylistSongIds`) |
 
 ## Data
 
@@ -80,11 +82,11 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 | Modelos dominio UI | `data/model/Models.kt` (`OnlineCatalogTrack`, `CatalogTrackCandidate`, `DownloadStatus`, `ActiveDownload` + factories `queued`/`downloading`/`conflict`/`success`/`error` + `targetPlaylistId` / `resultSongId`, `ActiveDownloadSource` incl. `LB_IMPORT` / `DISCOVER`, `CandidateDownloadState` incl. `QUEUED`, `PlaylistPendingTrack`, `AlbumOverride`, `WifiTransferItem` / `WifiTransferState`, `Album.displayName`) |
 | Cola Local/Remote | `data/model/PlayableItem.kt` (`PlayableItem`, `ResolvedStream`, `Song.toPlayable`) |
 | Room DB | `data/db/AppDatabase.kt` (v6) |
-| DAO | `data/db/MusicDao.kt` |
+| DAO | `data/db/MusicDao.kt` (`getCoPlaylistSongIds`) |
 | Song entity + mappers | `data/db/SongEntity.kt` |
 | Album overrides | `data/db/AlbumOverrideEntity.kt` |
 | Playlist entities | `data/db/PlaylistEntities.kt` (`PlaylistPendingTrackEntity`) |
-| Catálogo / lyrics / covers web | `data/network/MetadataFetcher.kt` |
+| Catálogo / lyrics / covers web | `data/network/MetadataFetcher.kt` (`CatalogSongHint`, `resolveDeezerArtistId`, `fetchDeezerArtistRadio`, `fetchDeezerRelatedArtistIds`, `fetchDeezerArtistTop`, `fetchItunesArtistSongs`) |
 | YouTube search + stream | `data/network/YouTubeExtractor.kt` (`searchYouTube`, `parseSearchContents`, `audioPreferenceScore`, `rankByAudioPreference`, `resolveYouTubeQueryOrId`) |
 | Stream resolve + cache TTL | `data/stream/StreamResolver.kt` |
 | Theme DataStore | `data/preferences/ThemePreferencesRepository.kt` |
@@ -118,7 +120,7 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 | YouTube extraction | `app/src/test/.../YouTubeExtractionIntegrationTest.kt` |
 | YouTube audio preference | `app/src/test/.../YouTubeAudioPreferenceTest.kt` |
 | StreamResolver cache/TTL | `app/src/test/.../StreamResolverTest.kt` |
-| Radio local / engine | `app/src/test/.../RadioEngineTest.kt` |
+| Radio local / engine / Deezer | `app/src/test/.../RadioEngineTest.kt`, `DeezerSimilarRadioTest.kt` |
 | LB radio / CF JSON parse | `app/src/test/.../ListenBrainzRadioParseTest.kt` |
 | LB Para Ti → PlayableItem | `app/src/test/.../MatchedLbPlaylistPlayableTest.kt` |
 | CF match Local|Remote | `app/src/test/.../FetchAndMatchCfRecommendationsUseCaseTest.kt` |

@@ -638,6 +638,10 @@ class MusicRepository(private val context: Context) : IMusicRepository {
         musicDao.removeSongFromPlaylist(playlistId, songId)
     }
 
+    override suspend fun getCoPlaylistSongIds(songId: Long): Set<Long> = withContext(Dispatchers.IO) {
+        musicDao.getCoPlaylistSongIds(songId).toSet()
+    }
+
     override fun getPlaylistPendingTracksFlow(playlistId: Long): Flow<List<PlaylistPendingTrack>> =
         musicDao.getPlaylistPendingTracksFlow(playlistId).map { list ->
             list.map { it.toPendingTrack() }

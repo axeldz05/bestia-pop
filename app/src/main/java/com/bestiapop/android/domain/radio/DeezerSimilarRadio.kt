@@ -1,0 +1,142 @@
+package com.bestiapop.android.domain.radio
+
+import com.bestiapop.android.data.network.CatalogSongHint
+import com.bestiapop.android.data.model.PlayableItem
+import com.bestiapop.android.data.model.Song
+import com.bestiapop.android.domain.usecase.MatchListenBrainzTracksUseCase
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+
+/**
+ * Deezer artist radio + related tops as Radio NEW/BOTH fill (no token).
+ * Optionally tops up with same-artist iTunes search when still under [limit].
+ */
+class DeezerSimilarRadio(
+    private val resolveArtistId: suspend (artist: String) -> Long?,
+    private val fetchArtistRadio: suspend (artistId: Long) -> List<CatalogSongHint>,
+    private val fetchRelatedArtistIds: suspend (artistId: Long, limit: Int) -> List<Long>,
+    private val fetchArtistTop: suspend (artistId: Long, limit: Int) -> List<CatalogSongHint>,
+    private val fetchItunesArtistSongs: suspend (artist: String, limit: Int) -> List<CatalogSongHint> =
+        { _, _ -> emptyList() },
+    private val clockMs: () -> Long = { System.currentTimeMillis() },
+    private val cacheTtlMs: Long = CACHE_TTL_MS,
+    private val relatedArtistLimit: Int = RELATED_ARTIST_LIMIT,
+    private val relatedTopLimit: Int = RELATED_TOP_LIMIT,
+    private val itunesFillLimit: Int = ITUNES_FILL_LIMIT
+) : SimilarTracksProvider {
+
+    override val id: String = "deezer"
+
+    private val mutex = Mutex()
+    private var cachedArtistKey: String? = null
+    private var cachedAtMs: Long = 0L
+    private var cachedHints: List<CatalogSongHint> = emptyList()
+
+    override suspend fun suggest(
+        seed: PlayableItem,
+        library: List<Song>,
+        excludeKeys: Set<String>,
+        limit: Int
+    ): List<PlayableItem> {
+        if (limit <= 0 || seed.artist.isBlank() || seed.title.isBlank()) return emptyList()
+
+        val pool = resolvePool(seed.artist)
+        if (pool.isEmpty()) return emptyList()
+
+        val libraryIndex = MatchListenBrainzTracksUseCase.buildLibraryIndex(library)
+        val seedKey = MatchListenBrainzTracksUseCase.matchKey(seed.artist, seed.title)
+        val seen = excludeKeys.toMutableSet()
+        if (seedKey.isNotEmpty()) seen.add(seedKey)
+
+        val remotes = ArrayList<PlayableItem.Remote>(limit)
+        fun tryAdd(hint: CatalogSongHint) {
+            if (remotes.size >= limit) return
+            val key = MatchListenBrainzTracksUseCase.matchKey(hint.artist, hint.title)
+            if (key.isEmpty() || key in seen) return
+            // NEW/BOTH remote pool: skip tracks already in the library
+            if (libraryIndex.containsKey(key)) return
+            seen.add(key)
+            remotes.add(
+                PlayableItem.Remote(
+                    title = hint.title,
+                    artist = hint.artist,
+                    album = hint.album,
+                    artworkUri = hint.artworkUrl,
+                    durationMs = hint.durationMs,
+                    youtubeQueryOrId = "${hint.artist} ${hint.title}"
+                )
+            )
+        }
+
+        for (hint in pool) {
+            if (remotes.size >= limit) break
+            tryAdd(hint)
+        }
+
+        if (remotes.size < limit) {
+            val itunes = runCatching {
+                fetchItunesArtistSongs(seed.artist, itunesFillLimit)
+            }.getOrDefault(emptyList())
+            val seedTitleNorm = MatchListenBrainzTracksUseCase.normalize(seed.title)
+            for (hint in itunes) {
+                if (remotes.size >= limit) break
+                val titleNorm = MatchListenBrainzTracksUseCase.normalize(hint.title)
+                if (titleNorm.isNotEmpty() && titleNorm == seedTitleNorm) continue
+                tryAdd(hint)
+            }
+        }
+
+        return remotes
+    }
+
+    private suspend fun resolvePool(artist: String): List<CatalogSongHint> {
+        val artistKey = MatchListenBrainzTracksUseCase.normalize(artist)
+        if (artistKey.isEmpty()) return emptyList()
+
+        mutex.withLock {
+            val fresh = cachedArtistKey == artistKey &&
+                clockMs() - cachedAtMs < cacheTtlMs &&
+                cachedHints.isNotEmpty()
+            if (fresh) return cachedHints
+        }
+
+        val artistId = runCatching { resolveArtistId(artist) }.getOrNull() ?: return emptyList()
+        val hints = ArrayList<CatalogSongHint>()
+        val seenKeys = HashSet<String>()
+
+        fun append(list: List<CatalogSongHint>) {
+            for (hint in list) {
+                val key = MatchListenBrainzTracksUseCase.matchKey(hint.artist, hint.title)
+                if (key.isEmpty() || key in seenKeys) continue
+                seenKeys.add(key)
+                hints.add(hint)
+            }
+        }
+
+        append(runCatching { fetchArtistRadio(artistId) }.getOrDefault(emptyList()))
+
+        val relatedIds = runCatching {
+            fetchRelatedArtistIds(artistId, relatedArtistLimit)
+        }.getOrDefault(emptyList())
+        for (relatedId in relatedIds) {
+            append(
+                runCatching { fetchArtistTop(relatedId, relatedTopLimit) }
+                    .getOrDefault(emptyList())
+            )
+        }
+
+        mutex.withLock {
+            cachedArtistKey = artistKey
+            cachedAtMs = clockMs()
+            cachedHints = hints
+        }
+        return hints
+    }
+
+    companion object {
+        const val CACHE_TTL_MS = 20L * 60L * 1000L
+        const val RELATED_ARTIST_LIMIT = 4
+        const val RELATED_TOP_LIMIT = 5
+        const val ITUNES_FILL_LIMIT = 25
+    }
+}

@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
@@ -39,7 +40,6 @@ import androidx.compose.material.icons.automirrored.filled.VolumeMute
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Lyrics
 import androidx.compose.material.icons.filled.MusicNote
@@ -100,13 +100,21 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.data.model.RepeatMode
+import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.domain.radio.RadioMode
 import com.bestiapop.android.ui.MusicPlayerViewModel
 import com.bestiapop.android.ui.components.ArtworkThumbnail
 import com.bestiapop.android.ui.components.formatDuration
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
+
+/** Layout hit-test coords without Compose state (avoids recomposition on every layout pass). */
+private class ScrollZoneCoords {
+    var surface: LayoutCoordinates? = null
+    var inner: LayoutCoordinates? = null
+}
 
 private data class LrcLine(val timeMs: Long, val text: String)
 
@@ -140,7 +148,8 @@ fun NowPlayingScreen(
 
     val currentItem by viewModel.currentItem.collectAsState()
     val isPlaying by viewModel.isPlaying.collectAsState()
-    val positionMs by viewModel.playbackPositionMs.collectAsState()
+    // Do NOT collect playbackPositionMs here — it ticks every 200ms and would recompose
+    // the whole screen (including the Cola LazyColumn). Scrubber/lyrics collect locally.
     val repeatMode by viewModel.repeatMode.collectAsState()
     val isShuffle by viewModel.isShuffle.collectAsState()
     val volumeLevel by viewModel.volumeLevel.collectAsState()
@@ -154,8 +163,6 @@ fun NowPlayingScreen(
     var radioMenuExpanded by remember { mutableStateOf(false) }
 
     var selectedTab by remember { mutableIntStateOf(0) } // 0 = Portada, 1 = Letra, 2 = Cola
-    var isDragging by remember { mutableStateOf(false) }
-    var dragPosition by remember { mutableFloatStateOf(0f) }
     val queueListState = rememberLazyListState()
 
     val item = currentItem ?: return
@@ -164,7 +171,6 @@ fun NowPlayingScreen(
         is PlayableItem.Local -> item.song.album
         is PlayableItem.Remote -> item.album?.takeIf { it.isNotBlank() } ?: "Stream"
     }
-    val currentPosition = if (isDragging) dragPosition.toLong() else positionMs
 
     // Swipe-to-dismiss: Portada uses nested scroll; Letra/Cola dismiss only outside the
     // lyrics/queue panel so those lists keep exclusive vertical scrolling.
@@ -180,9 +186,7 @@ fun NowPlayingScreen(
 
     var dragOffset by remember { mutableFloatStateOf(0f) }
     val enterOffset = remember { Animatable(screenHeightPx) }
-
-    var surfaceCoords by remember { mutableStateOf<LayoutCoordinates?>(null) }
-    var innerScrollCoords by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    val scrollZoneCoords = remember { ScrollZoneCoords() }
 
     LaunchedEffect(Unit) {
         enterOffset.animateTo(0f, tween(280))
@@ -190,14 +194,14 @@ fun NowPlayingScreen(
 
     LaunchedEffect(selectedTab) {
         if (selectedTab == 0) {
-            innerScrollCoords = null
+            scrollZoneCoords.inner = null
         }
         dragOffset = 0f
     }
 
     fun touchInInnerScrollZone(positionInSurface: Offset): Boolean {
-        val surface = surfaceCoords ?: return false
-        val inner = innerScrollCoords ?: return false
+        val surface = scrollZoneCoords.surface ?: return false
+        val inner = scrollZoneCoords.inner ?: return false
         if (!surface.isAttached || !inner.isAttached) return false
         val bounds = surface.localBoundingBoxOf(inner, clipBounds = false)
         return bounds.contains(positionInSurface)
@@ -283,18 +287,18 @@ fun NowPlayingScreen(
         queueItems.indexOfFirst { it.mediaId == item.mediaId }
     }
 
-    // Scroll queue to current song only when entering Cola or on user-initiated track change
+    // Jump (no animation) so opening Cola stays snappy on long queues
     LaunchedEffect(selectedTab, queueFocusEpoch) {
         if (selectedTab != 2) return@LaunchedEffect
         val index = currentQueueIndex
         if (index >= 0) {
-            queueListState.animateScrollToItem(index)
+            queueListState.scrollToItem(index)
         }
     }
 
     val surfaceModifier = Modifier
         .fillMaxSize()
-        .onGloballyPositioned { surfaceCoords = it }
+        .onGloballyPositioned { scrollZoneCoords.surface = it }
         .nestedScroll(nestedScrollConnection)
         .then(outsideScrollDismissPointer)
         .offset {
@@ -483,214 +487,26 @@ fun NowPlayingScreen(
                     }
                 }
                 1 -> {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth(0.85f)
-                            .height(280.dp)
-                            .onGloballyPositioned { innerScrollCoords = it }
-                            .clip(RoundedCornerShape(24.dp))
-                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-                            .padding(16.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        val rawLyrics = localSong?.lyrics
-                        if (!rawLyrics.isNullOrEmpty()) {
-                            val parsedLrc = remember(rawLyrics) { parseLrcLyrics(rawLyrics) }
-
-                            if (parsedLrc.isNotEmpty()) {
-                                Column(
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .verticalScroll(rememberScrollState()),
-                                    horizontalAlignment = Alignment.CenterHorizontally
-                                ) {
-                                    parsedLrc.forEach { line ->
-                                        val isCurrentLine = currentPosition >= line.timeMs &&
-                                                (parsedLrc.indexOf(line) == parsedLrc.lastIndex || currentPosition < parsedLrc[parsedLrc.indexOf(line) + 1].timeMs)
-
-                                        Text(
-                                            text = line.text,
-                                            style = MaterialTheme.typography.bodyMedium.copy(
-                                                fontWeight = if (isCurrentLine) FontWeight.Bold else FontWeight.Normal,
-                                                fontSize = if (isCurrentLine) 17.sp else 14.sp
-                                            ),
-                                            color = if (isCurrentLine) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                                            textAlign = TextAlign.Center,
-                                            modifier = Modifier.padding(vertical = 4.dp)
-                                        )
-                                    }
-                                }
-                            } else {
-                                Column(
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .verticalScroll(rememberScrollState())
-                                ) {
-                                    Text(
-                                        text = rawLyrics,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        textAlign = TextAlign.Center,
-                                        color = MaterialTheme.colorScheme.onSurface,
-                                        modifier = Modifier.fillMaxWidth()
-                                    )
-                                }
-                            }
-                        } else {
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.Center
-                            ) {
-                                Text(
-                                    text = if (localSong == null) {
-                                        "Letra no disponible en stream"
-                                    } else {
-                                        "Sin letra disponible"
-                                    },
-                                    style = MaterialTheme.typography.titleMedium,
-                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                                )
-                                if (localSong != null) {
-                                Spacer(modifier = Modifier.height(12.dp))
-                                Button(
-                                    onClick = { viewModel.retryFetchLyrics(localSong) },
-                                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
-                                    shape = RoundedCornerShape(12.dp)
-                                ) {
-                                    Icon(imageVector = Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text("Buscar en línea", color = MaterialTheme.colorScheme.onPrimaryContainer)
-                                }
-                                }
-                            }
+                    NowPlayingLyricsPanel(
+                        localSong = localSong,
+                        positionMsFlow = viewModel.playbackPositionMs,
+                        onRetryFetchLyrics = viewModel::retryFetchLyrics,
+                        onPanelPositioned = remember(scrollZoneCoords) {
+                            { coords: LayoutCoordinates -> scrollZoneCoords.inner = coords }
                         }
-                    }
+                    )
                 }
                 2 -> {
-                    // Queue Tab Content
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth(0.92f)
-                            .height(280.dp)
-                            .onGloballyPositioned { innerScrollCoords = it }
-                            .clip(RoundedCornerShape(24.dp))
-                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
-                    ) {
-                        if (queueItems.isEmpty()) {
-                            Column(
-                                modifier = Modifier.fillMaxSize(),
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.Center
-                            ) {
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Filled.QueueMusic,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
-                                    modifier = Modifier.size(48.dp)
-                                )
-                                Spacer(modifier = Modifier.height(8.dp))
-                                Text(
-                                    text = "La cola está vacía",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                                )
-                            }
-                        } else {
-                            val currentIndex = currentQueueIndex
-                            LazyColumn(
-                                state = queueListState,
-                                modifier = Modifier.fillMaxSize()
-                            ) {
-                                itemsIndexed(queueItems, key = { idx, s -> "${s.mediaId}_$idx" }) { index, queueSong ->
-                                    val isCurrent = index == currentIndex
-                                    val bgColor = if (isCurrent)
-                                        MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
-                                    else
-                                        MaterialTheme.colorScheme.surface.copy(alpha = 0f)
-
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .background(bgColor)
-                                            .clickable { viewModel.skipToQueueIndex(index) }
-                                            .padding(horizontal = 12.dp, vertical = 6.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        // Track number / now-playing indicator
-                                        Box(
-                                            modifier = Modifier.width(28.dp),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            if (isCurrent) {
-                                                Icon(
-                                                    imageVector = Icons.Default.PlayArrow,
-                                                    contentDescription = "Reproduciendo",
-                                                    tint = MaterialTheme.colorScheme.primary,
-                                                    modifier = Modifier.size(18.dp)
-                                                )
-                                            } else {
-                                                Text(
-                                                    text = "${index + 1}",
-                                                    style = MaterialTheme.typography.labelMedium,
-                                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-                                                )
-                                            }
-                                        }
-
-                                        ArtworkThumbnail(
-                                            artworkUri = queueSong.artworkUri,
-                                            size = 40.dp,
-                                            cornerRadius = 8.dp,
-                                            contentDescription = null
-                                        )
-
-                                        Spacer(modifier = Modifier.width(10.dp))
-
-                                        // Title & Artist
-                                        Column(
-                                            modifier = Modifier.weight(1f)
-                                        ) {
-                                            Text(
-                                                text = queueSong.title,
-                                                style = MaterialTheme.typography.bodyMedium.copy(
-                                                    fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal
-                                                ),
-                                                color = if (isCurrent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis
-                                            )
-                                            Text(
-                                                text = queueSong.artist,
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis
-                                            )
-                                        }
-
-                                        // Duration
-                                        Text(
-                                            text = formatDuration(queueSong.durationMs),
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-                                        )
-
-                                        // Remove button
-                                        IconButton(
-                                            onClick = { viewModel.removeFromQueue(index) },
-                                            modifier = Modifier.size(32.dp)
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Default.Close,
-                                                contentDescription = "Quitar de la cola",
-                                                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f),
-                                                modifier = Modifier.size(16.dp)
-                                            )
-                                        }
-                                    }
-                                }
-                            }
+                    NowPlayingQueuePanel(
+                        queueItems = queueItems,
+                        currentIndex = currentQueueIndex,
+                        listState = queueListState,
+                        onSkipTo = viewModel::skipToQueueIndex,
+                        onRemove = viewModel::removeFromQueue,
+                        onPanelPositioned = remember(scrollZoneCoords) {
+                            { coords: LayoutCoordinates -> scrollZoneCoords.inner = coords }
                         }
-                    }
+                    )
                 }
             }
 
@@ -747,47 +563,11 @@ fun NowPlayingScreen(
             Spacer(modifier = Modifier.height(20.dp))
 
             // Interactive Time Scrubber Slider Bar
-            Column(modifier = Modifier.fillMaxWidth()) {
-                val maxDuration = item.durationMs.toFloat().coerceAtLeast(1f)
-                val sliderValue = if (isDragging) dragPosition else currentPosition.toFloat().coerceIn(0f, maxDuration)
-
-                Slider(
-                    value = sliderValue,
-                    onValueChange = { newValue ->
-                        isDragging = true
-                        dragPosition = newValue
-                    },
-                    onValueChangeFinished = {
-                        isDragging = false
-                        viewModel.seekTo(dragPosition.toLong())
-                    },
-                    valueRange = 0f..maxDuration,
-                    colors = SliderDefaults.colors(
-                        thumbColor = MaterialTheme.colorScheme.primary,
-                        activeTrackColor = MaterialTheme.colorScheme.primary,
-                        inactiveTrackColor = MaterialTheme.colorScheme.surfaceVariant
-                    ),
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 4.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        text = formatDuration(currentPosition),
-                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    Text(
-                        text = formatDuration(item.durationMs),
-                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
-                    )
-                }
-            }
+            NowPlayingScrubber(
+                durationMs = item.durationMs,
+                positionMsFlow = viewModel.playbackPositionMs,
+                onSeek = { viewModel.seekTo(it) }
+            )
 
             Spacer(modifier = Modifier.height(16.dp))
 
@@ -921,6 +701,319 @@ fun NowPlayingScreen(
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun NowPlayingScrubber(
+    durationMs: Long,
+    positionMsFlow: StateFlow<Long>,
+    onSeek: (Long) -> Unit
+) {
+    val positionMs by positionMsFlow.collectAsState()
+    var isDragging by remember { mutableStateOf(false) }
+    var dragPosition by remember { mutableFloatStateOf(0f) }
+    val maxDuration = durationMs.toFloat().coerceAtLeast(1f)
+    val displayPosition = if (isDragging) dragPosition.toLong() else positionMs
+    val sliderValue = if (isDragging) dragPosition else positionMs.toFloat().coerceIn(0f, maxDuration)
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Slider(
+            value = sliderValue,
+            onValueChange = { newValue ->
+                isDragging = true
+                dragPosition = newValue
+            },
+            onValueChangeFinished = {
+                isDragging = false
+                onSeek(dragPosition.toLong())
+            },
+            valueRange = 0f..maxDuration,
+            colors = SliderDefaults.colors(
+                thumbColor = MaterialTheme.colorScheme.primary,
+                activeTrackColor = MaterialTheme.colorScheme.primary,
+                inactiveTrackColor = MaterialTheme.colorScheme.surfaceVariant
+            ),
+            modifier = Modifier.fillMaxWidth()
+        )
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 4.dp),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(
+                text = formatDuration(displayPosition),
+                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                color = MaterialTheme.colorScheme.primary
+            )
+            Text(
+                text = formatDuration(durationMs),
+                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
+            )
+        }
+    }
+}
+
+@Composable
+private fun NowPlayingLyricsPanel(
+    localSong: Song?,
+    positionMsFlow: StateFlow<Long>,
+    onRetryFetchLyrics: (Song) -> Unit,
+    onPanelPositioned: (LayoutCoordinates) -> Unit
+) {
+    val positionMs by positionMsFlow.collectAsState()
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth(0.85f)
+            .height(280.dp)
+            .onGloballyPositioned(onPanelPositioned)
+            .clip(RoundedCornerShape(24.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+            .padding(16.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        val rawLyrics = localSong?.lyrics
+        if (!rawLyrics.isNullOrEmpty()) {
+            val parsedLrc = remember(rawLyrics) { parseLrcLyrics(rawLyrics) }
+
+            if (parsedLrc.isNotEmpty()) {
+                val currentLineIndex = remember(parsedLrc, positionMs) {
+                    var idx = -1
+                    for (i in parsedLrc.indices) {
+                        if (positionMs >= parsedLrc[i].timeMs) idx = i else break
+                    }
+                    idx
+                }
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .verticalScroll(rememberScrollState()),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    parsedLrc.forEachIndexed { index, line ->
+                        val isCurrentLine = index == currentLineIndex
+                        Text(
+                            text = line.text,
+                            style = MaterialTheme.typography.bodyMedium.copy(
+                                fontWeight = if (isCurrentLine) FontWeight.Bold else FontWeight.Normal,
+                                fontSize = if (isCurrentLine) 17.sp else 14.sp
+                            ),
+                            color = if (isCurrentLine) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                            },
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.padding(vertical = 4.dp)
+                        )
+                    }
+                }
+            } else {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    Text(
+                        text = rawLyrics,
+                        style = MaterialTheme.typography.bodyMedium,
+                        textAlign = TextAlign.Center,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
+        } else {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Text(
+                    text = if (localSong == null) {
+                        "Letra no disponible en stream"
+                    } else {
+                        "Sin letra disponible"
+                    },
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                )
+                if (localSong != null) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Button(
+                        onClick = { onRetryFetchLyrics(localSong) },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primaryContainer
+                        ),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Buscar en línea", color = MaterialTheme.colorScheme.onPrimaryContainer)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun NowPlayingQueuePanel(
+    queueItems: List<PlayableItem>,
+    currentIndex: Int,
+    listState: LazyListState,
+    onSkipTo: (Int) -> Unit,
+    onRemove: (Int) -> Unit,
+    onPanelPositioned: (LayoutCoordinates) -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth(0.92f)
+            .height(280.dp)
+            .onGloballyPositioned(onPanelPositioned)
+            .clip(RoundedCornerShape(24.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
+    ) {
+        if (queueItems.isEmpty()) {
+            Column(
+                modifier = Modifier.fillMaxSize(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.QueueMusic,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
+                    modifier = Modifier.size(48.dp)
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "La cola está vacía",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                )
+            }
+        } else {
+            LazyColumn(
+                state = listState,
+                modifier = Modifier.fillMaxSize()
+            ) {
+                itemsIndexed(
+                    items = queueItems,
+                    key = { idx, s -> "${s.mediaId}_$idx" },
+                    contentType = { _, _ -> "queue_row" }
+                ) { index, queueSong ->
+                    NowPlayingQueueRow(
+                        item = queueSong,
+                        index = index,
+                        isCurrent = index == currentIndex,
+                        onClick = { onSkipTo(index) },
+                        onRemove = { onRemove(index) }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun NowPlayingQueueRow(
+    item: PlayableItem,
+    index: Int,
+    isCurrent: Boolean,
+    onClick: () -> Unit,
+    onRemove: () -> Unit
+) {
+    val bgColor = if (isCurrent) {
+        MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+    } else {
+        MaterialTheme.colorScheme.surface.copy(alpha = 0f)
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(bgColor)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier.width(28.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            if (isCurrent) {
+                Icon(
+                    imageVector = Icons.Default.PlayArrow,
+                    contentDescription = "Reproduciendo",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(18.dp)
+                )
+            } else {
+                Text(
+                    text = "${index + 1}",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                )
+            }
+        }
+
+        ArtworkThumbnail(
+            artworkUri = item.artworkUri,
+            size = 40.dp,
+            cornerRadius = 8.dp,
+            contentDescription = null
+        )
+
+        Spacer(modifier = Modifier.width(10.dp))
+
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = item.title,
+                style = MaterialTheme.typography.bodyMedium.copy(
+                    fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal
+                ),
+                color = if (isCurrent) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.onSurface
+                },
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = item.artist,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+
+        Text(
+            text = formatDuration(item.durationMs),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+        )
+
+        IconButton(
+            onClick = onRemove,
+            modifier = Modifier.size(32.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.Close,
+                contentDescription = "Quitar de la cola",
+                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f),
+                modifier = Modifier.size(16.dp)
+            )
         }
     }
 }

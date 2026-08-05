@@ -1,6 +1,11 @@
 package com.bestiapop.android.ui.screens
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
+import android.widget.Toast
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,6 +23,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CloudUpload
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -148,6 +154,11 @@ fun WebServerScreen(viewModel: MusicPlayerViewModel) {
 
                 if (serverAddress != null) {
                     val urlDisplay = "http://$serverAddress"
+                    val copyUrl = {
+                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        clipboard.setPrimaryClip(ClipData.newPlainText("WiFi Sync", urlDisplay))
+                        Toast.makeText(context, "Link copiado", Toast.LENGTH_SHORT).show()
+                    }
 
                     Surface(
                         color = MaterialTheme.colorScheme.surface,
@@ -169,22 +180,39 @@ fun WebServerScreen(viewModel: MusicPlayerViewModel) {
 
                             Spacer(modifier = Modifier.height(8.dp))
 
-                            Text(
-                                text = urlDisplay,
-                                style = MaterialTheme.typography.headlineSmall.copy(
-                                    fontWeight = FontWeight.ExtraBold,
-                                    fontSize = 20.sp
-                                ),
-                                color = MaterialTheme.colorScheme.primary,
-                                textAlign = TextAlign.Center
-                            )
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable(onClick = copyUrl)
+                                    .padding(vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center
+                            ) {
+                                Text(
+                                    text = urlDisplay,
+                                    style = MaterialTheme.typography.headlineSmall.copy(
+                                        fontWeight = FontWeight.ExtraBold,
+                                        fontSize = 20.sp
+                                    ),
+                                    color = MaterialTheme.colorScheme.primary,
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.weight(1f, fill = false)
+                                )
+                                IconButton(onClick = copyUrl) {
+                                    Icon(
+                                        imageVector = Icons.Default.ContentCopy,
+                                        contentDescription = "Copiar link",
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
 
                             Text(
-                                text = "en el navegador",
+                                text = "Tocá para copiar · abrí en el navegador",
                                 style = MaterialTheme.typography.bodyMedium,
                                 textAlign = TextAlign.Center,
                                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
-                                modifier = Modifier.padding(top = 8.dp)
+                                modifier = Modifier.padding(top = 4.dp)
                             )
                         }
                     }

@@ -67,11 +67,12 @@ Mini player se rehidrata desde `MediaController` (sesión viva) o `PlaybackSessi
 
 1. **Todo es colección** — play/shuffle/enqueue pasan por pipeline unificado (`PlayCollectionUseCase` + ViewModel); cola interna es `PlayableItem`.
 2. **Catálogo ≠ audio** — metadatos de iTunes/Deezer; bytes de audio vía YouTube (re-extraer URL antes de descargar/stream por CDN 403).
-3. **Álbum vs playlist en portadas** — álbum propaga a canciones; portada de playlist es entidad propia.
+3. **Álbum vs playlist en portadas/metadata** — álbum tiene `album_overrides` (guardar solo álbum vs álbum+canciones); portada de playlist es entidad propia; editar canción no reescribe álbum.
 4. **Portadas locales** — copiar a `context.filesDir` (no depender de content URIs temporales).
 5. **Remoto efímero** — `PlayableItem.Remote` + `ResolvedStream` en memoria; nunca persistir URLs CDN en Room.
 6. **Radio** — sesión con seed + providers (`LocalMetadataRadio` / `ListenBrainzRadio` / `CfRecommendationsRadio`); refill de cola; no pipeline paralelo.
 7. **Para Ti mixto** — Discover + CF Recomendados reproducen Local+Remote; “Guardar al escuchar” / import LB no bloquean ni persisten URLs CDN; faltantes de import usan `activeDownloads` (`LB_IMPORT` + `targetPlaylistId`).
+8. **Cola de descargas** — `QUEUED`/`SUCCESS` visibles; máx. 3 concurrentes; playlist del catálogo crea playlist local.
 
 ## Servicios Android
 
@@ -82,9 +83,9 @@ Mini player se rehidrata desde `MediaController` (sesión viva) o `PlaybackSessi
 
 ## Base de datos
 
-Entidades: `SongEntity`, `PlaylistEntity`, `PlaylistSongCrossRef`, `PlaylistPendingTrackEntity`, `PendingListenEntity`.
+Entidades: `SongEntity`, `PlaylistEntity`, `PlaylistSongCrossRef`, `PlaylistPendingTrackEntity`, `PendingListenEntity`, `AlbumOverrideEntity`.
 Índice único Room: `songs.uriString`. Deduplicación lógica por `matchKey(artist, title)` en filtros de scan / download conflict (`Music/BestiaPop` app-managed). URIs app-owned: path absoluto (`SongPathNormalizer`). One-shot migrator archivado en branch `archive/library-dedup-v1-migrator`.
-Migraciones Room: 1→2 (dedupe + unique index), 2→3 (playlist description/coverUri), 3→4 (pending_listens), 4→5 (playlist_pending_tracks).
+Migraciones Room: 1→2 (dedupe + unique index), 2→3 (playlist description/coverUri), 3→4 (pending_listens), 4→5 (playlist_pending_tracks), 5→6 (`album_overrides`).
 
 ## Relacionado
 

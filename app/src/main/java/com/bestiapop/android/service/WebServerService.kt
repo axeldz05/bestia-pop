@@ -12,17 +12,16 @@ import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import com.bestiapop.android.data.db.SongEntity
+import com.bestiapop.android.data.model.WifiTransferItem
+import com.bestiapop.android.data.model.WifiTransferState
 import com.bestiapop.android.data.repository.MusicRepository
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
-import io.ktor.http.content.PartData
-import io.ktor.http.content.streamProvider
 import io.ktor.server.application.call
 import io.ktor.server.cio.CIO
 import io.ktor.server.engine.EmbeddedServer
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.request.receiveChannel
-import io.ktor.server.request.receiveMultipart
 import io.ktor.server.response.header
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.get
@@ -34,10 +33,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import java.io.File
 import java.net.NetworkInterface
 import java.util.Collections
+import java.util.UUID
 
 class WebServerService : Service() {
 
@@ -48,6 +49,32 @@ class WebServerService : Service() {
         const val PORT = 8080
         private val _serverState = MutableStateFlow<String?>(null)
         val serverState: StateFlow<String?> = _serverState
+
+        private val _transfers = MutableStateFlow<List<WifiTransferItem>>(emptyList())
+        val transfers: StateFlow<List<WifiTransferItem>> = _transfers.asStateFlow()
+
+        fun dismissTransfer(id: String) {
+            _transfers.value = _transfers.value.filterNot { it.id == id }
+        }
+
+        fun clearTransfers() {
+            _transfers.value = emptyList()
+        }
+
+        private fun upsertTransfer(item: WifiTransferItem) {
+            val list = _transfers.value.toMutableList()
+            val index = list.indexOfFirst { it.id == item.id }
+            if (index >= 0) list[index] = item else list.add(0, item)
+            _transfers.value = list
+        }
+
+        private fun updateTransfer(id: String, transform: (WifiTransferItem) -> WifiTransferItem) {
+            val list = _transfers.value.toMutableList()
+            val index = list.indexOfFirst { it.id == id }
+            if (index < 0) return
+            list[index] = transform(list[index])
+            _transfers.value = list
+        }
 
         fun getLocalIpAddress(context: Context): String? {
             try {
@@ -150,8 +177,23 @@ class WebServerService : Service() {
                             val rawName = call.request.queryParameters["name"] ?: "audio_${System.currentTimeMillis()}.mp3"
                             val safeName = rawName.substringAfterLast("/").substringAfterLast("\\").replace(Regex("[^a-zA-Z0-9._-]"), "_")
                             val destinationFile = File(uploadDir, safeName)
+                            val transferId = UUID.randomUUID().toString()
+                            val displayTitle = safeName.substringBeforeLast(".")
+                            val contentLength = call.request.headers["Content-Length"]?.toLongOrNull()?.takeIf { it > 0L }
+
+                            upsertTransfer(
+                                WifiTransferItem(
+                                    id = transferId,
+                                    fileName = safeName,
+                                    title = displayTitle,
+                                    artist = "Recibiendo…",
+                                    state = WifiTransferState.UPLOADING,
+                                    progressPercent = 0
+                                )
+                            )
 
                             try {
+                                var bytesWritten = 0L
                                 val channel = call.receiveChannel()
                                 destinationFile.outputStream().buffered(64 * 1024).use { output ->
                                     val buffer = ByteArray(64 * 1024)
@@ -159,11 +201,29 @@ class WebServerService : Service() {
                                         val read = channel.readAvailable(buffer, 0, buffer.size)
                                         if (read <= 0) break
                                         output.write(buffer, 0, read)
+                                        bytesWritten += read
+                                        if (contentLength != null) {
+                                            val percent = ((bytesWritten * 100) / contentLength).toInt().coerceIn(0, 99)
+                                            updateTransfer(transferId) {
+                                                it.copy(
+                                                    state = WifiTransferState.UPLOADING,
+                                                    progressPercent = percent
+                                                )
+                                            }
+                                        }
                                     }
                                     output.flush()
                                 }
 
-                                serviceScope.launch(Dispatchers.IO) {
+                                updateTransfer(transferId) {
+                                    it.copy(
+                                        state = WifiTransferState.PROCESSING,
+                                        progressPercent = 100,
+                                        artist = "Procesando…"
+                                    )
+                                }
+
+                                try {
                                     val retriever = MediaMetadataRetriever()
                                     try {
                                         retriever.setDataSource(destinationFile.absolutePath)
@@ -195,16 +255,39 @@ class WebServerService : Service() {
                                             dateAdded = System.currentTimeMillis()
                                         )
 
-                                        repository.saveUploadedSong(songEntity)
-                                    } catch (e: Exception) {
-                                        e.printStackTrace()
+                                        val songId = repository.saveUploadedSong(songEntity)
+                                        updateTransfer(transferId) {
+                                            it.copy(
+                                                title = title,
+                                                artist = artist,
+                                                state = WifiTransferState.DONE,
+                                                progressPercent = 100,
+                                                songId = songId,
+                                                artworkUri = embeddedArt,
+                                                errorMessage = null
+                                            )
+                                        }
                                     } finally {
-                                        try { retriever.release() } catch (ignored: Exception) {}
+                                        try { retriever.release() } catch (_: Exception) {}
+                                    }
+                                } catch (e: Exception) {
+                                    e.printStackTrace()
+                                    updateTransfer(transferId) {
+                                        it.copy(
+                                            state = WifiTransferState.ERROR,
+                                            errorMessage = e.localizedMessage ?: "Error al guardar"
+                                        )
                                     }
                                 }
 
                                 call.respondText("""{"status":"ok","filename":"$safeName"}""", ContentType.Application.Json)
                             } catch (e: Exception) {
+                                updateTransfer(transferId) {
+                                    it.copy(
+                                        state = WifiTransferState.ERROR,
+                                        errorMessage = e.localizedMessage ?: "Error de transferencia"
+                                    )
+                                }
                                 call.respondText("""{"status":"error","message":"${e.localizedMessage}"}""", ContentType.Application.Json, HttpStatusCode.InternalServerError)
                             }
                         }
@@ -654,6 +737,10 @@ class WebServerService : Service() {
     override fun onDestroy() {
         server?.stop(1000, 2000)
         _serverState.value = null
+        // Keep received items visible after stop; only clear in-progress ones.
+        _transfers.value = _transfers.value.filter {
+            it.state == WifiTransferState.DONE || it.state == WifiTransferState.ERROR
+        }
         super.onDestroy()
     }
 

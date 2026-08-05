@@ -1,6 +1,7 @@
 package com.bestiapop.android.domain.usecase
 
 import com.bestiapop.android.data.model.Album
+import com.bestiapop.android.data.model.AlbumOverride
 import com.bestiapop.android.data.model.Artist
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.ui.SortOption
@@ -87,19 +88,27 @@ class GetLibrarySongsUseCase {
         }
     }
 
-    fun extractAlbums(songs: List<Song>): List<Album> {
+    fun extractAlbums(
+        songs: List<Song>,
+        overrides: Map<String, AlbumOverride> = emptyMap()
+    ): List<Album> {
         return songs.groupBy { it.album }.map { (albumName, albumSongs) ->
+            val override = overrides[albumName]
             val firstArt = albumSongs.firstOrNull { !it.artworkUri.isNullOrEmpty() }?.artworkUri
             val artistName = albumSongs.firstOrNull()?.artist ?: "Unknown Artist"
+            val derivedYear = albumSongs.map { it.year }.firstOrNull { it > 0 } ?: 0
             Album(
                 name = albumName,
-                artist = artistName,
+                displayName = override?.displayName?.takeIf { it.isNotBlank() } ?: albumName,
+                artist = override?.artist?.takeIf { it.isNotBlank() } ?: artistName,
                 songCount = albumSongs.size,
-                artworkUri = firstArt,
-                genre = dominantGenre(albumSongs.map { it.genre }),
+                artworkUri = override?.artworkUri?.takeIf { it.isNotBlank() } ?: firstArt,
+                genre = override?.genre?.takeIf { it.isNotBlank() }
+                    ?: dominantGenre(albumSongs.map { it.genre }),
+                year = if (override != null && override.year > 0) override.year else derivedYear,
                 dateAdded = albumSongs.maxOfOrNull { it.dateAdded }
             )
-        }.sortedBy { it.name.lowercase() }
+        }.sortedBy { it.displayName.lowercase() }
     }
 
     fun extractArtists(songs: List<Song>, artistPhotoMap: Map<String, String> = emptyMap()): List<Artist> {

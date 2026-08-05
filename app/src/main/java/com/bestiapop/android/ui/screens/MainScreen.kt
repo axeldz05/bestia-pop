@@ -182,7 +182,7 @@ fun MainScreen(
                         }
                     )
                     2 -> DownloadsScreen(viewModel = viewModel)
-                    3 -> WebServerScreen()
+                    3 -> WebServerScreen(viewModel = viewModel)
                     4 -> SettingsScreen(viewModel = viewModel)
                 }
             }

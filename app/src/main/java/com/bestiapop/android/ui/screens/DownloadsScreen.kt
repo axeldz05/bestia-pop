@@ -22,7 +22,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import com.bestiapop.android.data.model.CandidateDownloadState
 import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.ui.MusicPlayerViewModel
 import com.bestiapop.android.ui.components.ActiveDownloadRow
@@ -34,12 +33,6 @@ fun DownloadsScreen(viewModel: MusicPlayerViewModel) {
     val isPlaying by viewModel.isPlaying.collectAsState()
     val resolvingRemote by viewModel.resolvingRemote.collectAsState()
     val currentItem by viewModel.currentItem.collectAsState()
-
-    val visibleDownloads = activeDownloads.filter {
-        it.state == CandidateDownloadState.DOWNLOADING ||
-            it.state == CandidateDownloadState.ERROR ||
-            it.state == CandidateDownloadState.IDLE
-    }
 
     Column(
         modifier = Modifier
@@ -67,9 +60,9 @@ fun DownloadsScreen(viewModel: MusicPlayerViewModel) {
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        if (visibleDownloads.isEmpty()) {
+        if (activeDownloads.isEmpty()) {
             Text(
-                text = "No hay descargas en curso",
+                text = "No hay descargas",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
                 modifier = Modifier
@@ -78,7 +71,7 @@ fun DownloadsScreen(viewModel: MusicPlayerViewModel) {
                 textAlign = TextAlign.Center
             )
         } else {
-            visibleDownloads.forEach { download ->
+            activeDownloads.forEach { download ->
                 val track = download.currentTrack
                 val previewKey = track?.let { viewModel.catalogPreviewKeyFor(it) }
                 val isThisPreview = previewKey != null && catalogPreviewKey == previewKey
@@ -87,6 +80,7 @@ fun DownloadsScreen(viewModel: MusicPlayerViewModel) {
                     isPreviewPlaying = isThisPreview && isPlaying && currentItem is PlayableItem.Remote,
                     isPreviewResolving = isThisPreview && resolvingRemote,
                     onPreview = { viewModel.previewActiveDownload(download.id) },
+                    onPlay = { viewModel.playActiveDownload(download.id) },
                     onRetry = { viewModel.retryActiveDownload(download.id) },
                     onCycle = { viewModel.cycleActiveDownload(download.id) },
                     onDismiss = { viewModel.dismissActiveDownload(download.id) }

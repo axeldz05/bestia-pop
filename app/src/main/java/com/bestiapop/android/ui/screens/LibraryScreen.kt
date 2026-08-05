@@ -60,6 +60,7 @@ import com.bestiapop.android.ui.components.MultiSelectActionBar
 import com.bestiapop.android.ui.components.PlaylistAdditionActionBar
 import com.bestiapop.android.ui.screens.library.AddToPlaylistDialog
 import com.bestiapop.android.ui.screens.library.ConfirmDeleteSongsDialog
+import com.bestiapop.android.ui.screens.library.EditAlbumMetadataDialog
 import com.bestiapop.android.ui.screens.library.EditSongMetadataDialog
 import com.bestiapop.android.ui.screens.library.LibraryAlbumGrid
 import com.bestiapop.android.ui.screens.library.LibraryArtistList
@@ -111,6 +112,7 @@ fun LibraryScreen(
     // Active Dialogs state
     var editingSong by remember { mutableStateOf<Song?>(null) }
     var albumForCoverChange by remember { mutableStateOf<Album?>(null) }
+    var albumForEdit by remember { mutableStateOf<Album?>(null) }
     var songForPlaylistAddition by remember { mutableStateOf<Song?>(null) }
     var songsForDeletion by remember { mutableStateOf<List<Song>?>(null) }
 
@@ -493,7 +495,8 @@ fun LibraryScreen(
                             val albumSongs = songs.filter { it.album.equals(album.name, ignoreCase = true) }
                             viewModel.shuffleCollection(albumSongs)
                         },
-                        onChangeAlbumCover = { albumForCoverChange = it }
+                        onChangeAlbumCover = { albumForCoverChange = it },
+                        onEditAlbum = { albumForEdit = it }
                     )
                 }
 
@@ -541,16 +544,47 @@ fun LibraryScreen(
         EditSongMetadataDialog(
             song = song,
             onDismiss = { editingSong = null },
-            onConfirm = { title, artist, album, genre ->
-                viewModel.updateSongMetadata(song.id, title, artist, album, genre)
+            onConfirm = { title, artist, album, genre, year ->
+                viewModel.updateSongMetadata(song.id, title, artist, album, genre, year)
                 editingSong = null
+            }
+        )
+    }
+
+    albumForEdit?.let { album ->
+        EditAlbumMetadataDialog(
+            album = album,
+            onDismiss = { albumForEdit = null },
+            onSaveAlbumOnly = { displayName, artist, genre, year, artworkUri ->
+                viewModel.saveAlbumMetadata(
+                    albumKey = album.name,
+                    displayName = displayName,
+                    artist = artist,
+                    genre = genre,
+                    year = year,
+                    artworkUri = artworkUri,
+                    propagateToSongs = false
+                )
+                albumForEdit = null
+            },
+            onSaveAlbumAndSongs = { displayName, artist, genre, year, artworkUri ->
+                viewModel.saveAlbumMetadata(
+                    albumKey = album.name,
+                    displayName = displayName,
+                    artist = artist,
+                    genre = genre,
+                    year = year,
+                    artworkUri = artworkUri,
+                    propagateToSongs = true
+                )
+                albumForEdit = null
             }
         )
     }
 
     albumForCoverChange?.let { album ->
         SetAlbumArtworkDialog(
-            albumName = album.name,
+            albumName = album.displayName,
             currentArtworkUri = album.artworkUri,
             onDismiss = { albumForCoverChange = null },
             onArtworkSelected = { newUri ->

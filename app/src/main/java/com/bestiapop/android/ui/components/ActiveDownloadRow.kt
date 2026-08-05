@@ -40,6 +40,7 @@ fun ActiveDownloadRow(
     isPreviewPlaying: Boolean,
     isPreviewResolving: Boolean,
     onPreview: () -> Unit,
+    onPlay: () -> Unit,
     onRetry: () -> Unit,
     onCycle: () -> Unit,
     onDismiss: () -> Unit,
@@ -92,6 +93,13 @@ fun ActiveDownloadRow(
             Spacer(modifier = Modifier.width(4.dp))
 
             when (download.state) {
+                CandidateDownloadState.QUEUED -> {
+                    Text(
+                        text = "En cola",
+                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f)
+                    )
+                }
                 CandidateDownloadState.DOWNLOADING -> {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         CircularProgressIndicator(
@@ -105,6 +113,24 @@ fun ActiveDownloadRow(
                             style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
                             color = MaterialTheme.colorScheme.primary
                         )
+                    }
+                }
+                CandidateDownloadState.SUCCESS -> {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(onClick = onPlay) {
+                            Icon(
+                                imageVector = Icons.Default.PlayArrow,
+                                contentDescription = "Reproducir",
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                        IconButton(onClick = onDismiss) {
+                            Icon(
+                                Icons.Default.Close,
+                                contentDescription = "Limpiar",
+                                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                            )
+                        }
                     }
                 }
                 CandidateDownloadState.ERROR -> {
@@ -138,8 +164,8 @@ fun ActiveDownloadRow(
                         }
                     }
                 }
-                else -> {
-                    // IDLE / residual: Preview + Buscar otro
+                CandidateDownloadState.IDLE -> {
+                    // Conflict / residual: Preview + Buscar otro
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.End
@@ -193,14 +219,20 @@ private fun buildSubtitle(download: ActiveDownload): String {
         ActiveDownloadSource.LB_IMPORT -> "Import Para Ti"
     }
     return when (download.state) {
+        CandidateDownloadState.QUEUED -> {
+            listOfNotNull(artist.takeIf { it.isNotBlank() }, sourceLabel, "En cola").joinToString(" · ")
+        }
         CandidateDownloadState.DOWNLOADING -> {
             val msg = download.progressMessage?.takeIf { it.isNotBlank() } ?: "Descargando…"
             listOfNotNull(artist.takeIf { it.isNotBlank() }, sourceLabel, msg).joinToString(" · ")
+        }
+        CandidateDownloadState.SUCCESS -> {
+            listOfNotNull(artist.takeIf { it.isNotBlank() }, sourceLabel, "Descargada").joinToString(" · ")
         }
         CandidateDownloadState.ERROR -> {
             download.errorMessage?.takeIf { it.isNotBlank() }
                 ?: listOfNotNull(artist.takeIf { it.isNotBlank() }, sourceLabel, "Error").joinToString(" · ")
         }
-        else -> listOfNotNull(artist.takeIf { it.isNotBlank() }, sourceLabel).joinToString(" · ")
+        CandidateDownloadState.IDLE -> listOfNotNull(artist.takeIf { it.isNotBlank() }, sourceLabel).joinToString(" · ")
     }
 }

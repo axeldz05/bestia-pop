@@ -18,7 +18,8 @@ class ManageArtworkUseCase(private val repository: IMusicRepository) {
                 title = song.title,
                 artist = song.artist,
                 album = song.album,
-                genre = song.genre
+                genre = song.genre,
+                year = song.year
             )
             repository.enhanceSongMetadataAndLyrics(song.copy(artworkUri = savedUri))
         }

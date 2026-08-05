@@ -41,12 +41,13 @@ import com.bestiapop.android.ui.components.ArtworkThumbnail
 fun EditSongMetadataDialog(
     song: Song,
     onDismiss: () -> Unit,
-    onConfirm: (title: String, artist: String, album: String, genre: String) -> Unit
+    onConfirm: (title: String, artist: String, album: String, genre: String, year: Int) -> Unit
 ) {
     var title by remember { mutableStateOf(song.title) }
     var artist by remember { mutableStateOf(song.artist) }
     var album by remember { mutableStateOf(song.album) }
     var genre by remember { mutableStateOf(song.genre) }
+    var yearText by remember { mutableStateOf(if (song.year > 0) song.year.toString() else "") }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -86,11 +87,130 @@ fun EditSongMetadataDialog(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
+                OutlinedTextField(
+                    value = yearText,
+                    onValueChange = { yearText = it.filter { ch -> ch.isDigit() }.take(4) },
+                    label = { Text("Año") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
             }
         },
         confirmButton = {
-            Button(onClick = { onConfirm(title, artist, album, genre) }) {
+            Button(onClick = {
+                onConfirm(title, artist, album, genre, yearText.toIntOrNull() ?: 0)
+            }) {
                 Text("Guardar")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancelar")
+            }
+        }
+    )
+}
+
+@Composable
+fun EditAlbumMetadataDialog(
+    album: com.bestiapop.android.data.model.Album,
+    onDismiss: () -> Unit,
+    onSaveAlbumOnly: (displayName: String, artist: String, genre: String, year: Int, artworkUri: String?) -> Unit,
+    onSaveAlbumAndSongs: (displayName: String, artist: String, genre: String, year: Int, artworkUri: String?) -> Unit
+) {
+    var displayName by remember { mutableStateOf(album.displayName) }
+    var artist by remember { mutableStateOf(album.artist) }
+    var genre by remember { mutableStateOf(album.genre.orEmpty()) }
+    var yearText by remember { mutableStateOf(if (album.year > 0) album.year.toString() else "") }
+    var selectedUri by remember { mutableStateOf(album.artworkUri) }
+
+    val imagePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let { selectedUri = it.toString() }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Editar álbum") },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                ArtworkThumbnail(
+                    artworkUri = selectedUri,
+                    size = 120.dp,
+                    cornerRadius = 12.dp
+                )
+                OutlinedButton(onClick = { imagePickerLauncher.launch("image/*") }) {
+                    Icon(Icons.Default.AddPhotoAlternate, contentDescription = null)
+                    Spacer(modifier = Modifier.padding(horizontal = 4.dp))
+                    Text("Cambiar portada")
+                }
+                OutlinedTextField(
+                    value = displayName,
+                    onValueChange = { displayName = it },
+                    label = { Text("Nombre del álbum") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = artist,
+                    onValueChange = { artist = it },
+                    label = { Text("Artista") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = genre,
+                    onValueChange = { genre = it },
+                    label = { Text("Género") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = yearText,
+                    onValueChange = { yearText = it.filter { ch -> ch.isDigit() }.take(4) },
+                    label = { Text("Año") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Button(
+                    onClick = {
+                        onSaveAlbumAndSongs(
+                            displayName,
+                            artist,
+                            genre,
+                            yearText.toIntOrNull() ?: 0,
+                            selectedUri
+                        )
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Guardar para álbum y canciones")
+                }
+                OutlinedButton(
+                    onClick = {
+                        onSaveAlbumOnly(
+                            displayName,
+                            artist,
+                            genre,
+                            yearText.toIntOrNull() ?: 0,
+                            selectedUri
+                        )
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Guardar para álbum")
+                }
             }
         },
         dismissButton = {

@@ -45,8 +45,31 @@ interface MusicDao {
     @Query("UPDATE songs SET artworkUri = :artworkUri, lyrics = :lyrics WHERE id = :songId")
     suspend fun updateMetadataAndLyrics(songId: Long, artworkUri: String?, lyrics: String?)
 
-    @Query("UPDATE songs SET title = :title, artist = :artist, album = :album, genre = :genre WHERE id = :songId")
-    suspend fun updateSongMetadata(songId: Long, title: String, artist: String, album: String, genre: String)
+    @Query("UPDATE songs SET title = :title, artist = :artist, album = :album, genre = :genre, year = :year WHERE id = :songId")
+    suspend fun updateSongMetadata(
+        songId: Long,
+        title: String,
+        artist: String,
+        album: String,
+        genre: String,
+        year: Int
+    )
+
+    @Query(
+        """
+        UPDATE songs SET artist = :artist, album = :newAlbum, genre = :genre, year = :year,
+        artworkUri = CASE WHEN :artworkUri IS NOT NULL AND :artworkUri != '' THEN :artworkUri ELSE artworkUri END
+        WHERE album = :oldAlbum
+        """
+    )
+    suspend fun updateSongsAlbumMetadata(
+        oldAlbum: String,
+        newAlbum: String,
+        artist: String,
+        genre: String,
+        year: Int,
+        artworkUri: String?
+    )
 
     @Query("SELECT artworkUri FROM songs WHERE album = :albumName AND artworkUri IS NOT NULL AND artworkUri != '' LIMIT 1")
     suspend fun getArtworkForAlbum(albumName: String): String?
@@ -59,6 +82,19 @@ interface MusicDao {
 
     @Query("UPDATE songs SET durationMs = :durationMs WHERE id = :songId")
     suspend fun updateSongDuration(songId: Long, durationMs: Long)
+
+    // Album overrides
+    @Query("SELECT * FROM album_overrides")
+    fun getAllAlbumOverridesFlow(): Flow<List<AlbumOverrideEntity>>
+
+    @Query("SELECT * FROM album_overrides WHERE albumKey = :albumKey LIMIT 1")
+    suspend fun getAlbumOverride(albumKey: String): AlbumOverrideEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAlbumOverride(override: AlbumOverrideEntity)
+
+    @Query("DELETE FROM album_overrides WHERE albumKey = :albumKey")
+    suspend fun deleteAlbumOverride(albumKey: String)
 
     // Playlists
     @Query("SELECT * FROM playlists ORDER BY createdAt DESC")

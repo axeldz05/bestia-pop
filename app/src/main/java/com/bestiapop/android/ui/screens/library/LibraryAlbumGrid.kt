@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddPhotoAlternate
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Shuffle
@@ -52,6 +53,7 @@ fun LibraryAlbumGrid(
     onPlayAlbum: (Album) -> Unit,
     onShuffleAlbum: (Album) -> Unit,
     onChangeAlbumCover: (Album) -> Unit,
+    onEditAlbum: (Album) -> Unit = onChangeAlbumCover,
     modifier: Modifier = Modifier
 ) {
     if (albums.isEmpty()) {
@@ -82,7 +84,8 @@ fun LibraryAlbumGrid(
                 onClick = { onAlbumClick(album) },
                 onPlay = { onPlayAlbum(album) },
                 onShuffle = { onShuffleAlbum(album) },
-                onChangeCover = { onChangeAlbumCover(album) }
+                onChangeCover = { onChangeAlbumCover(album) },
+                onEditAlbum = { onEditAlbum(album) }
             )
         }
     }
@@ -95,7 +98,8 @@ fun AlbumGridCard(
     onClick: () -> Unit,
     onPlay: () -> Unit,
     onShuffle: () -> Unit,
-    onChangeCover: () -> Unit
+    onChangeCover: () -> Unit,
+    onEditAlbum: () -> Unit = onChangeCover
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
     val sortInfo = remember(album.genre, album.dateAdded, sortOption) {
@@ -167,6 +171,14 @@ fun AlbumGridCard(
                             }
                         )
                         DropdownMenuItem(
+                            text = { Text("Editar álbum") },
+                            leadingIcon = { Icon(Icons.Default.Edit, null) },
+                            onClick = {
+                                menuExpanded = false
+                                onEditAlbum()
+                            }
+                        )
+                        DropdownMenuItem(
                             text = { Text("Cambiar portada") },
                             leadingIcon = { Icon(Icons.Default.AddPhotoAlternate, null) },
                             onClick = {
@@ -181,7 +193,7 @@ fun AlbumGridCard(
             Spacer(modifier = Modifier.height(8.dp))
 
             Text(
-                text = album.name,
+                text = album.displayName,
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 maxLines = 1,

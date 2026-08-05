@@ -225,8 +225,14 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     ): List<LibraryListItem> =
         getLibrarySongsUseCase.buildListItems(songs, viewMode)
 
-    val albumsState: StateFlow<List<Album>> = songsState.map { songs ->
-        getLibrarySongsUseCase.extractAlbums(songs)
+    val albumsState: StateFlow<List<Album>> = combine(
+        songsState,
+        repository.albumOverridesFlow
+    ) { songs, overrides ->
+        getLibrarySongsUseCase.extractAlbums(
+            songs,
+            overrides.associateBy { it.albumKey }
+        )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     private val _artistPhotos = MutableStateFlow<Map<String, String>>(emptyMap())
@@ -357,6 +363,12 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private val _selectedCollectionTitle = MutableStateFlow<String?>(null)
     val selectedCollectionTitle = _selectedCollectionTitle.asStateFlow()
 
+    private enum class CatalogCollectionKind { ALBUM, PLAYLIST }
+    private var selectedCollectionKind: CatalogCollectionKind? = null
+    private var selectedCollectionCoverUrl: String? = null
+    /** Local playlist created when batch-downloading a catalog playlist (reuse across single/batch). */
+    private var catalogBatchPlaylistId: Long? = null
+
     private val _activeTrackCandidates = MutableStateFlow<List<CatalogTrackCandidate>>(emptyList())
     val activeTrackCandidates = _activeTrackCandidates.asStateFlow()
 
@@ -374,6 +386,9 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     private val _downloadConflict = MutableStateFlow<DownloadConflict?>(null)
     val downloadConflict = _downloadConflict.asStateFlow()
+
+    /** Caps concurrent online downloads across all sources. */
+    private val downloadSemaphore = Semaphore(3)
 
     /** When set during a batch, subsequent conflicts reuse this policy without another dialog. */
     private var batchConflictPolicy: DownloadConflictPolicy? = null
@@ -1262,10 +1277,41 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     fun setAlbumArtwork(albumName: String, artworkUri: String) {
         viewModelScope.launch(Dispatchers.IO) {
-            val savedUri = repository.savePlaylistCoverImage(artworkUri) ?: artworkUri
-            val albumSongs = songsState.value.filter { it.album.equals(albumName, ignoreCase = true) }
-            albumSongs.forEach { song ->
-                repository.enhanceSongMetadataAndLyrics(song.copy(artworkUri = savedUri))
+            val existing = repository.getAlbumOverride(albumName)
+            val override = AlbumOverride(
+                albumKey = albumName,
+                displayName = existing?.displayName ?: albumName,
+                artist = existing?.artist,
+                genre = existing?.genre,
+                year = existing?.year ?: 0,
+                artworkUri = artworkUri
+            )
+            repository.updateAlbumMetadataPropagateToSongs(override)
+        }
+    }
+
+    fun saveAlbumMetadata(
+        albumKey: String,
+        displayName: String,
+        artist: String,
+        genre: String,
+        year: Int,
+        artworkUri: String?,
+        propagateToSongs: Boolean
+    ) {
+        viewModelScope.launch {
+            val override = AlbumOverride(
+                albumKey = albumKey,
+                displayName = displayName.ifBlank { albumKey },
+                artist = artist.takeIf { it.isNotBlank() },
+                genre = genre.takeIf { it.isNotBlank() },
+                year = year.coerceAtLeast(0),
+                artworkUri = artworkUri
+            )
+            if (propagateToSongs) {
+                repository.updateAlbumMetadataPropagateToSongs(override)
+            } else {
+                repository.upsertAlbumOverride(override)
             }
         }
     }
@@ -1785,10 +1831,11 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         title: String,
         artist: String,
         album: String,
-        genre: String
+        genre: String,
+        year: Int = 0
     ) {
         viewModelScope.launch {
-            repository.updateSongMetadata(songId, title, artist, album, genre)
+            repository.updateSongMetadata(songId, title, artist, album, genre, year)
         }
     }
 
@@ -2256,32 +2303,61 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
         val total = tracks.size
         val successCount = AtomicInteger(0)
-        val semaphore = Semaphore(3)
+
+        // Pre-register all as QUEUED so Descargas shows the full list immediately.
+        for (track in tracks) {
+            val downloadId = ImportListenBrainzPlaylistUseCase.downloadIdFor(
+                track.artist,
+                track.title
+            )
+            if (downloadId.isEmpty()) continue
+            val existing = _activeDownloads.value.find { it.id == downloadId }
+            if (existing != null &&
+                (existing.state == CandidateDownloadState.DOWNLOADING ||
+                    existing.state == CandidateDownloadState.QUEUED)
+            ) {
+                continue
+            }
+            upsertActiveDownload(
+                ActiveDownload(
+                    id = downloadId,
+                    source = ActiveDownloadSource.LB_IMPORT,
+                    displayTitle = track.title,
+                    displayArtist = track.artist,
+                    artworkUrl = track.artworkUrl,
+                    candidates = listOf(track),
+                    currentCandidateIndex = 0,
+                    state = CandidateDownloadState.QUEUED,
+                    progressMessage = "En cola",
+                    progressPercent = 0,
+                    errorMessage = null,
+                    targetPlaylistId = playlistId
+                )
+            )
+        }
 
         coroutineScope {
             val jobs = tracks.map { track ->
                 async {
-                    semaphore.withPermit {
-                        val downloadId = ImportListenBrainzPlaylistUseCase.downloadIdFor(
-                            track.artist,
-                            track.title
-                        )
-                        if (downloadId.isEmpty()) return@withPermit
-                        val existing = _activeDownloads.value.find { it.id == downloadId }
-                        if (existing != null && existing.state == CandidateDownloadState.DOWNLOADING) {
-                            return@withPermit
-                        }
-                        val result = runTrackedDownload(
-                            downloadId = downloadId,
-                            source = ActiveDownloadSource.LB_IMPORT,
-                            track = track,
-                            displayTitle = track.title,
-                            displayArtist = track.artist,
-                            artworkUrl = track.artworkUrl,
-                            targetPlaylistId = playlistId
-                        )
-                        if (result.isSuccess) successCount.incrementAndGet()
+                    val downloadId = ImportListenBrainzPlaylistUseCase.downloadIdFor(
+                        track.artist,
+                        track.title
+                    )
+                    if (downloadId.isEmpty()) return@async
+                    val existing = _activeDownloads.value.find { it.id == downloadId }
+                    if (existing != null && existing.state == CandidateDownloadState.DOWNLOADING) {
+                        return@async
                     }
+                    val result = runTrackedDownload(
+                        downloadId = downloadId,
+                        source = ActiveDownloadSource.LB_IMPORT,
+                        track = track,
+                        displayTitle = track.title,
+                        displayArtist = track.artist,
+                        artworkUrl = track.artworkUrl,
+                        targetPlaylistId = playlistId
+                    )
+                    if (result.isSuccess) successCount.incrementAndGet()
                 }
             }
             jobs.awaitAll()
@@ -2344,6 +2420,8 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         viewModelScope.launch {
             _isLoadingCollection.value = true
             _selectedCollectionTitle.value = album.title
+            selectedCollectionKind = CatalogCollectionKind.ALBUM
+            selectedCollectionCoverUrl = album.coverUrl
             val candidates = MetadataFetcher.fetchAlbumTrackCandidates(album.id, album.title, album.artist, album.coverUrl)
             _activeTrackCandidates.value = candidates
             _isLoadingCollection.value = false
@@ -2354,6 +2432,8 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         viewModelScope.launch {
             _isLoadingCollection.value = true
             _selectedCollectionTitle.value = playlist.title
+            selectedCollectionKind = CatalogCollectionKind.PLAYLIST
+            selectedCollectionCoverUrl = playlist.coverUrl
             val candidates = MetadataFetcher.fetchPlaylistTrackCandidates(playlist.id, playlist.title)
             _activeTrackCandidates.value = candidates
             _isLoadingCollection.value = false
@@ -2430,6 +2510,9 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     fun clearSelectedCollection() {
         _selectedCollectionTitle.value = null
+        selectedCollectionKind = null
+        selectedCollectionCoverUrl = null
+        catalogBatchPlaylistId = null
         _activeTrackCandidates.value = emptyList()
         _isLoadingCollection.value = false
     }
@@ -2569,8 +2652,9 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     /**
-     * Registers/updates [ActiveDownload] and runs the download.
-     * On success the job is removed from [activeDownloads]; on failure it stays as ERROR.
+     * Registers/updates [ActiveDownload] (QUEUED → DOWNLOADING) and runs the download
+     * under the global [downloadSemaphore] (max 3 concurrent).
+     * On success the job stays as SUCCESS with [ActiveDownload.resultSongId]; on failure as ERROR.
      * When [targetPlaylistId] is set, the saved song is added to that playlist.
      */
     private suspend fun runTrackedDownload(
@@ -2588,6 +2672,63 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     ): Result<Song> {
         val candidates = existingCandidates?.takeIf { it.isNotEmpty() } ?: listOf(track)
         val safeIndex = currentCandidateIndex.coerceIn(0, (candidates.size - 1).coerceAtLeast(0))
+
+        val existing = _activeDownloads.value.find { it.id == downloadId }
+        if (existing == null ||
+            existing.state != CandidateDownloadState.DOWNLOADING
+        ) {
+            upsertActiveDownload(
+                ActiveDownload(
+                    id = downloadId,
+                    source = source,
+                    displayTitle = displayTitle.ifBlank { track.title }.ifBlank { "Descarga" },
+                    displayArtist = displayArtist,
+                    artworkUrl = artworkUrl,
+                    candidates = candidates,
+                    currentCandidateIndex = safeIndex,
+                    state = CandidateDownloadState.QUEUED,
+                    progressMessage = "En cola",
+                    progressPercent = 0,
+                    errorMessage = null,
+                    targetPlaylistId = targetPlaylistId,
+                    resultSongId = existing?.resultSongId
+                )
+            )
+            if (mirrorCandidateTitle != null) {
+                updateCandidateState(mirrorCandidateTitle, CandidateDownloadState.QUEUED, percent = 0)
+            }
+        }
+
+        return downloadSemaphore.withPermit {
+            runTrackedDownloadLocked(
+                downloadId = downloadId,
+                source = source,
+                track = track,
+                displayTitle = displayTitle,
+                displayArtist = displayArtist,
+                artworkUrl = artworkUrl,
+                candidates = candidates,
+                safeIndex = safeIndex,
+                mirrorCandidateTitle = mirrorCandidateTitle,
+                targetPlaylistId = targetPlaylistId,
+                conflictPolicy = conflictPolicy
+            )
+        }
+    }
+
+    private suspend fun runTrackedDownloadLocked(
+        downloadId: String,
+        source: ActiveDownloadSource,
+        track: OnlineCatalogTrack,
+        displayTitle: String,
+        displayArtist: String,
+        artworkUrl: String?,
+        candidates: List<OnlineCatalogTrack>,
+        safeIndex: Int,
+        mirrorCandidateTitle: String?,
+        targetPlaylistId: Long?,
+        conflictPolicy: DownloadConflictPolicy?
+    ): Result<Song> {
         val activeTrack = candidates.getOrNull(safeIndex) ?: track
 
         var resolvedPolicy = conflictPolicy ?: batchConflictPolicy?.let { cached ->
@@ -2755,7 +2896,23 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
         result.fold(
             onSuccess = { song ->
-                removeActiveDownload(downloadId)
+                upsertActiveDownload(
+                    ActiveDownload(
+                        id = downloadId,
+                        source = source,
+                        displayTitle = song.title.ifBlank { displayTitle }.ifBlank { "Descarga" },
+                        displayArtist = song.artist.ifBlank { displayArtist },
+                        artworkUrl = song.artworkUri ?: artworkUrl,
+                        candidates = candidates,
+                        currentCandidateIndex = safeIndex,
+                        state = CandidateDownloadState.SUCCESS,
+                        progressMessage = "Descargada",
+                        progressPercent = 100,
+                        errorMessage = null,
+                        targetPlaylistId = targetPlaylistId,
+                        resultSongId = song.id
+                    )
+                )
                 if (mirrorCandidateTitle != null) {
                     updateCandidateState(mirrorCandidateTitle, CandidateDownloadState.SUCCESS, percent = 100)
                 }
@@ -2867,6 +3024,15 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         playOnlineCatalogTrackAsStream(track)
     }
 
+    fun playActiveDownload(id: String) {
+        val download = _activeDownloads.value.find { it.id == id } ?: return
+        val songId = download.resultSongId ?: return
+        viewModelScope.launch {
+            val song = rawSongs.first().find { it.id == songId } ?: return@launch
+            playSong(song)
+        }
+    }
+
     fun dismissActiveDownload(id: String) {
         removeActiveDownload(id)
         saveWhileListeningAttempted.remove(id)
@@ -2884,6 +3050,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         )
 
         viewModelScope.launch {
+            val targetPlaylistId = ensureCatalogPlaylistForBatch()
             runTrackedDownload(
                 downloadId = downloadId,
                 source = ActiveDownloadSource.BATCH,
@@ -2893,7 +3060,8 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 artworkUrl = candidate.coverUrl ?: track.artworkUrl,
                 existingCandidates = candidate.candidates,
                 currentCandidateIndex = candidate.currentCandidateIndex,
-                mirrorCandidateTitle = candidate.trackTitle
+                mirrorCandidateTitle = candidate.trackTitle,
+                targetPlaylistId = targetPlaylistId
             )
         }
     }
@@ -2907,32 +3075,57 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             val total = selected.size
             val completedCount = AtomicInteger(0)
             val successCount = AtomicInteger(0)
+            val targetPlaylistId = ensureCatalogPlaylistForBatch()
 
-            val semaphore = Semaphore(3)
+            // Pre-register all as QUEUED so Descargas shows the full list immediately.
+            for (candidate in selected) {
+                val track = candidate.currentTrack ?: continue
+                val downloadId = activeDownloadIdFor(
+                    track,
+                    ActiveDownloadSource.BATCH,
+                    explicitId = "batch:${candidate.artist}|${candidate.trackTitle}"
+                )
+                upsertActiveDownload(
+                    ActiveDownload(
+                        id = downloadId,
+                        source = ActiveDownloadSource.BATCH,
+                        displayTitle = candidate.trackTitle.ifBlank { track.title },
+                        displayArtist = candidate.artist.ifBlank { track.artist },
+                        artworkUrl = candidate.coverUrl ?: track.artworkUrl,
+                        candidates = candidate.candidates.ifEmpty { listOf(track) },
+                        currentCandidateIndex = candidate.currentCandidateIndex,
+                        state = CandidateDownloadState.QUEUED,
+                        progressMessage = "En cola",
+                        progressPercent = 0,
+                        errorMessage = null,
+                        targetPlaylistId = targetPlaylistId
+                    )
+                )
+                updateCandidateState(candidate.trackTitle, CandidateDownloadState.QUEUED, percent = 0)
+            }
 
             val jobs = selected.map { candidate ->
                 async {
-                    semaphore.withPermit {
-                        val track = candidate.currentTrack ?: return@withPermit
-                        completedCount.incrementAndGet()
-                        val downloadId = activeDownloadIdFor(
-                            track,
-                            ActiveDownloadSource.BATCH,
-                            explicitId = "batch:${candidate.artist}|${candidate.trackTitle}"
-                        )
-                        val result = runTrackedDownload(
-                            downloadId = downloadId,
-                            source = ActiveDownloadSource.BATCH,
-                            track = track,
-                            displayTitle = candidate.trackTitle.ifBlank { track.title },
-                            displayArtist = candidate.artist.ifBlank { track.artist },
-                            artworkUrl = candidate.coverUrl ?: track.artworkUrl,
-                            existingCandidates = candidate.candidates,
-                            currentCandidateIndex = candidate.currentCandidateIndex,
-                            mirrorCandidateTitle = candidate.trackTitle
-                        )
-                        if (result.isSuccess) successCount.incrementAndGet()
-                    }
+                    val track = candidate.currentTrack ?: return@async
+                    completedCount.incrementAndGet()
+                    val downloadId = activeDownloadIdFor(
+                        track,
+                        ActiveDownloadSource.BATCH,
+                        explicitId = "batch:${candidate.artist}|${candidate.trackTitle}"
+                    )
+                    val result = runTrackedDownload(
+                        downloadId = downloadId,
+                        source = ActiveDownloadSource.BATCH,
+                        track = track,
+                        displayTitle = candidate.trackTitle.ifBlank { track.title },
+                        displayArtist = candidate.artist.ifBlank { track.artist },
+                        artworkUrl = candidate.coverUrl ?: track.artworkUrl,
+                        existingCandidates = candidate.candidates,
+                        currentCandidateIndex = candidate.currentCandidateIndex,
+                        mirrorCandidateTitle = candidate.trackTitle,
+                        targetPlaylistId = targetPlaylistId
+                    )
+                    if (result.isSuccess) successCount.incrementAndGet()
                 }
             }
             jobs.awaitAll()
@@ -2944,6 +3137,20 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 Toast.LENGTH_SHORT
             ).show()
         }
+    }
+
+    /**
+     * When downloading from a catalog playlist inspection, create a matching local playlist
+     * once per batch session and return its id for [ActiveDownload.targetPlaylistId].
+     */
+    private suspend fun ensureCatalogPlaylistForBatch(): Long? {
+        if (selectedCollectionKind != CatalogCollectionKind.PLAYLIST) return null
+        catalogBatchPlaylistId?.let { return it }
+        val name = _selectedCollectionTitle.value?.takeIf { it.isNotBlank() } ?: "Playlist"
+        val cover = selectedCollectionCoverUrl
+        val id = repository.createPlaylist(name, coverUri = cover)
+        catalogBatchPlaylistId = id
+        return id
     }
 
     fun downloadFromUrl(url: String) {

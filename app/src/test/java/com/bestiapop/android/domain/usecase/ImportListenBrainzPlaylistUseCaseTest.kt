@@ -139,6 +139,7 @@ class ImportListenBrainzPlaylistUseCaseTest {
 
         override val allSongsFlow: Flow<List<Song>> = emptyFlow()
         override val playlistsFlow: Flow<List<Playlist>> = emptyFlow()
+        override val albumOverridesFlow: Flow<List<com.bestiapop.android.data.model.AlbumOverride>> = emptyFlow()
         override fun getPlaylistSongsFlow(playlistId: Long): Flow<List<Song>> = emptyFlow()
         override fun getPlaylistDetailsFlow(playlistId: Long): Flow<Pair<Playlist, List<Song>>?> = emptyFlow()
         override suspend fun scanMediaStore() = Unit
@@ -155,10 +156,15 @@ class ImportListenBrainzPlaylistUseCaseTest {
             title: String,
             artist: String,
             album: String,
-            genre: String
+            genre: String,
+            year: Int
         ) = Unit
+        override suspend fun upsertAlbumOverride(override: com.bestiapop.android.data.model.AlbumOverride) = Unit
+        override suspend fun updateAlbumMetadataPropagateToSongs(override: com.bestiapop.android.data.model.AlbumOverride) = Unit
+        override suspend fun getAlbumOverride(albumKey: String): com.bestiapop.android.data.model.AlbumOverride? = null
         override fun extractAndSaveEmbeddedArtwork(audioPathOrUri: String, identifier: String): String? = null
         override fun savePlaylistCoverImage(sourceUriStr: String?): String? = null
+        override fun saveAlbumCoverImage(sourceUriStr: String?): String? = null
 
         override suspend fun createPlaylist(
             name: String,

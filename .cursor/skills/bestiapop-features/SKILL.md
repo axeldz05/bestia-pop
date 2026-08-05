@@ -37,11 +37,11 @@ Archivos: `domain/usecase/PlayCollectionUseCase.kt`, `ui/MusicPlayerViewModel.kt
 | Descargar + persistir | `DownloadAudioTrackUseCase.execute` → `IMusicRepository.downloadAndSaveOnlineTrack` |
 | UI diálogo | `ui/components/AddMusicDialog.kt` |
 | Centro de descargas | `DownloadsScreen` + `ActiveDownloadRow`; persistencia `ActiveDownloadsStore` / `ActiveDownloadCodec`; notif `DownloadNotificationHelper`; badge `activeDownloadBadgeCount` en tab Descargas (`MainScreen`) |
-| Orquestación VM | `runTrackedDownload` ← `downloadSingleCandidate`, `downloadSelectedCandidatesBatch`, `downloadFromUrl`, `downloadOnlineTrack`, `maybeEnqueueSaveWhileListening`; acciones `retryActiveDownload` / `cycleActiveDownload` / `previewActiveDownload` / `dismissActiveDownload`; deep-link `requestOpenDownloads` / `pendingOpenDownloads` |
+| Orquestación VM | `runTrackedDownload` ← `downloadSingleCandidate`, `downloadSelectedCandidatesBatch`, `downloadFromUrl`, `downloadOnlineTrack`, `maybeEnqueueSaveWhileListening`; acciones `retryActiveDownload` / `cycleActiveDownload` / `previewActiveDownload` / `playActiveDownload` / `dismissActiveDownload`; deep-link `requestOpenDownloads` / `pendingOpenDownloads` |
 
-Modelo clave: `OnlineCatalogTrack`, `CatalogTrackCandidate`, `DownloadStatus` (legacy Idle), `ActiveDownload` / `ActiveDownloadSource` (`CATALOG`, `LINK`, `SAVE_WHILE_LISTENING`, `BATCH`, `LB_IMPORT`), cola `activeDownloads` (+ `targetPlaylistId` opcional).
+Modelo clave: `OnlineCatalogTrack`, `CatalogTrackCandidate`, `DownloadStatus` (legacy Idle), `ActiveDownload` / `ActiveDownloadSource` (`CATALOG`, `LINK`, `SAVE_WHILE_LISTENING`, `BATCH`, `LB_IMPORT`), cola `activeDownloads` (+ `targetPlaylistId` opcional, `resultSongId` en SUCCESS).
 
-**Invariante cola:** todas las descargas online se registran en `activeDownloads`; éxito las remueve; fallo deja `ERROR`. Tras kill del proceso, `ActiveDownloadCodec.forPersistence` restaura ERROR/IDLE (DOWNLOADING → “Interrumpida”). Add Music banners leen `activeDownloads` (no `DownloadStatus`). `LB_IMPORT` añade a playlist al éxito vía `targetPlaylistId`.
+**Invariante cola:** todas las descargas online se registran en `activeDownloads` (estado `QUEUED` → `DOWNLOADING` → `SUCCESS`/`ERROR`); éxito **se mantiene** con play/limpiar hasta `dismissActiveDownload`. Fallo deja `ERROR`. Concurrencia global `Semaphore(3)` en `runTrackedDownload`. Tras kill: `ActiveDownloadCodec.forPersistence` restaura SUCCESS; DOWNLOADING/QUEUED → ERROR “Interrumpida”. Badge = DOWNLOADING + ERROR. Add Music banners leen `activeDownloads`. `LB_IMPORT` y batch de **playlist del catálogo** añaden a playlist al éxito vía `targetPlaylistId` (`ensureCatalogPlaylistForBatch`).
 
 ## 3. Biblioteca: filtro, orden y vistas
 
@@ -58,15 +58,17 @@ Modelo clave: `OnlineCatalogTrack`, `CatalogTrackCandidate`, `DownloadStatus` (l
 UI: `LibraryScreen`, `LibrarySongList`, `LibraryAlbumGrid`, `LibraryArtistList`.
 Estado: `ui/state/LibraryUiState.kt`, `LibraryListItem.kt`.
 
-## 4. Portadas: álbum ≠ playlist
+## 4. Portadas y metadata: álbum ≠ playlist ≠ canción
 
 | Tipo | Comportamiento | Entry points |
 |------|----------------|--------------|
-| **Álbum** | Al asignar portada, **todas** las canciones del álbum heredan | `setAlbumArtwork` → `ManageArtworkUseCase.updateAlbumArtwork` |
+| **Álbum (override)** | Tabla `album_overrides`; UI lee override si existe. **Guardar para álbum** = solo override; **Guardar para álbum y canciones** = override + bulk update de songs | `saveAlbumMetadata` / `upsertAlbumOverride` / `updateAlbumMetadataPropagateToSongs`; UI `EditAlbumMetadataDialog` |
+| **Álbum portada** | `setAlbumArtwork` → propagate via `updateAlbumMetadataPropagateToSongs` | `MusicPlayerViewModel.setAlbumArtwork` |
 | **Playlist** | `Playlist.coverUri` / `PlaylistEntity.coverUri` es de la lista; **no** pisa artwork de canciones | `createPlaylist` / `updatePlaylist`, `savePlaylistCoverImage` |
-| **Persistencia local** | Copiar imagen a `context.filesDir` | `MusicRepository.savePlaylistCoverImage`, `extractAndSaveEmbeddedArtwork` |
+| **Canción** | Editar una canción **no** reescribe el álbum ni siblings | `updateSongMetadata` (incluye `year`); UI `EditSongMetadataDialog` |
+| **Persistencia local** | Copiar imagen a `context.filesDir` (`album_covers` / playlist covers) | `saveAlbumCoverImage`, `savePlaylistCoverImage`, `extractAndSaveEmbeddedArtwork` |
 
-Herencia visual en lista: `GetLibrarySongsUseCase.execute` unifica artwork faltante desde otras canciones del mismo álbum.
+Herencia visual en lista: `GetLibrarySongsUseCase.execute` unifica artwork faltante desde otras canciones del mismo álbum; `extractAlbums(songs, overrides)` aplica `AlbumOverride`.
 
 ## 5. Playlists locales
 
@@ -103,11 +105,13 @@ State: `currentThemeState`.
 
 ## 8. WiFi Sync
 
-`WebServerService` (Ktor) + `WebServerScreen()` (solo servidor; sin cola de descargas).
+`WebServerService` (Ktor) + `WebServerScreen(viewModel)`.
 
 | Capacidad | Entry point |
 |-----------|-------------|
 | Servidor local | `WebServerService` + toggle en `WebServerScreen` |
+| Transferencias en app | `WebServerService.transfers` (`WifiTransferItem` / `WifiTransferState`); lista en `WebServerScreen` (progreso + `SongListItem` al completar) |
+| Dismiss | `WebServerService.dismissTransfer` |
 
 Centro de descargas online → sección 2 (`DownloadsScreen`, tab Descargas).
 
@@ -115,11 +119,12 @@ Centro de descargas online → sección 2 (`DownloadsScreen`, tab Descargas).
 
 | Capacidad | Entry point |
 |-----------|-------------|
-| UI cola | `DownloadsScreen` + `ActiveDownloadRow` (preview↔reintentar, buscar otro, dismiss) |
-| Persistencia cola | `ActiveDownloadsStore` + `ActiveDownloadCodec` (DataStore JSON) |
+| UI cola | `DownloadsScreen` + `ActiveDownloadRow` (QUEUED / progreso / SUCCESS play+limpiar / ERROR retry·cycle·dismiss) |
+| Persistencia cola | `ActiveDownloadsStore` + `ActiveDownloadCodec` (DataStore JSON; conserva SUCCESS + `resultSongId`) |
 | Notif progreso | `DownloadNotificationHelper` (canal `downloads_channel`; tap → tab Descargas) |
 | Badge tab | `activeDownloadBadgeCount` en `MainScreen` NavigationBar Descargas |
 | Deep-link | `requestOpenDownloads` / `pendingOpenDownloads` / `consumeOpenDownloads` |
+| Límite | `downloadSemaphore` (3) en ViewModel |
 
 ## 9. ListenBrainz (scrobbling + Para Ti)
 

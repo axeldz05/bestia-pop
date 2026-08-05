@@ -23,12 +23,49 @@ data class Song(
 )
 
 data class Album(
+    /** Storage key matching [Song.album] for filtering/grouping. */
     val name: String,
     val artist: String,
     val songCount: Int,
     val artworkUri: String? = null,
     val genre: String? = null,
-    val dateAdded: Long? = null
+    val dateAdded: Long? = null,
+    val year: Int = 0,
+    /** UI label; may differ from [name] when an override renames without propagating to songs. */
+    val displayName: String = name
+)
+
+enum class WifiTransferState {
+    PENDING,
+    UPLOADING,
+    PROCESSING,
+    DONE,
+    ERROR
+}
+
+/**
+ * A file being received (or already received) via the WiFi sync web server.
+ */
+data class WifiTransferItem(
+    val id: String,
+    val fileName: String,
+    val title: String,
+    val artist: String,
+    val state: WifiTransferState = WifiTransferState.PENDING,
+    val progressPercent: Int = 0,
+    val songId: Long? = null,
+    val errorMessage: String? = null,
+    val artworkUri: String? = null
+)
+
+/** Persisted album-level metadata that can diverge from individual songs. */
+data class AlbumOverride(
+    val albumKey: String,
+    val displayName: String,
+    val artist: String? = null,
+    val genre: String? = null,
+    val year: Int = 0,
+    val artworkUri: String? = null
 )
 
 data class Artist(
@@ -126,6 +163,7 @@ data class CatalogPlaylist(
 
 enum class CandidateDownloadState {
     IDLE,
+    QUEUED,
     DOWNLOADING,
     SUCCESS,
     ERROR
@@ -193,8 +231,9 @@ data class DownloadConflict(
 
 /**
  * Unified in-memory download job for the Descargas center.
- * SUCCESS items are removed from the list; UI shows DOWNLOADING and ERROR.
- * [targetPlaylistId] — when set (e.g. LB_IMPORT), success adds the song to that playlist.
+ * Shows QUEUED / DOWNLOADING / ERROR / IDLE (conflict) / SUCCESS (kept until dismissed).
+ * [targetPlaylistId] — when set (e.g. LB_IMPORT / catalog playlist), success adds the song to that playlist.
+ * [resultSongId] — set on SUCCESS so the UI can play the local song.
  */
 data class ActiveDownload(
     val id: String,
@@ -208,7 +247,8 @@ data class ActiveDownload(
     val progressMessage: String? = null,
     val progressPercent: Int = 0,
     val errorMessage: String? = null,
-    val targetPlaylistId: Long? = null
+    val targetPlaylistId: Long? = null,
+    val resultSongId: Long? = null
 ) {
     val currentTrack: OnlineCatalogTrack?
         get() = candidates.getOrNull(currentCandidateIndex)

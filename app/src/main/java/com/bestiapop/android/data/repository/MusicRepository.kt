@@ -71,7 +71,10 @@ class MusicRepository(private val context: Context) : IMusicRepository {
         entities.map { it.toSong() }
     }
 
-
+    override val albumOverridesFlow: Flow<List<com.bestiapop.android.data.model.AlbumOverride>> =
+        musicDao.getAllAlbumOverridesFlow().map { entities ->
+            entities.map { it.toModel() }
+        }
 
     override val playlistsFlow: Flow<List<Playlist>> = musicDao.getAllPlaylistsFlow().map { entities ->
         entities.map { entity ->
@@ -494,23 +497,94 @@ class MusicRepository(private val context: Context) : IMusicRepository {
         title: String,
         artist: String,
         album: String,
-        genre: String
+        genre: String,
+        year: Int
     ) = withContext(Dispatchers.IO) {
         val safeTitle = title.ifBlank { "Unknown Track" }
         val safeArtist = artist.ifBlank { "Unknown Artist" }
         val safeAlbum = album.ifBlank { "Unknown Album" }
         val safeGenre = genre.ifBlank { "Music" }
+        val safeYear = year.coerceAtLeast(0)
 
-        musicDao.updateSongMetadata(songId, safeTitle, safeArtist, safeAlbum, safeGenre)
+        // Per-song edit only — does not rewrite sibling songs or album overrides.
+        musicDao.updateSongMetadata(songId, safeTitle, safeArtist, safeAlbum, safeGenre, safeYear)
+    }
 
-        val existingArt = musicDao.getArtworkForAlbum(safeAlbum)
-        if (!existingArt.isNullOrEmpty()) {
-            musicDao.setAlbumArtwork(safeAlbum, existingArt)
-        } else {
-            val fetchedArt = MetadataFetcher.fetchAlbumArtUrl(safeArtist, safeAlbum)
-            if (!fetchedArt.isNullOrEmpty()) {
-                musicDao.setAlbumArtwork(safeAlbum, fetchedArt)
-            }
+    override suspend fun getAlbumOverride(albumKey: String): com.bestiapop.android.data.model.AlbumOverride? =
+        withContext(Dispatchers.IO) {
+            musicDao.getAlbumOverride(albumKey)?.toModel()
+        }
+
+    override suspend fun upsertAlbumOverride(override: com.bestiapop.android.data.model.AlbumOverride) =
+        withContext(Dispatchers.IO) {
+            val savedArt = saveAlbumCoverImage(override.artworkUri) ?: override.artworkUri
+            musicDao.upsertAlbumOverride(
+                com.bestiapop.android.data.db.AlbumOverrideEntity(
+                    albumKey = override.albumKey,
+                    displayName = override.displayName.ifBlank { override.albumKey },
+                    artist = override.artist?.takeIf { it.isNotBlank() },
+                    genre = override.genre?.takeIf { it.isNotBlank() },
+                    year = override.year.coerceAtLeast(0),
+                    artworkUri = savedArt
+                )
+            )
+        }
+
+    override suspend fun updateAlbumMetadataPropagateToSongs(
+        override: com.bestiapop.android.data.model.AlbumOverride
+    ) = withContext(Dispatchers.IO) {
+        val oldKey = override.albumKey
+        val newName = override.displayName.ifBlank { oldKey }
+        val safeArtist = override.artist?.takeIf { it.isNotBlank() } ?: "Unknown Artist"
+        val safeGenre = override.genre?.takeIf { it.isNotBlank() } ?: "Music"
+        val safeYear = override.year.coerceAtLeast(0)
+        val savedArt = saveAlbumCoverImage(override.artworkUri) ?: override.artworkUri
+
+        musicDao.updateSongsAlbumMetadata(
+            oldAlbum = oldKey,
+            newAlbum = newName,
+            artist = safeArtist,
+            genre = safeGenre,
+            year = safeYear,
+            artworkUri = savedArt
+        )
+
+        if (oldKey != newName) {
+            musicDao.deleteAlbumOverride(oldKey)
+        }
+        musicDao.upsertAlbumOverride(
+            com.bestiapop.android.data.db.AlbumOverrideEntity(
+                albumKey = newName,
+                displayName = newName,
+                artist = safeArtist,
+                genre = safeGenre,
+                year = safeYear,
+                artworkUri = savedArt
+            )
+        )
+    }
+
+    override fun saveAlbumCoverImage(sourceUriStr: String?): String? {
+        if (sourceUriStr.isNullOrBlank()) return null
+        if (sourceUriStr.startsWith("file://") &&
+            (sourceUriStr.contains("album_covers") || sourceUriStr.contains("playlist_covers") ||
+                sourceUriStr.contains("artwork"))
+        ) {
+            return sourceUriStr
+        }
+        try {
+            val uri = Uri.parse(sourceUriStr)
+            val coversDir = File(context.filesDir, "album_covers")
+            if (!coversDir.exists()) coversDir.mkdirs()
+
+            val destFile = File(coversDir, "cover_${System.currentTimeMillis()}_${(1000..9999).random()}.jpg")
+            context.contentResolver.openInputStream(uri)?.use { input ->
+                destFile.outputStream().use { output -> input.copyTo(output) }
+            } ?: return if (sourceUriStr.startsWith("http")) sourceUriStr else null
+            return destFile.absolutePath
+        } catch (e: Exception) {
+            e.printStackTrace()
+            return if (sourceUriStr.startsWith("http")) sourceUriStr else null
         }
     }
 

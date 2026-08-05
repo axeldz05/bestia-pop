@@ -50,18 +50,22 @@ object ActiveDownloadCodec {
     }
 
     /**
-     * Persist only IDLE/ERROR; any DOWNLOADING becomes ERROR with [INTERRUPTED_DOWNLOAD_MESSAGE].
-     * SUCCESS is dropped (should not stay in the live queue).
+     * Persist IDLE/ERROR/SUCCESS/QUEUED; any DOWNLOADING or QUEUED becomes ERROR with
+     * [INTERRUPTED_DOWNLOAD_MESSAGE] (QUEUED never started; DOWNLOADING was interrupted).
      */
     fun forPersistence(list: List<ActiveDownload>): List<ActiveDownload> =
-        list.mapNotNull { download ->
+        list.map { download ->
             when (download.state) {
-                CandidateDownloadState.SUCCESS -> null
-                CandidateDownloadState.DOWNLOADING -> download.copy(
+                CandidateDownloadState.DOWNLOADING,
+                CandidateDownloadState.QUEUED -> download.copy(
                     state = CandidateDownloadState.ERROR,
                     progressMessage = null,
                     progressPercent = 0,
                     errorMessage = INTERRUPTED_DOWNLOAD_MESSAGE
+                )
+                CandidateDownloadState.SUCCESS -> download.copy(
+                    progressMessage = null,
+                    progressPercent = 100
                 )
                 CandidateDownloadState.ERROR,
                 CandidateDownloadState.IDLE -> download.copy(
@@ -85,6 +89,11 @@ object ActiveDownloadCodec {
                 put("targetPlaylistId", download.targetPlaylistId)
             } else {
                 put("targetPlaylistId", JSONObject.NULL)
+            }
+            if (download.resultSongId != null) {
+                put("resultSongId", download.resultSongId)
+            } else {
+                put("resultSongId", JSONObject.NULL)
             }
             val candidates = JSONArray()
             for (track in download.candidates) {
@@ -125,6 +134,11 @@ object ActiveDownloadCodec {
             } else {
                 null
             }
+            val resultSongId = if (obj.has("resultSongId") && !obj.isNull("resultSongId")) {
+                obj.optLong("resultSongId").takeIf { it > 0L }
+            } else {
+                null
+            }
             ActiveDownload(
                 id = obj.getString("id"),
                 source = source,
@@ -136,9 +150,10 @@ object ActiveDownloadCodec {
                     .coerceIn(0, (candidates.size - 1).coerceAtLeast(0)),
                 state = state,
                 progressMessage = null,
-                progressPercent = 0,
+                progressPercent = if (state == CandidateDownloadState.SUCCESS) 100 else 0,
                 errorMessage = obj.optNullableString("errorMessage"),
-                targetPlaylistId = targetPlaylistId
+                targetPlaylistId = targetPlaylistId,
+                resultSongId = resultSongId
             )
         } catch (_: Exception) {
             null

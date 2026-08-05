@@ -984,6 +984,8 @@ private fun CandidateTrackCard(
                         isPreviewing -> "${item.artist} • Preview en pausa"
                         item.downloadState == com.bestiapop.android.data.model.CandidateDownloadState.IDLE ->
                             "${item.artist} • YouTube: ${currentYt?.title ?: "No encontrado"}"
+                        item.downloadState == com.bestiapop.android.data.model.CandidateDownloadState.QUEUED ->
+                            "${item.artist} • En cola…"
                         item.downloadState == com.bestiapop.android.data.model.CandidateDownloadState.DOWNLOADING ->
                             "${item.artist} • Descargando audio..."
                         item.downloadState == com.bestiapop.android.data.model.CandidateDownloadState.SUCCESS ->
@@ -1066,6 +1068,13 @@ private fun CandidateTrackCard(
                             Spacer(modifier = Modifier.width(4.dp))
                             Text("Buscar otro", style = MaterialTheme.typography.labelSmall)
                         }
+                    }
+                    com.bestiapop.android.data.model.CandidateDownloadState.QUEUED -> {
+                        Text(
+                            text = "En cola",
+                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f)
+                        )
                     }
                     com.bestiapop.android.data.model.CandidateDownloadState.DOWNLOADING -> {
                         Row(verticalAlignment = Alignment.CenterVertically) {

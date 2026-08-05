@@ -2,6 +2,7 @@ package com.bestiapop.android.domain.repository
 
 import android.net.Uri
 import com.bestiapop.android.data.db.SongEntity
+import com.bestiapop.android.data.model.AlbumOverride
 import com.bestiapop.android.data.model.OnlineCatalogTrack
 import com.bestiapop.android.data.model.Playlist
 import com.bestiapop.android.data.model.PlaylistPendingTrack
@@ -11,6 +12,7 @@ import kotlinx.coroutines.flow.Flow
 interface IMusicRepository {
     val allSongsFlow: Flow<List<Song>>
     val playlistsFlow: Flow<List<Playlist>>
+    val albumOverridesFlow: Flow<List<AlbumOverride>>
 
     fun getPlaylistSongsFlow(playlistId: Long): Flow<List<Song>>
     fun getPlaylistDetailsFlow(playlistId: Long): Flow<Pair<Playlist, List<Song>>?>
@@ -29,10 +31,24 @@ interface IMusicRepository {
         title: String,
         artist: String,
         album: String,
-        genre: String
+        genre: String,
+        year: Int = 0
     )
+
+    /** Persist album-level override only (does not rewrite songs). */
+    suspend fun upsertAlbumOverride(override: AlbumOverride)
+
+    /**
+     * Persist album override and rewrite artist/album/genre/year/artwork on all songs
+     * currently under [AlbumOverride.albumKey].
+     */
+    suspend fun updateAlbumMetadataPropagateToSongs(override: AlbumOverride)
+
+    suspend fun getAlbumOverride(albumKey: String): AlbumOverride?
+
     fun extractAndSaveEmbeddedArtwork(audioPathOrUri: String, identifier: String): String?
     fun savePlaylistCoverImage(sourceUriStr: String?): String?
+    fun saveAlbumCoverImage(sourceUriStr: String?): String?
 
     suspend fun createPlaylist(name: String, description: String? = null, coverUri: String? = null): Long
     suspend fun updatePlaylist(id: Long, name: String, description: String? = null, coverUri: String? = null)

@@ -62,11 +62,28 @@ class ActiveDownloadCodecTest {
     }
 
     @Test
-    fun forPersistence_dropsSuccess() {
+    fun forPersistence_keepsSuccessWithSongId() {
         val persisted = ActiveDownloadCodec.forPersistence(
-            listOf(download(CandidateDownloadState.SUCCESS))
+            listOf(
+                download(CandidateDownloadState.SUCCESS).copy(
+                    resultSongId = 99L,
+                    progressPercent = 100
+                )
+            )
         )
-        assertTrue(persisted.isEmpty())
+        assertEquals(1, persisted.size)
+        assertEquals(CandidateDownloadState.SUCCESS, persisted[0].state)
+        assertEquals(99L, persisted[0].resultSongId)
+    }
+
+    @Test
+    fun forPersistence_convertsQueuedToInterruptedError() {
+        val persisted = ActiveDownloadCodec.forPersistence(
+            listOf(download(CandidateDownloadState.QUEUED))
+        )
+        assertEquals(1, persisted.size)
+        assertEquals(CandidateDownloadState.ERROR, persisted[0].state)
+        assertEquals(INTERRUPTED_DOWNLOAD_MESSAGE, persisted[0].errorMessage)
     }
 
     @Test
@@ -80,7 +97,9 @@ class ActiveDownloadCodecTest {
         val list = listOf(
             download(CandidateDownloadState.DOWNLOADING, "a"),
             download(CandidateDownloadState.ERROR, "b"),
-            download(CandidateDownloadState.IDLE, "c")
+            download(CandidateDownloadState.IDLE, "c"),
+            download(CandidateDownloadState.QUEUED, "d"),
+            download(CandidateDownloadState.SUCCESS, "e")
         )
         assertEquals(2, activeDownloadBadgeCount(list))
     }
@@ -97,6 +116,17 @@ class ActiveDownloadCodecTest {
         assertEquals(1, restored.size)
         assertEquals(ActiveDownloadSource.LB_IMPORT, restored[0].source)
         assertEquals(42L, restored[0].targetPlaylistId)
+    }
+
+    @Test
+    fun roundTrip_preservesSuccessAndResultSongId() {
+        val original = listOf(
+            download(CandidateDownloadState.SUCCESS).copy(resultSongId = 55L)
+        )
+        val restored = ActiveDownloadCodec.decode(ActiveDownloadCodec.encode(original))
+        assertEquals(1, restored.size)
+        assertEquals(CandidateDownloadState.SUCCESS, restored[0].state)
+        assertEquals(55L, restored[0].resultSongId)
     }
 
     @Test

@@ -3237,6 +3237,12 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         saveWhileListeningAttempted.remove(id)
     }
 
+    fun dismissAllActiveDownloads() {
+        val ids = _activeDownloads.value.map { it.id }
+        _activeDownloads.value = emptyList()
+        ids.forEach { saveWhileListeningAttempted.remove(it) }
+    }
+
     fun downloadSingleCandidate(index: Int) {
         val list = _activeTrackCandidates.value
         if (index !in list.indices) return

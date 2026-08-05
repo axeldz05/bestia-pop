@@ -14,6 +14,7 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -54,8 +55,14 @@ fun DownloadsScreen(viewModel: MusicPlayerViewModel) {
             Text(
                 text = "Descargas",
                 style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
-                color = MaterialTheme.colorScheme.onBackground
+                color = MaterialTheme.colorScheme.onBackground,
+                modifier = Modifier.weight(1f)
             )
+            if (activeDownloads.isNotEmpty()) {
+                TextButton(onClick = { viewModel.dismissAllActiveDownloads() }) {
+                    Text("Limpiar todo")
+                }
+            }
         }
 
         Spacer(modifier = Modifier.height(24.dp))

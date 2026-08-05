@@ -38,7 +38,7 @@ Archivos: `ui/MusicPlayerViewModel.kt` (`playPlayableCollection` / `applyShuffle
 | Descargar + persistir | `DownloadAudioTrackUseCase.execute` → `IMusicRepository.downloadAndSaveOnlineTrack` |
 | UI diálogo | `ui/components/AddMusicDialog.kt` |
 | Centro de descargas | `DownloadsScreen` + `ActiveDownloadRow`; persistencia `ActiveDownloadsStore` / `ActiveDownloadCodec`; notif `DownloadNotificationHelper`; badge `activeDownloadBadgeCount` en tab Descargas (`MainScreen`) |
-| Orquestación VM | `enqueueTrackedBatch` → `runTrackedDownload` ← `downloadSingleCandidate`, `downloadSelectedCandidatesBatch`, `downloadFromUrl`, `downloadOnlineTrack`, `downloadRemoteItem`, `maybeEnqueueSaveWhileListening`; candidatos vía `expandCandidates`; acciones `retryActiveDownload` / `cycleActiveDownload` / `previewActiveDownload` / `playActiveDownload` / `dismissActiveDownload`; deep-link `requestOpenDownloads` / `pendingOpenDownloads` |
+| Orquestación VM | `enqueueTrackedBatch` → `runTrackedDownload` ← `downloadSingleCandidate`, `downloadSelectedCandidatesBatch`, `downloadFromUrl`, `downloadOnlineTrack`, `downloadRemoteItem`, `maybeEnqueueSaveWhileListening`; candidatos vía `expandCandidates`; acciones `retryActiveDownload` / `cycleActiveDownload` / `previewActiveDownload` / `playActiveDownload` / `dismissActiveDownload` / `dismissAllActiveDownloads`; deep-link `requestOpenDownloads` / `pendingOpenDownloads` |
 
 Modelo clave: `OnlineCatalogTrack`, `CatalogTrackCandidate`, `DownloadStatus` (legacy Idle), `ActiveDownload` / `ActiveDownloadSource` (`CATALOG`, `LINK`, `SAVE_WHILE_LISTENING`, `BATCH`, `LB_IMPORT`, `DISCOVER`), cola `activeDownloads` (+ `targetPlaylistId` opcional, `resultSongId` en SUCCESS).
 
@@ -54,6 +54,7 @@ Modelo clave: `OnlineCatalogTrack`, `CatalogTrackCandidate`, `DownloadStatus` (l
 | Sort | `SortOption`: TITLE, ARTIST, ALBUM, GENRE, DATE_ADDED |
 | Filtrado/orden | `GetLibrarySongsUseCase.execute` |
 | Vista plana vs grupos álbum | `LibraryViewMode.FLAT` / `ALBUM_GROUPS` → `buildLibraryListItems` / `buildListItems` |
+| Colapsar álbum / todos | `collapsedAlbumNames` + toggle por header (`onToggleCollapseAlbum`); expandir/colapsar todo en `LibraryScreen` (vista grupos) |
 | Derivados | `extractAlbums`, `extractArtists` → `albumsState`, `artistsState` |
 
 UI: `LibraryScreen`, `LibrarySongList`, `LibraryAlbumGrid`, `LibraryArtistList`.

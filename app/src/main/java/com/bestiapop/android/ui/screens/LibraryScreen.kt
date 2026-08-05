@@ -25,7 +25,10 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.Sort
+import androidx.compose.material.icons.filled.UnfoldLess
+import androidx.compose.material.icons.filled.UnfoldMore
 import androidx.compose.material.icons.filled.ViewAgenda
+// UnfoldLess / UnfoldMore: collapse/expand all album groups
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -177,6 +180,15 @@ fun LibraryScreen(
                 collapsedAlbumNames + albumName
             }
         }
+    }
+
+    val libraryAlbumNames = remember(songs) {
+        songs.map { it.album }.filter { it.isNotBlank() }.toSet()
+    }
+    val allAlbumsCollapsed = libraryAlbumNames.isNotEmpty() &&
+        libraryAlbumNames.all { collapsedAlbumNames.contains(it) }
+    val toggleCollapseAllAlbums = {
+        collapsedAlbumNames = if (allAlbumsCollapsed) emptySet() else libraryAlbumNames
     }
 
     val selectAllSongs = remember {
@@ -364,6 +376,22 @@ fun LibraryScreen(
                 )
 
                 if (selectedTabIndex == 0) {
+                    if (showAlbumHeaders && libraryAlbumNames.isNotEmpty()) {
+                        IconButton(onClick = toggleCollapseAllAlbums) {
+                            Icon(
+                                imageVector = if (allAlbumsCollapsed) {
+                                    Icons.Default.UnfoldMore
+                                } else {
+                                    Icons.Default.UnfoldLess
+                                },
+                                contentDescription = if (allAlbumsCollapsed) {
+                                    "Expandir todos los álbumes"
+                                } else {
+                                    "Colapsar todos los álbumes"
+                                }
+                            )
+                        }
+                    }
                     IconButton(onClick = { showAlbumHeaders = !showAlbumHeaders }) {
                         Icon(
                             imageVector = Icons.Default.ViewAgenda,

@@ -375,27 +375,24 @@ fun NowPlayingScreen(
                         onDismissRequest = { radioMenuExpanded = false }
                     ) {
                         DropdownMenuItem(
-                            text = { Text("Offline") },
+                            text = { Text("Solo conocidos") },
                             onClick = {
                                 radioMenuExpanded = false
-                                viewModel.setRadioForceOnline(false)
-                                viewModel.startRadio(mode = RadioMode.EASY, announceMode = true)
+                                viewModel.startRadio(mode = RadioMode.KNOWN, announceMode = true)
                             }
                         )
                         DropdownMenuItem(
-                            text = { Text("Online") },
+                            text = { Text("Solo nuevos") },
                             onClick = {
                                 radioMenuExpanded = false
-                                viewModel.setRadioForceOnline(false)
-                                viewModel.startRadio(mode = RadioMode.EXPLORE, announceMode = true)
+                                viewModel.startRadio(mode = RadioMode.NEW, announceMode = true)
                             }
                         )
                         DropdownMenuItem(
-                            text = { Text("Forzar online") },
+                            text = { Text("Ambos") },
                             onClick = {
                                 radioMenuExpanded = false
-                                viewModel.setRadioForceOnline(true)
-                                viewModel.startRadio(mode = RadioMode.EXPLORE, announceMode = true)
+                                viewModel.startRadio(mode = RadioMode.BOTH, announceMode = true)
                             }
                         )
                         if (radioActive) {

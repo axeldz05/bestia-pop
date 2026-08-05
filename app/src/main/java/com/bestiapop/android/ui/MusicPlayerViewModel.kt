@@ -44,6 +44,7 @@ import com.bestiapop.android.domain.radio.ListenBrainzRadio
 import com.bestiapop.android.domain.radio.LocalMetadataRadio
 import com.bestiapop.android.domain.radio.RadioEngine
 import com.bestiapop.android.domain.radio.RadioMode
+import com.bestiapop.android.domain.radio.RadioSuggestResult
 import com.bestiapop.android.domain.usecase.FetchAndMatchCfRecommendationsUseCase
 import com.bestiapop.android.domain.usecase.ImportListenBrainzPlaylistUseCase
 import com.bestiapop.android.domain.usecase.MatchListenBrainzTracksUseCase
@@ -299,11 +300,8 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private val _radioLoading = MutableStateFlow(false)
     val radioLoading = _radioLoading.asStateFlow()
 
-    private val _radioMode = MutableStateFlow(RadioMode.EASY)
+    private val _radioMode = MutableStateFlow(RadioMode.KNOWN)
     val radioMode = _radioMode.asStateFlow()
-
-    private val _radioForceOnline = MutableStateFlow(false)
-    val radioForceOnline = _radioForceOnline.asStateFlow()
 
     private val _radioStatusLabel = MutableStateFlow<String?>(null)
     val radioStatusLabel = _radioStatusLabel.asStateFlow()
@@ -317,7 +315,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private var resolvingTransitionJob: Job? = null
     private var radioRefillJob: Job? = null
     private val playedInRadioSession = linkedSetOf<String>()
-    /** Last user-chosen mode (session); auto uses this when not forcing. */
+    /** Last user-chosen mode (session); auto-start / tap reuse this when set. */
     private var radioPreferredMode: RadioMode? = null
 
     /** True after UI was rebuilt from a live MediaController timeline. */
@@ -1506,25 +1504,14 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     fun setRadioPreferredMode(mode: RadioMode) {
         radioPreferredMode = mode
-        if (mode == RadioMode.EASY) {
-            _radioForceOnline.value = false
-        }
-    }
-
-    fun setRadioForceOnline(force: Boolean) {
-        _radioForceOnline.value = force
-        if (force) {
-            radioPreferredMode = RadioMode.EXPLORE
-        }
     }
 
     fun stopRadio() {
         radioRefillJob?.cancel()
         radioRefillJob = null
         _radioActive.value = false
-        _radioForceOnline.value = false
         playedInRadioSession.clear()
-        _radioMode.value = RadioMode.EASY
+        _radioMode.value = RadioMode.KNOWN
         updateRadioStatusLabel()
     }
 
@@ -1560,37 +1547,28 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
         if (mode != null) {
             setRadioPreferredMode(mode)
-            if (mode == RadioMode.EXPLORE && !_radioForceOnline.value) {
-                // explicit Online without force
-            }
         }
 
         val settings = listenBrainzSettings.value
-        val canUseLb = settings.enabled &&
-            settings.userToken.isNotBlank() &&
-            connectivityObserver.isCurrentlyOnline()
+        val hasLbCredentials = settings.enabled && settings.userToken.isNotBlank()
 
-        var force = _radioForceOnline.value
         var resolvedMode = when {
-            force -> RadioMode.EXPLORE
             mode != null -> mode
             radioPreferredMode != null -> radioPreferredMode!!
-            canUseLb -> RadioMode.EXPLORE
-            else -> RadioMode.EASY
+            hasLbCredentials && connectivityObserver.isCurrentlyOnline() -> RadioMode.BOTH
+            else -> RadioMode.KNOWN
         }
 
-        if (force && !canUseLb) {
+        // Solo nuevos needs LB configured; network may come back later — we retry below.
+        if (resolvedMode == RadioMode.NEW && !hasLbCredentials) {
             if (!auto) {
                 Toast.makeText(
                     getApplication(),
-                    "Radio online no disponible, pasando a offline",
+                    "Radio online no disponible",
                     Toast.LENGTH_SHORT
                 ).show()
             }
-            _radioForceOnline.value = false
-            force = false
-            resolvedMode = RadioMode.EASY
-            radioPreferredMode = RadioMode.EASY
+            return
         }
 
         val keepCurrentPlaying = !auto && shouldKeepCurrentWhenStartingRadio()
@@ -1617,50 +1595,24 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                     }
                 }
 
-                var effectiveMode = resolvedMode
-                var batch = radioEngine.suggest(
+                val effectiveMode = resolvedMode
+                val batch = suggestRadioWithRetry(
                     seed = seed,
                     library = library,
                     mode = effectiveMode,
                     excludeKeys = exclude,
-                    limit = RADIO_BATCH_SIZE,
-                    lbToken = settings.userToken.takeIf { it.isNotBlank() },
-                    lbAvailable = canUseLb,
-                    lbUsername = settings.username
+                    settings = settings
                 )
-
-                if (force && batch.listenBrainzFailed) {
-                    if (!auto) {
-                        Toast.makeText(
-                            getApplication(),
-                            "Radio online no disponible, pasando a offline",
-                            Toast.LENGTH_SHORT
-                        ).show()
-                    }
-                    _radioForceOnline.value = false
-                    force = false
-                    effectiveMode = RadioMode.EASY
-                    radioPreferredMode = RadioMode.EASY
-                    batch = radioEngine.suggest(
-                        seed = seed,
-                        library = library,
-                        mode = RadioMode.EASY,
-                        excludeKeys = exclude,
-                        limit = RADIO_BATCH_SIZE,
-                        lbToken = null,
-                        lbAvailable = false,
-                        lbUsername = null
-                    )
-                }
 
                 val suggestions = batch.items
                 if (suggestions.isEmpty()) {
                     if (!auto) {
-                        Toast.makeText(
-                            getApplication(),
-                            "No encontré canciones parecidas",
-                            Toast.LENGTH_SHORT
-                        ).show()
+                        val emptyMsg = when {
+                            effectiveMode == RadioMode.NEW ->
+                                "Radio online no disponible"
+                            else -> "No encontré canciones parecidas"
+                        }
+                        Toast.makeText(getApplication(), emptyMsg, Toast.LENGTH_SHORT).show()
                     }
                     return@launch
                 }
@@ -1668,7 +1620,6 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 val previousPlayed = if (_radioActive.value) playedInRadioSession.toSet() else emptySet()
                 clearRadioSessionKeepPreference()
                 _radioMode.value = effectiveMode
-                _radioForceOnline.value = force
                 playedInRadioSession.addAll(previousPlayed)
                 playedInRadioSession.addAll(exclude)
                 rememberRadioPlayed(seed)
@@ -1676,8 +1627,11 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 updateRadioStatusLabel()
 
                 if (toastMode && !auto) {
-                    val label = if (effectiveMode == RadioMode.EXPLORE) "Radio online" else "Radio offline"
-                    Toast.makeText(getApplication(), label, Toast.LENGTH_SHORT).show()
+                    Toast.makeText(
+                        getApplication(),
+                        radioModeAnnounceLabel(effectiveMode),
+                        Toast.LENGTH_SHORT
+                    ).show()
                 }
 
                 if (keepCurrentPlaying) {
@@ -1696,6 +1650,50 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 _radioLoading.value = false
             }
         }
+    }
+
+    /**
+     * For [RadioMode.NEW], retries LB/CF until we get Remotes or [RADIO_ONLINE_RETRY_TIMEOUT_MS].
+     * Other modes run once (BOTH already falls back to locales).
+     */
+    private suspend fun suggestRadioWithRetry(
+        seed: PlayableItem,
+        library: List<Song>,
+        mode: RadioMode,
+        excludeKeys: Set<String>,
+        settings: ListenBrainzSettings,
+        timeoutMs: Long = RADIO_ONLINE_RETRY_TIMEOUT_MS
+    ): RadioSuggestResult {
+        fun canUseLbNow(): Boolean =
+            settings.enabled &&
+                settings.userToken.isNotBlank() &&
+                connectivityObserver.isCurrentlyOnline()
+
+        suspend fun once() = radioEngine.suggest(
+            seed = seed,
+            library = library,
+            mode = mode,
+            excludeKeys = excludeKeys,
+            limit = RADIO_BATCH_SIZE,
+            lbToken = settings.userToken.takeIf { it.isNotBlank() },
+            lbAvailable = canUseLbNow(),
+            lbUsername = settings.username
+        )
+
+        if (mode != RadioMode.NEW) {
+            return once()
+        }
+
+        val deadline = System.currentTimeMillis() + timeoutMs
+        var attempt = 0
+        var last = once()
+        while (last.items.isEmpty() && System.currentTimeMillis() < deadline) {
+            attempt++
+            val backoff = minOf(1_000L * attempt, RADIO_ONLINE_RETRY_MAX_BACKOFF_MS)
+            delay(backoff)
+            last = once()
+        }
+        return last
     }
 
     private fun shouldKeepCurrentWhenStartingRadio(): Boolean {
@@ -1763,14 +1761,17 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             _radioStatusLabel.value = null
             return
         }
-        _radioStatusLabel.value = when {
-            _radioForceOnline.value && _radioMode.value == RadioMode.EXPLORE ->
-                "Radio · Online (forzado)"
-            _radioMode.value == RadioMode.EXPLORE ->
-                "Radio · Online"
-            else ->
-                "Radio · Offline"
+        _radioStatusLabel.value = when (_radioMode.value) {
+            RadioMode.KNOWN -> "Radio · Solo conocidos"
+            RadioMode.NEW -> "Radio · Solo nuevos"
+            RadioMode.BOTH -> "Radio · Ambos"
         }
+    }
+
+    private fun radioModeAnnounceLabel(mode: RadioMode): String = when (mode) {
+        RadioMode.KNOWN -> "Radio · Solo conocidos"
+        RadioMode.NEW -> "Radio · Solo nuevos"
+        RadioMode.BOTH -> "Radio · Ambos"
     }
 
     private fun rememberRadioPlayed(item: PlayableItem) {
@@ -1801,70 +1802,25 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
         radioRefillJob = viewModelScope.launch {
             val settings = listenBrainzSettings.value
-            val canUseLb = settings.enabled &&
-                settings.userToken.isNotBlank() &&
-                connectivityObserver.isCurrentlyOnline()
-            var force = _radioForceOnline.value
-            var mode = when {
-                force -> RadioMode.EXPLORE
-                else -> _radioMode.value
-            }
+            val hasLbCredentials = settings.enabled && settings.userToken.isNotBlank()
+            val mode = _radioMode.value
 
-            if (force && !canUseLb) {
-                Toast.makeText(
-                    getApplication(),
-                    "Radio online no disponible, pasando a offline",
-                    Toast.LENGTH_SHORT
-                ).show()
-                _radioForceOnline.value = false
-                force = false
-                mode = RadioMode.EASY
-                _radioMode.value = RadioMode.EASY
-                radioPreferredMode = RadioMode.EASY
-                updateRadioStatusLabel()
+            if (mode == RadioMode.NEW && !hasLbCredentials) {
+                return@launch
             }
 
             val library = rawSongs.first()
             val exclude = buildRadioExcludeKeys(seed)
-            var batch = radioEngine.suggest(
+            val batch = suggestRadioWithRetry(
                 seed = seed,
                 library = library,
                 mode = mode,
                 excludeKeys = exclude,
-                limit = RADIO_BATCH_SIZE,
-                lbToken = settings.userToken.takeIf { it.isNotBlank() },
-                lbAvailable = canUseLb,
-                lbUsername = settings.username
+                settings = settings,
+                timeoutMs = RADIO_ONLINE_REFILL_RETRY_TIMEOUT_MS
             )
 
-            if (force && batch.listenBrainzFailed) {
-                Toast.makeText(
-                    getApplication(),
-                    "Radio online no disponible, pasando a offline",
-                    Toast.LENGTH_SHORT
-                ).show()
-                _radioForceOnline.value = false
-                mode = RadioMode.EASY
-                _radioMode.value = RadioMode.EASY
-                radioPreferredMode = RadioMode.EASY
-                updateRadioStatusLabel()
-                batch = radioEngine.suggest(
-                    seed = seed,
-                    library = library,
-                    mode = RadioMode.EASY,
-                    excludeKeys = exclude,
-                    limit = RADIO_BATCH_SIZE,
-                    lbToken = null,
-                    lbAvailable = false,
-                    lbUsername = null
-                )
-            }
-
             if (batch.items.isNotEmpty() && _radioActive.value) {
-                if (mode == RadioMode.EXPLORE) {
-                    _radioMode.value = RadioMode.EXPLORE
-                    updateRadioStatusLabel()
-                }
                 addPlayableBatch(batch.items)
             }
         }
@@ -3365,6 +3321,10 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     companion object {
         private const val RADIO_BATCH_SIZE = 30
         private const val RADIO_REFILL_THRESHOLD = 5
+        /** How long Solo nuevos keeps retrying LB/CF before giving up. */
+        private const val RADIO_ONLINE_RETRY_TIMEOUT_MS = 45_000L
+        private const val RADIO_ONLINE_REFILL_RETRY_TIMEOUT_MS = 20_000L
+        private const val RADIO_ONLINE_RETRY_MAX_BACKOFF_MS = 5_000L
         private const val LAST_PLAYED_POSITION_SAVE_INTERVAL_MS = 5_000L
     }
 }

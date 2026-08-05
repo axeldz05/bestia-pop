@@ -103,8 +103,65 @@ class RadioEngineTest {
         durationMs = 180_000L
     )
 
+    private fun failingLb() = ListenBrainzRadio(
+        lookupMetadata = { _, _, _ ->
+            com.bestiapop.android.data.listenbrainz.LbApiResult.Failure("offline")
+        },
+        fetchLbRadio = { _, _, _ ->
+            com.bestiapop.android.data.listenbrainz.LbApiResult.Failure("offline")
+        },
+        fetchRecordingMetadata = { _, _ ->
+            com.bestiapop.android.data.listenbrainz.LbApiResult.Failure("offline")
+        }
+    )
+
+    private fun lbWithLibraryMatchAndRemote() = ListenBrainzRadio(
+        lookupMetadata = { _, _, _ ->
+            com.bestiapop.android.data.listenbrainz.LbApiResult.Success(
+                com.bestiapop.android.data.listenbrainz.LbMetadataLookup(
+                    artistMbids = listOf("artist-mbid"),
+                    recordingMbid = null,
+                    artistCreditName = "Artist A",
+                    recordingName = "Seed"
+                )
+            )
+        },
+        fetchLbRadio = { _, _, _ ->
+            com.bestiapop.android.data.listenbrainz.LbApiResult.Success(
+                listOf(
+                    com.bestiapop.android.data.listenbrainz.LbRadioRecording(
+                        recordingMbid = "rec-1",
+                        similarArtistMbid = null,
+                        similarArtistName = "Artist A"
+                    ),
+                    com.bestiapop.android.data.listenbrainz.LbRadioRecording(
+                        recordingMbid = "rec-2",
+                        similarArtistMbid = null,
+                        similarArtistName = "Remote Artist"
+                    )
+                )
+            )
+        },
+        fetchRecordingMetadata = { _, _ ->
+            com.bestiapop.android.data.listenbrainz.LbApiResult.Success(
+                mapOf(
+                    "rec-1" to com.bestiapop.android.data.listenbrainz.LbRecordingMetadata(
+                        recordingMbid = "rec-1",
+                        title = "B",
+                        artist = "Artist A"
+                    ),
+                    "rec-2" to com.bestiapop.android.data.listenbrainz.LbRecordingMetadata(
+                        recordingMbid = "rec-2",
+                        title = "Remote Song",
+                        artist = "Remote Artist"
+                    )
+                )
+            )
+        }
+    )
+
     @Test
-    fun easyModeDoesNotCallListenBrainz() = runBlocking {
+    fun knownModeDoesNotCallListenBrainz() = runBlocking {
         var lbCalls = 0
         val lb = ListenBrainzRadio(
             lookupMetadata = { _, _, _ ->
@@ -130,7 +187,7 @@ class RadioEngineTest {
         val result = engine.suggest(
             seed = seed,
             library = library,
-            mode = RadioMode.EASY,
+            mode = RadioMode.KNOWN,
             excludeKeys = emptySet(),
             limit = 10,
             lbToken = "token",
@@ -145,21 +202,10 @@ class RadioEngineTest {
     }
 
     @Test
-    fun exploreFallsBackToLocalWhenLbFails() = runBlocking {
-        val lb = ListenBrainzRadio(
-            lookupMetadata = { _, _, _ ->
-                com.bestiapop.android.data.listenbrainz.LbApiResult.Failure("offline")
-            },
-            fetchLbRadio = { _, _, _ ->
-                com.bestiapop.android.data.listenbrainz.LbApiResult.Failure("offline")
-            },
-            fetchRecordingMetadata = { _, _ ->
-                com.bestiapop.android.data.listenbrainz.LbApiResult.Failure("offline")
-            }
-        )
+    fun newModeReturnsEmptyWhenLbFails() = runBlocking {
         val engine = RadioEngine(
             localRadio = LocalMetadataRadio(random = Random(2)),
-            listenBrainzRadio = lb
+            listenBrainzRadio = failingLb()
         )
         val seed = song(1, "Seed", "Artist A").toPlayable()
         val library = listOf(seed.song, song(2, "B", "Artist A"))
@@ -167,7 +213,89 @@ class RadioEngineTest {
         val result = engine.suggest(
             seed = seed,
             library = library,
-            mode = RadioMode.EXPLORE,
+            mode = RadioMode.NEW,
+            excludeKeys = emptySet(),
+            limit = 5,
+            lbToken = "token",
+            lbAvailable = true
+        )
+
+        assertTrue(result.items.isEmpty())
+        assertFalse(result.usedListenBrainz)
+        assertTrue(result.listenBrainzFailed)
+    }
+
+    @Test
+    fun newModeSkipsLibraryMatchesKeepsOnlyRemotes() = runBlocking {
+        val engine = RadioEngine(
+            localRadio = LocalMetadataRadio(random = Random(3)),
+            listenBrainzRadio = lbWithLibraryMatchAndRemote()
+        )
+        val seed = song(1, "Seed", "Artist A").toPlayable()
+        val library = listOf(seed.song, song(2, "B", "Artist A"), song(3, "C", "Artist A"))
+
+        val result = engine.suggest(
+            seed = seed,
+            library = library,
+            mode = RadioMode.NEW,
+            excludeKeys = emptySet(),
+            limit = 10,
+            lbToken = "token",
+            lbAvailable = true
+        )
+
+        assertTrue(result.items.all { it is PlayableItem.Remote })
+        assertFalse(result.items.any { it.title == "B" })
+        assertTrue(result.items.any { it.title == "Remote Song" })
+        assertTrue(result.usedListenBrainz)
+        assertFalse(result.listenBrainzFailed)
+    }
+
+    @Test
+    fun bothInterleavesRemoteThenLocal() = runBlocking {
+        val engine = RadioEngine(
+            localRadio = LocalMetadataRadio(random = Random(3)),
+            listenBrainzRadio = lbWithLibraryMatchAndRemote()
+        )
+        val seed = song(1, "Seed", "Artist A").toPlayable()
+        val library = listOf(seed.song, song(2, "B", "Artist A"), song(3, "C", "Artist A"))
+
+        val result = engine.suggest(
+            seed = seed,
+            library = library,
+            mode = RadioMode.BOTH,
+            excludeKeys = emptySet(),
+            limit = 4,
+            lbToken = "token",
+            lbAvailable = true
+        )
+
+        assertTrue(result.items.size >= 2)
+        assertTrue(result.items.first() is PlayableItem.Remote)
+        val types = result.items.map { it is PlayableItem.Remote }
+        // When both pools have items: R, L, R, L…
+        if (result.items.count { it is PlayableItem.Remote } >= 1 &&
+            result.items.count { it is PlayableItem.Local } >= 1
+        ) {
+            assertTrue(types[0])
+            assertFalse(types[1])
+        }
+        assertTrue(result.usedListenBrainz)
+    }
+
+    @Test
+    fun bothFallsBackToLocalWhenLbFails() = runBlocking {
+        val engine = RadioEngine(
+            localRadio = LocalMetadataRadio(random = Random(2)),
+            listenBrainzRadio = failingLb()
+        )
+        val seed = song(1, "Seed", "Artist A").toPlayable()
+        val library = listOf(seed.song, song(2, "B", "Artist A"))
+
+        val result = engine.suggest(
+            seed = seed,
+            library = library,
+            mode = RadioMode.BOTH,
             excludeKeys = emptySet(),
             limit = 5,
             lbToken = "token",
@@ -176,84 +304,12 @@ class RadioEngineTest {
 
         assertEquals(1, result.items.size)
         assertEquals("B", result.items.single().title)
+        assertTrue(result.items.all { it is PlayableItem.Local })
         assertFalse(result.usedListenBrainz)
-        assertTrue(result.listenBrainzFailed)
     }
 
     @Test
-    fun exploreDedupesLocalAndRemote() = runBlocking {
-        val lb = ListenBrainzRadio(
-            lookupMetadata = { _, _, _ ->
-                com.bestiapop.android.data.listenbrainz.LbApiResult.Success(
-                    com.bestiapop.android.data.listenbrainz.LbMetadataLookup(
-                        artistMbids = listOf("artist-mbid"),
-                        recordingMbid = null,
-                        artistCreditName = "Artist A",
-                        recordingName = "Seed"
-                    )
-                )
-            },
-            fetchLbRadio = { _, _, _ ->
-                com.bestiapop.android.data.listenbrainz.LbApiResult.Success(
-                    listOf(
-                        com.bestiapop.android.data.listenbrainz.LbRadioRecording(
-                            recordingMbid = "rec-1",
-                            similarArtistMbid = null,
-                            similarArtistName = "Artist A"
-                        ),
-                        com.bestiapop.android.data.listenbrainz.LbRadioRecording(
-                            recordingMbid = "rec-2",
-                            similarArtistMbid = null,
-                            similarArtistName = "Remote Artist"
-                        )
-                    )
-                )
-            },
-            fetchRecordingMetadata = { _, _ ->
-                com.bestiapop.android.data.listenbrainz.LbApiResult.Success(
-                    mapOf(
-                        "rec-1" to com.bestiapop.android.data.listenbrainz.LbRecordingMetadata(
-                            recordingMbid = "rec-1",
-                            title = "B",
-                            artist = "Artist A"
-                        ),
-                        "rec-2" to com.bestiapop.android.data.listenbrainz.LbRecordingMetadata(
-                            recordingMbid = "rec-2",
-                            title = "Remote Song",
-                            artist = "Remote Artist"
-                        )
-                    )
-                )
-            }
-        )
-        val engine = RadioEngine(
-            localRadio = LocalMetadataRadio(random = Random(3)),
-            listenBrainzRadio = lb
-        )
-        val seed = song(1, "Seed", "Artist A").toPlayable()
-        val library = listOf(seed.song, song(2, "B", "Artist A"), song(3, "C", "Artist A"))
-
-        val result = engine.suggest(
-            seed = seed,
-            library = library,
-            mode = RadioMode.EXPLORE,
-            excludeKeys = emptySet(),
-            limit = 10,
-            lbToken = "token",
-            lbAvailable = true
-        )
-
-        val keys = result.items.map { MatchListenBrainzTracksUseCase.matchKey(it.artist, it.title) }
-        assertEquals(keys.size, keys.toSet().size)
-        assertTrue(result.items.any { it is PlayableItem.Local && it.title == "B" })
-        assertTrue(result.items.any { it is PlayableItem.Remote && it.title == "Remote Song" })
-        assertEquals(1, result.items.count { it.title == "B" })
-        assertTrue(result.usedListenBrainz)
-        assertFalse(result.listenBrainzFailed)
-    }
-
-    @Test
-    fun exploreFillsWithCfWhenLocalAndLbInsufficient() = runBlocking {
+    fun newFillsWithCfWhenLbInsufficient() = runBlocking {
         val lb = ListenBrainzRadio(
             lookupMetadata = { _, _, _ ->
                 com.bestiapop.android.data.listenbrainz.LbApiResult.Success(
@@ -323,13 +379,12 @@ class RadioEngineTest {
             cfRecommendationsRadio = cf
         )
         val seed = song(1, "Seed", "Artist A").toPlayable()
-        // Tiny library so local fill cannot satisfy limit alone
         val library = listOf(seed.song)
 
         val result = engine.suggest(
             seed = seed,
             library = library,
-            mode = RadioMode.EXPLORE,
+            mode = RadioMode.NEW,
             excludeKeys = emptySet(),
             limit = 3,
             lbToken = "token",
@@ -337,9 +392,25 @@ class RadioEngineTest {
             lbUsername = "user"
         )
 
-        assertTrue(result.items.any { it is PlayableItem.Remote && it.title == "LB Song" })
-        assertTrue(result.items.any { it is PlayableItem.Remote && it.title.startsWith("CF ") })
+        assertTrue(result.items.all { it is PlayableItem.Remote })
+        assertTrue(result.items.any { it.title == "LB Song" })
+        assertTrue(result.items.any { it.title.startsWith("CF ") })
         assertEquals(3, result.items.size)
         assertTrue(result.usedListenBrainz)
+    }
+
+    @Test
+    fun interleaveEquitableStartsWithOnlineAndDrainsRemainder() {
+        val online = listOf(
+            PlayableItem.Remote(title = "R1", artist = "A"),
+            PlayableItem.Remote(title = "R2", artist = "A")
+        )
+        val offline = listOf(
+            song(1, "L1", "A").toPlayable(),
+            song(2, "L2", "A").toPlayable(),
+            song(3, "L3", "A").toPlayable()
+        )
+        val out = RadioEngine.interleaveEquitable(online, offline, limit = 5)
+        assertEquals(listOf("R1", "L1", "R2", "L2", "L3"), out.map { it.title })
     }
 }

@@ -11,7 +11,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
 /**
- * User-based CF recommendations as an extra Radio EXPLORE fill pool (not seed-based).
+ * User-based CF recommendations as an extra Radio NEW/BOTH fill pool (not seed-based).
  */
 class CfRecommendationsRadio(
     private val fetchCf: suspend (

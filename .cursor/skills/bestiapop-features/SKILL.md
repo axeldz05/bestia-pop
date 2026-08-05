@@ -212,22 +212,21 @@ Centro de descargas online → sección 2 (`DownloadsScreen`, tab Descargas).
 
 **Invariantes:**
 - Seed = canción elegida (`startRadio(seedSong)` o `currentItem`); entry en menú de canción (“Iniciar radio”) y `NowPlayingScreen`.
-- **Modos UI:** Offline (`EASY`) / Online (`EXPLORE`); label `radioStatusLabel` (“Radio · Offline|Online|Online (forzado)”).
-- **Forzar online:** `radioForceOnline`; ante sin red/token o `listenBrainzFailed` → toast, force off, Offline, sigue con local.
-- Long-press Radio en Now Playing: Offline / Online / Forzar online / Detener radio (`stopRadio` no vacía cola).
-- **Auto:** al llegar a `STATE_ENDED` con `RepeatMode.OFF`, `startRadio(auto = true)` respeta preferred/force.
+- **Modos UI:** Solo conocidos (`KNOWN`) / Solo nuevos (`NEW`) / Ambos (`BOTH`); label `radioStatusLabel` (“Radio · Solo conocidos|Solo nuevos|Ambos”).
+- Long-press Radio en Now Playing: Solo conocidos / Solo nuevos / Ambos / Detener radio (`stopRadio` no vacía cola).
+- **Auto:** al llegar a `STATE_ENDED` con `RepeatMode.OFF`, `startRadio(auto = true)` respeta preferred; default sin preferred = `BOTH` si hay LB, si no `KNOWN`.
 - **Durante reproducción:** no saltea el tema actual; `replaceUpcomingWithRadio` + toast “Se agregaron canciones de la radio a la cola”.
-- **EASY:** solo biblioteca; **EXPLORE:** locales del seed → lb-radio → CF (`CfRecommendationsRadio`); `RadioSuggestResult` indica si LB/CF aportó/falló.
-- Refill cuando quedan < 5 con misma política force/degrade; **no** persistir URLs CDN.
+- **KNOWN:** solo biblioteca (`LocalMetadataRadio`). **NEW:** solo `PlayableItem.Remote` vía LB → CF (matches de biblioteca se omiten); reintenta con backoff hasta ~45s (`suggestRadioWithRetry`) y solo entonces toast si sigue vacío; sin credenciales LB → toast inmediato. **BOTH:** intercala Remote, Local, Remote… (`RadioEngine.interleaveEquitable`); sin online sigue con conocidos (sin toast).
+- Refill con el mismo modo; **NEW** reintenta online ~20s; **no** persistir URLs CDN.
 
 | Capacidad | Entry point |
 |-----------|-------------|
-| Modos | `RadioMode.EASY` / `EXPLORE`; `radioMode` / `radioForceOnline` / `radioStatusLabel` |
-| Motor | `RadioEngine.suggest` → `RadioSuggestResult` |
+| Modos | `RadioMode.KNOWN` / `NEW` / `BOTH`; `radioMode` / `radioStatusLabel` |
+| Motor | `RadioEngine.suggest` → `RadioSuggestResult`; `interleaveEquitable` |
 | Local | `LocalMetadataRadio.suggest` |
 | LB | `ListenBrainzRadio.suggest` + LB client metadata/lb-radio |
 | CF fill | `CfRecommendationsRadio.suggest` (`artist_type=similar`, cache TTL) |
-| Sesión | `startRadio`, `stopRadio`, `setRadioPreferredMode`, `setRadioForceOnline`, `replaceUpcomingWithRadio`, refill/auto |
+| Sesión | `startRadio`, `stopRadio`, `setRadioPreferredMode`, `suggestRadioWithRetry`, `replaceUpcomingWithRadio`, refill/auto |
 | UI | Now Playing (tap/long-press); mini bar `statusLabel` (radio / resolving); menú canción “Iniciar radio” |
 
 ## 12. System back (jerarquía UI)

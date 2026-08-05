@@ -1,0 +1,105 @@
+package com.bestiapop.android.data.preferences
+
+import com.bestiapop.android.data.model.Song
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class PlaybackSessionStoreTest {
+
+    private fun song(
+        id: Long,
+        uri: String = "content://song/$id",
+        title: String = "Song $id"
+    ) = Song(
+        id = id,
+        uriString = uri,
+        title = title,
+        artist = "Artist",
+        album = "Album",
+        durationMs = 180_000L,
+        artworkUri = "file:///art/$id.jpg"
+    )
+
+    @Test
+    fun codec_roundTrip_preservesFields() {
+        val original = LastPlayedSnapshot(
+            songId = 42L,
+            uriString = "content://music/42",
+            positionMs = 12_345L,
+            title = "Hello",
+            artist = "World",
+            album = "LP",
+            artworkUri = "file:///cover.jpg",
+            durationMs = 200_000L
+        )
+        val restored = LastPlayedCodec.decode(LastPlayedCodec.encode(original))
+        assertEquals(original, restored)
+    }
+
+    @Test
+    fun codec_decode_blankOrInvalid_returnsNull() {
+        assertNull(LastPlayedCodec.decode(""))
+        assertNull(LastPlayedCodec.decode("not-json"))
+        assertNull(LastPlayedCodec.decode("""{"songId":1}"""))
+    }
+
+    @Test
+    fun resolveIdleSeed_prefersLastPlayedById() {
+        val library = listOf(song(1), song(2), song(3))
+        val last = LastPlayedSnapshot(songId = 2L, uriString = "other", positionMs = 1000L)
+        val picked = PlaybackHydration.resolveIdleSeed(library, last) { error("should not random") }
+        assertEquals(2L, picked?.id)
+    }
+
+    @Test
+    fun resolveIdleSeed_fallsBackToUriThenRandom() {
+        val library = listOf(song(1), song(2, uri = "content://x"), song(3))
+        val last = LastPlayedSnapshot(songId = 99L, uriString = "content://x", positionMs = 0L)
+        val byUri = PlaybackHydration.resolveIdleSeed(library, last) { error("no") }
+        assertEquals(2L, byUri?.id)
+
+        val missing = LastPlayedSnapshot(songId = 99L, uriString = "missing", positionMs = 0L)
+        val randomPick = song(3)
+        val picked = PlaybackHydration.resolveIdleSeed(library, missing) { randomPick }
+        assertEquals(3L, picked?.id)
+    }
+
+    @Test
+    fun resolveIdleSeed_emptyLibrary_returnsNull() {
+        assertNull(PlaybackHydration.resolveIdleSeed(emptyList(), null))
+        assertNull(
+            PlaybackHydration.resolveIdleSeed(
+                emptyList(),
+                LastPlayedSnapshot(1L, "uri")
+            )
+        )
+    }
+
+    @Test
+    fun resumePositionMs_onlyWhenMatchingAndCapped() {
+        val s = song(5).copy(durationMs = 10_000L)
+        val last = LastPlayedSnapshot(
+            songId = 5L,
+            uriString = s.uriString,
+            positionMs = 50_000L,
+            durationMs = 10_000L
+        )
+        assertEquals(10_000L, PlaybackHydration.resumePositionMs(s, last))
+        assertEquals(0L, PlaybackHydration.resumePositionMs(song(9), last))
+        assertEquals(0L, PlaybackHydration.resumePositionMs(s, null))
+    }
+
+    @Test
+    fun snapshotFromSong_mapsFields() {
+        val s = song(7)
+        val snap = PlaybackHydration.snapshotFromSong(s, 900L)
+        assertEquals(7L, snap.songId)
+        assertEquals(s.uriString, snap.uriString)
+        assertEquals(900L, snap.positionMs)
+        assertEquals(s.title, snap.title)
+        assertEquals(s.artworkUri, snap.artworkUri)
+        assertTrue(LastPlayedCodec.decode(LastPlayedCodec.encode(snap)) == snap)
+    }
+}

@@ -52,9 +52,17 @@ fun MainScreen(
     val isPlaying by viewModel.isPlaying.collectAsState()
     val positionMs by viewModel.playbackPositionMs.collectAsState()
     val radioStatusLabel by viewModel.radioStatusLabel.collectAsState()
+    val resolvingRemote by viewModel.resolvingRemote.collectAsState()
+    val radioLoading by viewModel.radioLoading.collectAsState()
     val activeDownloads by viewModel.activeDownloads.collectAsState()
     val pendingOpenDownloads by viewModel.pendingOpenDownloads.collectAsState()
     val downloadBadgeCount = activeDownloadBadgeCount(activeDownloads)
+
+    val miniPlayerStatusLabel = when {
+        resolvingRemote -> "Resolviendo stream…"
+        radioLoading -> "Armando radio…"
+        else -> radioStatusLabel
+    }
 
     LaunchedEffect(pendingOpenDownloads) {
         if (pendingOpenDownloads) {
@@ -154,9 +162,10 @@ fun MainScreen(
                 isPlaying = isPlaying,
                 progressMs = positionMs,
                 onPlayPauseClick = { viewModel.togglePlayPause() },
+                onPreviousClick = { viewModel.skipToPrevious() },
                 onNextClick = { viewModel.skipToNext() },
                 onBarClick = { openFullPlayer() },
-                radioStatusLabel = radioStatusLabel
+                statusLabel = miniPlayerStatusLabel
             )
 
             NavigationBar(

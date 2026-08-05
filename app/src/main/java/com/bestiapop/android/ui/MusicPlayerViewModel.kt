@@ -32,6 +32,8 @@ import com.bestiapop.android.data.preferences.ListenBrainzPreferencesRepository
 import com.bestiapop.android.data.preferences.ListenBrainzSettings
 import com.bestiapop.android.data.preferences.MAX_SAVE_WHILE_LISTENING_PERCENT
 import com.bestiapop.android.data.preferences.MIN_SAVE_WHILE_LISTENING_PERCENT
+import com.bestiapop.android.data.preferences.PlaybackHydration
+import com.bestiapop.android.data.preferences.PlaybackSessionStore
 import com.bestiapop.android.data.preferences.ThemePreferencesRepository
 import com.bestiapop.android.data.repository.MusicRepository
 import com.bestiapop.android.data.stream.StreamResolver
@@ -120,6 +122,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private val themeRepository = ThemePreferencesRepository(application)
     private val listenBrainzPreferences = ListenBrainzPreferencesRepository(application)
     private val activeDownloadsStore = ActiveDownloadsStore(application)
+    private val playbackSessionStore = PlaybackSessionStore(application)
     private val downloadNotificationHelper = DownloadNotificationHelper(application)
     private val pendingListenDao = AppDatabase.getDatabase(application).pendingListenDao()
     private val connectivityObserver = ConnectivityObserver(application)
@@ -288,6 +291,13 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private val playedInRadioSession = linkedSetOf<String>()
     /** Last user-chosen mode (session); auto uses this when not forcing. */
     private var radioPreferredMode: RadioMode? = null
+
+    /** True after UI was rebuilt from a live MediaController timeline. */
+    private var liveSessionHydrated = false
+    private var idleSeedDone = false
+    /** Seek target applied once on the next [finishPlayPlayableCollection] (idle resume). */
+    private var pendingResumePositionMs: Long? = null
+    private var lastPersistedPositionAtMs = 0L
 
     private val radioEngine = RadioEngine(
         localRadio = LocalMetadataRadio(),
@@ -460,7 +470,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 _currentItem.value?.let { current ->
                     if (current is PlayableItem.Local) {
                         songs.find { it.uriString == current.song.uriString }?.let { updated ->
-                            setCurrentItem(PlayableItem.Local(updated))
+                            setCurrentItem(PlayableItem.Local(updated), persistLastPlayed = false)
                         }
                     }
                 }
@@ -474,6 +484,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                         }
                     }
                 }
+                maybeSeedIdlePlayer()
             }
         }
 
@@ -499,6 +510,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             try {
                 mediaController = controllerFuture?.get()
                 setupPlayerListener()
+                syncUiFromController()
             } catch (e: Exception) {
                 e.printStackTrace()
             }
@@ -508,15 +520,161 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private var lastMediaItemIndex: Int = -1
     private var suppressShuffleWrapDetection: Boolean = false
 
-    private fun setCurrentItem(item: PlayableItem?) {
+    private fun setCurrentItem(item: PlayableItem?, persistLastPlayed: Boolean = true) {
         _currentItem.value = item
         val localSong = (item as? PlayableItem.Local)?.song
         _currentSong.value = localSong
         if (localSong != null) {
             listenTracker.onTrackChanged(localSong)
             requestMetadataEnhancement(localSong)
+            if (persistLastPlayed) {
+                saveLastPlayed(localSong, _playbackPositionMs.value)
+            }
         } else {
             listenTracker.onTrackChanged(null)
+        }
+    }
+
+    private fun saveLastPlayed(song: Song, positionMs: Long) {
+        val snapshot = PlaybackHydration.snapshotFromSong(song, positionMs)
+        viewModelScope.launch(Dispatchers.IO) {
+            playbackSessionStore.save(snapshot)
+        }
+        lastPersistedPositionAtMs = System.currentTimeMillis()
+    }
+
+    private fun persistCurrentPosition(force: Boolean = false) {
+        val song = (_currentItem.value as? PlayableItem.Local)?.song ?: return
+        val now = System.currentTimeMillis()
+        if (!force && now - lastPersistedPositionAtMs < LAST_PLAYED_POSITION_SAVE_INTERVAL_MS) return
+        saveLastPlayed(song, _playbackPositionMs.value)
+    }
+
+    /**
+     * Rebuild ViewModel queue / current item from a live MediaController session
+     * (Activity recreate while MusicService keeps playing).
+     */
+    private fun syncUiFromController() {
+        val controller = mediaController ?: return
+        if (controller.mediaItemCount <= 0) {
+            maybeSeedIdlePlayer()
+            return
+        }
+
+        liveSessionHydrated = true
+        idleSeedDone = true
+
+        val library = songsState.value
+        val rebuilt = buildList {
+            for (i in 0 until controller.mediaItemCount) {
+                val mediaItem = controller.getMediaItemAt(i)
+                add(mediaItemToPlayable(mediaItem, library))
+            }
+        }
+        if (rebuilt.isEmpty()) {
+            maybeSeedIdlePlayer()
+            return
+        }
+
+        val index = controller.currentMediaItemIndex.coerceIn(0, rebuilt.lastIndex)
+        _queue.value = rebuilt
+        setCurrentItem(rebuilt[index])
+        lastMediaItemIndex = index
+        _isPlaying.value = controller.isPlaying
+        _playbackPositionMs.value = controller.currentPosition.coerceAtLeast(0L)
+        _isShuffle.value = controller.shuffleModeEnabled
+        _repeatMode.value = when (controller.repeatMode) {
+            Player.REPEAT_MODE_ONE -> RepeatMode.ONE
+            Player.REPEAT_MODE_ALL -> RepeatMode.ALL
+            else -> RepeatMode.OFF
+        }
+
+        ensureRemoteReadyAt(index)
+        prefetchAround(index)
+    }
+
+    private fun mediaItemToPlayable(mediaItem: MediaItem, library: List<Song>): PlayableItem {
+        val id = mediaItem.mediaId
+        val meta = mediaItem.mediaMetadata
+        val title = meta.title?.toString()?.takeIf { it.isNotBlank() } ?: "Unknown"
+        val artist = meta.artist?.toString()?.takeIf { it.isNotBlank() } ?: "Unknown Artist"
+        val album = meta.albumTitle?.toString()?.takeIf { it.isNotBlank() }
+        val artwork = meta.artworkUri?.toString()
+        val durationMs = 0L
+
+        if (id.startsWith("remote:")) {
+            val remoteKey = id.removePrefix("remote:")
+            val looksLikeVideoId = remoteKey.length == 11 &&
+                remoteKey.all { it.isLetterOrDigit() || it == '_' || it == '-' }
+            return if (looksLikeVideoId) {
+                // Preserve mediaId via resolved.videoId; stale timestamp forces re-resolve.
+                PlayableItem.Remote(
+                    title = title,
+                    artist = artist,
+                    album = album,
+                    artworkUri = artwork,
+                    durationMs = durationMs,
+                    youtubeQueryOrId = remoteKey,
+                    resolved = ResolvedStream(
+                        audioUrl = "",
+                        userAgent = "",
+                        videoId = remoteKey,
+                        resolvedAtEpochMs = 0L
+                    )
+                )
+            } else {
+                PlayableItem.Remote(
+                    title = title,
+                    artist = artist,
+                    album = album,
+                    artworkUri = artwork,
+                    durationMs = durationMs,
+                    youtubeQueryOrId = "$artist $title".trim().ifBlank { remoteKey }
+                )
+            }
+        }
+
+        val local = library.find { it.uriString == id }
+            ?: library.find { it.id.toString() == id }
+        if (local != null) return local.toPlayable()
+
+        return PlayableItem.Local(
+            Song(
+                id = id.toLongOrNull() ?: 0L,
+                uriString = id,
+                title = title,
+                artist = artist,
+                album = album ?: "Unknown Album",
+                artworkUri = artwork,
+                durationMs = durationMs
+            )
+        )
+    }
+
+    private fun maybeSeedIdlePlayer() {
+        if (liveSessionHydrated || idleSeedDone || _currentItem.value != null) return
+        val songs = songsState.value
+        if (songs.isEmpty()) return
+        // Wait until MediaController connect attempt finished when possible.
+        if (mediaController == null && controllerFuture != null &&
+            !(controllerFuture?.isDone == true)
+        ) {
+            return
+        }
+        if (mediaController != null && (mediaController?.mediaItemCount ?: 0) > 0) {
+            return
+        }
+
+        idleSeedDone = true
+        viewModelScope.launch {
+            val last = withContext(Dispatchers.IO) { playbackSessionStore.load() }
+            if (liveSessionHydrated || _currentItem.value != null) return@launch
+            val library = songsState.value
+            val song = PlaybackHydration.resolveIdleSeed(library, last) ?: return@launch
+            if (liveSessionHydrated || _currentItem.value != null) return@launch
+            setCurrentItem(song.toPlayable(), persistLastPlayed = false)
+            _playbackPositionMs.value = PlaybackHydration.resumePositionMs(song, last)
+            _isPlaying.value = false
         }
     }
 
@@ -526,6 +684,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 _isPlaying.value = isPlayingNow
                 if (!isPlayingNow) {
                     listenTracker.onStopped()
+                    persistCurrentPosition(force = true)
                 }
             }
 
@@ -561,17 +720,14 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                             it is PlayableItem.Local &&
                                 (it.song.uriString == idOrUri || it.song.id.toString() == idOrUri)
                         }
-                    if (playable != null) {
-                        setCurrentItem(playable)
-                        remoteErrorRetryUsed = false
-                        ensureRemoteReadyAt(newIndex)
-                        prefetchAround(newIndex)
-                        if (_radioActive.value) {
-                            rememberRadioPlayed(playable)
-                            maybeRefillRadio(newIndex)
-                        }
-                    } else {
-                        listenTracker.onTrackChanged(null)
+                        ?: mediaItemToPlayable(item, songsState.value)
+                    setCurrentItem(playable)
+                    remoteErrorRetryUsed = false
+                    ensureRemoteReadyAt(newIndex)
+                    prefetchAround(newIndex)
+                    if (_radioActive.value) {
+                        rememberRadioPlayed(playable)
+                        maybeRefillRadio(newIndex)
                     }
                 } ?: listenTracker.onTrackChanged(null)
 
@@ -810,6 +966,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 mediaController?.let { controller ->
                     if (controller.isPlaying && System.currentTimeMillis() - lastSeekTimestamp > 600) {
                         _playbackPositionMs.value = controller.currentPosition.coerceAtLeast(0L)
+                        persistCurrentPosition(force = false)
                         val dur = controller.duration
                         val curr = _currentItem.value
                         if (dur > 0 && curr != null && curr.durationMs <= 0) {
@@ -838,6 +995,8 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                                 durationMs = durationMs
                             )
                         }
+                    } else if (!controller.isPlaying && controller.mediaItemCount > 0) {
+                        _playbackPositionMs.value = controller.currentPosition.coerceAtLeast(0L)
                     }
                     listenTracker.onPlaybackTick(
                         isPlaying = controller.isPlaying,
@@ -1029,13 +1188,21 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         lastMediaItemIndex = index
         _isShuffle.value = false
         remoteErrorRetryUsed = false
+        liveSessionHydrated = true
+        idleSeedDone = true
         bumpQueueFocus()
+
+        val startPositionMs = pendingResumePositionMs?.coerceAtLeast(0L) ?: 0L
+        pendingResumePositionMs = null
 
         mediaController?.let { controller ->
             controller.shuffleModeEnabled = false
-            controller.setMediaItems(items.map { playableToMediaItem(it) }, index, 0L)
+            controller.setMediaItems(items.map { playableToMediaItem(it) }, index, startPositionMs)
             controller.prepare()
             controller.play()
+        }
+        if (startPositionMs > 0L) {
+            _playbackPositionMs.value = startPositionMs
         }
     }
 
@@ -1105,12 +1272,22 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     fun togglePlayPause() {
-        mediaController?.let { controller ->
+        val controller = mediaController
+        if (controller != null && controller.mediaItemCount > 0) {
             if (controller.isPlaying) {
                 controller.pause()
             } else {
                 controller.play()
             }
+            return
+        }
+
+        val current = _currentItem.value ?: return
+        val resumeMs = _playbackPositionMs.value
+        pendingResumePositionMs = resumeMs.takeIf { it > 0L }
+        when (current) {
+            is PlayableItem.Local -> playSong(current.song)
+            is PlayableItem.Remote -> playPlayableCollection(listOf(current), 0)
         }
     }
 
@@ -2613,6 +2790,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     companion object {
         private const val RADIO_BATCH_SIZE = 30
         private const val RADIO_REFILL_THRESHOLD = 5
+        private const val LAST_PLAYED_POSITION_SAVE_INTERVAL_MS = 5_000L
     }
 }
 

@@ -17,6 +17,7 @@ import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -42,9 +43,10 @@ fun BottomPlayerBar(
     isPlaying: Boolean,
     progressMs: Long,
     onPlayPauseClick: () -> Unit,
+    onPreviousClick: () -> Unit,
     onNextClick: () -> Unit,
     onBarClick: () -> Unit,
-    radioStatusLabel: String? = null
+    statusLabel: String? = null
 ) {
     if (currentItem == null) return
 
@@ -52,11 +54,12 @@ fun BottomPlayerBar(
         (progressMs.toFloat() / currentItem.durationMs.toFloat()).coerceIn(0f, 1f)
     } else 0f
 
-    val subtitle = if (!radioStatusLabel.isNullOrBlank()) {
-        radioStatusLabel
+    val subtitle = if (!statusLabel.isNullOrBlank()) {
+        statusLabel
     } else {
         currentItem.artist
     }
+    val highlightStatus = !statusLabel.isNullOrBlank()
 
     Surface(
         color = MaterialTheme.colorScheme.surfaceVariant,
@@ -131,7 +134,7 @@ fun BottomPlayerBar(
                         Text(
                             text = subtitle,
                             style = MaterialTheme.typography.bodySmall,
-                            color = if (radioStatusLabel != null) {
+                            color = if (highlightStatus) {
                                 MaterialTheme.colorScheme.primary
                             } else {
                                 MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
@@ -141,6 +144,14 @@ fun BottomPlayerBar(
                         )
                     }
                 }
+            }
+
+            IconButton(onClick = onPreviousClick) {
+                Icon(
+                    imageVector = Icons.Default.SkipPrevious,
+                    contentDescription = "Previous",
+                    tint = MaterialTheme.colorScheme.onSurface
+                )
             }
 
             IconButton(onClick = onPlayPauseClick) {

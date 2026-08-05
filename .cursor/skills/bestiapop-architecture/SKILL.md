@@ -59,6 +59,7 @@ service/     MusicService (playback), WebServerService (WiFi sync)
 4. Ajustes (`SettingsScreen` / temas / ListenBrainz)
 
 Overlay: `BottomPlayerBar` → `NowPlayingScreen`; cola en `QueueScreen`.
+Mini player se rehidrata desde `MediaController` (sesión viva) o `PlaybackSessionStore` / seed idle (ver features §10b).
 
 ## Principios estructurales (invariantes)
 

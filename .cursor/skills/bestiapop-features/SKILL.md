@@ -155,6 +155,22 @@ Centro de descargas online → sección 2 (`DownloadsScreen`, tab Descargas).
 | Stream desde catálogo | `playOnlineCatalogTrackAsStream` + preview in-dialog (`CatalogTrackItem` / `CandidateTrackCard` + `CatalogPreviewBar`); `cycleSongCatalogResult` / `cycleTrackCandidate` (“Buscar otro”) |
 | UI player | `BottomPlayerBar` / `NowPlayingScreen` / `QueueScreen` observan `PlayableItem` |
 
+## 10b. Continuidad del mini player
+
+**Invariantes:**
+- Tras reconnect de `MediaController`, `syncUiFromController` rehidrata `_queue` / `currentItem` / `isPlaying` / posición desde la sesión viva (prioridad sobre last-played).
+- Sin sesión viva: seed idle con última canción **local** persistida (`PlaybackSessionStore`) o, si no hay historial, una aleatoria de la biblioteca; sin autoplay.
+- Biblioteca vacía y sin sesión → `BottomPlayerBar` oculto (`currentItem == null`).
+- Idle play: si `mediaItemCount == 0` y hay `currentItem`, `togglePlayPause` carga vía `playSong` / `playPlayableCollection` (resume de posición).
+- No persistir CDN de `Remote`. Mini bar: Previous + status (`Resolviendo…` / `Armando radio…` / `radioStatusLabel`).
+
+| Capacidad | Entry point |
+|-----------|-------------|
+| Resync sesión | `MusicPlayerViewModel.syncUiFromController` / `mediaItemToPlayable` |
+| Last-played | `PlaybackSessionStore`, `LastPlayedCodec`, `PlaybackHydration` en `data/preferences/PlaybackSessionStore.kt` |
+| Seed idle | `maybeSeedIdlePlayer` |
+| Mini bar UI | `BottomPlayerBar` (`statusLabel`, Previous); wiring en `MainScreen` |
+
 ## 11. Radio (similares)
 
 **Invariantes:**
@@ -175,7 +191,7 @@ Centro de descargas online → sección 2 (`DownloadsScreen`, tab Descargas).
 | LB | `ListenBrainzRadio.suggest` + LB client metadata/lb-radio |
 | CF fill | `CfRecommendationsRadio.suggest` (`artist_type=similar`, cache TTL) |
 | Sesión | `startRadio`, `stopRadio`, `setRadioPreferredMode`, `setRadioForceOnline`, `replaceUpcomingWithRadio`, refill/auto |
-| UI | Now Playing (tap/long-press); `BottomPlayerBar.radioStatusLabel`; menú canción “Iniciar radio” |
+| UI | Now Playing (tap/long-press); mini bar `statusLabel` (radio / resolving); menú canción “Iniciar radio” |
 
 ## Relacionado
 

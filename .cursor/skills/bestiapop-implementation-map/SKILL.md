@@ -27,7 +27,7 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 | Shell + bottom nav | `ui/screens/MainScreen.kt` |
 | System back (exit doble + orquestación) | `MainScreen` `BackHandler` + `SnackbarHost`; nested en screens abajo |
 | Biblioteca | `ui/screens/LibraryScreen.kt` (`BackHandler`: multi-select / addition / album-artist / search; `LibrarySongListHost` + `SongActionDialogsHost`) |
-| Lista canciones / álbumes / artistas | `ui/screens/library/LibrarySongList.kt`, `LibrarySongListHost.kt` (`LibrarySongListActions`, `SongActionDialogsHost`), `LibraryAlbumGrid.kt`, `LibraryArtistList.kt`, `LibraryDialogs.kt` |
+| Lista canciones / álbumes / artistas | `ui/screens/library/LibrarySongList.kt`, `LibrarySongListHost.kt` (`LibrarySongListActions`, `SongActionDialogsHost`), `LibraryAlbumGrid.kt` (`AlbumEditCoverMenuItems`), `LibraryArtistList.kt`, `LibraryDialogs.kt` (`EditAlbumMetadataDialog`, `ConfirmMergeAlbumsDialog`, `SetAlbumArtworkDialog`) |
 | Playlists | `ui/screens/PlaylistsScreen.kt` (`BackHandler`: CF → LB → local detail; play/shuffle vía `LabeledPlayShuffleButtons` + `playCollection`/`shuffleCollection`; `MatchedTrackRow`; `matchedStreamCountLabel`; `rememberSongQueueActions`) |
 | Ajustes / ListenBrainz | `ui/screens/SettingsScreen.kt` (`BackHandler` sección), `ListenBrainzSettingsScreen.kt` |
 | Ajustes / Sonido | `ui/screens/VolumeBoostSettingsScreen.kt` (`SettingsScreen` sección `Sound`) |
@@ -68,6 +68,7 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 | `DownloadAudioTrackUseCase` | `domain/usecase/DownloadAudioTrackUseCase.kt` | wrap download Result |
 | `MatchListenBrainzTracksUseCase` | `domain/usecase/MatchListenBrainzTracksUseCase.kt` | match LB tracks → local `Song` (delega a `TrackMatchKeys`) |
 | `TrackMatchKeys` | `domain/util/TrackMatchKeys.kt` | `normalize` / `matchKey` / `downloadIdFor` / `buildLibraryIndex` / `buildIndex` (shared) |
+| Album name normalize | `domain/util/AlbumNames.kt` | `normalizeAlbumName` / `albumNamesMatch` (merge conflict + saves) |
 | `ImportListenBrainzPlaylistUseCase` | `domain/usecase/ImportListenBrainzPlaylistUseCase.kt` | create Room playlist: matched + `PlaylistPendingTrack` metadata |
 | `FetchAndMatchCfRecommendationsUseCase` | `domain/usecase/FetchAndMatchCfRecommendationsUseCase.kt` | CF mbids → metadata → Local/Remote |
 | `RadioEngine` | `domain/radio/RadioEngine.kt` | orquesta KNOWN / NEW / BOTH; fill LB→CF→`SimilarTracksProvider`; `interleaveEquitable`; `RadioSuggestResult` |
@@ -90,6 +91,7 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 | DAO | `data/db/MusicDao.kt` (`getCoPlaylistSongIds`) |
 | Song entity + mappers | `data/db/SongEntity.kt` |
 | Album overrides | `data/db/AlbumOverrideEntity.kt` |
+| Album merge | `IMusicRepository.mergeAlbumInto` → `MusicRepository.mergeAlbumInto` + `MusicDao.updateSongsAlbumMetadata` / `getSongsForAlbum` |
 | Playlist entities | `data/db/PlaylistEntities.kt` (`PlaylistPendingTrackEntity`) |
 | Catálogo / lyrics / covers web | `data/network/MetadataFetcher.kt` (`CatalogSongHint`, `searchDeezerArtist`, `parseDeezerSearchTracks`, `parseItunesSongResults`, `toCatalogCandidate`, `resolveDeezerArtistId`, `fetchDeezerArtistRadio`, `fetchDeezerRelatedArtistIds`, `fetchDeezerArtistTop`, `fetchItunesArtistSongs`) |
 | YouTube search + stream | `data/network/YouTubeExtractor.kt` (`searchYouTube`, `parseSearchContents`, `audioPreferenceScore`, `rankByAudioPreference`, `resolveYouTubeQueryOrId`) |
@@ -144,7 +146,7 @@ Mantener esta lista alineada con `MusicPlayerViewModel.kt`:
 - Biblioteca: `songsState`, `albumsState`, `artistsState`, `searchQuery`, `sortOption`, `buildLibraryListItems`
 - Playback: `playSong`, `playCollection`, `playPlayableCollection`, `applyShuffledQueue`, `playMatchedCollection`, `shuffleMatchedCollection`, `shuffleCollection`, `enqueueCollection`, `playNextInQueue`, `playNextBatch`, `currentItem`, `currentSong`, `queue`, `resolvingRemote`, `repeatMode`, `isShuffle`, `syncUiFromController`, `maybeSeedIdlePlayer`, `togglePlayPause`, `volumeLevel`, `volumeBoostEnabled`, `setVolume`, `setVolumeBoostEnabled`, `stereoLeftGain`, `stereoRightGain`, `setStereoLeftGain`, `setStereoRightGain`, `resetStereoBalance`
 - Radio: `startRadio` / `stopRadio` / `setRadioPreferredMode`, `suggestRadioWithRetry`, `radioMode`, `radioStatusLabel`, `RADIO_LOADING_LABEL`, `radioModeLabel`, `replaceUpcomingWithRadio`, `maybeAutoStartRadioOnQueueEnd`
-- Artwork: `setAlbumArtwork`, `saveAlbumMetadata`
+- Artwork: `setAlbumArtwork`, `saveAlbumMetadata`, `requestSaveAlbumMetadata`, `confirmPendingAlbumMerge`, `dismissPendingAlbumMerge`, `mergeAlbumInto`
 - Online: `searchCatalog`, `searchOnlineCatalog`, `downloadSingleCandidate`, `downloadSelectedCandidatesBatch`, `enqueueTrackedBatch`, `downloadFromUrl`, `downloadOnlineTrack`, `activeDownloads`, `downloadConflict`, `resolveDownloadConflictOverwrite` / `resolveDownloadConflictSaveAs` / `cancelDownloadConflict`, `retryActiveDownload`, `cycleActiveDownload`, `previewActiveDownload`, `playActiveDownload`, `dismissActiveDownload`, `requestOpenDownloads` / `pendingOpenDownloads`, `playOnlineCatalogTrackAsStream`, `expandCandidates`, `launchCycleYouTubeMatch`, `cycleSongCatalogResult`, `cycleTrackCandidate`, `catalogPreviewKey`, `toastSongInLibrary`, `toastDownloadsQueued`
 - ListenBrainz: `listenBrainzSettings`, `setListenBrainzEnabled`, `setListenBrainzDiscoverEnabled`, `setListenBrainzSaveWhileListening`, `setListenBrainzSaveWhileListeningPercent`, `refreshListenBrainzDiscoverPlaylists`, `openListenBrainzPlaylist`, `playListenBrainzPlaylist`, `shuffleListenBrainzPlaylist`, `playListenBrainzPlaylistAt`, `saveListenBrainzPlaylistAsLocal`, `importListenBrainzPlaylistWithDownloads`, `downloadPlaylistPendingTracks`, `downloadRemoteItem`, `getPlaylistPendingTracksFlow`, `refreshCfRecommendations`, `openCfRecommendations`, `closeCfRecommendations`, `playCfRecommendations`, `shuffleCfRecommendations`, `playCfAt`, `cfRecommendations`, `cfListState`, `cfDetailOpen`
 

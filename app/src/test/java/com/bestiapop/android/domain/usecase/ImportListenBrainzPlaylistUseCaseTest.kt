@@ -161,6 +161,7 @@ class ImportListenBrainzPlaylistUseCaseTest {
         ) = Unit
         override suspend fun upsertAlbumOverride(override: com.bestiapop.android.data.model.AlbumOverride) = Unit
         override suspend fun updateAlbumMetadataPropagateToSongs(override: com.bestiapop.android.data.model.AlbumOverride) = Unit
+        override suspend fun mergeAlbumInto(sourceAlbumKey: String, targetAlbumKey: String) = Unit
         override suspend fun getAlbumOverride(albumKey: String): com.bestiapop.android.data.model.AlbumOverride? = null
         override fun extractAndSaveEmbeddedArtwork(audioPathOrUri: String, identifier: String): String? = null
         override fun savePlaylistCoverImage(sourceUriStr: String?): String? = null

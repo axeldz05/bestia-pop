@@ -64,6 +64,8 @@ Estado: `ui/state/LibraryUiState.kt`, `LibraryListItem.kt`.
 | Tipo | Comportamiento | Entry points |
 |------|----------------|--------------|
 | **Álbum (override)** | Tabla `album_overrides`; UI lee override si existe. **Guardar para álbum** = solo override; **Guardar para álbum y canciones** = override + bulk update de songs | `saveAlbumMetadata` / `upsertAlbumOverride` / `updateAlbumMetadataPropagateToSongs`; UI `EditAlbumMetadataDialog` |
+| **Álbum menú** | Header de grupos (`TauonAlbumHeader` ⋮) y grilla (`AlbumGridCard` ⋮) → Editar / Cambiar portada vía `AlbumEditCoverMenuItems`; detalle de álbum también tiene IconButton Edit | `LibrarySongList` / `LibraryAlbumGrid` / `LibraryScreen` |
+| **Álbum merge** | Renombrar a un álbum existente → `ConfirmMergeAlbumsDialog`; al confirmar, canciones de A adoptan metadata de B. Match con `normalizeAlbumName` (trim, `…`/`â€¦` → `...`, ignoreCase) vía Room en `requestSaveAlbumMetadata`. `mergeAlbumInto` también pliega otras keys equivalentes (mojibake) | `requestSaveAlbumMetadata` / `confirmPendingAlbumMerge` / `findAlbumMergeTarget` / `AlbumNames.kt` |
 | **Álbum portada** | `setAlbumArtwork` → propagate via `updateAlbumMetadataPropagateToSongs` | `MusicPlayerViewModel.setAlbumArtwork` |
 | **Playlist** | `Playlist.coverUri` / `PlaylistEntity.coverUri` es de la lista; **no** pisa artwork de canciones | `createPlaylist` / `updatePlaylist`, `savePlaylistCoverImage` |
 | **Canción** | Editar una canción **no** reescribe el álbum ni siblings | `updateSongMetadata` (incluye `year`); UI `EditSongMetadataDialog` |

@@ -44,6 +44,13 @@ interface IMusicRepository {
      */
     suspend fun updateAlbumMetadataPropagateToSongs(override: AlbumOverride)
 
+    /**
+     * Move all songs under [sourceAlbumKey] into [targetAlbumKey], rewriting their
+     * album/artist/genre/year/artwork to match the effective metadata of the target album.
+     * Deletes the source album override; leaves the target override untouched.
+     */
+    suspend fun mergeAlbumInto(sourceAlbumKey: String, targetAlbumKey: String)
+
     suspend fun getAlbumOverride(albumKey: String): AlbumOverride?
 
     fun extractAndSaveEmbeddedArtwork(audioPathOrUri: String, identifier: String): String?

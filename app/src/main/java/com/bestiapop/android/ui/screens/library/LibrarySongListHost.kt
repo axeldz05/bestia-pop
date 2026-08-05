@@ -21,7 +21,9 @@ data class LibrarySongListActions(
     val onToggleSelect: (Song) -> Unit,
     val onToggleSelectAlbum: (List<Song>) -> Unit,
     val onAlbumLongClick: (List<Song>) -> Unit,
-    val onToggleCollapseAlbum: (String) -> Unit
+    val onToggleCollapseAlbum: (String) -> Unit,
+    val onEditAlbum: (String) -> Unit = {},
+    val onChangeAlbumCover: (String) -> Unit = {}
 )
 
 /**
@@ -62,6 +64,8 @@ fun LibrarySongListHost(
         onToggleSelectAlbum = actions.onToggleSelectAlbum,
         onAlbumLongClick = actions.onAlbumLongClick,
         onToggleCollapseAlbum = actions.onToggleCollapseAlbum,
+        onEditAlbum = actions.onEditAlbum,
+        onChangeAlbumCover = actions.onChangeAlbumCover,
         modifier = modifier
     )
 }

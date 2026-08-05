@@ -19,6 +19,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
@@ -60,6 +61,7 @@ import com.bestiapop.android.ui.components.LabeledPlayShuffleButtons
 import com.bestiapop.android.ui.components.MultiSelectActionBar
 import com.bestiapop.android.ui.components.PlaylistAdditionActionBar
 import com.bestiapop.android.ui.components.rememberSongQueueActions
+import com.bestiapop.android.ui.screens.library.ConfirmMergeAlbumsDialog
 import com.bestiapop.android.ui.screens.library.EditAlbumMetadataDialog
 import com.bestiapop.android.ui.screens.library.LibraryAlbumGrid
 import com.bestiapop.android.ui.screens.library.LibraryArtistList
@@ -86,6 +88,7 @@ fun LibraryScreen(
     val currentSong by viewModel.currentSong.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
     val sortOption by viewModel.sortOption.collectAsState()
+    val pendingAlbumMerge by viewModel.pendingAlbumMerge.collectAsState()
 
     var selectedTabIndex by remember { mutableIntStateOf(0) }
     var sortMenuExpanded by remember { mutableStateOf(false) }
@@ -116,6 +119,25 @@ fun LibraryScreen(
     var albumForEdit by remember { mutableStateOf<Album?>(null) }
     var songForPlaylistAddition by remember { mutableStateOf<Song?>(null) }
     var songsForDeletion by remember { mutableStateOf<List<Song>?>(null) }
+
+    val resolveAlbumByKey = remember(albums) {
+        { albumKey: String ->
+            albums.firstOrNull { it.name.equals(albumKey, ignoreCase = true) }
+        }
+    }
+
+    val onEditAlbumByKey = remember(resolveAlbumByKey) {
+        { albumKey: String ->
+            resolveAlbumByKey(albumKey)?.let { albumForEdit = it }
+            Unit
+        }
+    }
+    val onChangeAlbumCoverByKey = remember(resolveAlbumByKey) {
+        { albumKey: String ->
+            resolveAlbumByKey(albumKey)?.let { albumForCoverChange = it }
+            Unit
+        }
+    }
 
     val currentSongId = currentSong?.id
 
@@ -198,7 +220,8 @@ fun LibraryScreen(
     }
     val songListActions = remember(
         onPlayNext, onAddToQueue, onStartRadio, onAddToPlaylist, onEditMetadata, onDeleteSong,
-        onPlayAlbum, onShuffleAlbum, toggleSelectSong, toggleSelectAlbum, onAlbumLongClick, toggleCollapseAlbum
+        onPlayAlbum, onShuffleAlbum, toggleSelectSong, toggleSelectAlbum, onAlbumLongClick,
+        toggleCollapseAlbum, onEditAlbumByKey, onChangeAlbumCoverByKey
     ) {
         LibrarySongListActions(
             onPlayNext = onPlayNext,
@@ -212,7 +235,9 @@ fun LibraryScreen(
             onToggleSelect = toggleSelectSong,
             onToggleSelectAlbum = toggleSelectAlbum,
             onAlbumLongClick = onAlbumLongClick,
-            onToggleCollapseAlbum = toggleCollapseAlbum
+            onToggleCollapseAlbum = toggleCollapseAlbum,
+            onEditAlbum = onEditAlbumByKey,
+            onChangeAlbumCover = onChangeAlbumCoverByKey
         )
     }
 
@@ -258,6 +283,12 @@ fun LibraryScreen(
             )
 
             Spacer(modifier = Modifier.width(4.dp))
+
+            if (selectedAlbumName != null) {
+                IconButton(onClick = { onEditAlbumByKey(selectedAlbumName!!) }) {
+                    Icon(Icons.Default.Edit, contentDescription = "Editar álbum")
+                }
+            }
 
             // Sort Menu Trigger
             Box {
@@ -531,32 +562,52 @@ fun LibraryScreen(
     )
 
     albumForEdit?.let { album ->
-        EditAlbumMetadataDialog(
-            album = album,
-            onDismiss = { albumForEdit = null },
-            onSaveAlbumOnly = { displayName, artist, genre, year, artworkUri ->
-                viewModel.saveAlbumMetadata(
-                    albumKey = album.name,
-                    displayName = displayName,
-                    artist = artist,
-                    genre = genre,
-                    year = year,
-                    artworkUri = artworkUri,
-                    propagateToSongs = false
-                )
-                albumForEdit = null
-            },
-            onSaveAlbumAndSongs = { displayName, artist, genre, year, artworkUri ->
-                viewModel.saveAlbumMetadata(
-                    albumKey = album.name,
-                    displayName = displayName,
-                    artist = artist,
-                    genre = genre,
-                    year = year,
-                    artworkUri = artworkUri,
-                    propagateToSongs = true
-                )
-                albumForEdit = null
+        if (pendingAlbumMerge == null) {
+            EditAlbumMetadataDialog(
+                album = album,
+                onDismiss = { albumForEdit = null },
+                onSaveAlbumOnly = { displayName, artist, genre, year, artworkUri ->
+                    viewModel.requestSaveAlbumMetadata(
+                        source = album,
+                        displayName = displayName,
+                        artist = artist,
+                        genre = genre,
+                        year = year,
+                        artworkUri = artworkUri,
+                        propagateToSongs = false
+                    )
+                    // Keep dialog open until merge prompt or successful save settles;
+                    // close when no merge is pending after a short beat via collecting.
+                    albumForEdit = null
+                },
+                onSaveAlbumAndSongs = { displayName, artist, genre, year, artworkUri ->
+                    viewModel.requestSaveAlbumMetadata(
+                        source = album,
+                        displayName = displayName,
+                        artist = artist,
+                        genre = genre,
+                        year = year,
+                        artworkUri = artworkUri,
+                        propagateToSongs = true
+                    )
+                    albumForEdit = null
+                }
+            )
+        }
+    }
+
+    pendingAlbumMerge?.let { pending ->
+        ConfirmMergeAlbumsDialog(
+            source = pending.source,
+            target = pending.target,
+            onDismiss = { viewModel.dismissPendingAlbumMerge() },
+            onConfirm = {
+                val sourceKey = pending.source.name
+                val targetKey = pending.target.name
+                viewModel.confirmPendingAlbumMerge()
+                if (selectedAlbumName.equals(sourceKey, ignoreCase = true)) {
+                    selectedAlbumName = targetKey
+                }
             }
         )
     }

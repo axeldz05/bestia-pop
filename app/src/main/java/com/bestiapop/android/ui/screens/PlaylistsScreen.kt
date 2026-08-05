@@ -47,7 +47,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -164,30 +163,17 @@ fun PlaylistsScreen(
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        Scaffold(
-            floatingActionButton = {
-                if (selectedPlaylistId == null && selectedLbPlaylistMbid == null && !cfDetailOpen) {
-                    FloatingActionButton(
-                        onClick = { showCreateDialog = true },
-                        containerColor = MaterialTheme.colorScheme.primary,
-                        contentColor = MaterialTheme.colorScheme.onPrimary
-                    ) {
-                        Icon(imageVector = Icons.Default.Add, contentDescription = "Crear Playlist")
-                    }
-                }
-            },
-            containerColor = MaterialTheme.colorScheme.background
-        ) { padding ->
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding)
-                    .padding(16.dp)
+        // Same pattern as LibraryScreen: FAB overlays content. Scaffold FAB slot would add
+        // bottom content padding (~72dp) on top of MainScreen's bottomChromePadding → gap bar.
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp)
+        ) {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
                     if (showDiscover) {
                         item(key = "para-ti-header") {
                             Row(
@@ -413,6 +399,18 @@ fun PlaylistsScreen(
                         }
                     }
                 }
+            }
+
+        if (selectedPlaylistId == null && selectedLbPlaylistMbid == null && !cfDetailOpen) {
+            FloatingActionButton(
+                onClick = { showCreateDialog = true },
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(16.dp),
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary
+            ) {
+                Icon(imageVector = Icons.Default.Add, contentDescription = "Crear Playlist")
             }
         }
 

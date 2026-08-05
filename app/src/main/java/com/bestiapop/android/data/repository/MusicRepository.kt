@@ -508,7 +508,8 @@ class MusicRepository(private val context: Context) : IMusicRepository {
         override: com.bestiapop.android.data.model.AlbumOverride
     ) = withContext(Dispatchers.IO) {
         val oldKey = override.albumKey
-        val newName = override.displayName.ifBlank { oldKey }
+        val newName = com.bestiapop.android.domain.util.normalizeAlbumName(override.displayName)
+            .ifBlank { oldKey }
         val safeArtist = override.artist?.takeIf { it.isNotBlank() } ?: "Unknown Artist"
         val safeGenre = override.genre?.takeIf { it.isNotBlank() } ?: "Music"
         val safeYear = override.year.coerceAtLeast(0)
@@ -539,6 +540,54 @@ class MusicRepository(private val context: Context) : IMusicRepository {
                 savedArt
             )
         )
+    }
+
+    override suspend fun mergeAlbumInto(
+        sourceAlbumKey: String,
+        targetAlbumKey: String
+    ) = withContext(Dispatchers.IO) {
+        if (sourceAlbumKey == targetAlbumKey) return@withContext
+
+        val targetSongs = musicDao.getSongsForAlbum(targetAlbumKey)
+        val canonicalTarget = targetSongs.firstOrNull()?.album ?: targetAlbumKey
+        val override = musicDao.getAlbumOverride(canonicalTarget)?.toModel()
+            ?: musicDao.getAlbumOverride(targetAlbumKey)?.toModel()
+
+        val safeArtist = override?.artist?.takeIf { it.isNotBlank() }
+            ?: targetSongs.firstOrNull()?.artist?.takeIf { it.isNotBlank() }
+            ?: "Unknown Artist"
+        val safeGenre = override?.genre?.takeIf { it.isNotBlank() }
+            ?: targetSongs.map { it.genre }.firstOrNull { it.isNotBlank() }
+            ?: "Music"
+        val safeYear = when {
+            override != null && override.year > 0 -> override.year
+            else -> targetSongs.map { it.year }.firstOrNull { it > 0 } ?: 0
+        }
+        val artwork = override?.artworkUri?.takeIf { it.isNotBlank() }
+            ?: targetSongs.firstOrNull { !it.artworkUri.isNullOrBlank() }?.artworkUri
+
+        suspend fun rewriteAlbumKey(oldKey: String) {
+            if (oldKey == canonicalTarget) return
+            musicDao.updateSongsAlbumMetadata(
+                oldAlbum = oldKey,
+                newAlbum = canonicalTarget,
+                artist = safeArtist,
+                genre = safeGenre,
+                year = safeYear,
+                artworkUri = artwork
+            )
+            musicDao.deleteAlbumOverride(oldKey)
+        }
+
+        rewriteAlbumKey(sourceAlbumKey)
+
+        // Fold other equivalent titles (e.g. Takk… + Takkâ€¦ after renaming Takk. → Takk...)
+        val remainingKeys = musicDao.getAllSongs().map { it.album }.distinct()
+        com.bestiapop.android.domain.util.findEquivalentAlbumKeys(
+            albumKeys = remainingKeys,
+            targetName = canonicalTarget,
+            excludeKey = canonicalTarget
+        ).forEach { rewriteAlbumKey(it) }
     }
 
     private fun persistOverrideEntity(

@@ -18,7 +18,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.CheckboxDefaults
+import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -27,8 +29,11 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TriStateCheckbox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.State
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.state.ToggleableState
@@ -64,6 +69,8 @@ fun LibrarySongList(
     onToggleSelectAlbum: (List<Song>) -> Unit = {},
     onAlbumLongClick: (List<Song>) -> Unit = {},
     onToggleCollapseAlbum: (String) -> Unit = {},
+    onEditAlbum: (String) -> Unit = {},
+    onChangeAlbumCover: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     if (items.isEmpty()) {
@@ -98,6 +105,8 @@ fun LibrarySongList(
     val onToggleSelectAlbumState = rememberUpdatedState(onToggleSelectAlbum)
     val onAlbumLongClickState = rememberUpdatedState(onAlbumLongClick)
     val onToggleCollapseAlbumState = rememberUpdatedState(onToggleCollapseAlbum)
+    val onEditAlbumState = rememberUpdatedState(onEditAlbum)
+    val onChangeAlbumCoverState = rememberUpdatedState(onChangeAlbumCover)
 
     LazyColumn(modifier = modifier.fillMaxSize()) {
         items(
@@ -131,6 +140,12 @@ fun LibrarySongList(
                     val toggleCollapse = remember(item.albumName) {
                         { onToggleCollapseAlbumState.value(item.albumName) }
                     }
+                    val editAlbum = remember(item.albumName) {
+                        { onEditAlbumState.value(item.albumName) }
+                    }
+                    val changeAlbumCover = remember(item.albumName) {
+                        { onChangeAlbumCoverState.value(item.albumName) }
+                    }
                     TauonAlbumHeader(
                         albumName = item.albumName,
                         artistName = item.artistName,
@@ -143,7 +158,9 @@ fun LibrarySongList(
                         onShuffleAlbum = shuffleAlbum,
                         onToggleSelect = toggleSelectAlbum,
                         onLongClick = albumLongClick,
-                        onToggleCollapse = toggleCollapse
+                        onToggleCollapse = toggleCollapse,
+                        onEditAlbum = editAlbum,
+                        onChangeAlbumCover = changeAlbumCover
                     )
                 }
 
@@ -289,8 +306,12 @@ fun TauonAlbumHeader(
     onShuffleAlbum: () -> Unit,
     onToggleSelect: () -> Unit = {},
     onLongClick: () -> Unit = {},
-    onToggleCollapse: () -> Unit = {}
+    onToggleCollapse: () -> Unit = {},
+    onEditAlbum: () -> Unit = {},
+    onChangeAlbumCover: () -> Unit = {}
 ) {
+    var menuExpanded by remember { mutableStateOf(false) }
+
     Surface(
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
         modifier = Modifier
@@ -359,6 +380,30 @@ fun TauonAlbumHeader(
                     )
                 }
                 if (!isSelectionMode) {
+                    Box {
+                        IconButton(onClick = { menuExpanded = true }) {
+                            Icon(
+                                imageVector = Icons.Default.MoreVert,
+                                contentDescription = "Opciones de álbum",
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+                        DropdownMenu(
+                            expanded = menuExpanded,
+                            onDismissRequest = { menuExpanded = false }
+                        ) {
+                            AlbumEditCoverMenuItems(
+                                onEditAlbum = {
+                                    menuExpanded = false
+                                    onEditAlbum()
+                                },
+                                onChangeCover = {
+                                    menuExpanded = false
+                                    onChangeAlbumCover()
+                                }
+                            )
+                        }
+                    }
                     PlayShuffleIconPair(
                         onPlay = onPlayAlbum,
                         onShuffle = onShuffleAlbum,

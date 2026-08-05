@@ -170,18 +170,12 @@ fun AlbumGridCard(
                                 onShuffle()
                             }
                         )
-                        DropdownMenuItem(
-                            text = { Text("Editar álbum") },
-                            leadingIcon = { Icon(Icons.Default.Edit, null) },
-                            onClick = {
+                        AlbumEditCoverMenuItems(
+                            onEditAlbum = {
                                 menuExpanded = false
                                 onEditAlbum()
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Cambiar portada") },
-                            leadingIcon = { Icon(Icons.Default.AddPhotoAlternate, null) },
-                            onClick = {
+                            },
+                            onChangeCover = {
                                 menuExpanded = false
                                 onChangeCover()
                             }
@@ -209,4 +203,22 @@ fun AlbumGridCard(
             )
         }
     }
+}
+
+/** Shared Edit / Change-cover items for album overflow menus (grid + song-list header). */
+@Composable
+fun AlbumEditCoverMenuItems(
+    onEditAlbum: () -> Unit,
+    onChangeCover: () -> Unit
+) {
+    DropdownMenuItem(
+        text = { Text("Editar álbum") },
+        leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) },
+        onClick = onEditAlbum
+    )
+    DropdownMenuItem(
+        text = { Text("Cambiar portada") },
+        leadingIcon = { Icon(Icons.Default.AddPhotoAlternate, contentDescription = null) },
+        onClick = onChangeCover
+    )
 }

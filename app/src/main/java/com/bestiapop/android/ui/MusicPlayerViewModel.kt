@@ -51,6 +51,8 @@ import com.bestiapop.android.domain.usecase.FetchAndMatchCfRecommendationsUseCas
 import com.bestiapop.android.domain.usecase.ImportListenBrainzPlaylistUseCase
 import com.bestiapop.android.domain.usecase.MatchListenBrainzTracksUseCase
 import com.bestiapop.android.domain.util.TrackMatchKeys
+import com.bestiapop.android.domain.util.findAlbumMergeTarget
+import com.bestiapop.android.domain.util.normalizeAlbumName
 import com.bestiapop.android.service.DownloadNotificationHelper
 import com.bestiapop.android.service.MusicService
 import com.bestiapop.android.service.StreamPlaybackTag
@@ -244,6 +246,14 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     val songsState: StateFlow<List<Song>> = combine(rawSongs, _searchQuery, _sortOption) { list, query, sort ->
         getLibrarySongsUseCase.execute(list, query, sort)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    data class PendingAlbumMerge(
+        val source: Album,
+        val target: Album
+    )
+
+    private val _pendingAlbumMerge = MutableStateFlow<PendingAlbumMerge?>(null)
+    val pendingAlbumMerge: StateFlow<PendingAlbumMerge?> = _pendingAlbumMerge.asStateFlow()
 
     fun buildLibraryListItems(
         songs: List<Song>,
@@ -1372,8 +1382,12 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
-    fun saveAlbumMetadata(
-        albumKey: String,
+    /**
+     * Save album metadata, or set [pendingAlbumMerge] when [displayName] collides with
+     * another album (checked against Room, not the search-filtered UI list).
+     */
+    fun requestSaveAlbumMetadata(
+        source: Album,
         displayName: String,
         artist: String,
         genre: String,
@@ -1382,9 +1396,21 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         propagateToSongs: Boolean
     ) {
         viewModelScope.launch {
+            val songs = repository.getAllSongsSync()
+            val overrides = repository.albumOverridesFlow.first()
+            val albums = getLibrarySongsUseCase.extractAlbums(
+                songs,
+                overrides.associateBy { it.albumKey }
+            )
+            val conflict = findAlbumMergeTarget(albums, source.name, displayName)
+            if (conflict != null) {
+                _pendingAlbumMerge.value = PendingAlbumMerge(source = source, target = conflict)
+                return@launch
+            }
+            val normalizedName = normalizeAlbumName(displayName).ifBlank { source.name }
             val override = AlbumOverride(
-                albumKey = albumKey,
-                displayName = displayName.ifBlank { albumKey },
+                albumKey = source.name,
+                displayName = normalizedName,
                 artist = artist.takeIf { it.isNotBlank() },
                 genre = genre.takeIf { it.isNotBlank() },
                 year = year.coerceAtLeast(0),
@@ -1395,6 +1421,53 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             } else {
                 repository.upsertAlbumOverride(override)
             }
+        }
+    }
+
+    fun confirmPendingAlbumMerge() {
+        val pending = _pendingAlbumMerge.value ?: return
+        viewModelScope.launch {
+            repository.mergeAlbumInto(pending.source.name, pending.target.name)
+            _pendingAlbumMerge.value = null
+            toast("Álbumes unidos")
+        }
+    }
+
+    fun dismissPendingAlbumMerge() {
+        _pendingAlbumMerge.value = null
+    }
+
+    fun saveAlbumMetadata(
+        albumKey: String,
+        displayName: String,
+        artist: String,
+        genre: String,
+        year: Int,
+        artworkUri: String?,
+        propagateToSongs: Boolean
+    ) {
+        viewModelScope.launch {
+            val normalizedName = normalizeAlbumName(displayName).ifBlank { albumKey }
+            val override = AlbumOverride(
+                albumKey = albumKey,
+                displayName = normalizedName,
+                artist = artist.takeIf { it.isNotBlank() },
+                genre = genre.takeIf { it.isNotBlank() },
+                year = year.coerceAtLeast(0),
+                artworkUri = artworkUri
+            )
+            if (propagateToSongs) {
+                repository.updateAlbumMetadataPropagateToSongs(override)
+            } else {
+                repository.upsertAlbumOverride(override)
+            }
+        }
+    }
+
+    fun mergeAlbumInto(sourceAlbumKey: String, targetAlbumKey: String) {
+        viewModelScope.launch {
+            repository.mergeAlbumInto(sourceAlbumKey, targetAlbumKey)
+            toast("Álbumes unidos")
         }
     }
 

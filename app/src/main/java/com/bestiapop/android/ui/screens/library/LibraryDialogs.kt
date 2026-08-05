@@ -26,6 +26,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.bestiapop.android.data.model.Playlist
 import com.bestiapop.android.data.model.Song
@@ -169,7 +170,11 @@ fun EditAlbumMetadataDialog(
             }
         },
         confirmButton = {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+                horizontalAlignment = Alignment.End
+            ) {
                 Button(
                     onClick = {
                         onSaveAlbumAndSongs(
@@ -198,6 +203,77 @@ fun EditAlbumMetadataDialog(
                 ) {
                     Text("Guardar para álbum")
                 }
+                TextButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Cancelar")
+                }
+            }
+        }
+    )
+}
+
+@Composable
+fun ConfirmMergeAlbumsDialog(
+    source: com.bestiapop.android.data.model.Album,
+    target: com.bestiapop.android.data.model.Album,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit
+) {
+    val yearLabel = if (target.year > 0) target.year.toString() else "—"
+    val genreLabel = target.genre?.takeIf { it.isNotBlank() } ?: "—"
+    val resultCount = source.songCount + target.songCount
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Unir álbumes") },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    text = "«${source.displayName}» (${source.songCount} canciones) se unirá a «${target.displayName}» (${target.songCount} canciones).",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Text(
+                    text = "Las canciones de «${source.displayName}» adoptarán exactamente la metadata de «${target.displayName}». Los demás campos del formulario se descartarán.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f)
+                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    ArtworkThumbnail(
+                        artworkUri = target.artworkUri,
+                        size = 64.dp,
+                        cornerRadius = 8.dp
+                    )
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(
+                            text = target.displayName,
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text("Artista: ${target.artist}", style = MaterialTheme.typography.bodySmall)
+                        Text("Género: $genreLabel", style = MaterialTheme.typography.bodySmall)
+                        Text("Año: $yearLabel", style = MaterialTheme.typography.bodySmall)
+                        Text(
+                            text = "Resultado: $resultCount canciones",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = onConfirm) {
+                Text("Unir álbumes")
             }
         },
         dismissButton = {

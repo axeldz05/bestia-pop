@@ -4,9 +4,11 @@ import android.app.Activity
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.LibraryMusic
@@ -135,8 +137,12 @@ fun MainScreen(
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
+        // Only statusBars here: bottom chrome (mini player + NavigationBar) already owns
+        // navigation-bar insets. Applying systemBars in Scaffold would double-pad and leave
+        // a empty strip between page content and BottomPlayerBar (worse with nested Scaffolds).
         Scaffold(
-            containerColor = MaterialTheme.colorScheme.background
+            containerColor = MaterialTheme.colorScheme.background,
+            contentWindowInsets = WindowInsets.statusBars
         ) { innerPadding ->
             Box(
                 modifier = Modifier

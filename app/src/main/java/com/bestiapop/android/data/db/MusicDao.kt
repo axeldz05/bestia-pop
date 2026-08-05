@@ -59,7 +59,7 @@ interface MusicDao {
         """
         UPDATE songs SET artist = :artist, album = :newAlbum, genre = :genre, year = :year,
         artworkUri = CASE WHEN :artworkUri IS NOT NULL AND :artworkUri != '' THEN :artworkUri ELSE artworkUri END
-        WHERE album = :oldAlbum
+        WHERE album = :oldAlbum COLLATE NOCASE
         """
     )
     suspend fun updateSongsAlbumMetadata(
@@ -70,6 +70,9 @@ interface MusicDao {
         year: Int,
         artworkUri: String?
     )
+
+    @Query("SELECT * FROM songs WHERE album = :albumName COLLATE NOCASE")
+    suspend fun getSongsForAlbum(albumName: String): List<SongEntity>
 
     @Query("SELECT artworkUri FROM songs WHERE album = :albumName AND artworkUri IS NOT NULL AND artworkUri != '' LIMIT 1")
     suspend fun getArtworkForAlbum(albumName: String): String?

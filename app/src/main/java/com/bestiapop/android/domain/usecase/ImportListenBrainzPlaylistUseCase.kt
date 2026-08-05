@@ -2,6 +2,7 @@ package com.bestiapop.android.domain.usecase
 
 import com.bestiapop.android.data.listenbrainz.MatchedLbPlaylist
 import com.bestiapop.android.data.model.OnlineCatalogTrack
+import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.data.model.PlaylistPendingTrack
 import com.bestiapop.android.domain.repository.IMusicRepository
 
@@ -61,16 +62,12 @@ class ImportListenBrainzPlaylistUseCase(
             .filter { it.localSong == null }
             .map { it.track }
             .map { track ->
-                OnlineCatalogTrack(
-                    id = "${track.artist} ${track.title}".trim(),
-                    title = track.title,
+                PlayableItem.remoteFrom(
                     artist = track.artist,
-                    album = track.releaseName.orEmpty(),
-                    artworkUrl = null,
-                    durationMs = 0L,
-                    audioUrl = "",
-                    provider = "ListenBrainz"
-                )
+                    title = track.title,
+                    album = track.releaseName,
+                    recordingMbid = track.recordingMbid
+                ).toOnlineCatalogTrack(provider = "ListenBrainz")
             }
 
     companion object {

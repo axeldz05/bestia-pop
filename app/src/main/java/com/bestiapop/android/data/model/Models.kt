@@ -96,16 +96,13 @@ data class PlaylistPendingTrack(
     val recordingMbid: String? = null,
     val position: Int = 0
 ) {
-    fun toOnlineCatalogTrack(): OnlineCatalogTrack = OnlineCatalogTrack(
-        id = "${artist} ${title}".trim(),
-        title = title,
-        artist = artist,
-        album = releaseName.orEmpty(),
-        artworkUrl = null,
-        durationMs = 0L,
-        audioUrl = "",
-        provider = "ListenBrainz"
-    )
+    fun toOnlineCatalogTrack(): OnlineCatalogTrack =
+        PlayableItem.remoteFrom(
+            artist = artist,
+            title = title,
+            album = releaseName,
+            recordingMbid = recordingMbid
+        ).toOnlineCatalogTrack(provider = "ListenBrainz")
 }
 
 data class ColorSchemeData(

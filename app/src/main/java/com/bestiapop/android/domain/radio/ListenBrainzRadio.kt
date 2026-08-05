@@ -67,9 +67,7 @@ class ListenBrainzRadio(
         }
 
         val results = ArrayList<PlayableItem>(limit)
-        val seen = excludeKeys.toMutableSet()
-        val seedKey = MatchListenBrainzTracksUseCase.matchKey(seed.artist, seed.title)
-        if (seedKey.isNotEmpty()) seen.add(seedKey)
+        val localSeen = HashSet<String>()
 
         for (rec in recordings) {
             if (results.size >= limit) break
@@ -80,20 +78,19 @@ class ListenBrainzRadio(
                 ?: continue
 
             val key = MatchListenBrainzTracksUseCase.matchKey(artist, title)
-            if (key.isEmpty() || key in seen) continue
-            seen.add(key)
+            if (key.isEmpty() || key in localSeen) continue
+            localSeen.add(key)
 
             val local = libraryIndex[key]
             if (local != null) {
                 results.add(local.toPlayable())
             } else {
                 results.add(
-                    PlayableItem.Remote(
-                        title = title,
+                    PlayableItem.remoteFrom(
                         artist = artist,
+                        title = title,
                         album = meta?.releaseName,
-                        recordingMbid = rec.recordingMbid,
-                        youtubeQueryOrId = "$artist $title"
+                        recordingMbid = rec.recordingMbid
                     )
                 )
             }

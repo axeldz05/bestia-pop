@@ -13,7 +13,7 @@ Cada feature lista **invariantes** + **entry points**. Si el código diverge, ac
 
 ## 1. Colecciones unificadas (“todo es playlist”)
 
-**Invariante:** Listas, álbumes, artistas, playlists y colas usan el mismo pipeline de reproducción.
+**Invariante:** Listas, álbumes, artistas, playlists locales y colas usan el mismo pipeline de reproducción (`playCollection` / `shuffleCollection`). UI: `LabeledPlayShuffleButtons` en library header, detalle de playlist local, CF y LB.
 
 | Acción | ViewModel | Pipeline |
 |--------|-----------|----------|
@@ -23,7 +23,7 @@ Cada feature lista **invariantes** + **entry points**. Si el código diverge, ac
 | Encolar | `enqueueCollection(songs)` | append a cola `PlayableItem` |
 | Una canción | `playSong(song, playlistOrQueue)` | (arma cola + MediaController) |
 
-Archivos: `ui/MusicPlayerViewModel.kt` (`playPlayableCollection` / `applyShuffledQueue`).
+Archivos: `ui/MusicPlayerViewModel.kt` (`playPlayableCollection` / `applyShuffledQueue`); `ui/components/PlayShuffleButtons.kt`.
 
 ## 2. Búsqueda online y descarga de audio
 
@@ -67,7 +67,7 @@ Estado: `ui/state/LibraryUiState.kt`, `LibraryListItem.kt`.
 | **Álbum portada** | `setAlbumArtwork` → propagate via `updateAlbumMetadataPropagateToSongs` | `MusicPlayerViewModel.setAlbumArtwork` |
 | **Playlist** | `Playlist.coverUri` / `PlaylistEntity.coverUri` es de la lista; **no** pisa artwork de canciones | `createPlaylist` / `updatePlaylist`, `savePlaylistCoverImage` |
 | **Canción** | Editar una canción **no** reescribe el álbum ni siblings | `updateSongMetadata` (incluye `year`); UI `EditSongMetadataDialog` |
-| **Persistencia local** | Copiar imagen a `context.filesDir` (`album_covers` / playlist covers) | `saveAlbumCoverImage`, `savePlaylistCoverImage`, `extractAndSaveEmbeddedArtwork` |
+| **Persistencia local** | Copiar imagen a `context.filesDir` (`album_covers` / playlist covers); URI unificada `file.toURI()` vía `persistUserCover` | `saveAlbumCoverImage`, `savePlaylistCoverImage`, `extractAndSaveEmbeddedArtwork` |
 
 Herencia visual en lista: `GetLibrarySongsUseCase.execute` unifica artwork faltante desde otras canciones del mismo álbum; `extractAlbums(songs, overrides)` aplica `AlbumOverride`.
 

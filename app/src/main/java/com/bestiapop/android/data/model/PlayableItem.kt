@@ -37,6 +37,45 @@ sealed class PlayableItem {
                     ?: "$artist|$title"
                 return "remote:${query.lowercase().hashCode().toUInt().toString(16)}"
             }
+
+        /** L2: map ephemeral remote to catalog download input (no CDN URL persisted). */
+        fun toOnlineCatalogTrack(provider: String = "YouTube"): OnlineCatalogTrack = OnlineCatalogTrack(
+            id = youtubeQueryOrId?.takeIf { it.isNotBlank() }
+                ?: "$artist $title".trim(),
+            title = title,
+            artist = artist,
+            album = album.orEmpty(),
+            artworkUrl = artworkUri,
+            durationMs = durationMs,
+            audioUrl = "",
+            provider = provider
+        )
+    }
+
+    companion object {
+        /** L2: build a Remote with default YouTube query `"$artist $title"`. */
+        fun remoteFrom(
+            artist: String,
+            title: String,
+            album: String? = null,
+            artworkUri: String? = null,
+            durationMs: Long = 0,
+            recordingMbid: String? = null,
+            youtubeQueryOrId: String? = null,
+            resolved: ResolvedStream? = null
+        ): Remote {
+            val defaultQuery = "$artist $title".trim().takeIf { it.isNotBlank() }
+            return Remote(
+                title = title,
+                artist = artist,
+                album = album,
+                artworkUri = artworkUri,
+                durationMs = durationMs,
+                recordingMbid = recordingMbid,
+                youtubeQueryOrId = youtubeQueryOrId?.takeIf { it.isNotBlank() } ?: defaultQuery,
+                resolved = resolved
+            )
+        }
     }
 }
 

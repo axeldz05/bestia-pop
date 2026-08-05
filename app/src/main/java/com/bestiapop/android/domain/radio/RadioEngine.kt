@@ -194,16 +194,8 @@ class RadioEngine(
         fun addRemotes(items: List<PlayableItem>): Int {
             var added = 0
             for (item in items) {
-                if (remotes.size >= limit) return added
-                if (item !is PlayableItem.Remote) continue
-                val key = MatchListenBrainzTracksUseCase.matchKey(item.artist, item.title)
-                val idKey = item.mediaId
-                if (key.isNotEmpty() && key in seen) continue
-                if (idKey in seen) continue
-                if (key.isNotEmpty()) seen.add(key)
-                seen.add(idKey)
-                remotes.add(item)
-                added++
+                if (remotes.size >= limit) break
+                if (tryAddRemote(item, remotes, seen, limit)) added++
             }
             return added
         }
@@ -277,6 +269,25 @@ class RadioEngine(
             usedOnlineDiscovery = usedOnlineDiscovery,
             onlineDiscoveryFailed = onlineDiscoveryFailed
         )
+    }
+
+    /** L2: accept a Remote into [remotes] if not already in [seen] (matchKey + mediaId). */
+    private fun tryAddRemote(
+        item: PlayableItem,
+        remotes: MutableList<PlayableItem.Remote>,
+        seen: MutableSet<String>,
+        limit: Int
+    ): Boolean {
+        if (remotes.size >= limit) return false
+        if (item !is PlayableItem.Remote) return false
+        val key = MatchListenBrainzTracksUseCase.matchKey(item.artist, item.title)
+        val idKey = item.mediaId
+        if (key.isNotEmpty() && key in seen) return false
+        if (idKey in seen) return false
+        if (key.isNotEmpty()) seen.add(key)
+        seen.add(idKey)
+        remotes.add(item)
+        return true
     }
 
     companion object {

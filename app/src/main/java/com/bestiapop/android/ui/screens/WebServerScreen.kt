@@ -58,9 +58,7 @@ import com.bestiapop.android.service.WebServerService
 import com.bestiapop.android.ui.MusicPlayerViewModel
 import com.bestiapop.android.ui.components.ArtworkThumbnail
 import com.bestiapop.android.ui.components.SongListItem
-import com.bestiapop.android.ui.screens.library.AddToPlaylistDialog
-import com.bestiapop.android.ui.screens.library.ConfirmDeleteSongsDialog
-import com.bestiapop.android.ui.screens.library.EditSongMetadataDialog
+import com.bestiapop.android.ui.screens.library.SongActionDialogsHost
 
 @Composable
 fun WebServerScreen(viewModel: MusicPlayerViewModel) {
@@ -345,53 +343,26 @@ fun WebServerScreen(viewModel: MusicPlayerViewModel) {
         Spacer(modifier = Modifier.height(16.dp))
     }
 
-    editingSong?.let { song ->
-        EditSongMetadataDialog(
-            song = song,
-            onDismiss = { editingSong = null },
-            onConfirm = { title, artist, album, genre, year ->
-                viewModel.updateSongMetadata(song.id, title, artist, album, genre, year)
-                editingSong = null
-            }
-        )
-    }
-
-    songForPlaylist?.let { song ->
-        AddToPlaylistDialog(
-            playlists = playlists,
-            onDismiss = { songForPlaylist = null },
-            onSelectPlaylist = { playlist ->
-                viewModel.addSongToPlaylist(playlist.id, song)
-                songForPlaylist = null
-            },
-            onCreateNewPlaylist = { songForPlaylist = null }
-        )
-    }
-
-    songsForDeletion?.let { targetSongs ->
-        ConfirmDeleteSongsDialog(
-            songCount = targetSongs.size,
-            onDismiss = { songsForDeletion = null },
-            onConfirmDeleteFromApp = {
-                viewModel.deleteSongsFromApp(targetSongs)
-                targetSongs.forEach { song ->
-                    transfers.find { it.songId == song.id }?.let {
-                        WebServerService.dismissTransfer(it.id)
-                    }
+    SongActionDialogsHost(
+        editingSong = editingSong,
+        songForPlaylistAddition = songForPlaylist,
+        songsForDeletion = songsForDeletion,
+        playlists = playlists,
+        viewModel = viewModel,
+        onDismissEdit = { editingSong = null },
+        onDismissPlaylist = { songForPlaylist = null },
+        onDismissDelete = { songsForDeletion = null },
+        onSelectPlaylist = { playlist, song ->
+            viewModel.addSongToPlaylist(playlist.id, song)
+        },
+        onAfterDelete = { targetSongs ->
+            targetSongs.forEach { song ->
+                transfers.find { it.songId == song.id }?.let {
+                    WebServerService.dismissTransfer(it.id)
                 }
-                songsForDeletion = null
-            },
-            onConfirmDeleteFromDevice = {
-                viewModel.deleteSongsFromDevice(targetSongs)
-                targetSongs.forEach { song ->
-                    transfers.find { it.songId == song.id }?.let {
-                        WebServerService.dismissTransfer(it.id)
-                    }
-                }
-                songsForDeletion = null
             }
-        )
-    }
+        }
+    )
 }
 
 @Composable

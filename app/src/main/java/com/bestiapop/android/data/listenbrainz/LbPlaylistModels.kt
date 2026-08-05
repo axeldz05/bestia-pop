@@ -32,12 +32,11 @@ data class MatchedLbTrack(
         return if (local != null) {
             local.toPlayable()
         } else {
-            PlayableItem.Remote(
-                title = track.title,
+            PlayableItem.remoteFrom(
                 artist = track.artist,
+                title = track.title,
                 album = track.releaseName,
-                recordingMbid = track.recordingMbid,
-                youtubeQueryOrId = "${track.artist} ${track.title}"
+                recordingMbid = track.recordingMbid
             )
         }
     }

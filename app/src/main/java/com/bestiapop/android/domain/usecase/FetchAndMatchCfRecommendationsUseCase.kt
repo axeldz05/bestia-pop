@@ -54,30 +54,7 @@ class FetchAndMatchCfRecommendationsUseCase(
             is LbApiResult.Failure -> emptyMap()
         }
 
-        val libraryIndex = MatchListenBrainzTracksUseCase.buildLibraryIndex(library)
-        val scoreByMbid = payload.recordings.associate { it.recordingMbid to it.score }
-        val matches = ArrayList<MatchedCfTrack>(payload.recordings.size)
-
-        for (rec in payload.recordings) {
-            val meta = metaByMbid[rec.recordingMbid] ?: continue
-            val title = meta.title.takeIf { it.isNotBlank() } ?: continue
-            val artist = meta.artist.takeIf { it.isNotBlank() } ?: continue
-            val key = MatchListenBrainzTracksUseCase.matchKey(artist, title)
-            matches.add(
-                MatchedCfTrack(
-                    recordingMbid = rec.recordingMbid,
-                    title = title,
-                    artist = artist,
-                    album = meta.releaseName,
-                    score = scoreByMbid[rec.recordingMbid] ?: rec.score,
-                    localSong = if (key.isNotEmpty()) libraryIndex[key] else null
-                )
-            )
-        }
-
-        return LbApiResult.Success(
-            MatchedCfRecommendations(payload = payload, matches = matches)
-        )
+        return LbApiResult.Success(matchFromMetadata(payload, metaByMbid, library))
     }
 
     /** Maps already-fetched CF recordings + metadata to matched playables (no network). */

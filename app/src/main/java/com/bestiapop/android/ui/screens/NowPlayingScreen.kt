@@ -104,6 +104,7 @@ import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.domain.radio.RadioMode
 import com.bestiapop.android.ui.MusicPlayerViewModel
 import com.bestiapop.android.ui.components.ArtworkThumbnail
+import com.bestiapop.android.ui.components.QueueItemRow
 import com.bestiapop.android.ui.components.formatDuration
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -911,109 +912,20 @@ private fun NowPlayingQueuePanel(
                     key = { idx, s -> "${s.mediaId}_$idx" },
                     contentType = { _, _ -> "queue_row" }
                 ) { index, queueSong ->
-                    NowPlayingQueueRow(
+                    QueueItemRow(
                         item = queueSong,
-                        index = index,
-                        isCurrent = index == currentIndex,
+                        isCurrentPlaying = index == currentIndex,
                         onClick = { onSkipTo(index) },
-                        onRemove = { onRemove(index) }
+                        onRemove = { onRemove(index) },
+                        showIndex = true,
+                        index = index,
+                        removeIcon = Icons.Default.Close,
+                        removeContentDescription = "Quitar de la cola",
+                        trailingDuration = formatDuration(queueSong.durationMs),
+                        compact = true
                     )
                 }
             }
-        }
-    }
-}
-
-@Composable
-private fun NowPlayingQueueRow(
-    item: PlayableItem,
-    index: Int,
-    isCurrent: Boolean,
-    onClick: () -> Unit,
-    onRemove: () -> Unit
-) {
-    val bgColor = if (isCurrent) {
-        MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
-    } else {
-        MaterialTheme.colorScheme.surface.copy(alpha = 0f)
-    }
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(bgColor)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Box(
-            modifier = Modifier.width(28.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            if (isCurrent) {
-                Icon(
-                    imageVector = Icons.Default.PlayArrow,
-                    contentDescription = "Reproduciendo",
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(18.dp)
-                )
-            } else {
-                Text(
-                    text = "${index + 1}",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-                )
-            }
-        }
-
-        ArtworkThumbnail(
-            artworkUri = item.artworkUri,
-            size = 40.dp,
-            cornerRadius = 8.dp,
-            contentDescription = null
-        )
-
-        Spacer(modifier = Modifier.width(10.dp))
-
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = item.title,
-                style = MaterialTheme.typography.bodyMedium.copy(
-                    fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal
-                ),
-                color = if (isCurrent) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    MaterialTheme.colorScheme.onSurface
-                },
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Text(
-                text = item.artist,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-
-        Text(
-            text = formatDuration(item.durationMs),
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-        )
-
-        IconButton(
-            onClick = onRemove,
-            modifier = Modifier.size(32.dp)
-        ) {
-            Icon(
-                imageVector = Icons.Default.Close,
-                contentDescription = "Quitar de la cola",
-                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f),
-                modifier = Modifier.size(16.dp)
-            )
         }
     }
 }

@@ -56,16 +56,16 @@ import com.bestiapop.android.data.model.Playlist
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.ui.MusicPlayerViewModel
 import com.bestiapop.android.ui.SortOption
+import com.bestiapop.android.ui.components.LabeledPlayShuffleButtons
 import com.bestiapop.android.ui.components.MultiSelectActionBar
 import com.bestiapop.android.ui.components.PlaylistAdditionActionBar
-import com.bestiapop.android.ui.screens.library.AddToPlaylistDialog
-import com.bestiapop.android.ui.screens.library.ConfirmDeleteSongsDialog
 import com.bestiapop.android.ui.screens.library.EditAlbumMetadataDialog
-import com.bestiapop.android.ui.screens.library.EditSongMetadataDialog
 import com.bestiapop.android.ui.screens.library.LibraryAlbumGrid
 import com.bestiapop.android.ui.screens.library.LibraryArtistList
-import com.bestiapop.android.ui.screens.library.LibrarySongList
+import com.bestiapop.android.ui.screens.library.LibrarySongListActions
+import com.bestiapop.android.ui.screens.library.LibrarySongListHost
 import com.bestiapop.android.ui.screens.library.SetAlbumArtworkDialog
+import com.bestiapop.android.ui.screens.library.SongActionDialogsHost
 import com.bestiapop.android.ui.state.LibraryViewMode
 
 @Composable
@@ -194,6 +194,25 @@ fun LibraryScreen(
     val onShuffleAlbum = remember<(String, List<Song>) -> Unit> {
         { _, albumSongs -> viewModel.shuffleCollection(albumSongs) }
     }
+    val songListActions = remember(
+        onPlayNext, onAddToQueue, onStartRadio, onAddToPlaylist, onEditMetadata, onDeleteSong,
+        onPlayAlbum, onShuffleAlbum, toggleSelectSong, toggleSelectAlbum, onAlbumLongClick, toggleCollapseAlbum
+    ) {
+        LibrarySongListActions(
+            onPlayNext = onPlayNext,
+            onAddToQueue = onAddToQueue,
+            onStartRadio = onStartRadio,
+            onAddToPlaylist = onAddToPlaylist,
+            onEditMetadata = onEditMetadata,
+            onDeleteSong = onDeleteSong,
+            onPlayAlbum = onPlayAlbum,
+            onShuffleAlbum = onShuffleAlbum,
+            onToggleSelect = toggleSelectSong,
+            onToggleSelectAlbum = toggleSelectAlbum,
+            onAlbumLongClick = onAlbumLongClick,
+            onToggleCollapseAlbum = toggleCollapseAlbum
+        )
+    }
 
     Column(modifier = Modifier.fillMaxSize()) {
 
@@ -302,25 +321,14 @@ fun LibraryScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row {
-                    Button(
-                        onClick = { viewModel.playCollection(songs) },
-                        enabled = songs.isNotEmpty()
-                    ) {
-                        Icon(Icons.Default.PlayArrow, contentDescription = null)
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Reproducir todo")
-                    }
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Button(
-                        onClick = { viewModel.shuffleCollection(songs) },
-                        enabled = songs.isNotEmpty()
-                    ) {
-                        Icon(Icons.Default.Shuffle, contentDescription = null)
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Mezclar")
-                    }
-                }
+                LabeledPlayShuffleButtons(
+                    onPlay = { viewModel.playCollection(songs) },
+                    onShuffle = { viewModel.shuffleCollection(songs) },
+                    enabled = songs.isNotEmpty(),
+                    playLabel = "Reproducir todo",
+                    shuffleLabel = "Mezclar",
+                    modifier = Modifier.weight(1f)
+                )
 
                 if (selectedTabIndex == 0) {
                     IconButton(onClick = { showAlbumHeaders = !showAlbumHeaders }) {
@@ -384,29 +392,17 @@ fun LibraryScreen(
                     val albumListItems = remember(albumSongs) {
                         viewModel.buildLibraryListItems(albumSongs, LibraryViewMode.FLAT)
                     }
-                    LibrarySongList(
+                    LibrarySongListHost(
                         items = albumListItems,
                         currentSongId = currentSongId,
                         isSelectionMode = isMultiSelectMode,
                         selectedSongIds = selectedSongIds,
                         collapsedAlbumNames = collapsedAlbumNames,
                         sortOption = sortOption,
+                        actions = songListActions,
                         onSongClick = { song, index ->
                             if (isMultiSelectMode) toggleSelectSong(song) else viewModel.playCollection(albumSongs, index)
-                        },
-                        onSongLongClick = toggleSelectSong,
-                        onToggleSelect = toggleSelectSong,
-                        onPlayNext = onPlayNext,
-                        onAddToQueue = onAddToQueue,
-                        onStartRadio = onStartRadio,
-                        onAddToPlaylist = onAddToPlaylist,
-                        onEditMetadata = onEditMetadata,
-                        onDeleteSong = onDeleteSong,
-                        onPlayAlbum = onPlayAlbum,
-                        onShuffleAlbum = onShuffleAlbum,
-                        onToggleSelectAlbum = toggleSelectAlbum,
-                        onAlbumLongClick = onAlbumLongClick,
-                        onToggleCollapseAlbum = toggleCollapseAlbum
+                        }
                     )
                 }
 
@@ -417,29 +413,17 @@ fun LibraryScreen(
                     val artistListItems = remember(artistSongs) {
                         viewModel.buildLibraryListItems(artistSongs, LibraryViewMode.ALBUM_GROUPS)
                     }
-                    LibrarySongList(
+                    LibrarySongListHost(
                         items = artistListItems,
                         currentSongId = currentSongId,
                         isSelectionMode = isMultiSelectMode,
                         selectedSongIds = selectedSongIds,
                         collapsedAlbumNames = collapsedAlbumNames,
                         sortOption = sortOption,
+                        actions = songListActions,
                         onSongClick = { song, index ->
                             if (isMultiSelectMode) toggleSelectSong(song) else viewModel.playCollection(artistSongs, index)
-                        },
-                        onSongLongClick = toggleSelectSong,
-                        onToggleSelect = toggleSelectSong,
-                        onPlayNext = onPlayNext,
-                        onAddToQueue = onAddToQueue,
-                        onStartRadio = onStartRadio,
-                        onAddToPlaylist = onAddToPlaylist,
-                        onEditMetadata = onEditMetadata,
-                        onDeleteSong = onDeleteSong,
-                        onPlayAlbum = onPlayAlbum,
-                        onShuffleAlbum = onShuffleAlbum,
-                        onToggleSelectAlbum = toggleSelectAlbum,
-                        onAlbumLongClick = onAlbumLongClick,
-                        onToggleCollapseAlbum = toggleCollapseAlbum
+                        }
                     )
                 }
 
@@ -452,33 +436,21 @@ fun LibraryScreen(
                     val songListItems = remember(songs, songsViewMode) {
                         viewModel.buildLibraryListItems(songs, songsViewMode)
                     }
-                    LibrarySongList(
+                    LibrarySongListHost(
                         items = songListItems,
                         currentSongId = currentSongId,
                         isSelectionMode = isMultiSelectMode || isPlaylistAdditionMode,
                         selectedSongIds = selectedSongIds,
                         collapsedAlbumNames = collapsedAlbumNames,
                         sortOption = sortOption,
+                        actions = songListActions,
                         onSongClick = { song, index ->
                             if (isPlaylistAdditionMode || isMultiSelectMode) {
                                 toggleSelectSong(song)
                             } else {
                                 viewModel.playCollection(songs, index)
                             }
-                        },
-                        onSongLongClick = toggleSelectSong,
-                        onToggleSelect = toggleSelectSong,
-                        onPlayNext = onPlayNext,
-                        onAddToQueue = onAddToQueue,
-                        onStartRadio = onStartRadio,
-                        onAddToPlaylist = onAddToPlaylist,
-                        onEditMetadata = onEditMetadata,
-                        onDeleteSong = onDeleteSong,
-                        onPlayAlbum = onPlayAlbum,
-                        onShuffleAlbum = onShuffleAlbum,
-                        onToggleSelectAlbum = toggleSelectAlbum,
-                        onAlbumLongClick = onAlbumLongClick,
-                        onToggleCollapseAlbum = toggleCollapseAlbum
+                        }
                     )
                 }
 
@@ -540,16 +512,21 @@ fun LibraryScreen(
     }
 
     // Modal Dialog Invocations
-    editingSong?.let { song ->
-        EditSongMetadataDialog(
-            song = song,
-            onDismiss = { editingSong = null },
-            onConfirm = { title, artist, album, genre, year ->
-                viewModel.updateSongMetadata(song.id, title, artist, album, genre, year)
-                editingSong = null
-            }
-        )
-    }
+    SongActionDialogsHost(
+        editingSong = editingSong,
+        songForPlaylistAddition = songForPlaylistAddition,
+        songsForDeletion = songsForDeletion,
+        playlists = playlists,
+        viewModel = viewModel,
+        onDismissEdit = { editingSong = null },
+        onDismissPlaylist = { songForPlaylistAddition = null },
+        onDismissDelete = { songsForDeletion = null },
+        onAfterPlaylistAdd = { clearSelection() },
+        onAfterDelete = { clearSelection() },
+        playlistSongIds = { song ->
+            if (isMultiSelectMode) selectedSongIds.toList() else listOf(song.id)
+        }
+    )
 
     albumForEdit?.let { album ->
         EditAlbumMetadataDialog(
@@ -590,39 +567,6 @@ fun LibraryScreen(
             onArtworkSelected = { newUri ->
                 viewModel.setAlbumArtwork(album.name, newUri)
                 albumForCoverChange = null
-            }
-        )
-    }
-
-    songForPlaylistAddition?.let { song ->
-        AddToPlaylistDialog(
-            playlists = playlists,
-            onDismiss = { songForPlaylistAddition = null },
-            onSelectPlaylist = { playlist ->
-                val targetIds = if (isMultiSelectMode) selectedSongIds.toList() else listOf(song.id)
-                viewModel.addSongsToPlaylist(playlist.id, targetIds)
-                songForPlaylistAddition = null
-                clearSelection()
-            },
-            onCreateNewPlaylist = {
-                songForPlaylistAddition = null
-            }
-        )
-    }
-
-    songsForDeletion?.let { targetSongs ->
-        ConfirmDeleteSongsDialog(
-            songCount = targetSongs.size,
-            onDismiss = { songsForDeletion = null },
-            onConfirmDeleteFromApp = {
-                viewModel.deleteSongsFromApp(targetSongs)
-                songsForDeletion = null
-                clearSelection()
-            },
-            onConfirmDeleteFromDevice = {
-                viewModel.deleteSongsFromDevice(targetSongs)
-                songsForDeletion = null
-                clearSelection()
             }
         )
     }

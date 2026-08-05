@@ -1,5 +1,9 @@
 package com.bestiapop.android.data.network
 
+import com.bestiapop.android.data.model.CatalogAlbum
+import com.bestiapop.android.data.model.CatalogPlaylist
+import com.bestiapop.android.data.model.CatalogTrackCandidate
+import com.bestiapop.android.data.model.OnlineCatalogTrack
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -16,6 +20,11 @@ data class FullTrackMetadata(
     val artistName: String?,
     val title: String?,
     val durationMs: Long = 0L
+)
+
+data class DeezerArtistHit(
+    val id: Long,
+    val pictureUrl: String?
 )
 
 object MetadataFetcher {
@@ -45,16 +54,18 @@ object MetadataFetcher {
     private fun encodeQuery(queryText: String): String =
         URLEncoder.encode(queryText, StandardCharsets.UTF_8.name())
 
-    private fun normalizeItunesArtwork(artworkUrl100: String): String? {
+    // --- L1: artwork / JSON primitives (kept accessible) ---
+
+    fun normalizeItunesArtwork(artworkUrl100: String): String? {
         if (artworkUrl100.isEmpty()) return null
         return artworkUrl100.replace("100x100bb", "600x600bb")
     }
 
-    private fun pickCoverUrl(coverXl: String?, coverBig: String?): String? {
+    fun pickCoverUrl(coverXl: String?, coverBig: String?): String? {
         return coverXl?.ifBlank { null } ?: coverBig?.ifBlank { null }
     }
 
-    private fun getJson(url: String, userAgent: String = "BestiaPop/1.0"): JSONObject? {
+    fun getJson(url: String, userAgent: String = "BestiaPop/1.0"): JSONObject? {
         return try {
             val request = Request.Builder().url(url).header("User-Agent", userAgent).build()
             client.newCall(request).execute().use { response ->
@@ -68,39 +79,161 @@ object MetadataFetcher {
         }
     }
 
-    private fun searchDeezerTrack(queryText: String): FullTrackMetadata? {
-        val url = "https://api.deezer.com/search?q=${encodeQuery(queryText)}&limit=1"
+    fun parseDeezerTrackArray(data: JSONArray?): List<CatalogSongHint> {
+        if (data == null || data.length() == 0) return emptyList()
+        val out = ArrayList<CatalogSongHint>(data.length())
+        for (i in 0 until data.length()) {
+            val obj = data.getJSONObject(i)
+            val title = obj.optString("title").ifBlank { null } ?: continue
+            val artistObj = obj.optJSONObject("artist")
+            val artistName = artistObj?.optString("name")?.ifBlank { null } ?: continue
+            val albumObj = obj.optJSONObject("album")
+            val albumTitle = albumObj?.optString("title")?.ifBlank { null }
+            val cover = pickCoverUrl(
+                albumObj?.optString("cover_xl"),
+                albumObj?.optString("cover_big")
+            )
+            val durationSec = obj.optLong("duration", 0L)
+            out.add(
+                CatalogSongHint(
+                    title = title,
+                    artist = artistName,
+                    album = albumTitle,
+                    artworkUrl = cover,
+                    durationMs = if (durationSec > 0) durationSec * 1000L else 0L
+                )
+            )
+        }
+        return out
+    }
+
+    // --- L2: compressed parsers / search helpers ---
+
+    fun parseDeezerSearchTracks(
+        data: JSONArray?,
+        provider: String = "Deezer/YouTube"
+    ): List<OnlineCatalogTrack> {
+        if (data == null || data.length() == 0) return emptyList()
+        val tracks = ArrayList<OnlineCatalogTrack>(data.length())
+        for (i in 0 until data.length()) {
+            val obj = data.getJSONObject(i)
+            val title = obj.optString("title", "Canción")
+            val artistObj = obj.optJSONObject("artist")
+            val artistName = artistObj?.optString("name", "Artista") ?: "Artista"
+            val albumObj = obj.optJSONObject("album")
+            val albumTitle = albumObj?.optString("title", "Álbum") ?: "Álbum"
+            val cover = pickCoverUrl(
+                albumObj?.optString("cover_xl"),
+                albumObj?.optString("cover_big")
+            )
+            tracks.add(
+                OnlineCatalogTrack(
+                    id = obj.optString("id").ifBlank { "$artistName $title#$i" },
+                    title = title,
+                    artist = artistName,
+                    album = albumTitle,
+                    artworkUrl = cover,
+                    durationMs = obj.optLong("duration", 180L) * 1000L,
+                    audioUrl = "$artistName $title",
+                    provider = provider
+                )
+            )
+        }
+        return tracks
+    }
+
+    fun parseItunesSongResults(
+        results: JSONArray?,
+        provider: String = "iTunes/YouTube",
+        limit: Int = Int.MAX_VALUE,
+        defaultTitle: String = "Canción",
+        defaultArtist: String = "Artista",
+        defaultAlbum: String = "Álbum"
+    ): List<OnlineCatalogTrack> {
+        if (results == null || results.length() == 0 || limit <= 0) return emptyList()
+        val tracks = ArrayList<OnlineCatalogTrack>(minOf(limit, results.length()))
+        for (i in 0 until results.length()) {
+            if (tracks.size >= limit) break
+            val obj = results.getJSONObject(i)
+            val title = obj.optString("trackName", defaultTitle)
+            val artistName = obj.optString("artistName", defaultArtist)
+            val albumTitle = obj.optString("collectionName", defaultAlbum)
+            tracks.add(
+                OnlineCatalogTrack(
+                    id = obj.optString("trackId").ifBlank {
+                        "$artistName $title#${obj.optString("collectionId", "$i")}"
+                    },
+                    title = title,
+                    artist = artistName,
+                    album = albumTitle,
+                    artworkUrl = normalizeItunesArtwork(obj.optString("artworkUrl100")),
+                    durationMs = obj.optLong("trackTimeMillis", 180000L),
+                    audioUrl = "$artistName $title",
+                    provider = provider
+                )
+            )
+        }
+        return tracks
+    }
+
+    fun toCatalogCandidate(track: OnlineCatalogTrack): CatalogTrackCandidate =
+        CatalogTrackCandidate(
+            trackTitle = track.title,
+            artist = track.artist,
+            albumName = track.album,
+            coverUrl = track.artworkUrl,
+            candidates = listOf(track),
+            currentCandidateIndex = 0,
+            isSelected = true
+        )
+
+    /** Deezer artist search hit (id + picture). Shared by photo URL and artist-id resolve. */
+    fun searchDeezerArtist(name: String): DeezerArtistHit? {
+        val cleanArtistName = cleanArtist(name)
+        if (cleanArtistName.isEmpty()) return null
+        val url = "https://api.deezer.com/search/artist?q=${encodeQuery(cleanArtistName)}&limit=1"
         val json = getJson(url) ?: return null
         val data = json.optJSONArray("data") ?: return null
         if (data.length() == 0) return null
         val item = data.getJSONObject(0)
-        val albumObj = item.optJSONObject("album")
-        val artistObj = item.optJSONObject("artist")
-        val durationSec = item.optLong("duration", 0L)
+        val id = item.optLong("id", 0L)
+        if (id <= 0L) return null
+        return DeezerArtistHit(
+            id = id,
+            pictureUrl = pickCoverUrl(item.optString("picture_xl"), item.optString("picture_big"))
+        )
+    }
+
+    private fun searchDeezerTrack(queryText: String): FullTrackMetadata? {
+        val url = "https://api.deezer.com/search?q=${encodeQuery(queryText)}&limit=1"
+        val json = getJson(url) ?: return null
+        val hint = parseDeezerTrackArray(json.optJSONArray("data")).firstOrNull() ?: return null
         return FullTrackMetadata(
-            album = albumObj?.optString("title")?.ifBlank { null },
-            artworkUrl = pickCoverUrl(
-                albumObj?.optString("cover_xl"),
-                albumObj?.optString("cover_big")
-            ),
-            artistName = artistObj?.optString("name")?.ifBlank { null },
-            title = item.optString("title").ifBlank { null },
-            durationMs = if (durationSec > 0) durationSec * 1000L else 0L
+            album = hint.album,
+            artworkUrl = hint.artworkUrl,
+            artistName = hint.artist,
+            title = hint.title,
+            durationMs = hint.durationMs
         )
     }
 
     private fun searchItunesSong(queryText: String): FullTrackMetadata? {
         val url = "https://itunes.apple.com/search?term=${encodeQuery(queryText)}&entity=song&limit=1"
         val json = getJson(url) ?: return null
-        val results = json.optJSONArray("results") ?: return null
-        if (results.length() == 0) return null
-        val item = results.getJSONObject(0)
+        val track = parseItunesSongResults(
+            json.optJSONArray("results"),
+            limit = 1,
+            defaultTitle = "",
+            defaultArtist = "",
+            defaultAlbum = ""
+        ).firstOrNull() ?: return null
+        val title = track.title.ifBlank { null } ?: return null
         return FullTrackMetadata(
-            album = item.optString("collectionName").ifBlank { null },
-            artworkUrl = normalizeItunesArtwork(item.optString("artworkUrl100")),
-            artistName = item.optString("artistName").ifBlank { null },
-            title = item.optString("trackName").ifBlank { null },
-            durationMs = item.optLong("trackTimeMillis", 0L)
+            album = track.album.ifBlank { null },
+            artworkUrl = track.artworkUrl,
+            artistName = track.artist.ifBlank { null },
+            title = title,
+            durationMs = track.durationMs
         )
     }
 
@@ -113,7 +246,7 @@ object MetadataFetcher {
         return pickCoverUrl(item.optString("cover_xl"), item.optString("cover_big"))
     }
 
-    suspend fun getFeaturedDemoCatalog(): List<com.bestiapop.android.data.model.OnlineCatalogTrack> = withContext(Dispatchers.IO) {
+    suspend fun getFeaturedDemoCatalog(): List<OnlineCatalogTrack> = withContext(Dispatchers.IO) {
         val tracks = searchOnlineCatalog("rock hits")
         if (tracks.isNotEmpty()) {
             return@withContext tracks
@@ -121,129 +254,38 @@ object MetadataFetcher {
         return@withContext searchOnlineCatalog("top songs")
     }
 
-    suspend fun searchOnlineCatalog(query: String): List<com.bestiapop.android.data.model.OnlineCatalogTrack> = withContext(Dispatchers.IO) {
+    suspend fun searchOnlineCatalog(query: String): List<OnlineCatalogTrack> = withContext(Dispatchers.IO) {
         val cleanQ = query.trim()
         if (cleanQ.isEmpty()) {
             return@withContext getFeaturedDemoCatalog()
         }
-        val tracks = mutableListOf<com.bestiapop.android.data.model.OnlineCatalogTrack>()
 
         // 1. Deezer Song Search API
-        try {
-            val encoded = URLEncoder.encode(cleanQ, StandardCharsets.UTF_8.name())
-            val url = "https://api.deezer.com/search?q=$encoded&limit=25"
-            val request = Request.Builder().url(url).header("User-Agent", "Mozilla/5.0").build()
+        val deezerUrl = "https://api.deezer.com/search?q=${encodeQuery(cleanQ)}&limit=25"
+        val deezerTracks = parseDeezerSearchTracks(
+            getJson(deezerUrl, userAgent = "Mozilla/5.0")?.optJSONArray("data")
+        )
+        if (deezerTracks.isNotEmpty()) return@withContext deezerTracks
 
-            client.newCall(request).execute().use { response ->
-                if (response.isSuccessful) {
-                    val body = response.body?.string() ?: ""
-                    val json = JSONObject(body)
-                    val data = json.optJSONArray("data")
-                    if (data != null) {
-                        for (i in 0 until data.length()) {
-                            val obj = data.getJSONObject(i)
-                            val title = obj.optString("title", "Canción")
-                            val artistObj = obj.optJSONObject("artist")
-                            val artistName = artistObj?.optString("name", "Artista") ?: "Artista"
-                            val albumObj = obj.optJSONObject("album")
-                            val albumTitle = albumObj?.optString("title", "Álbum") ?: "Álbum"
-                            val coverXl = albumObj?.optString("cover_xl")?.ifEmpty { albumObj.optString("cover_big") }
+        // 2. Fallback to iTunes Song Search API
+        val itunesUrl =
+            "https://itunes.apple.com/search?term=${encodeQuery(cleanQ)}&entity=song&limit=25"
+        val itunesTracks = parseItunesSongResults(
+            getJson(itunesUrl, userAgent = "Mozilla/5.0")?.optJSONArray("results")
+        )
+        if (itunesTracks.isNotEmpty()) return@withContext itunesTracks
 
-                            tracks.add(
-                                com.bestiapop.android.data.model.OnlineCatalogTrack(
-                                    id = obj.optString("id").ifBlank { "$artistName $title#$i" },
-                                    title = title,
-                                    artist = artistName,
-                                    album = albumTitle,
-                                    artworkUrl = coverXl,
-                                    durationMs = obj.optLong("duration", 180L) * 1000L,
-                                    audioUrl = "$artistName $title",
-                                    provider = "Deezer/YouTube"
-                                )
-                            )
-                        }
-                    }
-                }
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-
-        // 2. Fallback to iTunes Song Search API if Deezer returned empty
-        if (tracks.isEmpty()) {
-            try {
-                val encoded = URLEncoder.encode(cleanQ, StandardCharsets.UTF_8.name())
-                val url = "https://itunes.apple.com/search?term=$encoded&entity=song&limit=25"
-                val request = Request.Builder().url(url).header("User-Agent", "Mozilla/5.0").build()
-
-                client.newCall(request).execute().use { response ->
-                    if (response.isSuccessful) {
-                        val body = response.body?.string() ?: ""
-                        val json = JSONObject(body)
-                        val results = json.optJSONArray("results")
-                        if (results != null) {
-                            for (i in 0 until results.length()) {
-                                val obj = results.getJSONObject(i)
-                                val title = obj.optString("trackName", "Canción")
-                                val artistName = obj.optString("artistName", "Artista")
-                                val albumTitle = obj.optString("collectionName", "Álbum")
-                                val artwork100 = obj.optString("artworkUrl100").replace("100x100bb", "600x600bb")
-
-                                tracks.add(
-                                    com.bestiapop.android.data.model.OnlineCatalogTrack(
-                                        id = obj.optString("trackId").ifBlank {
-                                            "$artistName $title#${obj.optString("collectionId", "$i")}"
-                                        },
-                                        title = title,
-                                        artist = artistName,
-                                        album = albumTitle,
-                                        artworkUrl = artwork100.ifBlank { null },
-                                        durationMs = obj.optLong("trackTimeMillis", 180000L),
-                                        audioUrl = "$artistName $title",
-                                        provider = "iTunes/YouTube"
-                                    )
-                                )
-                            }
-                        }
-                    }
-                }
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
-        }
-
-        // 3. Fallback to YouTube Search API if both returned empty
-        if (tracks.isEmpty()) {
-            return@withContext YouTubeExtractor.searchYouTube(cleanQ)
-        }
-
-        return@withContext tracks
+        // 3. Fallback to YouTube Search API
+        return@withContext YouTubeExtractor.searchYouTube(cleanQ)
     }
 
-
-
     suspend fun fetchArtistPhotoUrl(artist: String): String? = withContext(Dispatchers.IO) {
-        val cleanArtistName = cleanArtist(artist)
-        if (cleanArtistName.isEmpty()) return@withContext null
-
-        val url = "https://api.deezer.com/search/artist?q=${encodeQuery(cleanArtistName)}&limit=1"
-        val json = getJson(url) ?: return@withContext null
-        val data = json.optJSONArray("data") ?: return@withContext null
-        if (data.length() == 0) return@withContext null
-        val item = data.getJSONObject(0)
-        return@withContext pickCoverUrl(item.optString("picture_xl"), item.optString("picture_big"))
+        searchDeezerArtist(artist)?.pictureUrl
     }
 
     /** Deezer artist id for radio / related lookups. */
     suspend fun resolveDeezerArtistId(artist: String): Long? = withContext(Dispatchers.IO) {
-        val cleanArtistName = cleanArtist(artist)
-        if (cleanArtistName.isEmpty()) return@withContext null
-        val url = "https://api.deezer.com/search/artist?q=${encodeQuery(cleanArtistName)}&limit=1"
-        val json = getJson(url) ?: return@withContext null
-        val data = json.optJSONArray("data") ?: return@withContext null
-        if (data.length() == 0) return@withContext null
-        val id = data.getJSONObject(0).optLong("id", 0L)
-        return@withContext id.takeIf { it > 0L }
+        searchDeezerArtist(artist)?.id
     }
 
     /** Tracks from Deezer artist radio mix. */
@@ -289,53 +331,21 @@ object MetadataFetcher {
             val url =
                 "https://itunes.apple.com/search?term=${encodeQuery(cleanArtistName)}&entity=song&limit=$limit"
             val json = getJson(url) ?: return@withContext emptyList()
-            val results = json.optJSONArray("results") ?: return@withContext emptyList()
-            val out = ArrayList<CatalogSongHint>(minOf(limit, results.length()))
-            for (i in 0 until results.length()) {
-                if (out.size >= limit) break
-                val obj = results.getJSONObject(i)
-                val title = obj.optString("trackName").takeIf { it.isNotBlank() } ?: continue
-                val artistName = obj.optString("artistName").ifBlank { cleanArtistName }
-                out.add(
-                    CatalogSongHint(
-                        title = title,
-                        artist = artistName,
-                        album = obj.optString("collectionName").ifBlank { null },
-                        artworkUrl = normalizeItunesArtwork(obj.optString("artworkUrl100")),
-                        durationMs = obj.optLong("trackTimeMillis", 0L)
-                    )
-                )
-            }
-            out
-        }
-
-    private fun parseDeezerTrackArray(data: JSONArray?): List<CatalogSongHint> {
-        if (data == null || data.length() == 0) return emptyList()
-        val out = ArrayList<CatalogSongHint>(data.length())
-        for (i in 0 until data.length()) {
-            val obj = data.getJSONObject(i)
-            val title = obj.optString("title").ifBlank { null } ?: continue
-            val artistObj = obj.optJSONObject("artist")
-            val artistName = artistObj?.optString("name")?.ifBlank { null } ?: continue
-            val albumObj = obj.optJSONObject("album")
-            val albumTitle = albumObj?.optString("title")?.ifBlank { null }
-            val cover = pickCoverUrl(
-                albumObj?.optString("cover_xl"),
-                albumObj?.optString("cover_big")
-            )
-            val durationSec = obj.optLong("duration", 0L)
-            out.add(
+            return@withContext parseItunesSongResults(
+                json.optJSONArray("results"),
+                limit = limit,
+                defaultAlbum = ""
+            ).mapNotNull { track ->
+                val title = track.title.ifBlank { null } ?: return@mapNotNull null
                 CatalogSongHint(
                     title = title,
-                    artist = artistName,
-                    album = albumTitle,
-                    artworkUrl = cover,
-                    durationMs = if (durationSec > 0) durationSec * 1000L else 0L
+                    artist = track.artist.ifBlank { cleanArtistName },
+                    album = track.album.ifBlank { null },
+                    artworkUrl = track.artworkUrl,
+                    durationMs = track.durationMs
                 )
-            )
+            }
         }
-        return out
-    }
 
     suspend fun fetchAlbumArtUrl(artist: String, titleOrAlbum: String): String? = withContext(Dispatchers.IO) {
         val queryText = buildQueryText(artist, titleOrAlbum) ?: return@withContext null
@@ -418,40 +428,25 @@ object MetadataFetcher {
         fetchFullTrackMetadata(artist, title)?.durationMs ?: 0L
     }
 
-    suspend fun searchAlbums(query: String): List<com.bestiapop.android.data.model.CatalogAlbum> = withContext(Dispatchers.IO) {
+    suspend fun searchAlbums(query: String): List<CatalogAlbum> = withContext(Dispatchers.IO) {
         val cleanQ = query.trim().ifEmpty { "rock hits" }
-        val list = mutableListOf<com.bestiapop.android.data.model.CatalogAlbum>()
+        val list = mutableListOf<CatalogAlbum>()
         try {
-            val encoded = URLEncoder.encode(cleanQ, StandardCharsets.UTF_8.name())
-            val url = "https://api.deezer.com/search/album?q=$encoded&limit=15"
-            val request = Request.Builder().url(url).header("User-Agent", "Mozilla/5.0").build()
-
-            client.newCall(request).execute().use { response ->
-                if (response.isSuccessful) {
-                    val body = response.body?.string() ?: ""
-                    val json = JSONObject(body)
-                    val data = json.optJSONArray("data")
-                    if (data != null) {
-                        for (i in 0 until data.length()) {
-                            val obj = data.getJSONObject(i)
-                            val id = obj.optLong("id").toString()
-                            val title = obj.optString("title", "Álbum")
-                            val artistObj = obj.optJSONObject("artist")
-                            val artistName = artistObj?.optString("name", "Artista") ?: "Artista"
-                            val coverXl = obj.optString("cover_xl").ifEmpty { obj.optString("cover_big") }
-                            val nbTracks = obj.optInt("nb_tracks", 0)
-
-                            list.add(
-                                com.bestiapop.android.data.model.CatalogAlbum(
-                                    id = id,
-                                    title = title,
-                                    artist = artistName,
-                                    coverUrl = coverXl.ifBlank { null },
-                                    trackCount = nbTracks
-                                )
-                            )
-                        }
-                    }
+            val url = "https://api.deezer.com/search/album?q=${encodeQuery(cleanQ)}&limit=15"
+            val data = getJson(url, userAgent = "Mozilla/5.0")?.optJSONArray("data")
+            if (data != null) {
+                for (i in 0 until data.length()) {
+                    val obj = data.getJSONObject(i)
+                    val artistObj = obj.optJSONObject("artist")
+                    list.add(
+                        CatalogAlbum(
+                            id = obj.optLong("id").toString(),
+                            title = obj.optString("title", "Álbum"),
+                            artist = artistObj?.optString("name", "Artista") ?: "Artista",
+                            coverUrl = pickCoverUrl(obj.optString("cover_xl"), obj.optString("cover_big")),
+                            trackCount = obj.optInt("nb_tracks", 0)
+                        )
+                    )
                 }
             }
         } catch (e: Exception) {
@@ -461,35 +456,21 @@ object MetadataFetcher {
         // Fallback to iTunes if Deezer returned empty
         if (list.isEmpty()) {
             try {
-                val encoded = URLEncoder.encode(cleanQ, StandardCharsets.UTF_8.name())
-                val url = "https://itunes.apple.com/search?term=$encoded&entity=album&limit=15"
-                val request = Request.Builder().url(url).header("User-Agent", "Mozilla/5.0").build()
-
-                client.newCall(request).execute().use { response ->
-                    if (response.isSuccessful) {
-                        val body = response.body?.string() ?: ""
-                        val json = JSONObject(body)
-                        val results = json.optJSONArray("results")
-                        if (results != null) {
-                            for (i in 0 until results.length()) {
-                                val obj = results.getJSONObject(i)
-                                val id = obj.optLong("collectionId").toString()
-                                val title = obj.optString("collectionName", "Álbum")
-                                val artistName = obj.optString("artistName", "Artista")
-                                val artwork100 = obj.optString("artworkUrl100").replace("100x100bb", "600x600bb")
-                                val trackCount = obj.optInt("trackCount", 0)
-
-                                list.add(
-                                    com.bestiapop.android.data.model.CatalogAlbum(
-                                        id = id,
-                                        title = title,
-                                        artist = artistName,
-                                        coverUrl = artwork100.ifBlank { null },
-                                        trackCount = trackCount
-                                    )
-                                )
-                            }
-                        }
+                val url =
+                    "https://itunes.apple.com/search?term=${encodeQuery(cleanQ)}&entity=album&limit=15"
+                val results = getJson(url, userAgent = "Mozilla/5.0")?.optJSONArray("results")
+                if (results != null) {
+                    for (i in 0 until results.length()) {
+                        val obj = results.getJSONObject(i)
+                        list.add(
+                            CatalogAlbum(
+                                id = obj.optLong("collectionId").toString(),
+                                title = obj.optString("collectionName", "Álbum"),
+                                artist = obj.optString("artistName", "Artista"),
+                                coverUrl = normalizeItunesArtwork(obj.optString("artworkUrl100")),
+                                trackCount = obj.optInt("trackCount", 0)
+                            )
+                        )
                     }
                 }
             } catch (e: Exception) {
@@ -499,40 +480,28 @@ object MetadataFetcher {
         return@withContext list
     }
 
-    suspend fun searchPlaylists(query: String): List<com.bestiapop.android.data.model.CatalogPlaylist> = withContext(Dispatchers.IO) {
+    suspend fun searchPlaylists(query: String): List<CatalogPlaylist> = withContext(Dispatchers.IO) {
         val cleanQ = query.trim().ifEmpty { "top hits" }
-        val list = mutableListOf<com.bestiapop.android.data.model.CatalogPlaylist>()
+        val list = mutableListOf<CatalogPlaylist>()
         try {
-            val encoded = URLEncoder.encode(cleanQ, StandardCharsets.UTF_8.name())
-            val url = "https://api.deezer.com/search/playlist?q=$encoded&limit=15"
-            val request = Request.Builder().url(url).header("User-Agent", "Mozilla/5.0").build()
-
-            client.newCall(request).execute().use { response ->
-                if (response.isSuccessful) {
-                    val body = response.body?.string() ?: ""
-                    val json = JSONObject(body)
-                    val data = json.optJSONArray("data")
-                    if (data != null) {
-                        for (i in 0 until data.length()) {
-                            val obj = data.getJSONObject(i)
-                            val id = obj.optLong("id").toString()
-                            val title = obj.optString("title", "Playlist")
-                            val userObj = obj.optJSONObject("user")
-                            val creator = userObj?.optString("name", "Deezer User") ?: "Deezer User"
-                            val pictureXl = obj.optString("picture_xl").ifEmpty { obj.optString("picture_big") }
-                            val nbTracks = obj.optInt("nb_tracks", 0)
-
-                            list.add(
-                                com.bestiapop.android.data.model.CatalogPlaylist(
-                                    id = id,
-                                    title = title,
-                                    creator = creator,
-                                    coverUrl = pictureXl.ifBlank { null },
-                                    trackCount = nbTracks
-                                )
-                            )
-                        }
-                    }
+            val url = "https://api.deezer.com/search/playlist?q=${encodeQuery(cleanQ)}&limit=15"
+            val data = getJson(url, userAgent = "Mozilla/5.0")?.optJSONArray("data")
+            if (data != null) {
+                for (i in 0 until data.length()) {
+                    val obj = data.getJSONObject(i)
+                    val userObj = obj.optJSONObject("user")
+                    list.add(
+                        CatalogPlaylist(
+                            id = obj.optLong("id").toString(),
+                            title = obj.optString("title", "Playlist"),
+                            creator = userObj?.optString("name", "Deezer User") ?: "Deezer User",
+                            coverUrl = pickCoverUrl(
+                                obj.optString("picture_xl"),
+                                obj.optString("picture_big")
+                            ),
+                            trackCount = obj.optInt("nb_tracks", 0)
+                        )
+                    )
                 }
             }
         } catch (e: Exception) {
@@ -541,31 +510,25 @@ object MetadataFetcher {
         return@withContext list
     }
 
-
     suspend fun fetchAlbumTrackCandidates(
         albumId: String,
         albumTitle: String,
         artistName: String,
         albumCoverUrl: String?
-    ): List<com.bestiapop.android.data.model.CatalogTrackCandidate> = withContext(Dispatchers.IO) {
-        val resultCandidates = mutableListOf<com.bestiapop.android.data.model.CatalogTrackCandidate>()
+    ): List<CatalogTrackCandidate> = withContext(Dispatchers.IO) {
+        val resultCandidates = mutableListOf<CatalogTrackCandidate>()
         try {
             val url = "https://api.deezer.com/album/$albumId/tracks?limit=50"
-            val request = Request.Builder().url(url).header("User-Agent", "Mozilla/5.0").build()
-
-            client.newCall(request).execute().use { response ->
-                if (response.isSuccessful) {
-                    val body = response.body?.string() ?: ""
-                    val json = JSONObject(body)
-                    val data = json.optJSONArray("data")
-                    if (data != null && data.length() > 0) {
-                        for (i in 0 until data.length()) {
-                            val obj = data.getJSONObject(i)
-                            val trackTitle = obj.optString("title", "Pista ${i + 1}")
-                            val trackArtistObj = obj.optJSONObject("artist")
-                            val trackArtist = trackArtistObj?.optString("name", artistName) ?: artistName
-
-                            val initialTrack = com.bestiapop.android.data.model.OnlineCatalogTrack(
+            val data = getJson(url, userAgent = "Mozilla/5.0")?.optJSONArray("data")
+            if (data != null && data.length() > 0) {
+                for (i in 0 until data.length()) {
+                    val obj = data.getJSONObject(i)
+                    val trackTitle = obj.optString("title", "Pista ${i + 1}")
+                    val trackArtistObj = obj.optJSONObject("artist")
+                    val trackArtist = trackArtistObj?.optString("name", artistName) ?: artistName
+                    resultCandidates.add(
+                        toCatalogCandidate(
+                            OnlineCatalogTrack(
                                 id = "$trackArtist $trackTitle",
                                 title = trackTitle,
                                 artist = trackArtist,
@@ -575,20 +538,8 @@ object MetadataFetcher {
                                 audioUrl = "$trackArtist $trackTitle",
                                 provider = "YouTube"
                             )
-
-                            resultCandidates.add(
-                                com.bestiapop.android.data.model.CatalogTrackCandidate(
-                                    trackTitle = trackTitle,
-                                    artist = trackArtist,
-                                    albumName = albumTitle,
-                                    coverUrl = albumCoverUrl,
-                                    candidates = listOf(initialTrack),
-                                    currentCandidateIndex = 0,
-                                    isSelected = true
-                                )
-                            )
-                        }
-                    }
+                        )
+                    )
                 }
             }
         } catch (e: Exception) {
@@ -599,48 +550,27 @@ object MetadataFetcher {
         if (resultCandidates.isEmpty()) {
             try {
                 val queryTerm = "$artistName $albumTitle".trim()
-                val encoded = URLEncoder.encode(queryTerm, StandardCharsets.UTF_8.name())
-                val url = "https://itunes.apple.com/search?term=$encoded&entity=song&limit=30"
-                val request = Request.Builder().url(url).header("User-Agent", "Mozilla/5.0").build()
-
-                client.newCall(request).execute().use { response ->
-                    if (response.isSuccessful) {
-                        val body = response.body?.string() ?: ""
-                        val json = JSONObject(body)
-                        val results = json.optJSONArray("results")
-                        if (results != null) {
-                            for (i in 0 until results.length()) {
-                                val obj = results.getJSONObject(i)
-                                val trackTitle = obj.optString("trackName", "Pista ${i + 1}")
-                                val trackArtist = obj.optString("artistName", artistName)
-                                val albumName = obj.optString("collectionName", albumTitle)
-                                val artwork100 = obj.optString("artworkUrl100").replace("100x100bb", "600x600bb").ifBlank { albumCoverUrl }
-
-                                val initialTrack = com.bestiapop.android.data.model.OnlineCatalogTrack(
-                                    id = "$trackArtist $trackTitle",
-                                    title = trackTitle,
-                                    artist = trackArtist,
-                                    album = albumName,
-                                    artworkUrl = artwork100,
-                                    durationMs = obj.optLong("trackTimeMillis", 180000L),
-                                    audioUrl = "$trackArtist $trackTitle",
-                                    provider = "YouTube"
-                                )
-
-                                resultCandidates.add(
-                                    com.bestiapop.android.data.model.CatalogTrackCandidate(
-                                        trackTitle = trackTitle,
-                                        artist = trackArtist,
-                                        albumName = albumName,
-                                        coverUrl = artwork100,
-                                        candidates = listOf(initialTrack),
-                                        currentCandidateIndex = 0,
-                                        isSelected = true
-                                    )
-                                )
-                            }
-                        }
-                    }
+                val url =
+                    "https://itunes.apple.com/search?term=${encodeQuery(queryTerm)}&entity=song&limit=30"
+                val tracks = parseItunesSongResults(
+                    getJson(url, userAgent = "Mozilla/5.0")?.optJSONArray("results"),
+                    provider = "YouTube",
+                    limit = 30,
+                    defaultAlbum = albumTitle,
+                    defaultArtist = artistName
+                )
+                for (track in tracks) {
+                    val cover = track.artworkUrl ?: albumCoverUrl
+                    resultCandidates.add(
+                        toCatalogCandidate(
+                            track.copy(
+                                id = "${track.artist} ${track.title}",
+                                artworkUrl = cover,
+                                audioUrl = "${track.artist} ${track.title}",
+                                provider = "YouTube"
+                            )
+                        )
+                    )
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -653,52 +583,37 @@ object MetadataFetcher {
     suspend fun fetchPlaylistTrackCandidates(
         playlistId: String,
         playlistTitle: String
-    ): List<com.bestiapop.android.data.model.CatalogTrackCandidate> = withContext(Dispatchers.IO) {
-        val resultCandidates = mutableListOf<com.bestiapop.android.data.model.CatalogTrackCandidate>()
+    ): List<CatalogTrackCandidate> = withContext(Dispatchers.IO) {
+        val resultCandidates = mutableListOf<CatalogTrackCandidate>()
         try {
             val url = "https://api.deezer.com/playlist/$playlistId/tracks?limit=50"
-            val request = Request.Builder().url(url).header("User-Agent", "Mozilla/5.0").build()
-
-            client.newCall(request).execute().use { response ->
-                if (response.isSuccessful) {
-                    val body = response.body?.string() ?: ""
-                    val json = JSONObject(body)
-                    val data = json.optJSONArray("data")
-                    if (data != null) {
-                        for (i in 0 until data.length()) {
-                            val obj = data.getJSONObject(i)
-                            val trackTitle = obj.optString("title", "Pista ${i + 1}")
-                            val trackArtistObj = obj.optJSONObject("artist")
-                            val trackArtist = trackArtistObj?.optString("name", "Artista") ?: "Artista"
-                            val albumObj = obj.optJSONObject("album")
-                            val albumName = albumObj?.optString("title", playlistTitle) ?: playlistTitle
-                            val coverXl = albumObj?.optString("cover_xl")?.ifEmpty { albumObj.optString("cover_big") }
-
-
-                            val initialTrack = com.bestiapop.android.data.model.OnlineCatalogTrack(
+            val data = getJson(url, userAgent = "Mozilla/5.0")?.optJSONArray("data")
+            if (data != null) {
+                for (i in 0 until data.length()) {
+                    val obj = data.getJSONObject(i)
+                    val trackTitle = obj.optString("title", "Pista ${i + 1}")
+                    val trackArtistObj = obj.optJSONObject("artist")
+                    val trackArtist = trackArtistObj?.optString("name", "Artista") ?: "Artista"
+                    val albumObj = obj.optJSONObject("album")
+                    val albumName = albumObj?.optString("title", playlistTitle) ?: playlistTitle
+                    val cover = pickCoverUrl(
+                        albumObj?.optString("cover_xl"),
+                        albumObj?.optString("cover_big")
+                    )
+                    resultCandidates.add(
+                        toCatalogCandidate(
+                            OnlineCatalogTrack(
                                 id = "$trackArtist $trackTitle",
                                 title = trackTitle,
                                 artist = trackArtist,
                                 album = albumName,
-                                artworkUrl = coverXl,
+                                artworkUrl = cover,
                                 durationMs = obj.optLong("duration", 180L) * 1000L,
                                 audioUrl = "$trackArtist $trackTitle",
                                 provider = "YouTube"
                             )
-
-                            resultCandidates.add(
-                                com.bestiapop.android.data.model.CatalogTrackCandidate(
-                                    trackTitle = trackTitle,
-                                    artist = trackArtist,
-                                    albumName = albumName,
-                                    coverUrl = coverXl,
-                                    candidates = listOf(initialTrack),
-                                    currentCandidateIndex = 0,
-                                    isSelected = true
-                                )
-                            )
-                        }
-                    }
+                        )
+                    )
                 }
             }
         } catch (e: Exception) {
@@ -708,4 +623,3 @@ object MetadataFetcher {
     }
 
 }
-

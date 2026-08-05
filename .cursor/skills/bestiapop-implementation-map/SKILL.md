@@ -26,14 +26,14 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 |----------|---------|
 | Shell + bottom nav | `ui/screens/MainScreen.kt` |
 | System back (exit doble + orquestación) | `MainScreen` `BackHandler` + `SnackbarHost`; nested en screens abajo |
-| Biblioteca | `ui/screens/LibraryScreen.kt` (`BackHandler`: multi-select / addition / album-artist / search) |
-| Lista canciones / álbumes / artistas | `ui/screens/library/LibrarySongList.kt`, `LibraryAlbumGrid.kt`, `LibraryArtistList.kt`, `LibraryDialogs.kt` |
-| Playlists | `ui/screens/PlaylistsScreen.kt` (`BackHandler`: CF → LB → local detail; primitives `ScreenBackHeader`, `LabeledPlayShuffleButtons`, `PlaylistSurfaceCard`, `RemoteTrackPlaceholderRow` + `onDownload` / `downloadBusy`) |
+| Biblioteca | `ui/screens/LibraryScreen.kt` (`BackHandler`: multi-select / addition / album-artist / search; `LibrarySongListHost` + `SongActionDialogsHost`) |
+| Lista canciones / álbumes / artistas | `ui/screens/library/LibrarySongList.kt`, `LibrarySongListHost.kt` (`LibrarySongListActions`, `SongActionDialogsHost`), `LibraryAlbumGrid.kt`, `LibraryArtistList.kt`, `LibraryDialogs.kt` |
+| Playlists | `ui/screens/PlaylistsScreen.kt` (`BackHandler`: CF → LB → local detail; play/shuffle vía `LabeledPlayShuffleButtons` + `playCollection`/`shuffleCollection`; `MatchedTrackRow`) |
 | Ajustes / ListenBrainz | `ui/screens/SettingsScreen.kt` (`BackHandler` sección), `ListenBrainzSettingsScreen.kt` |
 | Ajustes / Sonido | `ui/screens/VolumeBoostSettingsScreen.kt` (`SettingsScreen` sección `Sound`) |
-| Now playing | `ui/screens/NowPlayingScreen.kt` (`BackHandler` → `onDismiss`) |
-| Cola | `ui/screens/QueueScreen.kt` |
-| WiFi sync | `ui/screens/WebServerScreen.kt` (`WebServerScreen(viewModel)` + transferencias) |
+| Now playing | `ui/screens/NowPlayingScreen.kt` (`BackHandler` → `onDismiss`; cola vía `QueueItemRow`) |
+| Cola | `ui/screens/QueueScreen.kt` (`QueueItemRow`) |
+| WiFi sync | `ui/screens/WebServerScreen.kt` (`WebServerScreen(viewModel)` + transferencias + `SongActionDialogsHost`) |
 | Descargas | `ui/screens/DownloadsScreen.kt` (`DownloadsScreen(viewModel)` + `ActiveDownloadRow`) |
 | Temas | `ui/screens/ThemeSettingsScreen.kt` |
 
@@ -47,8 +47,11 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 | Download conflict dialog | `ui/components/DownloadConflictDialog.kt` |
 | Add / download music | `ui/components/AddMusicDialog.kt` (banners vía `activeDownloads` + `ActiveDownloadsSummaryBanner`; `BackHandler` step-back colección) |
 | Song row | `ui/components/SongListItem.kt` |
+| Matched local/remote row | `ui/components/MatchedTrackRow.kt` (`isMatchedTrackPlaying`, `MatchedTrackRow`) |
+| Remote placeholder row | `ui/components/RemoteTrackPlaceholderRow.kt` |
+| Queue row | `ui/components/QueueItemRow.kt` (`PlayableItemRowContent`, `QueueItemRow`) |
 | Artwork UI | `ui/components/ArtworkThumbnail.kt`; `ui/components/ArtworkPicker.kt` (`ArtworkPickerBlock`, `rememberImagePicker`) |
-| Play / shuffle icons | `ui/components/PlayShuffleButtons.kt` (`PlayIconButton`, `ShuffleIconButton`, `PlayShuffleIconPair`) |
+| Play / shuffle icons | `ui/components/PlayShuffleButtons.kt` (`PlayIconButton`, `ShuffleIconButton`, `PlayShuffleIconPair`, `LabeledPlayShuffleButtons`) |
 | Download action widgets | `ui/components/DownloadActionWidgets.kt` (`DownloadProgressPercent`, `DownloadQueuedLabel`, `RetryCycleDismissActions`, `PreviewPlayPauseButton`) |
 | Multi-select bar | `ui/components/MultiSelectActionBar.kt` |
 | Sort helper UI | `ui/components/SortRelevantInfo.kt` |
@@ -62,7 +65,8 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 |----------|---------|-----------------|
 | `GetLibrarySongsUseCase` | `domain/usecase/GetLibrarySongsUseCase.kt` | filter, sort, album groups, extract albums/artists |
 | `DownloadAudioTrackUseCase` | `domain/usecase/DownloadAudioTrackUseCase.kt` | wrap download Result |
-| `MatchListenBrainzTracksUseCase` | `domain/usecase/MatchListenBrainzTracksUseCase.kt` | match LB tracks → local `Song` (`normalize` / `matchKey` / `buildLibraryIndex`) |
+| `MatchListenBrainzTracksUseCase` | `domain/usecase/MatchListenBrainzTracksUseCase.kt` | match LB tracks → local `Song` (delega a `TrackMatchKeys`) |
+| `TrackMatchKeys` | `domain/util/TrackMatchKeys.kt` | `normalize` / `matchKey` / `buildLibraryIndex` / `buildIndex` (shared) |
 | `ImportListenBrainzPlaylistUseCase` | `domain/usecase/ImportListenBrainzPlaylistUseCase.kt` | create Room playlist: matched + `PlaylistPendingTrack` metadata |
 | `FetchAndMatchCfRecommendationsUseCase` | `domain/usecase/FetchAndMatchCfRecommendationsUseCase.kt` | CF mbids → metadata → Local/Remote |
 | `RadioEngine` | `domain/radio/RadioEngine.kt` | orquesta KNOWN / NEW / BOTH; fill LB→CF→`SimilarTracksProvider`; `interleaveEquitable`; `RadioSuggestResult` |
@@ -86,9 +90,10 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 | Song entity + mappers | `data/db/SongEntity.kt` |
 | Album overrides | `data/db/AlbumOverrideEntity.kt` |
 | Playlist entities | `data/db/PlaylistEntities.kt` (`PlaylistPendingTrackEntity`) |
-| Catálogo / lyrics / covers web | `data/network/MetadataFetcher.kt` (`CatalogSongHint`, `resolveDeezerArtistId`, `fetchDeezerArtistRadio`, `fetchDeezerRelatedArtistIds`, `fetchDeezerArtistTop`, `fetchItunesArtistSongs`) |
+| Catálogo / lyrics / covers web | `data/network/MetadataFetcher.kt` (`CatalogSongHint`, `searchDeezerArtist`, `parseDeezerSearchTracks`, `parseItunesSongResults`, `toCatalogCandidate`, `resolveDeezerArtistId`, `fetchDeezerArtistRadio`, `fetchDeezerRelatedArtistIds`, `fetchDeezerArtistTop`, `fetchItunesArtistSongs`) |
 | YouTube search + stream | `data/network/YouTubeExtractor.kt` (`searchYouTube`, `parseSearchContents`, `audioPreferenceScore`, `rankByAudioPreference`, `resolveYouTubeQueryOrId`) |
-| Stream resolve + cache TTL | `data/stream/StreamResolver.kt` |
+| Stream resolve + cache TTL | `data/stream/StreamResolver.kt` (`resolve`, `resolveQuery` — playback + download) |
+| Playable factories | `data/model/PlayableItem.kt` (`remoteFrom`, `Remote.toOnlineCatalogTrack`) |
 | Theme DataStore | `data/preferences/ThemePreferencesRepository.kt` |
 | Playback / sonido | `data/preferences/PlaybackPreferencesRepository.kt` (`PlaybackSettings`, `MAX_VOLUME_BOOST_GAIN_MB`, `stereoLeftGain` / `stereoRightGain`) |
 | Active downloads persist | `data/preferences/ActiveDownloadsStore.kt` (`ActiveDownloadCodec`, `activeDownloadBadgeCount`) |

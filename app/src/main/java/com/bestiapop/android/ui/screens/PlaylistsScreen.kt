@@ -85,7 +85,11 @@ import com.bestiapop.android.ui.LbPlaylistDetailUiState
 import com.bestiapop.android.ui.MusicPlayerViewModel
 import com.bestiapop.android.ui.components.ArtworkPickerBlock
 import com.bestiapop.android.ui.components.ArtworkThumbnail
+import com.bestiapop.android.ui.components.LabeledPlayShuffleButtons
+import com.bestiapop.android.ui.components.MatchedTrackRow
+import com.bestiapop.android.ui.components.RemoteTrackPlaceholderRow
 import com.bestiapop.android.ui.components.SongListItem
+import com.bestiapop.android.ui.components.isMatchedTrackPlaying
 import com.bestiapop.android.ui.components.rememberImagePicker
 
 import androidx.compose.material.icons.filled.Recommend
@@ -571,40 +575,6 @@ fun ScreenBackHeader(
 }
 
 @Composable
-fun LabeledPlayShuffleButtons(
-    onPlay: () -> Unit,
-    onShuffle: () -> Unit,
-    enabled: Boolean = true
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        Button(
-            onClick = onPlay,
-            enabled = enabled,
-            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-            shape = RoundedCornerShape(12.dp),
-            modifier = Modifier.weight(1f)
-        ) {
-            Icon(imageVector = Icons.Default.PlayArrow, contentDescription = null)
-            Spacer(modifier = Modifier.width(4.dp))
-            Text("Reproducir")
-        }
-        OutlinedButton(
-            onClick = onShuffle,
-            enabled = enabled,
-            shape = RoundedCornerShape(12.dp),
-            modifier = Modifier.weight(1f)
-        ) {
-            Icon(imageVector = Icons.Default.Shuffle, contentDescription = null)
-            Spacer(modifier = Modifier.width(4.dp))
-            Text("Aleatorio")
-        }
-    }
-}
-
-@Composable
 fun PlaylistSurfaceCard(
     title: String,
     onClick: () -> Unit,
@@ -636,102 +606,6 @@ fun PlaylistSurfaceCard(
                 lines()
             }
             trailing()
-        }
-    }
-}
-
-@Composable
-fun RemoteTrackPlaceholderRow(
-    title: String,
-    artist: String,
-    badge: String,
-    leadingIcon: ImageVector,
-    highlighted: Boolean,
-    onClick: (() -> Unit)? = null,
-    onDownload: (() -> Unit)? = null,
-    downloadBusy: Boolean = false
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .alpha(if (onClick == null && onDownload == null) 0.55f else 0.85f)
-            .padding(vertical = 4.dp, horizontal = 4.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Row(
-            modifier = Modifier
-                .weight(1f)
-                .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
-                .padding(vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(48.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(
-                        if (highlighted) {
-                            MaterialTheme.colorScheme.primaryContainer
-                        } else {
-                            MaterialTheme.colorScheme.surfaceVariant
-                        }
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = leadingIcon,
-                    contentDescription = null,
-                    tint = if (highlighted) {
-                        MaterialTheme.colorScheme.onPrimaryContainer
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    }
-                )
-            }
-            Spacer(modifier = Modifier.width(12.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = artist,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = badge,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = if (onClick == null) {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    } else {
-                        MaterialTheme.colorScheme.tertiary.copy(alpha = 0.9f)
-                    }
-                )
-            }
-        }
-        if (onDownload != null) {
-            if (downloadBusy) {
-                CircularProgressIndicator(
-                    modifier = Modifier
-                        .padding(12.dp)
-                        .size(22.dp),
-                    strokeWidth = 2.dp
-                )
-            } else {
-                IconButton(onClick = onDownload) {
-                    Icon(
-                        imageVector = Icons.Default.Download,
-                        contentDescription = "Descargar",
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                }
-            }
         }
     }
 }
@@ -913,17 +787,8 @@ private fun CfRecommendationsDetailScreen(
     }
 }
 
-private fun isCfMatchPlaying(match: MatchedCfTrack, currentItem: PlayableItem?): Boolean {
-    if (currentItem == null) return false
-    val local = match.localSong
-    if (local != null && currentItem is PlayableItem.Local) {
-        return currentItem.song.uriString == local.uriString ||
-            currentItem.mediaId == local.uriString
-    }
-    val currentKey = MatchListenBrainzTracksUseCase.matchKey(currentItem.artist, currentItem.title)
-    val matchKey = MatchListenBrainzTracksUseCase.matchKey(match.artist, match.title)
-    return currentKey.isNotEmpty() && currentKey == matchKey
-}
+private fun isCfMatchPlaying(match: MatchedCfTrack, currentItem: PlayableItem?): Boolean =
+    isMatchedTrackPlaying(match.localSong, match.artist, match.title, currentItem)
 
 @Composable
 private fun CfMatchedTrackRow(
@@ -936,29 +801,25 @@ private fun CfMatchedTrackRow(
     onAddToQueue: (Song) -> Unit,
     onStartRadio: (Song) -> Unit
 ) {
-    val local = match.localSong
-    if (local != null) {
-        SongListItem(
-            song = local,
-            isCurrentPlaying = isCurrentPlaying,
-            onClick = onPlayAt,
-            onPlayNext = { onPlayNext(local) },
-            onAddToQueue = { onAddToQueue(local) },
-            onStartRadio = { onStartRadio(local) }
-        )
+    val remote = if (match.localSong == null) {
+        match.toPlayableItem() as PlayableItem.Remote
     } else {
-        val remote = match.toPlayableItem() as PlayableItem.Remote
-        RemoteTrackPlaceholderRow(
-            title = match.title,
-            artist = match.artist,
-            badge = "Stream",
-            leadingIcon = Icons.Default.PlayArrow,
-            highlighted = isCurrentPlaying,
-            onClick = onPlayAt,
-            onDownload = { onDownloadRemote(remote) },
-            downloadBusy = downloadBusy
-        )
+        null
     }
+    MatchedTrackRow(
+        localSong = match.localSong,
+        title = match.title,
+        artist = match.artist,
+        remoteBadge = "Stream",
+        isCurrentPlaying = isCurrentPlaying,
+        remote = remote,
+        downloadBusy = downloadBusy,
+        onPlayAt = onPlayAt,
+        onDownloadRemote = onDownloadRemote,
+        onPlayNext = onPlayNext,
+        onAddToQueue = onAddToQueue,
+        onStartRadio = onStartRadio
+    )
 }
 
 @Composable
@@ -1149,17 +1010,8 @@ private fun LbPlaylistDetailScreen(
     }
 }
 
-private fun isLbMatchPlaying(match: MatchedLbTrack, currentItem: PlayableItem?): Boolean {
-    if (currentItem == null) return false
-    val local = match.localSong
-    if (local != null && currentItem is PlayableItem.Local) {
-        return currentItem.song.uriString == local.uriString ||
-            currentItem.mediaId == local.uriString
-    }
-    val currentKey = MatchListenBrainzTracksUseCase.matchKey(currentItem.artist, currentItem.title)
-    val matchKey = MatchListenBrainzTracksUseCase.matchKey(match.track.artist, match.track.title)
-    return currentKey.isNotEmpty() && currentKey == matchKey
-}
+private fun isLbMatchPlaying(match: MatchedLbTrack, currentItem: PlayableItem?): Boolean =
+    isMatchedTrackPlaying(match.localSong, match.track.artist, match.track.title, currentItem)
 
 @Composable
 private fun LbMatchedTrackRow(
@@ -1172,29 +1024,25 @@ private fun LbMatchedTrackRow(
     onAddToQueue: (Song) -> Unit,
     onStartRadio: (Song) -> Unit
 ) {
-    val local = match.localSong
-    if (local != null) {
-        SongListItem(
-            song = local,
-            isCurrentPlaying = isCurrentPlaying,
-            onClick = onPlayAt,
-            onPlayNext = { onPlayNext(local) },
-            onAddToQueue = { onAddToQueue(local) },
-            onStartRadio = { onStartRadio(local) }
-        )
+    val remote = if (match.localSong == null) {
+        match.toPlayableItem() as PlayableItem.Remote
     } else {
-        val remote = match.toPlayableItem() as PlayableItem.Remote
-        RemoteTrackPlaceholderRow(
-            title = match.track.title,
-            artist = match.track.artist,
-            badge = "No en biblioteca · stream",
-            leadingIcon = Icons.Default.PlayArrow,
-            highlighted = isCurrentPlaying,
-            onClick = onPlayAt,
-            onDownload = { onDownloadRemote(remote) },
-            downloadBusy = downloadBusy
-        )
+        null
     }
+    MatchedTrackRow(
+        localSong = match.localSong,
+        title = match.track.title,
+        artist = match.track.artist,
+        remoteBadge = "No en biblioteca · stream",
+        isCurrentPlaying = isCurrentPlaying,
+        remote = remote,
+        downloadBusy = downloadBusy,
+        onPlayAt = onPlayAt,
+        onDownloadRemote = onDownloadRemote,
+        onPlayNext = onPlayNext,
+        onAddToQueue = onAddToQueue,
+        onStartRadio = onStartRadio
+    )
 }
 
 @Composable
@@ -1351,37 +1199,12 @@ private fun PlaylistDetailScreen(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Button(
-                    onClick = {
-                        if (songs.isNotEmpty()) {
-                            viewModel.playSong(songs.first(), songs)
-                        }
-                    },
+                LabeledPlayShuffleButtons(
+                    onPlay = { viewModel.playCollection(songs) },
+                    onShuffle = { viewModel.shuffleCollection(songs) },
                     enabled = songs.isNotEmpty(),
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                    shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.weight(1f)
-                ) {
-                    Icon(imageVector = Icons.Default.PlayArrow, contentDescription = null)
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Reproducir")
-                }
-
-                OutlinedButton(
-                    onClick = {
-                        if (songs.isNotEmpty()) {
-                            val shuffled = songs.shuffled()
-                            viewModel.playSong(shuffled.first(), shuffled)
-                        }
-                    },
-                    enabled = songs.isNotEmpty(),
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Icon(imageVector = Icons.Default.Shuffle, contentDescription = null)
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Aleatorio")
-                }
+                )
 
                 Button(
                     onClick = { onAddSongsRequest(playlist) },

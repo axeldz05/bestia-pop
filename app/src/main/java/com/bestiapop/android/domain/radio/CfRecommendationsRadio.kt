@@ -52,20 +52,8 @@ class CfRecommendationsRadio(
 
         val pool = resolvePool(username, token, library)
         if (pool.isEmpty()) return emptyList()
-
-        val seen = excludeKeys.toMutableSet()
-        val results = ArrayList<PlayableItem>(limit)
-        for (item in pool) {
-            if (results.size >= limit) break
-            val key = MatchListenBrainzTracksUseCase.matchKey(item.artist, item.title)
-            val idKey = item.mediaId
-            if (key.isNotEmpty() && key in seen) continue
-            if (idKey in seen) continue
-            if (key.isNotEmpty()) seen.add(key)
-            seen.add(idKey)
-            results.add(item)
-        }
-        return results
+        // Engine owns global excludeKeys dedupe; return raw pool candidates.
+        return pool
     }
 
     private suspend fun resolvePool(

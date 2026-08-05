@@ -736,9 +736,9 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 remoteKey.all { it.isLetterOrDigit() || it == '_' || it == '-' }
             return if (looksLikeVideoId) {
                 // Preserve mediaId via resolved.videoId; stale timestamp forces re-resolve.
-                PlayableItem.Remote(
-                    title = title,
+                PlayableItem.remoteFrom(
                     artist = artist,
+                    title = title,
                     album = album,
                     artworkUri = artwork,
                     durationMs = durationMs,
@@ -751,9 +751,9 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                     )
                 )
             } else {
-                PlayableItem.Remote(
-                    title = title,
+                PlayableItem.remoteFrom(
                     artist = artist,
+                    title = title,
                     album = album,
                     artworkUri = artwork,
                     durationMs = durationMs,
@@ -1162,17 +1162,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         if (existing != null && existing.state == CandidateDownloadState.DOWNLOADING) return
         saveWhileListeningAttempted.add(key)
 
-        val track = OnlineCatalogTrack(
-            id = remote.youtubeQueryOrId?.takeIf { it.isNotBlank() }
-                ?: "${remote.artist} ${remote.title}",
-            title = remote.title,
-            artist = remote.artist,
-            album = remote.album.orEmpty(),
-            artworkUrl = remote.artworkUri,
-            durationMs = remote.durationMs,
-            audioUrl = "",
-            provider = "YouTube"
-        )
+        val track = remote.toOnlineCatalogTrack(provider = "YouTube")
 
         viewModelScope.launch {
             val result = runTrackedDownload(
@@ -1347,9 +1337,9 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         }
         _catalogPreviewKey.value = key
         val queryOrId = YouTubeExtractor.resolveYouTubeQueryOrId(track)
-        val remote = PlayableItem.Remote(
-            title = track.title,
+        val remote = PlayableItem.remoteFrom(
             artist = track.artist,
+            title = track.title,
             album = track.album,
             artworkUri = track.artworkUrl,
             durationMs = track.durationMs,
@@ -3107,17 +3097,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             else -> Unit
         }
 
-        val track = OnlineCatalogTrack(
-            id = remote.youtubeQueryOrId?.takeIf { it.isNotBlank() }
-                ?: "${remote.artist} ${remote.title}",
-            title = remote.title,
-            artist = remote.artist,
-            album = remote.album.orEmpty(),
-            artworkUrl = remote.artworkUri,
-            durationMs = remote.durationMs,
-            audioUrl = "",
-            provider = "YouTube"
-        )
+        val track = remote.toOnlineCatalogTrack(provider = "YouTube")
 
         viewModelScope.launch {
             Toast.makeText(

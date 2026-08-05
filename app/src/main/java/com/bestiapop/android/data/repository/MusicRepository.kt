@@ -22,9 +22,11 @@ import com.bestiapop.android.data.model.Playlist
 import com.bestiapop.android.data.model.PlaylistPendingTrack
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.data.network.MetadataFetcher
+import com.bestiapop.android.data.stream.StreamResolver
 import com.bestiapop.android.data.util.AudioFileMetadata
 import com.bestiapop.android.data.util.SongPathNormalizer
 import com.bestiapop.android.domain.usecase.MatchListenBrainzTracksUseCase
+import com.bestiapop.android.domain.util.TrackMatchKeys
 import kotlinx.coroutines.Dispatchers
 
 import kotlinx.coroutines.flow.Flow
@@ -59,6 +61,7 @@ class MusicRepository(private val context: Context) : IMusicRepository {
 
     private val db = AppDatabase.getDatabase(context)
     private val musicDao = db.musicDao()
+    private val streamResolver = StreamResolver()
 
     private val sharedDownloadClient = okhttp3.OkHttpClient.Builder()
         .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
@@ -176,11 +179,7 @@ class MusicRepository(private val context: Context) : IMusicRepository {
 
     override suspend fun findSongByArtistTitle(artist: String, title: String): Song? =
         withContext(Dispatchers.IO) {
-            val key = MatchListenBrainzTracksUseCase.matchKey(artist, title)
-            if (key.isEmpty()) return@withContext null
-            musicDao.getAllSongs().firstOrNull {
-                MatchListenBrainzTracksUseCase.matchKey(it.artist, it.title) == key
-            }?.toSong()
+            findSongEntityByArtistTitle(artist, title)?.toSong()
         }
 
     override suspend fun scanFolderUri(treeUri: Uri) = withContext(Dispatchers.IO) {
@@ -300,9 +299,7 @@ class MusicRepository(private val context: Context) : IMusicRepository {
         val normalized = song.copy(uriString = normalizedUri)
         val key = MatchListenBrainzTracksUseCase.matchKey(normalized.artist, normalized.title)
         if (key.isNotEmpty()) {
-            val existing = musicDao.getAllSongs().firstOrNull {
-                MatchListenBrainzTracksUseCase.matchKey(it.artist, it.title) == key
-            }
+            val existing = findSongEntityByArtistTitle(normalized.artist, normalized.title)
             if (existing != null) {
                 val oldPath = SongPathNormalizer.resolveFilePath(existing.uriString, existing.folderPath)
                 val newPath = SongPathNormalizer.resolveFilePath(normalized.uriString, normalized.folderPath)
@@ -575,28 +572,35 @@ class MusicRepository(private val context: Context) : IMusicRepository {
         }
     }
 
-    override fun saveAlbumCoverImage(sourceUriStr: String?): String? {
+    /**
+     * L2: persist user cover under [subdir] with a single URI policy (`file.toURI()`).
+     * [alreadyOwned] returns true when [sourceUriStr] already lives in app storage.
+     */
+    private fun persistUserCover(
+        sourceUriStr: String?,
+        subdir: String,
+        alreadyOwned: (String) -> Boolean
+    ): String? {
         if (sourceUriStr.isNullOrBlank()) return null
-        if (sourceUriStr.startsWith("file://") &&
-            (sourceUriStr.contains("album_covers") || sourceUriStr.contains("playlist_covers") ||
-                sourceUriStr.contains("artwork"))
-        ) {
-            return sourceUriStr
-        }
-        val dest = copyUserImageTo("album_covers", sourceUriStr)
-        if (dest != null) return dest.absolutePath
+        if (alreadyOwned(sourceUriStr)) return sourceUriStr
+        val dest = copyUserImageTo(subdir, sourceUriStr)
+        if (dest != null) return dest.toURI().toString()
         return if (sourceUriStr.startsWith("http")) sourceUriStr else null
     }
 
-    // Playlists
-    override fun savePlaylistCoverImage(sourceUriStr: String?): String? {
-        if (sourceUriStr.isNullOrBlank()) return null
-        if (sourceUriStr.startsWith("file://") && sourceUriStr.contains("playlist_covers")) {
-            return sourceUriStr
+    override fun saveAlbumCoverImage(sourceUriStr: String?): String? =
+        persistUserCover(sourceUriStr, "album_covers") { uri ->
+            val inAppStorage = uri.contains("album_covers") ||
+                uri.contains("playlist_covers") ||
+                uri.contains("artwork")
+            inAppStorage && (uri.startsWith("file://") || uri.startsWith("/"))
         }
-        val dest = copyUserImageTo("playlist_covers", sourceUriStr)
-        return dest?.toURI()?.toString() ?: sourceUriStr
-    }
+
+    // Playlists
+    override fun savePlaylistCoverImage(sourceUriStr: String?): String? =
+        persistUserCover(sourceUriStr, "playlist_covers") { uri ->
+            uri.startsWith("file://") && uri.contains("playlist_covers")
+        }
 
     override suspend fun createPlaylist(name: String, description: String?, coverUri: String?): Long = withContext(Dispatchers.IO) {
         val savedCover = savePlaylistCoverImage(coverUri)
@@ -674,23 +678,19 @@ class MusicRepository(private val context: Context) : IMusicRepository {
         var finalDurationMs = track.durationMs
 
         val queryOrId = com.bestiapop.android.data.network.YouTubeExtractor.resolveYouTubeQueryOrId(track)
-        val extractRes = com.bestiapop.android.data.network.YouTubeExtractor.extractAudioStreamDetailed(queryOrId)
-
-        if (extractRes is com.bestiapop.android.data.network.YouTubeExtractResult.Success) {
-            val ytStream = extractRes.result
-            downloadUrl = ytStream.audioUrl
-            userAgentToUse = ytStream.userAgent
-            if (isPlaceholderTitle(finalTitle)) {
-                finalTitle = ytStream.title
-            }
-            if (isPlaceholderArtist(finalArtist)) {
-                finalArtist = ytStream.artist
-            }
-            if (finalArtwork.isNullOrBlank()) finalArtwork = ytStream.artworkUrl
-            if (finalDurationMs <= 0) finalDurationMs = ytStream.durationMs
-        } else if (extractRes is com.bestiapop.android.data.network.YouTubeExtractResult.Error) {
-            throw java.io.IOException(extractRes.message)
+        val ytStream = streamResolver.resolveQuery(queryOrId).getOrElse { e ->
+            throw java.io.IOException(e.message ?: "No se pudo resolver el stream de YouTube")
         }
+        downloadUrl = ytStream.audioUrl
+        userAgentToUse = ytStream.userAgent
+        if (isPlaceholderTitle(finalTitle) && ytStream.title.isNotBlank()) {
+            finalTitle = ytStream.title
+        }
+        if (isPlaceholderArtist(finalArtist) && ytStream.artist.isNotBlank()) {
+            finalArtist = ytStream.artist
+        }
+        if (finalArtwork.isNullOrBlank()) finalArtwork = ytStream.artworkUrl
+        if (finalDurationMs <= 0) finalDurationMs = ytStream.durationMs
 
         var overwriteTarget: SongEntity? = null
         when (conflictPolicy) {
@@ -875,11 +875,10 @@ class MusicRepository(private val context: Context) : IMusicRepository {
     }
 
     private suspend fun findSongEntityByArtistTitle(artist: String, title: String): SongEntity? {
-        val key = MatchListenBrainzTracksUseCase.matchKey(artist, title)
+        val key = TrackMatchKeys.matchKey(artist, title)
         if (key.isEmpty()) return null
-        return musicDao.getAllSongs().firstOrNull {
-            MatchListenBrainzTracksUseCase.matchKey(it.artist, it.title) == key
-        }
+        val entities = musicDao.getAllSongs()
+        return TrackMatchKeys.buildIndex(entities, { it.artist }, { it.title })[key]
     }
 
     suspend fun migrateLegacyYouTubeMusicSongs() = withContext(Dispatchers.IO) {

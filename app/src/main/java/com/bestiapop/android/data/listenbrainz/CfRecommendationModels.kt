@@ -30,12 +30,11 @@ data class MatchedCfTrack(
         return if (local != null) {
             local.toPlayable()
         } else {
-            PlayableItem.Remote(
-                title = title,
+            PlayableItem.remoteFrom(
                 artist = artist,
+                title = title,
                 album = album,
-                recordingMbid = recordingMbid,
-                youtubeQueryOrId = "$artist $title"
+                recordingMbid = recordingMbid
             )
         }
     }

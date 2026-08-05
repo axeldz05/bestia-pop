@@ -44,10 +44,10 @@ service/     MusicService (playback), WebServerService (WiFi sync)
 2. ViewModel combina flows + search/sort → `songsState` / `albumsState` / `artistsState`
 3. Screens Compose observan StateFlows y llaman métodos del ViewModel
 4. Reproducción: ViewModel cola `List<PlayableItem>` (`Local` | `Remote`) → `MediaController` → `MusicService` (ExoPlayer)
-5. Stream remoto: `StreamResolver` → `YouTubeExtractor.extractAudioStreamDetailed` → MediaItem HTTPS + `StreamPlaybackTag` (UA) → ExoPlayer
-6. Radio: `RadioEngine` (KNOWN / NEW / BOTH; fill LB→CF→Deezer) → `playPlayableCollection` / refill de cola; remotos reusan stream
-7. Para Ti: `MatchListenBrainzTracksUseCase` → `MatchedLbPlaylist.toPlayableItems` → `playPlayableCollection`; CF: `FetchAndMatchCfRecommendationsUseCase` → `MatchedCfRecommendations.toPlayableItems`; descarga manual `downloadRemoteItem` (`DISCOVER`); opcional `saveWhileListening` → download background; import Room vía `ImportListenBrainzPlaylistUseCase` + `LB_IMPORT`
-8. Descarga online: siempre vía `runTrackedDownload` → cola `activeDownloads` (tab Descargas) → `DownloadAudioTrackUseCase` → Room + storage
+5. Stream remoto: `StreamResolver.resolve` / `resolveQuery` → `YouTubeExtractor.extractAudioStreamDetailed` → MediaItem HTTPS + `StreamPlaybackTag` (UA) → ExoPlayer
+6. Radio: `RadioEngine` (KNOWN / NEW / BOTH; fill LB→CF→Deezer; dedupe global `tryAddRemote`) → `playPlayableCollection` / refill de cola; remotos reusan stream
+7. Para Ti: `MatchListenBrainzTracksUseCase` → `MatchedLbPlaylist.toPlayableItems` → `playPlayableCollection`; CF: `FetchAndMatchCfRecommendationsUseCase` → `matchFromMetadata` → `MatchedCfRecommendations.toPlayableItems`; descarga manual `downloadRemoteItem` (`DISCOVER`); opcional `saveWhileListening` → download background; import Room vía `ImportListenBrainzPlaylistUseCase` + `LB_IMPORT`
+8. Descarga online: siempre vía `runTrackedDownload` → cola `activeDownloads` (tab Descargas) → `DownloadAudioTrackUseCase` → `MusicRepository.downloadAndSaveOnlineTrack` (re-extract vía `StreamResolver.resolveQuery`) → Room + storage
 
 ## Navegación UI
 

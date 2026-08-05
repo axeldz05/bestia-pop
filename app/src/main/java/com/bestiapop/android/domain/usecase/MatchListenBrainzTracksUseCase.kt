@@ -4,45 +4,28 @@ import com.bestiapop.android.data.listenbrainz.LbPlaylistDetail
 import com.bestiapop.android.data.listenbrainz.MatchedLbPlaylist
 import com.bestiapop.android.data.listenbrainz.MatchedLbTrack
 import com.bestiapop.android.data.model.Song
+import com.bestiapop.android.domain.util.TrackMatchKeys
 
 class MatchListenBrainzTracksUseCase {
 
     fun execute(detail: LbPlaylistDetail, library: List<Song>): MatchedLbPlaylist {
-        val index = buildLibraryIndex(library)
+        val index = TrackMatchKeys.buildLibraryIndex(library)
         val matches = detail.tracks.map { track ->
             MatchedLbTrack(
                 track = track,
-                localSong = index[matchKey(track.artist, track.title)]
+                localSong = index[TrackMatchKeys.matchKey(track.artist, track.title)]
             )
         }
         return MatchedLbPlaylist(detail = detail, matches = matches)
     }
 
     companion object {
-        fun normalize(value: String): String {
-            return value
-                .lowercase()
-                .replace(Regex("[\\p{Punct}\\p{IsPunctuation}]"), " ")
-                .replace(Regex("\\s+"), " ")
-                .trim()
-        }
+        fun normalize(value: String): String = TrackMatchKeys.normalize(value)
 
-        fun matchKey(artist: String, title: String): String {
-            val a = normalize(artist)
-            val t = normalize(title)
-            if (a.isEmpty() || t.isEmpty()) return ""
-            return "$a|$t"
-        }
+        fun matchKey(artist: String, title: String): String =
+            TrackMatchKeys.matchKey(artist, title)
 
-        fun buildLibraryIndex(library: List<Song>): Map<String, Song> {
-            val map = HashMap<String, Song>(library.size)
-            for (song in library) {
-                val key = matchKey(song.artist, song.title)
-                if (key.isNotEmpty() && !map.containsKey(key)) {
-                    map[key] = song
-                }
-            }
-            return map
-        }
+        fun buildLibraryIndex(library: List<Song>): Map<String, Song> =
+            TrackMatchKeys.buildLibraryIndex(library)
     }
 }

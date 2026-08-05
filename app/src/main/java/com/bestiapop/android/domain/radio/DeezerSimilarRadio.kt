@@ -44,26 +44,22 @@ class DeezerSimilarRadio(
         if (pool.isEmpty()) return emptyList()
 
         val libraryIndex = MatchListenBrainzTracksUseCase.buildLibraryIndex(library)
-        val seedKey = MatchListenBrainzTracksUseCase.matchKey(seed.artist, seed.title)
-        val seen = excludeKeys.toMutableSet()
-        if (seedKey.isNotEmpty()) seen.add(seedKey)
-
         val remotes = ArrayList<PlayableItem.Remote>(limit)
+        val localSeen = HashSet<String>()
         fun tryAdd(hint: CatalogSongHint) {
             if (remotes.size >= limit) return
             val key = MatchListenBrainzTracksUseCase.matchKey(hint.artist, hint.title)
-            if (key.isEmpty() || key in seen) return
+            if (key.isEmpty() || key in localSeen) return
             // NEW/BOTH remote pool: skip tracks already in the library
             if (libraryIndex.containsKey(key)) return
-            seen.add(key)
+            localSeen.add(key)
             remotes.add(
-                PlayableItem.Remote(
-                    title = hint.title,
+                PlayableItem.remoteFrom(
                     artist = hint.artist,
+                    title = hint.title,
                     album = hint.album,
                     artworkUri = hint.artworkUrl,
-                    durationMs = hint.durationMs,
-                    youtubeQueryOrId = "${hint.artist} ${hint.title}"
+                    durationMs = hint.durationMs
                 )
             )
         }

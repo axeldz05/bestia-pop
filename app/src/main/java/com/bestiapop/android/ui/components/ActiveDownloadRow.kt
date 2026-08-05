@@ -144,6 +144,7 @@ private fun buildSubtitle(download: ActiveDownload): String {
         ActiveDownloadSource.SAVE_WHILE_LISTENING -> "Guardar al escuchar"
         ActiveDownloadSource.BATCH -> "Lote"
         ActiveDownloadSource.LB_IMPORT -> "Import Para Ti"
+        ActiveDownloadSource.DISCOVER -> "Para Ti"
     }
     return when (download.state) {
         CandidateDownloadState.QUEUED -> {

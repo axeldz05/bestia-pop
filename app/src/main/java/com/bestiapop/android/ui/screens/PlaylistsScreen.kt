@@ -72,6 +72,8 @@ import com.bestiapop.android.data.listenbrainz.MatchedCfRecommendations
 import com.bestiapop.android.data.listenbrainz.MatchedCfTrack
 import com.bestiapop.android.data.listenbrainz.MatchedLbPlaylist
 import com.bestiapop.android.data.listenbrainz.MatchedLbTrack
+import com.bestiapop.android.data.model.ActiveDownload
+import com.bestiapop.android.data.model.CandidateDownloadState
 import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.data.model.Playlist
 import com.bestiapop.android.data.model.PlaylistPendingTrack
@@ -435,6 +437,7 @@ fun PlaylistsScreen(
         // ListenBrainz Discover playlist detail
         if (selectedLbPlaylistMbid != null) {
             val currentItem by viewModel.currentItem.collectAsState()
+            val activeDownloads by viewModel.activeDownloads.collectAsState()
             LbPlaylistDetailScreen(
                 detailState = lbPlaylistDetailState,
                 matchedPlaylist = selectedLbPlaylist,
@@ -457,6 +460,8 @@ fun PlaylistsScreen(
                     viewModel.importListenBrainzPlaylistWithDownloads()
                 },
                 currentItem = currentItem,
+                activeDownloads = activeDownloads,
+                onDownloadRemote = { viewModel.downloadRemoteItem(it) },
                 onPlayNext = { viewModel.playNextInQueue(it) },
                 onAddToQueue = { viewModel.addToQueue(it) },
                 onStartRadio = { viewModel.startRadio(seedSong = it) }
@@ -466,6 +471,7 @@ fun PlaylistsScreen(
         // CF Recommendations detail
         if (cfDetailOpen) {
             val currentItem by viewModel.currentItem.collectAsState()
+            val activeDownloads by viewModel.activeDownloads.collectAsState()
             CfRecommendationsDetailScreen(
                 detailState = cfDetailState,
                 matched = cfRecommendations,
@@ -474,6 +480,8 @@ fun PlaylistsScreen(
                 onShuffle = { viewModel.shuffleCfRecommendations() },
                 onPlayAt = { index -> viewModel.playCfAt(index) },
                 currentItem = currentItem,
+                activeDownloads = activeDownloads,
+                onDownloadRemote = { viewModel.downloadRemoteItem(it) },
                 onPlayNext = { viewModel.playNextInQueue(it) },
                 onAddToQueue = { viewModel.addToQueue(it) },
                 onStartRadio = { viewModel.startRadio(seedSong = it) }
@@ -639,65 +647,106 @@ fun RemoteTrackPlaceholderRow(
     badge: String,
     leadingIcon: ImageVector,
     highlighted: Boolean,
-    onClick: (() -> Unit)? = null
+    onClick: (() -> Unit)? = null,
+    onDownload: (() -> Unit)? = null,
+    downloadBusy: Boolean = false
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .alpha(if (onClick == null) 0.55f else 0.85f)
-            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
-            .padding(vertical = 10.dp, horizontal = 4.dp),
+            .alpha(if (onClick == null && onDownload == null) 0.55f else 0.85f)
+            .padding(vertical = 4.dp, horizontal = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(
+        Row(
             modifier = Modifier
-                .size(48.dp)
-                .clip(RoundedCornerShape(8.dp))
-                .background(
-                    if (highlighted) {
-                        MaterialTheme.colorScheme.primaryContainer
-                    } else {
-                        MaterialTheme.colorScheme.surfaceVariant
-                    }
-                ),
-            contentAlignment = Alignment.Center
+                .weight(1f)
+                .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+                .padding(vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(
-                imageVector = leadingIcon,
-                contentDescription = null,
-                tint = if (highlighted) {
-                    MaterialTheme.colorScheme.onPrimaryContainer
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                }
-            )
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(
+                        if (highlighted) {
+                            MaterialTheme.colorScheme.primaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.surfaceVariant
+                        }
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = leadingIcon,
+                    contentDescription = null,
+                    tint = if (highlighted) {
+                        MaterialTheme.colorScheme.onPrimaryContainer
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    }
+                )
+            }
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = artist,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = badge,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (onClick == null) {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    } else {
+                        MaterialTheme.colorScheme.tertiary.copy(alpha = 0.9f)
+                    }
+                )
+            }
         }
-        Spacer(modifier = Modifier.width(12.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Text(
-                text = artist,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Text(
-                text = badge,
-                style = MaterialTheme.typography.labelSmall,
-                color = if (onClick == null) {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                } else {
-                    MaterialTheme.colorScheme.tertiary.copy(alpha = 0.9f)
+        if (onDownload != null) {
+            if (downloadBusy) {
+                CircularProgressIndicator(
+                    modifier = Modifier
+                        .padding(12.dp)
+                        .size(22.dp),
+                    strokeWidth = 2.dp
+                )
+            } else {
+                IconButton(onClick = onDownload) {
+                    Icon(
+                        imageVector = Icons.Default.Download,
+                        contentDescription = "Descargar",
+                        tint = MaterialTheme.colorScheme.primary
+                    )
                 }
-            )
+            }
         }
+    }
+}
+
+private fun isRemoteDownloadBusy(
+    artist: String,
+    title: String,
+    activeDownloads: List<ActiveDownload>
+): Boolean {
+    val key = MatchListenBrainzTracksUseCase.matchKey(artist, title)
+    if (key.isEmpty()) return false
+    return activeDownloads.any { download ->
+        download.id == key &&
+            (download.state == CandidateDownloadState.QUEUED ||
+                download.state == CandidateDownloadState.DOWNLOADING)
     }
 }
 
@@ -800,6 +849,8 @@ private fun CfRecommendationsDetailScreen(
     onShuffle: () -> Unit,
     onPlayAt: (Int) -> Unit,
     currentItem: PlayableItem?,
+    activeDownloads: List<ActiveDownload>,
+    onDownloadRemote: (PlayableItem.Remote) -> Unit,
     onPlayNext: (Song) -> Unit,
     onAddToQueue: (Song) -> Unit,
     onStartRadio: (Song) -> Unit
@@ -846,6 +897,12 @@ private fun CfRecommendationsDetailScreen(
                         match = match,
                         isCurrentPlaying = isCfMatchPlaying(match, currentItem),
                         onPlayAt = { onPlayAt(index) },
+                        downloadBusy = isRemoteDownloadBusy(
+                            match.artist,
+                            match.title,
+                            activeDownloads
+                        ),
+                        onDownloadRemote = onDownloadRemote,
                         onPlayNext = onPlayNext,
                         onAddToQueue = onAddToQueue,
                         onStartRadio = onStartRadio
@@ -873,6 +930,8 @@ private fun CfMatchedTrackRow(
     match: MatchedCfTrack,
     isCurrentPlaying: Boolean,
     onPlayAt: () -> Unit,
+    downloadBusy: Boolean,
+    onDownloadRemote: (PlayableItem.Remote) -> Unit,
     onPlayNext: (Song) -> Unit,
     onAddToQueue: (Song) -> Unit,
     onStartRadio: (Song) -> Unit
@@ -888,13 +947,16 @@ private fun CfMatchedTrackRow(
             onStartRadio = { onStartRadio(local) }
         )
     } else {
+        val remote = match.toPlayableItem() as PlayableItem.Remote
         RemoteTrackPlaceholderRow(
             title = match.title,
             artist = match.artist,
             badge = "Stream",
             leadingIcon = Icons.Default.PlayArrow,
             highlighted = isCurrentPlaying,
-            onClick = onPlayAt
+            onClick = onPlayAt,
+            onDownload = { onDownloadRemote(remote) },
+            downloadBusy = downloadBusy
         )
     }
 }
@@ -957,6 +1019,8 @@ private fun LbPlaylistDetailScreen(
     onSaveAsLocal: () -> Unit,
     onImportWithDownloads: () -> Unit,
     currentItem: PlayableItem?,
+    activeDownloads: List<ActiveDownload>,
+    onDownloadRemote: (PlayableItem.Remote) -> Unit,
     onPlayNext: (Song) -> Unit,
     onAddToQueue: (Song) -> Unit,
     onStartRadio: (Song) -> Unit
@@ -1069,6 +1133,12 @@ private fun LbPlaylistDetailScreen(
                         match = match,
                         isCurrentPlaying = isLbMatchPlaying(match, currentItem),
                         onPlayAt = { onPlayAt(index) },
+                        downloadBusy = isRemoteDownloadBusy(
+                            match.track.artist,
+                            match.track.title,
+                            activeDownloads
+                        ),
+                        onDownloadRemote = onDownloadRemote,
                         onPlayNext = onPlayNext,
                         onAddToQueue = onAddToQueue,
                         onStartRadio = onStartRadio
@@ -1096,6 +1166,8 @@ private fun LbMatchedTrackRow(
     match: MatchedLbTrack,
     isCurrentPlaying: Boolean,
     onPlayAt: () -> Unit,
+    downloadBusy: Boolean,
+    onDownloadRemote: (PlayableItem.Remote) -> Unit,
     onPlayNext: (Song) -> Unit,
     onAddToQueue: (Song) -> Unit,
     onStartRadio: (Song) -> Unit
@@ -1111,13 +1183,16 @@ private fun LbMatchedTrackRow(
             onStartRadio = { onStartRadio(local) }
         )
     } else {
+        val remote = match.toPlayableItem() as PlayableItem.Remote
         RemoteTrackPlaceholderRow(
             title = match.track.title,
             artist = match.track.artist,
             badge = "No en biblioteca · stream",
             leadingIcon = Icons.Default.PlayArrow,
             highlighted = isCurrentPlaying,
-            onClick = onPlayAt
+            onClick = onPlayAt,
+            onDownload = { onDownloadRemote(remote) },
+            downloadBusy = downloadBusy
         )
     }
 }

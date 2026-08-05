@@ -3034,9 +3034,13 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                         activeTrack.artist,
                         activeTrack.title
                     )
-                    rematchSelectedLbPlaylist(extraSong = song)
                 }
-                if (source == ActiveDownloadSource.CATALOG || source == ActiveDownloadSource.LINK) {
+                rematchSelectedLbPlaylist(extraSong = song)
+                rematchCfRecommendations(extraSong = song)
+                if (source == ActiveDownloadSource.CATALOG ||
+                    source == ActiveDownloadSource.LINK ||
+                    source == ActiveDownloadSource.DISCOVER
+                ) {
                     Toast.makeText(
                         getApplication(),
                         "¡${song.title} agregada a la biblioteca!",
@@ -3071,11 +3075,97 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     private suspend fun rematchSelectedLbPlaylist(extraSong: Song? = null) {
         val current = _selectedLbPlaylist.value ?: return
-        val library = rawSongs.first().let { list ->
+        val library = libraryWithExtra(extraSong)
+        _selectedLbPlaylist.value = matchListenBrainzTracksUseCase.execute(current.detail, library)
+    }
+
+    private suspend fun rematchCfRecommendations(extraSong: Song? = null) {
+        val current = _cfRecommendations.value ?: return
+        val index = MatchListenBrainzTracksUseCase.buildLibraryIndex(libraryWithExtra(extraSong))
+        _cfRecommendations.value = current.copy(
+            matches = current.matches.map { match ->
+                if (match.localSong != null) match
+                else {
+                    val key = MatchListenBrainzTracksUseCase.matchKey(match.artist, match.title)
+                    match.copy(localSong = if (key.isNotEmpty()) index[key] else null)
+                }
+            }
+        )
+    }
+
+    private suspend fun libraryWithExtra(extraSong: Song?): List<Song> =
+        rawSongs.first().let { list ->
             if (extraSong == null || list.any { it.id == extraSong.id }) list
             else list + extraSong
         }
-        _selectedLbPlaylist.value = matchListenBrainzTracksUseCase.execute(current.detail, library)
+
+    /**
+     * Manual download of a streamed remote (Para Ti / Recomendados) into the library.
+     * Enqueues via [runTrackedDownload] ([ActiveDownloadSource.DISCOVER]); progress in Descargas.
+     */
+    fun downloadRemoteItem(remote: PlayableItem.Remote) {
+        val key = MatchListenBrainzTracksUseCase.matchKey(remote.artist, remote.title)
+        if (key.isEmpty()) {
+            Toast.makeText(
+                getApplication(),
+                "No se puede descargar: faltan artista o título",
+                Toast.LENGTH_SHORT
+            ).show()
+            return
+        }
+        val existing = _activeDownloads.value.find { it.id == key }
+        when (existing?.state) {
+            CandidateDownloadState.QUEUED,
+            CandidateDownloadState.DOWNLOADING -> {
+                Toast.makeText(
+                    getApplication(),
+                    "Ya está en cola — ver Descargas",
+                    Toast.LENGTH_SHORT
+                ).show()
+                return
+            }
+            CandidateDownloadState.SUCCESS -> {
+                Toast.makeText(
+                    getApplication(),
+                    "«${remote.title}» ya está en la biblioteca",
+                    Toast.LENGTH_SHORT
+                ).show()
+                viewModelScope.launch {
+                    rematchSelectedLbPlaylist()
+                    rematchCfRecommendations()
+                }
+                return
+            }
+            else -> Unit
+        }
+
+        val track = OnlineCatalogTrack(
+            id = remote.youtubeQueryOrId?.takeIf { it.isNotBlank() }
+                ?: "${remote.artist} ${remote.title}",
+            title = remote.title,
+            artist = remote.artist,
+            album = remote.album.orEmpty(),
+            artworkUrl = remote.artworkUri,
+            durationMs = remote.durationMs,
+            audioUrl = "",
+            provider = "YouTube"
+        )
+
+        viewModelScope.launch {
+            Toast.makeText(
+                getApplication(),
+                "Descarga en cola — ver Descargas",
+                Toast.LENGTH_SHORT
+            ).show()
+            runTrackedDownload(
+                downloadId = key,
+                source = ActiveDownloadSource.DISCOVER,
+                track = track,
+                displayTitle = remote.title,
+                displayArtist = remote.artist,
+                artworkUrl = remote.artworkUri
+            )
+        }
     }
 
     fun retryActiveDownload(id: String) {

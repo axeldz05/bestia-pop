@@ -198,7 +198,9 @@ enum class ActiveDownloadSource {
     LINK,
     SAVE_WHILE_LISTENING,
     BATCH,
-    LB_IMPORT
+    LB_IMPORT,
+    /** Manual download from Para Ti / Recomendados (stream → library). */
+    DISCOVER
 }
 
 /** How to resolve a title+artist collision when downloading. */

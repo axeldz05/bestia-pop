@@ -15,7 +15,8 @@ interface MusicDao {
     @Query("SELECT * FROM songs ORDER BY title ASC")
     fun getAllSongsFlow(): Flow<List<SongEntity>>
 
-
+    @Query("SELECT * FROM songs ORDER BY title ASC")
+    suspend fun getAllSongs(): List<SongEntity>
 
     @Query("SELECT * FROM songs WHERE album = 'YouTube Music'")
     suspend fun getLegacyYouTubeMusicSongs(): List<SongEntity>
@@ -25,6 +26,9 @@ interface MusicDao {
 
     @Query("SELECT * FROM songs WHERE id = :id")
     suspend fun getSongById(id: Long): SongEntity?
+
+    @Query("SELECT * FROM playlist_song_cross_ref WHERE songId = :songId")
+    suspend fun getPlaylistRefsForSong(songId: Long): List<PlaylistSongCrossRef>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertSong(song: SongEntity): Long

@@ -372,6 +372,13 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private val _activeDownloads = MutableStateFlow<List<ActiveDownload>>(emptyList())
     val activeDownloads = _activeDownloads.asStateFlow()
 
+    private val _downloadConflict = MutableStateFlow<DownloadConflict?>(null)
+    val downloadConflict = _downloadConflict.asStateFlow()
+
+    /** When set during a batch, subsequent conflicts reuse this policy without another dialog. */
+    private var batchConflictPolicy: DownloadConflictPolicy? = null
+    private var batchSaveAsCounter: Int = 1
+
     /** Set when MainActivity should switch to Descargas (notification / dialog deep-link). */
     private val _pendingOpenDownloads = MutableStateFlow(false)
     val pendingOpenDownloads = _pendingOpenDownloads.asStateFlow()
@@ -406,7 +413,10 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         initMediaController()
         startPositionTracker()
         viewModelScope.launch {
-            repository.scanMediaStore()
+            withContext(Dispatchers.IO) {
+                repository.runLibraryDedupIfNeeded()
+                repository.scanMediaStore()
+            }
         }
         viewModelScope.launch {
             _catalogSearchResults.value = MetadataFetcher.getFeaturedDemoCatalog()
@@ -2444,6 +2454,8 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     private fun mapDownloadError(e: Throwable): String = when {
+        e is DuplicateSongException ->
+            "Ya existe en la biblioteca: ${e.existing.artist} — ${e.existing.title}"
         e.message?.contains("403") == true ->
             "Error HTTP 403 Forbidden: Enlace o firma expirada de YouTube."
         e.message?.contains("YouTube") == true ->
@@ -2454,8 +2466,75 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     private suspend fun downloadTrack(
         track: OnlineCatalogTrack,
-        onProgress: ((String) -> Unit)? = null
-    ): Result<Song> = downloadAudioTrackUseCase.execute(track, onProgress)
+        onProgress: ((String) -> Unit)? = null,
+        conflictPolicy: DownloadConflictPolicy? = null
+    ): Result<Song> = downloadAudioTrackUseCase.execute(track, onProgress, conflictPolicy)
+
+    fun resolveDownloadConflictOverwrite(applyToRemainingBatch: Boolean = false) {
+        val conflict = _downloadConflict.value ?: return
+        val applyAll = applyToRemainingBatch || conflict.applyToRemainingBatch
+        _downloadConflict.value = null
+        val policy = DownloadConflictPolicy.Overwrite(conflict.existing.id)
+        if (applyAll) {
+            batchConflictPolicy = DownloadConflictPolicy.Overwrite(conflict.existing.id)
+        }
+        viewModelScope.launch {
+            runTrackedDownload(
+                downloadId = conflict.downloadId,
+                source = conflict.source,
+                track = conflict.track,
+                displayTitle = conflict.displayTitle,
+                displayArtist = conflict.displayArtist,
+                artworkUrl = conflict.artworkUrl,
+                existingCandidates = conflict.candidates,
+                currentCandidateIndex = conflict.currentCandidateIndex,
+                mirrorCandidateTitle = conflict.mirrorCandidateTitle,
+                targetPlaylistId = conflict.targetPlaylistId,
+                conflictPolicy = policy
+            )
+        }
+    }
+
+    fun resolveDownloadConflictSaveAs(newTitle: String, applyToRemainingBatch: Boolean = false) {
+        val conflict = _downloadConflict.value ?: return
+        val title = newTitle.trim().ifBlank { "${conflict.existing.title} (2)" }
+        val applyAll = applyToRemainingBatch || conflict.applyToRemainingBatch
+        _downloadConflict.value = null
+        val policy = DownloadConflictPolicy.SaveAs(title)
+        if (applyAll) {
+            batchConflictPolicy = DownloadConflictPolicy.SaveAs(title)
+            batchSaveAsCounter = 2
+        }
+        viewModelScope.launch {
+            runTrackedDownload(
+                downloadId = conflict.downloadId,
+                source = conflict.source,
+                track = conflict.track.copy(title = title),
+                displayTitle = title,
+                displayArtist = conflict.displayArtist,
+                artworkUrl = conflict.artworkUrl,
+                existingCandidates = conflict.candidates,
+                currentCandidateIndex = conflict.currentCandidateIndex,
+                mirrorCandidateTitle = conflict.mirrorCandidateTitle,
+                targetPlaylistId = conflict.targetPlaylistId,
+                conflictPolicy = policy
+            )
+        }
+    }
+
+    fun cancelDownloadConflict() {
+        val conflict = _downloadConflict.value ?: return
+        _downloadConflict.value = null
+        removeActiveDownload(conflict.downloadId)
+        conflict.mirrorCandidateTitle?.let { title ->
+            updateCandidateState(title, CandidateDownloadState.IDLE, percent = 0)
+        }
+    }
+
+    fun clearBatchConflictPolicy() {
+        batchConflictPolicy = null
+        batchSaveAsCounter = 1
+    }
 
     private fun activeDownloadIdFor(
         track: OnlineCatalogTrack,
@@ -2505,10 +2584,98 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         existingCandidates: List<OnlineCatalogTrack>? = null,
         currentCandidateIndex: Int = 0,
         mirrorCandidateTitle: String? = null,
-        targetPlaylistId: Long? = null
+        targetPlaylistId: Long? = null,
+        conflictPolicy: DownloadConflictPolicy? = null
     ): Result<Song> {
         val candidates = existingCandidates?.takeIf { it.isNotEmpty() } ?: listOf(track)
         val safeIndex = currentCandidateIndex.coerceIn(0, (candidates.size - 1).coerceAtLeast(0))
+        val activeTrack = candidates.getOrNull(safeIndex) ?: track
+
+        var resolvedPolicy = conflictPolicy ?: batchConflictPolicy?.let { cached ->
+            when (cached) {
+                is DownloadConflictPolicy.Overwrite -> {
+                    val existing = repository.findSongByArtistTitle(
+                        displayArtist.ifBlank { activeTrack.artist },
+                        displayTitle.ifBlank { activeTrack.title }
+                    ) ?: repository.findSongByArtistTitle(activeTrack.artist, activeTrack.title)
+                    existing?.let { DownloadConflictPolicy.Overwrite(it.id) }
+                }
+                is DownloadConflictPolicy.SaveAs -> {
+                    batchSaveAsCounter++
+                    val base = displayTitle.ifBlank { activeTrack.title }.ifBlank { "Track" }
+                    DownloadConflictPolicy.SaveAs("$base ($batchSaveAsCounter)")
+                }
+            }
+        }
+
+        // Wait if another download is already showing the conflict dialog (batch).
+        if (resolvedPolicy == null) {
+            var waited = 0
+            while (_downloadConflict.value != null && batchConflictPolicy == null && waited < 120) {
+                delay(250)
+                waited++
+                batchConflictPolicy?.let { cached ->
+                    resolvedPolicy = when (cached) {
+                        is DownloadConflictPolicy.Overwrite -> {
+                            val existing = repository.findSongByArtistTitle(
+                                displayArtist.ifBlank { activeTrack.artist },
+                                displayTitle.ifBlank { activeTrack.title }
+                            ) ?: repository.findSongByArtistTitle(activeTrack.artist, activeTrack.title)
+                            existing?.let { DownloadConflictPolicy.Overwrite(it.id) }
+                        }
+                        is DownloadConflictPolicy.SaveAs -> {
+                            batchSaveAsCounter++
+                            val base = displayTitle.ifBlank { activeTrack.title }.ifBlank { "Track" }
+                            DownloadConflictPolicy.SaveAs("$base ($batchSaveAsCounter)")
+                        }
+                    }
+                }
+            }
+        }
+
+        if (resolvedPolicy == null) {
+            val existing = repository.findSongByArtistTitle(
+                displayArtist.ifBlank { activeTrack.artist },
+                displayTitle.ifBlank { activeTrack.title }
+            ) ?: repository.findSongByArtistTitle(activeTrack.artist, activeTrack.title)
+            if (existing != null) {
+                val isBatch = source == ActiveDownloadSource.BATCH || source == ActiveDownloadSource.LB_IMPORT
+                _downloadConflict.value = DownloadConflict(
+                    downloadId = downloadId,
+                    source = source,
+                    track = activeTrack,
+                    existing = existing,
+                    displayTitle = displayTitle.ifBlank { activeTrack.title }.ifBlank { existing.title },
+                    displayArtist = displayArtist.ifBlank { activeTrack.artist }.ifBlank { existing.artist },
+                    artworkUrl = artworkUrl,
+                    candidates = candidates,
+                    currentCandidateIndex = safeIndex,
+                    mirrorCandidateTitle = mirrorCandidateTitle,
+                    targetPlaylistId = targetPlaylistId,
+                    applyToRemainingBatch = isBatch
+                )
+                upsertActiveDownload(
+                    ActiveDownload(
+                        id = downloadId,
+                        source = source,
+                        displayTitle = displayTitle.ifBlank { track.title }.ifBlank { "Descarga" },
+                        displayArtist = displayArtist,
+                        artworkUrl = artworkUrl,
+                        candidates = candidates,
+                        currentCandidateIndex = safeIndex,
+                        state = CandidateDownloadState.IDLE,
+                        progressMessage = "Conflicto: ya está en la biblioteca",
+                        progressPercent = 0,
+                        errorMessage = null,
+                        targetPlaylistId = targetPlaylistId
+                    )
+                )
+                return Result.failure(
+                    DuplicateSongException(existing, activeTrack)
+                )
+            }
+        }
+
         upsertActiveDownload(
             ActiveDownload(
                 id = downloadId,
@@ -2530,24 +2697,61 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             updateCandidateState(mirrorCandidateTitle, CandidateDownloadState.DOWNLOADING, percent = 50)
         }
 
-        val activeTrack = candidates.getOrNull(safeIndex) ?: track
-        val result = downloadTrack(activeTrack) { progressMsg ->
-            val percent = when {
-                progressMsg.contains("Descargando audio", ignoreCase = true) -> 75
-                progressMsg.contains("Guardando", ignoreCase = true) -> 90
-                progressMsg.contains("Buscando", ignoreCase = true) -> 40
-                else -> 50
-            }
+        val trackForDownload = when (val policy = resolvedPolicy) {
+            is DownloadConflictPolicy.SaveAs -> activeTrack.copy(title = policy.newTitle)
+            else -> activeTrack
+        }
+
+        val result = downloadTrack(
+            track = trackForDownload,
+            onProgress = { progressMsg ->
+                val percent = when {
+                    progressMsg.contains("Descargando audio", ignoreCase = true) -> 75
+                    progressMsg.contains("Guardando", ignoreCase = true) -> 90
+                    progressMsg.contains("Buscando", ignoreCase = true) -> 40
+                    else -> 50
+                }
+                updateActiveDownload(downloadId) {
+                    it.copy(
+                        state = CandidateDownloadState.DOWNLOADING,
+                        progressMessage = progressMsg,
+                        progressPercent = percent
+                    )
+                }
+                if (mirrorCandidateTitle != null && percent >= 75) {
+                    updateCandidateState(mirrorCandidateTitle, CandidateDownloadState.DOWNLOADING, percent = 75)
+                }
+            },
+            conflictPolicy = resolvedPolicy
+        )
+
+        // Late conflict after YouTube metadata resolve (e.g. blank title on LINK)
+        val duplicate = result.exceptionOrNull() as? DuplicateSongException
+        if (duplicate != null && resolvedPolicy == null) {
+            val isBatch = source == ActiveDownloadSource.BATCH || source == ActiveDownloadSource.LB_IMPORT
+            _downloadConflict.value = DownloadConflict(
+                downloadId = downloadId,
+                source = source,
+                track = duplicate.track,
+                existing = duplicate.existing,
+                displayTitle = displayTitle.ifBlank { duplicate.track.title }.ifBlank { duplicate.existing.title },
+                displayArtist = displayArtist.ifBlank { duplicate.track.artist }.ifBlank { duplicate.existing.artist },
+                artworkUrl = artworkUrl,
+                candidates = candidates,
+                currentCandidateIndex = safeIndex,
+                mirrorCandidateTitle = mirrorCandidateTitle,
+                targetPlaylistId = targetPlaylistId,
+                applyToRemainingBatch = isBatch
+            )
             updateActiveDownload(downloadId) {
                 it.copy(
-                    state = CandidateDownloadState.DOWNLOADING,
-                    progressMessage = progressMsg,
-                    progressPercent = percent
+                    state = CandidateDownloadState.IDLE,
+                    progressMessage = "Conflicto: ya está en la biblioteca",
+                    progressPercent = 0,
+                    errorMessage = null
                 )
             }
-            if (mirrorCandidateTitle != null && percent >= 75) {
-                updateCandidateState(mirrorCandidateTitle, CandidateDownloadState.DOWNLOADING, percent = 75)
-            }
+            return result
         }
 
         result.fold(
@@ -2574,6 +2778,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 }
             },
             onFailure = { e ->
+                if (e is DuplicateSongException) return@fold
                 e.printStackTrace()
                 val error = mapDownloadError(e)
                 updateActiveDownload(downloadId) {
@@ -2699,6 +2904,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         if (selected.isEmpty()) return
 
         viewModelScope.launch {
+            clearBatchConflictPolicy()
             val total = selected.size
             val completedCount = AtomicInteger(0)
             val successCount = AtomicInteger(0)
@@ -2731,6 +2937,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 }
             }
             jobs.awaitAll()
+            clearBatchConflictPolicy()
 
             Toast.makeText(
                 getApplication(),

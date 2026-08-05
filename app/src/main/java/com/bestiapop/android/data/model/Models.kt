@@ -163,6 +163,34 @@ enum class ActiveDownloadSource {
     LB_IMPORT
 }
 
+/** How to resolve a title+artist collision when downloading. */
+sealed class DownloadConflictPolicy {
+    data class Overwrite(val existingSongId: Long) : DownloadConflictPolicy()
+    data class SaveAs(val newTitle: String) : DownloadConflictPolicy()
+}
+
+/** Thrown when a download would duplicate an existing library song and no [DownloadConflictPolicy] was provided. */
+class DuplicateSongException(
+    val existing: Song,
+    val track: OnlineCatalogTrack
+) : Exception("La canción ya está en la biblioteca: ${existing.artist} — ${existing.title}")
+
+/** Pending user decision for a download that collides with the library. */
+data class DownloadConflict(
+    val downloadId: String,
+    val source: ActiveDownloadSource,
+    val track: OnlineCatalogTrack,
+    val existing: Song,
+    val displayTitle: String,
+    val displayArtist: String,
+    val artworkUrl: String?,
+    val candidates: List<OnlineCatalogTrack>,
+    val currentCandidateIndex: Int,
+    val mirrorCandidateTitle: String? = null,
+    val targetPlaylistId: Long? = null,
+    val applyToRemainingBatch: Boolean = false
+)
+
 /**
  * Unified in-memory download job for the Descargas center.
  * SUCCESS items are removed from the list; UI shows DOWNLOADING and ERROR.

@@ -181,7 +181,7 @@ class WebServerService : Service() {
                                         val embeddedArt = repository.extractAndSaveEmbeddedArtwork(destinationFile.absolutePath, destinationFile.name)
 
                                         val songEntity = SongEntity(
-                                            uriString = destinationFile.toURI().toString(),
+                                            uriString = destinationFile.absolutePath,
                                             title = title,
                                             artist = artist,
                                             album = album,

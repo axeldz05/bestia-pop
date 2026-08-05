@@ -78,11 +78,22 @@ UI: `PlaylistsScreen`.
 
 ## 6. Importación / biblioteca local
 
+**Invariantes:**
+- Unicidad lógica por `matchKey(artist, title)` (además del índice Room `uriString`).
+- `Music/BestiaPop` es app-managed: `scanMediaStore` **no** reinserta esos archivos (evita duplicar `file:`/path vs `content://`).
+- URIs de descarga/upload se guardan como **path absoluto**.
+- One-shot: `runLibraryDedupIfNeeded()` → `LibraryDedupMigrator` (flag `library_dedup_v1_done`); keeper app-owned, remap playlists, borra filas y archivos extras seguros.
+- Descarga con conflicto → `DuplicateSongException` / `DownloadConflict` → diálogo Sobrescribir | Crear nueva | Cancelar (`DownloadConflictPolicy`).
+
 | Acción | API |
 |--------|-----|
-| Scan MediaStore | `scanMediaStore()` |
+| Dedup one-shot | `IMusicRepository.runLibraryDedupIfNeeded` / `LibraryDedupMigrator` |
+| Scan MediaStore | `scanMediaStore()` (skip BestiaPop + path/matchKey conocidos) |
 | Scan carpeta SAF | `scanFolderUri(treeUri)` |
-| Upload WiFi → DB | `saveUploadedSong` |
+| Upload WiFi → DB | `saveUploadedSong` (`absolutePath`; merge por matchKey) |
+| Lookup duplicado | `findSongByArtistTitle` |
+| Descarga + política | `downloadAndSaveOnlineTrack(..., conflictPolicy)` |
+| Conflicto UI | `downloadConflict` / `resolveDownloadConflictOverwrite` / `resolveDownloadConflictSaveAs` / `cancelDownloadConflict` + `DownloadConflictDialog` |
 | Borrar app / dispositivo | `deleteSongsFromApp` / `deleteSongsFromDevice` |
 | Enriquecer meta/letras | `enhanceSongMetadataAndLyrics` |
 

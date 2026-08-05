@@ -56,6 +56,7 @@ fun MainScreen(
     val radioLoading by viewModel.radioLoading.collectAsState()
     val activeDownloads by viewModel.activeDownloads.collectAsState()
     val pendingOpenDownloads by viewModel.pendingOpenDownloads.collectAsState()
+    val downloadConflict by viewModel.downloadConflict.collectAsState()
     val downloadBadgeCount = activeDownloadBadgeCount(activeDownloads)
 
     val miniPlayerStatusLabel = when {
@@ -211,6 +212,15 @@ fun MainScreen(
             NowPlayingScreen(
                 viewModel = viewModel,
                 onDismiss = { dismissFullPlayer() }
+            )
+        }
+
+        downloadConflict?.let { conflict ->
+            com.bestiapop.android.ui.components.DownloadConflictDialog(
+                conflict = conflict,
+                onOverwrite = { viewModel.resolveDownloadConflictOverwrite() },
+                onSaveAs = { title -> viewModel.resolveDownloadConflictSaveAs(title) },
+                onCancel = { viewModel.cancelDownloadConflict() }
             )
         }
     }

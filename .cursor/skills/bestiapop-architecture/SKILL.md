@@ -80,8 +80,9 @@ Mini player se rehidrata desde `MediaController` (sesión viva) o `PlaybackSessi
 
 ## Base de datos
 
-Entidades: `SongEntity`, `PlaylistEntity`, `PlaylistSongCrossRef`.
-Índice único: `songs.uriString`. Migraciones: 1→2 (dedupe + unique index), 2→3 (playlist description/coverUri).
+Entidades: `SongEntity`, `PlaylistEntity`, `PlaylistSongCrossRef`, `PlaylistPendingTrackEntity`, `PendingListenEntity`.
+Índice único Room: `songs.uriString`. Deduplicación lógica adicional por `matchKey(artist, title)` vía `LibraryDedupMigrator` + filtros de scan (`Music/BestiaPop` app-managed). URIs app-owned: path absoluto (`SongPathNormalizer`).
+Migraciones Room: 1→2 (dedupe + unique index), 2→3 (playlist description/coverUri), 3→4 (pending_listens), 4→5 (playlist_pending_tracks).
 
 ## Relacionado
 

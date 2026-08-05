@@ -18,6 +18,8 @@ interface IMusicRepository {
     suspend fun scanMediaStore()
     suspend fun scanFolderUri(treeUri: Uri)
     suspend fun getAllSongsSync(): List<Song>
+    suspend fun findSongByArtistTitle(artist: String, title: String): Song?
+    suspend fun runLibraryDedupIfNeeded(): com.bestiapop.android.data.migration.DedupResult?
     suspend fun saveUploadedSong(song: SongEntity): Long
     suspend fun deleteSongsFromApp(songs: List<Song>)
     suspend fun deleteSongsFromDevice(songs: List<Song>)
@@ -45,6 +47,7 @@ interface IMusicRepository {
 
     suspend fun downloadAndSaveOnlineTrack(
         track: OnlineCatalogTrack,
-        onProgress: ((String) -> Unit)? = null
+        onProgress: ((String) -> Unit)? = null,
+        conflictPolicy: com.bestiapop.android.data.model.DownloadConflictPolicy? = null
     ): Song
 }

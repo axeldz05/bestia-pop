@@ -42,6 +42,7 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 | ViewModel central | `ui/MusicPlayerViewModel.kt` |
 | Mini player | `ui/components/BottomPlayerBar.kt` (`statusLabel`, Previous/Next/Play) |
 | Active download row | `ui/components/ActiveDownloadRow.kt` |
+| Download conflict dialog | `ui/components/DownloadConflictDialog.kt` |
 | Add / download music | `ui/components/AddMusicDialog.kt` (banners vía `activeDownloads` + `ActiveDownloadsSummaryBanner`) |
 | Song row | `ui/components/SongListItem.kt` |
 | Artwork thumb | `ui/components/ArtworkThumbnail.kt` |
@@ -92,7 +93,9 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 | LB models + sync | `data/listenbrainz/LbPlaylistModels.kt` (`MatchedLbPlaylist.toPlayableItems`, `streamCount`), `LbRadioModels.kt`, `CfRecommendationModels.kt` (`MatchedCfRecommendations`), `ListenTracker.kt`, `ListenSyncCoordinator.kt` |
 | Connectivity | `data/network/ConnectivityObserver.kt` |
 | Pending listens Room | `data/db/PendingListenEntity.kt`, `PendingListenDao.kt` |
-| Storage helpers | `data/util/StorageUtils.kt` |
+| Storage helpers | `data/util/StorageUtils.kt`, `data/util/SongPathNormalizer.kt` |
+| Library dedup | `data/migration/LibraryDedupLogic.kt`, `LibraryDedupMigrator.kt`; flag `data/preferences/LibraryDedupPreferences.kt` |
+| Download conflict models | `data/model/Models.kt` (`DownloadConflictPolicy`, `DuplicateSongException`, `DownloadConflict`) |
 
 ## Services
 
@@ -117,6 +120,7 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 | ActiveDownload codec / badge | `app/src/test/.../ActiveDownloadCodecTest.kt` |
 | Last-played / idle hydration | `app/src/test/.../PlaybackSessionStoreTest.kt` |
 | Import LB playlist | `app/src/test/.../ImportListenBrainzPlaylistUseCaseTest.kt` |
+| Path normalize / dedup keeper | `app/src/test/.../SongPathNormalizerTest.kt`, `LibraryDedupLogicTest.kt` |
 | UI functional library | `app/src/androidTest/.../LibraryScreenFunctionalTest.kt` |
 
 ## Símbolos ViewModel frecuentes
@@ -127,7 +131,7 @@ Mantener esta lista alineada con `MusicPlayerViewModel.kt`:
 - Playback: `playSong`, `playCollection`, `playPlayableCollection`, `shuffleCollection`, `enqueueCollection`, `playNextInQueue`, `playNextBatch`, `currentItem`, `currentSong`, `queue`, `resolvingRemote`, `repeatMode`, `isShuffle`, `syncUiFromController`, `maybeSeedIdlePlayer`, `togglePlayPause`
 - Radio: `startRadio` / `stopRadio` / `setRadioPreferredMode` / `setRadioForceOnline`, `radioMode`, `radioForceOnline`, `radioStatusLabel`, `replaceUpcomingWithRadio`, `maybeAutoStartRadioOnQueueEnd`
 - Artwork: `setAlbumArtwork`
-- Online: `searchCatalog`, `searchOnlineCatalog`, `downloadSingleCandidate`, `downloadSelectedCandidatesBatch`, `downloadFromUrl`, `downloadOnlineTrack`, `activeDownloads`, `retryActiveDownload`, `cycleActiveDownload`, `previewActiveDownload`, `dismissActiveDownload`, `requestOpenDownloads` / `pendingOpenDownloads`, `playOnlineCatalogTrackAsStream`, `cycleSongCatalogResult`, `cycleTrackCandidate`, `catalogPreviewKey`
+- Online: `searchCatalog`, `searchOnlineCatalog`, `downloadSingleCandidate`, `downloadSelectedCandidatesBatch`, `downloadFromUrl`, `downloadOnlineTrack`, `activeDownloads`, `downloadConflict`, `resolveDownloadConflictOverwrite` / `resolveDownloadConflictSaveAs` / `cancelDownloadConflict`, `retryActiveDownload`, `cycleActiveDownload`, `previewActiveDownload`, `dismissActiveDownload`, `requestOpenDownloads` / `pendingOpenDownloads`, `playOnlineCatalogTrackAsStream`, `cycleSongCatalogResult`, `cycleTrackCandidate`, `catalogPreviewKey`
 - ListenBrainz: `listenBrainzSettings`, `setListenBrainzEnabled`, `setListenBrainzDiscoverEnabled`, `setListenBrainzSaveWhileListening`, `setListenBrainzSaveWhileListeningPercent`, `refreshListenBrainzDiscoverPlaylists`, `openListenBrainzPlaylist`, `playListenBrainzPlaylist`, `shuffleListenBrainzPlaylist`, `playListenBrainzPlaylistAt`, `saveListenBrainzPlaylistAsLocal`, `importListenBrainzPlaylistWithDownloads`, `downloadPlaylistPendingTracks`, `getPlaylistPendingTracksFlow`, `refreshCfRecommendations`, `openCfRecommendations`, `closeCfRecommendations`, `playCfRecommendations`, `shuffleCfRecommendations`, `playCfAt`, `cfRecommendations`, `cfListState`, `cfDetailOpen`
 
 ## Cómo actualizar este mapa

@@ -144,6 +144,8 @@ class ImportListenBrainzPlaylistUseCaseTest {
         override suspend fun scanMediaStore() = Unit
         override suspend fun scanFolderUri(treeUri: Uri) = Unit
         override suspend fun getAllSongsSync(): List<Song> = emptyList()
+        override suspend fun findSongByArtistTitle(artist: String, title: String): Song? = null
+        override suspend fun runLibraryDedupIfNeeded(): com.bestiapop.android.data.migration.DedupResult? = null
         override suspend fun saveUploadedSong(song: SongEntity): Long = 0L
         override suspend fun deleteSongsFromApp(songs: List<Song>) = Unit
         override suspend fun deleteSongsFromDevice(songs: List<Song>) = Unit
@@ -199,7 +201,8 @@ class ImportListenBrainzPlaylistUseCaseTest {
 
         override suspend fun downloadAndSaveOnlineTrack(
             track: OnlineCatalogTrack,
-            onProgress: ((String) -> Unit)?
+            onProgress: ((String) -> Unit)?,
+            conflictPolicy: com.bestiapop.android.data.model.DownloadConflictPolicy?
         ): Song = error("not used")
     }
 }

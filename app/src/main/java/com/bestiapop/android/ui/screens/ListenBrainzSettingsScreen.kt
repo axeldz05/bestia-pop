@@ -71,28 +71,12 @@ fun ListenBrainzSettingsScreen(viewModel: MusicPlayerViewModel) {
 
         Spacer(modifier = Modifier.height(20.dp))
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
-                Text(
-                    text = "Registrar escuchas",
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-                    color = MaterialTheme.colorScheme.onBackground
-                )
-                Text(
-                    text = if (settings.enabled) "Activo" else "Desactivado",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            Switch(
-                checked = settings.enabled,
-                onCheckedChange = { viewModel.setListenBrainzEnabled(it) }
-            )
-        }
+        SettingsSwitchRow(
+            title = "Registrar escuchas",
+            subtitle = if (settings.enabled) "Activo" else "Desactivado",
+            checked = settings.enabled,
+            onCheckedChange = { viewModel.setListenBrainzEnabled(it) }
+        )
 
         Spacer(modifier = Modifier.height(20.dp))
 
@@ -181,55 +165,23 @@ fun ListenBrainzSettingsScreen(viewModel: MusicPlayerViewModel) {
         Spacer(modifier = Modifier.height(24.dp))
 
         val canEnableDiscover = !settings.username.isNullOrBlank() && settings.userToken.isNotBlank()
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
-                Text(
-                    text = "Mostrar Para Ti",
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-                    color = MaterialTheme.colorScheme.onBackground
-                )
-                Text(
-                    text = "Daily/Weekly Jams y otras playlists Discover de tu cuenta en la pestaña Playlists.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            Switch(
-                checked = settings.discoverEnabled,
-                onCheckedChange = { viewModel.setListenBrainzDiscoverEnabled(it) },
-                enabled = canEnableDiscover
-            )
-        }
+        SettingsSwitchRow(
+            title = "Mostrar Para Ti",
+            subtitle = "Daily/Weekly Jams y otras playlists Discover de tu cuenta en la pestaña Playlists.",
+            checked = settings.discoverEnabled,
+            onCheckedChange = { viewModel.setListenBrainzDiscoverEnabled(it) },
+            enabled = canEnableDiscover
+        )
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
-                Text(
-                    text = "Guardar al escuchar",
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-                    color = MaterialTheme.colorScheme.onBackground
-                )
-                Text(
-                    text = "Descargar a la biblioteca en segundo plano los temas en stream (Para Ti / Radio) al alcanzar un porcentaje de reproducción.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            Switch(
-                checked = settings.saveWhileListening,
-                onCheckedChange = { viewModel.setListenBrainzSaveWhileListening(it) },
-                enabled = canEnableDiscover
-            )
-        }
+        SettingsSwitchRow(
+            title = "Guardar al escuchar",
+            subtitle = "Descargar a la biblioteca en segundo plano los temas en stream (Para Ti / Radio) al alcanzar un porcentaje de reproducción.",
+            checked = settings.saveWhileListening,
+            onCheckedChange = { viewModel.setListenBrainzSaveWhileListening(it) },
+            enabled = canEnableDiscover
+        )
 
         if (settings.saveWhileListening) {
             Spacer(modifier = Modifier.height(12.dp))
@@ -341,3 +293,37 @@ private fun ConnectionStatusBlock(
         color = color
     )
 }
+
+@Composable
+private fun SettingsSwitchRow(
+    title: String,
+    subtitle: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    enabled: Boolean = true
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                color = MaterialTheme.colorScheme.onBackground
+            )
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Switch(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+            enabled = enabled
+        )
+    }
+}
+

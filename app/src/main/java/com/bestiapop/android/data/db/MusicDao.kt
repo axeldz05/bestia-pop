@@ -77,9 +77,6 @@ interface MusicDao {
     @Query("UPDATE songs SET artworkUri = :artworkUri WHERE album = :albumName")
     suspend fun setAlbumArtwork(albumName: String, artworkUri: String?)
 
-    @Query("UPDATE songs SET artworkUri = :artworkUri WHERE id = :songId")
-    suspend fun updateSongArtwork(songId: Long, artworkUri: String?)
-
     @Query("UPDATE songs SET durationMs = :durationMs WHERE id = :songId")
     suspend fun updateSongDuration(songId: Long, durationMs: Long)
 

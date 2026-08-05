@@ -2,27 +2,20 @@ package com.bestiapop.android.ui.components
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -93,28 +86,8 @@ fun ActiveDownloadRow(
             Spacer(modifier = Modifier.width(4.dp))
 
             when (download.state) {
-                CandidateDownloadState.QUEUED -> {
-                    Text(
-                        text = "En cola",
-                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f)
-                    )
-                }
-                CandidateDownloadState.DOWNLOADING -> {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(20.dp),
-                            strokeWidth = 2.dp,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = "${download.progressPercent}%",
-                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                }
+                CandidateDownloadState.QUEUED -> DownloadQueuedLabel()
+                CandidateDownloadState.DOWNLOADING -> DownloadProgressPercent(download.progressPercent)
                 CandidateDownloadState.SUCCESS -> {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         IconButton(onClick = onPlay) {
@@ -134,74 +107,28 @@ fun ActiveDownloadRow(
                     }
                 }
                 CandidateDownloadState.ERROR -> {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        OutlinedButton(
-                            onClick = onRetry,
-                            shape = RoundedCornerShape(12.dp),
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
-                        ) {
-                            Icon(
-                                Icons.Default.Refresh,
-                                contentDescription = "Reintentar",
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Reintentar", style = MaterialTheme.typography.labelSmall)
-                        }
-                        IconButton(onClick = onCycle) {
-                            Icon(
-                                Icons.Default.Search,
-                                contentDescription = "Buscar otro",
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                        IconButton(onClick = onDismiss) {
-                            Icon(
-                                Icons.Default.Close,
-                                contentDescription = "Descartar",
-                                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                            )
-                        }
-                    }
+                    RetryCycleDismissActions(
+                        onRetry = onRetry,
+                        onCycle = onCycle,
+                        onDismiss = onDismiss
+                    )
                 }
                 CandidateDownloadState.IDLE -> {
-                    // Conflict / residual: Preview + Buscar otro
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.End
                     ) {
-                        IconButton(onClick = onPreview) {
-                            when {
-                                isPreviewResolving -> CircularProgressIndicator(
-                                    modifier = Modifier.size(22.dp),
-                                    strokeWidth = 2.dp,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                                isPreviewPlaying -> Icon(
-                                    imageVector = Icons.Default.Pause,
-                                    contentDescription = "Pausar preview",
-                                    tint = MaterialTheme.colorScheme.primary
-                                )
-                                else -> Icon(
-                                    imageVector = Icons.Default.PlayArrow,
-                                    contentDescription = "Preview",
-                                    tint = MaterialTheme.colorScheme.primary
-                                )
-                            }
-                        }
-                        OutlinedButton(
+                        PreviewPlayPauseButton(
+                            isResolving = isPreviewResolving,
+                            isPlaying = isPreviewPlaying,
+                            onClick = onPreview
+                        )
+                        DownloadOutlinedActionButton(
+                            label = "Buscar otro",
                             onClick = onCycle,
-                            shape = RoundedCornerShape(12.dp),
-                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
-                        ) {
-                            Icon(
-                                Icons.Default.Refresh,
-                                contentDescription = "Buscar otro",
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Buscar otro", style = MaterialTheme.typography.labelSmall)
-                        }
+                            contentDescription = "Buscar otro",
+                            horizontalPadding = 10
+                        )
                     }
                 }
             }

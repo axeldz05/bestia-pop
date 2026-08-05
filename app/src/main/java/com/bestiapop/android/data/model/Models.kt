@@ -254,6 +254,133 @@ data class ActiveDownload(
         get() = candidates.getOrNull(currentCandidateIndex)
 
     companion object {
+        fun queued(
+            id: String,
+            source: ActiveDownloadSource,
+            displayTitle: String,
+            displayArtist: String,
+            artworkUrl: String?,
+            candidates: List<OnlineCatalogTrack>,
+            currentCandidateIndex: Int = 0,
+            targetPlaylistId: Long? = null,
+            resultSongId: Long? = null
+        ): ActiveDownload = ActiveDownload(
+            id = id,
+            source = source,
+            displayTitle = displayTitle,
+            displayArtist = displayArtist,
+            artworkUrl = artworkUrl,
+            candidates = candidates,
+            currentCandidateIndex = currentCandidateIndex,
+            state = CandidateDownloadState.QUEUED,
+            progressMessage = "En cola",
+            progressPercent = 0,
+            errorMessage = null,
+            targetPlaylistId = targetPlaylistId,
+            resultSongId = resultSongId
+        )
+
+        fun downloading(
+            id: String,
+            source: ActiveDownloadSource,
+            displayTitle: String,
+            displayArtist: String,
+            artworkUrl: String?,
+            candidates: List<OnlineCatalogTrack>,
+            currentCandidateIndex: Int = 0,
+            targetPlaylistId: Long? = null,
+            progressMessage: String = "Iniciando descarga...",
+            progressPercent: Int = 20
+        ): ActiveDownload = ActiveDownload(
+            id = id,
+            source = source,
+            displayTitle = displayTitle,
+            displayArtist = displayArtist,
+            artworkUrl = artworkUrl,
+            candidates = candidates,
+            currentCandidateIndex = currentCandidateIndex,
+            state = CandidateDownloadState.DOWNLOADING,
+            progressMessage = progressMessage,
+            progressPercent = progressPercent,
+            errorMessage = null,
+            targetPlaylistId = targetPlaylistId
+        )
+
+        fun conflict(
+            id: String,
+            source: ActiveDownloadSource,
+            displayTitle: String,
+            displayArtist: String,
+            artworkUrl: String?,
+            candidates: List<OnlineCatalogTrack>,
+            currentCandidateIndex: Int = 0,
+            targetPlaylistId: Long? = null
+        ): ActiveDownload = ActiveDownload(
+            id = id,
+            source = source,
+            displayTitle = displayTitle,
+            displayArtist = displayArtist,
+            artworkUrl = artworkUrl,
+            candidates = candidates,
+            currentCandidateIndex = currentCandidateIndex,
+            state = CandidateDownloadState.IDLE,
+            progressMessage = "Conflicto: ya está en la biblioteca",
+            progressPercent = 0,
+            errorMessage = null,
+            targetPlaylistId = targetPlaylistId
+        )
+
+        fun success(
+            id: String,
+            source: ActiveDownloadSource,
+            song: Song,
+            displayTitle: String,
+            displayArtist: String,
+            artworkUrl: String?,
+            candidates: List<OnlineCatalogTrack>,
+            currentCandidateIndex: Int = 0,
+            targetPlaylistId: Long? = null
+        ): ActiveDownload = ActiveDownload(
+            id = id,
+            source = source,
+            displayTitle = song.title.ifBlank { displayTitle }.ifBlank { "Descarga" },
+            displayArtist = song.artist.ifBlank { displayArtist },
+            artworkUrl = song.artworkUri ?: artworkUrl,
+            candidates = candidates,
+            currentCandidateIndex = currentCandidateIndex,
+            state = CandidateDownloadState.SUCCESS,
+            progressMessage = "Descargada",
+            progressPercent = 100,
+            errorMessage = null,
+            targetPlaylistId = targetPlaylistId,
+            resultSongId = song.id
+        )
+
+        fun error(
+            id: String,
+            source: ActiveDownloadSource,
+            displayTitle: String,
+            displayArtist: String,
+            artworkUrl: String?,
+            candidates: List<OnlineCatalogTrack>,
+            errorMessage: String,
+            currentCandidateIndex: Int = 0,
+            targetPlaylistId: Long? = null
+        ): ActiveDownload = ActiveDownload(
+            id = id,
+            source = source,
+            displayTitle = displayTitle,
+            displayArtist = displayArtist,
+            artworkUrl = artworkUrl,
+            candidates = candidates,
+            currentCandidateIndex = currentCandidateIndex,
+            state = CandidateDownloadState.ERROR,
+            progressMessage = null,
+            progressPercent = 0,
+            errorMessage = errorMessage,
+            targetPlaylistId = targetPlaylistId
+        )
+
         /** Advance to the next YouTube match; expands via [newCandidates] when the list was a single placeholder. */
         fun withCycledCandidate(
             download: ActiveDownload,

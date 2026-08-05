@@ -59,7 +59,7 @@ class ListenBrainzRadio(
         val mbids = recordings.map { it.recordingMbid }.distinct()
         val metaByMbid = resolveRecordingMetadata(mbids, token)
 
-        val libraryIndex = buildLibraryIndex(library)
+        val libraryIndex = MatchListenBrainzTracksUseCase.buildLibraryIndex(library)
         val artistFallback = HashMap<String, String>()
         for (rec in recordings) {
             val name = rec.similarArtistName?.takeIf { it.isNotBlank() } ?: continue
@@ -163,17 +163,6 @@ class ListenBrainzRadio(
             }
         }
         return result
-    }
-
-    private fun buildLibraryIndex(library: List<Song>): Map<String, Song> {
-        val map = HashMap<String, Song>(library.size)
-        for (song in library) {
-            val key = MatchListenBrainzTracksUseCase.matchKey(song.artist, song.title)
-            if (key.isNotEmpty() && !map.containsKey(key)) {
-                map[key] = song
-            }
-        }
-        return map
     }
 
     private data class CachedArtistMbid(val mbid: String, val storedAtMs: Long)

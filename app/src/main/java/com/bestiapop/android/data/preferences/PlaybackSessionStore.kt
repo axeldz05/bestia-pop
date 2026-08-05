@@ -7,6 +7,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.bestiapop.android.data.model.Song
+import com.bestiapop.android.data.util.optNullableString
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -63,11 +64,6 @@ object LastPlayedCodec {
         } catch (_: Exception) {
             null
         }
-    }
-
-    private fun JSONObject.optNullableString(key: String): String? {
-        if (!has(key) || isNull(key)) return null
-        return optString(key, "").ifBlank { null }
     }
 }
 

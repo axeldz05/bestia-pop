@@ -1,8 +1,5 @@
 package com.bestiapop.android.ui.screens.library
 
-import android.net.Uri
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -14,11 +11,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -35,7 +29,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.bestiapop.android.data.model.Playlist
 import com.bestiapop.android.data.model.Song
+import com.bestiapop.android.ui.components.ArtworkPickerBlock
 import com.bestiapop.android.ui.components.ArtworkThumbnail
+import com.bestiapop.android.ui.components.rememberImagePicker
 
 @Composable
 fun EditSongMetadataDialog(
@@ -124,11 +120,7 @@ fun EditAlbumMetadataDialog(
     var yearText by remember { mutableStateOf(if (album.year > 0) album.year.toString() else "") }
     var selectedUri by remember { mutableStateOf(album.artworkUri) }
 
-    val imagePickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri: Uri? ->
-        uri?.let { selectedUri = it.toString() }
-    }
+    val imagePickerLauncher = rememberImagePicker { selectedUri = it }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -141,16 +133,11 @@ fun EditAlbumMetadataDialog(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                ArtworkThumbnail(
+                ArtworkPickerBlock(
                     artworkUri = selectedUri,
-                    size = 120.dp,
-                    cornerRadius = 12.dp
+                    onPick = { imagePickerLauncher.launch("image/*") },
+                    buttonText = "Cambiar portada"
                 )
-                OutlinedButton(onClick = { imagePickerLauncher.launch("image/*") }) {
-                    Icon(Icons.Default.AddPhotoAlternate, contentDescription = null)
-                    Spacer(modifier = Modifier.padding(horizontal = 4.dp))
-                    Text("Cambiar portada")
-                }
                 OutlinedTextField(
                     value = displayName,
                     onValueChange = { displayName = it },
@@ -230,13 +217,7 @@ fun SetAlbumArtworkDialog(
 ) {
     var selectedUri by remember { mutableStateOf(currentArtworkUri) }
 
-    val imagePickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri: Uri? ->
-        uri?.let {
-            selectedUri = it.toString()
-        }
-    }
+    val imagePickerLauncher = rememberImagePicker { selectedUri = it }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -254,22 +235,12 @@ fun SetAlbumArtworkDialog(
                     style = MaterialTheme.typography.bodySmall
                 )
 
-                ArtworkThumbnail(
+                ArtworkPickerBlock(
                     artworkUri = selectedUri,
-                    size = 120.dp,
-                    cornerRadius = 12.dp
+                    onPick = { imagePickerLauncher.launch("image/*") },
+                    buttonText = "Seleccionar imagen de la galería",
+                    spacing = 12.dp
                 )
-
-                OutlinedButton(
-                    onClick = { imagePickerLauncher.launch("image/*") }
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.AddPhotoAlternate,
-                        contentDescription = "Seleccionar imagen"
-                    )
-                    Spacer(modifier = Modifier.padding(horizontal = 4.dp))
-                    Text("Seleccionar imagen de la galería")
-                }
             }
         },
         confirmButton = {

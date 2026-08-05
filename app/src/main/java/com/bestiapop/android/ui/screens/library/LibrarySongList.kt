@@ -18,8 +18,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -39,6 +37,7 @@ import androidx.compose.ui.unit.dp
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.ui.SortOption
 import com.bestiapop.android.ui.components.ArtworkThumbnail
+import com.bestiapop.android.ui.components.PlayShuffleIconPair
 import com.bestiapop.android.ui.components.SongListItem
 import com.bestiapop.android.ui.components.formatSortRelevantInfo
 import com.bestiapop.android.ui.state.LibraryListItem
@@ -360,19 +359,12 @@ fun TauonAlbumHeader(
                     )
                 }
                 if (!isSelectionMode) {
-                    IconButton(onClick = onPlayAlbum) {
-                        Icon(
-                            imageVector = Icons.Default.PlayArrow,
-                            contentDescription = "Reproducir álbum",
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                    IconButton(onClick = onShuffleAlbum) {
-                        Icon(
-                            imageVector = Icons.Default.Shuffle,
-                            contentDescription = "Mezclar álbum"
-                        )
-                    }
+                    PlayShuffleIconPair(
+                        onPlay = onPlayAlbum,
+                        onShuffle = onShuffleAlbum,
+                        playDescription = "Reproducir álbum",
+                        shuffleDescription = "Mezclar álbum"
+                    )
                 }
             }
         }

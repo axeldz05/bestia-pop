@@ -22,6 +22,7 @@ import com.bestiapop.android.data.model.Playlist
 import com.bestiapop.android.data.model.PlaylistPendingTrack
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.data.network.MetadataFetcher
+import com.bestiapop.android.data.util.AudioFileMetadata
 import com.bestiapop.android.data.util.SongPathNormalizer
 import com.bestiapop.android.domain.usecase.MatchListenBrainzTracksUseCase
 import kotlinx.coroutines.Dispatchers
@@ -202,7 +203,6 @@ class MusicRepository(private val context: Context) : IMusicRepository {
         existingKeys: MutableSet<String>
     ) {
         val files = folder.listFiles()
-        val retriever = MediaMetadataRetriever()
 
         for (file in files) {
             if (file.isDirectory) {
@@ -210,36 +210,23 @@ class MusicRepository(private val context: Context) : IMusicRepository {
             } else if (file.isFile && isAudioFile(file.name ?: "")) {
                 val uri = file.uri
                 try {
-                    retriever.setDataSource(context, uri)
-                    val title = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE)
-                        ?: file.name?.substringBeforeLast(".") ?: "Unknown Track"
-                    val artist = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST) ?: "Unknown Artist"
-                    val album = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM) ?: "Unknown Album"
-                    val genre = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_GENRE) ?: "Music"
-                    val durationStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
-                    val durationMs = durationStr?.toLongOrNull() ?: 0L
+                    val path = uri.toString()
+                    val metadata = AudioFileMetadata.fromPath(
+                        context = context,
+                        path = path,
+                        fallbackTitle = file.name?.substringBeforeLast(".") ?: "Unknown Track",
+                        extractEmbeddedArtwork = ::extractAndSaveEmbeddedArtwork
+                    )
 
-                    val embeddedArt = extractAndSaveEmbeddedArtwork(uri.toString(), uri.toString())
-
-                    if (!isRealMusicTrack(durationMs, uri.toString(), file.name ?: "")) continue
-                    if (SongPathNormalizer.isUnderBestiaPop(uri.toString())) continue
-                    val key = MatchListenBrainzTracksUseCase.matchKey(artist, title)
+                    if (!isRealMusicTrack(metadata.durationMs, path, file.name ?: "")) continue
+                    if (SongPathNormalizer.isUnderBestiaPop(path)) continue
+                    val key = MatchListenBrainzTracksUseCase.matchKey(metadata.artist, metadata.title)
                     if (key.isNotEmpty() && existingKeys.contains(key)) continue
 
                     list.add(
-                        SongEntity(
-                            uriString = uri.toString(),
-                            title = title,
-                            artist = artist,
-                            album = album,
-                            genre = genre,
-                            durationMs = durationMs,
-                            year = 0,
-                            trackNumber = 0,
-                            artworkUri = embeddedArt,
-                            lyrics = null,
-                            folderPath = folder.name ?: "",
-                            dateAdded = System.currentTimeMillis()
+                        metadata.toSongEntity(
+                            uriString = path,
+                            folderPath = folder.name ?: ""
                         )
                     )
                     if (key.isNotEmpty()) existingKeys.add(key)
@@ -248,7 +235,6 @@ class MusicRepository(private val context: Context) : IMusicRepository {
                 }
             }
         }
-        retriever.release()
     }
 
     override fun extractAndSaveEmbeddedArtwork(audioPathOrUri: String, identifier: String): String? {
@@ -518,16 +504,7 @@ class MusicRepository(private val context: Context) : IMusicRepository {
     override suspend fun upsertAlbumOverride(override: com.bestiapop.android.data.model.AlbumOverride) =
         withContext(Dispatchers.IO) {
             val savedArt = saveAlbumCoverImage(override.artworkUri) ?: override.artworkUri
-            musicDao.upsertAlbumOverride(
-                com.bestiapop.android.data.db.AlbumOverrideEntity(
-                    albumKey = override.albumKey,
-                    displayName = override.displayName.ifBlank { override.albumKey },
-                    artist = override.artist?.takeIf { it.isNotBlank() },
-                    genre = override.genre?.takeIf { it.isNotBlank() },
-                    year = override.year.coerceAtLeast(0),
-                    artworkUri = savedArt
-                )
-            )
+            musicDao.upsertAlbumOverride(persistOverrideEntity(override, savedArt))
         }
 
     override suspend fun updateAlbumMetadataPropagateToSongs(
@@ -553,15 +530,49 @@ class MusicRepository(private val context: Context) : IMusicRepository {
             musicDao.deleteAlbumOverride(oldKey)
         }
         musicDao.upsertAlbumOverride(
-            com.bestiapop.android.data.db.AlbumOverrideEntity(
-                albumKey = newName,
-                displayName = newName,
-                artist = safeArtist,
-                genre = safeGenre,
-                year = safeYear,
-                artworkUri = savedArt
+            persistOverrideEntity(
+                override.copy(
+                    albumKey = newName,
+                    displayName = newName,
+                    artist = safeArtist,
+                    genre = safeGenre,
+                    year = safeYear,
+                    artworkUri = savedArt
+                ),
+                savedArt
             )
         )
+    }
+
+    private fun persistOverrideEntity(
+        override: com.bestiapop.android.data.model.AlbumOverride,
+        savedArt: String?
+    ): com.bestiapop.android.data.db.AlbumOverrideEntity =
+        com.bestiapop.android.data.db.AlbumOverrideEntity(
+            albumKey = override.albumKey,
+            displayName = override.displayName.ifBlank { override.albumKey },
+            artist = override.artist?.takeIf { it.isNotBlank() },
+            genre = override.genre?.takeIf { it.isNotBlank() },
+            year = override.year.coerceAtLeast(0),
+            artworkUri = savedArt
+        )
+
+    /** L1: copy a user-chosen image into [subdir] under filesDir. */
+    private fun copyUserImageTo(subdir: String, sourceUriStr: String?): File? {
+        if (sourceUriStr.isNullOrBlank()) return null
+        try {
+            val uri = Uri.parse(sourceUriStr)
+            val coversDir = File(context.filesDir, subdir)
+            if (!coversDir.exists()) coversDir.mkdirs()
+            val destFile = File(coversDir, "cover_${System.currentTimeMillis()}_${(1000..9999).random()}.jpg")
+            context.contentResolver.openInputStream(uri)?.use { input ->
+                destFile.outputStream().use { output -> input.copyTo(output) }
+            } ?: return null
+            return destFile
+        } catch (e: Exception) {
+            e.printStackTrace()
+            return null
+        }
     }
 
     override fun saveAlbumCoverImage(sourceUriStr: String?): String? {
@@ -572,20 +583,9 @@ class MusicRepository(private val context: Context) : IMusicRepository {
         ) {
             return sourceUriStr
         }
-        try {
-            val uri = Uri.parse(sourceUriStr)
-            val coversDir = File(context.filesDir, "album_covers")
-            if (!coversDir.exists()) coversDir.mkdirs()
-
-            val destFile = File(coversDir, "cover_${System.currentTimeMillis()}_${(1000..9999).random()}.jpg")
-            context.contentResolver.openInputStream(uri)?.use { input ->
-                destFile.outputStream().use { output -> input.copyTo(output) }
-            } ?: return if (sourceUriStr.startsWith("http")) sourceUriStr else null
-            return destFile.absolutePath
-        } catch (e: Exception) {
-            e.printStackTrace()
-            return if (sourceUriStr.startsWith("http")) sourceUriStr else null
-        }
+        val dest = copyUserImageTo("album_covers", sourceUriStr)
+        if (dest != null) return dest.absolutePath
+        return if (sourceUriStr.startsWith("http")) sourceUriStr else null
     }
 
     // Playlists
@@ -594,22 +594,8 @@ class MusicRepository(private val context: Context) : IMusicRepository {
         if (sourceUriStr.startsWith("file://") && sourceUriStr.contains("playlist_covers")) {
             return sourceUriStr
         }
-        try {
-            val uri = Uri.parse(sourceUriStr)
-            val coversDir = File(context.filesDir, "playlist_covers")
-            if (!coversDir.exists()) coversDir.mkdirs()
-
-            val destFile = File(coversDir, "cover_${System.currentTimeMillis()}_${(1000..9999).random()}.jpg")
-            context.contentResolver.openInputStream(uri)?.use { input ->
-                destFile.outputStream().use { output ->
-                    input.copyTo(output)
-                }
-            }
-            return destFile.toURI().toString()
-        } catch (e: Exception) {
-            e.printStackTrace()
-            return sourceUriStr
-        }
+        val dest = copyUserImageTo("playlist_covers", sourceUriStr)
+        return dest?.toURI()?.toString() ?: sourceUriStr
     }
 
     override suspend fun createPlaylist(name: String, description: String?, coverUri: String?): Long = withContext(Dispatchers.IO) {
@@ -690,10 +676,10 @@ class MusicRepository(private val context: Context) : IMusicRepository {
             val ytStream = extractRes.result
             downloadUrl = ytStream.audioUrl
             userAgentToUse = ytStream.userAgent
-            if (finalTitle.isBlank() || finalTitle == "YouTube Track" || finalTitle == "Canción desde Link") {
+            if (isPlaceholderTitle(finalTitle)) {
                 finalTitle = ytStream.title
             }
-            if (finalArtist.isBlank() || finalArtist == "YouTube Artist" || finalArtist == "Enlace Web") {
+            if (isPlaceholderArtist(finalArtist)) {
                 finalArtist = ytStream.artist
             }
             if (finalArtwork.isNullOrBlank()) finalArtwork = ytStream.artworkUrl
@@ -817,9 +803,7 @@ class MusicRepository(private val context: Context) : IMusicRepository {
         onProgress?.invoke("Obteniendo información del álbum y portada...")
 
         var finalAlbum = track.album
-        val hasUsefulAlbum = finalAlbum.isNotBlank() &&
-            !finalAlbum.equals("YouTube Music", ignoreCase = true) &&
-            !finalAlbum.equals("Single", ignoreCase = true)
+        val hasUsefulAlbum = !isGenericAlbum(finalAlbum)
         val hasArtwork = !finalArtwork.isNullOrEmpty()
 
         if (!hasUsefulAlbum || !hasArtwork) {
@@ -831,9 +815,7 @@ class MusicRepository(private val context: Context) : IMusicRepository {
                 if (finalArtwork.isNullOrEmpty() && !fullMeta.artworkUrl.isNullOrEmpty()) {
                     finalArtwork = fullMeta.artworkUrl
                 }
-                if (!fullMeta.artistName.isNullOrBlank() &&
-                    (finalArtist.isBlank() || finalArtist == "YouTube Artist" || finalArtist == "Enlace Web")
-                ) {
+                if (!fullMeta.artistName.isNullOrBlank() && isPlaceholderArtist(finalArtist)) {
                     finalArtist = fullMeta.artistName
                 }
                 if (finalDurationMs <= 0 && fullMeta.durationMs > 0) {
@@ -918,7 +900,15 @@ class MusicRepository(private val context: Context) : IMusicRepository {
             e.printStackTrace()
         }
     }
+
+    private fun isPlaceholderTitle(title: String): Boolean =
+        title.isBlank() || title == "YouTube Track" || title == "Canción desde Link"
+
+    private fun isPlaceholderArtist(artist: String): Boolean =
+        artist.isBlank() || artist == "YouTube Artist" || artist == "Enlace Web"
+
+    private fun isGenericAlbum(album: String): Boolean =
+        album.isBlank() ||
+            album.equals("YouTube Music", ignoreCase = true) ||
+            album.equals("Single", ignoreCase = true)
 }
-
-
-

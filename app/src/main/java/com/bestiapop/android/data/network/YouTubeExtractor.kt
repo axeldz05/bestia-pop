@@ -129,6 +129,62 @@ object YouTubeExtractor {
         return Pair(cleanTitle, artist.ifEmpty { "YouTube Artist" })
     }
 
+    internal fun parseSearchContents(contents: JSONArray): List<OnlineCatalogTrack> {
+        val results = mutableListOf<OnlineCatalogTrack>()
+        for (i in 0 until contents.length()) {
+            val section = contents.optJSONObject(i)?.optJSONObject("itemSectionRenderer") ?: continue
+            val items = section.optJSONArray("contents") ?: continue
+            for (j in 0 until items.length()) {
+                val video = items.optJSONObject(j)?.optJSONObject("compactVideoRenderer")
+                    ?: items.optJSONObject(j)?.optJSONObject("videoRenderer")
+                    ?: continue
+                val videoId = video.optString("videoId")
+                if (videoId.isEmpty()) continue
+
+                val rawTitle = video.optJSONObject("title")
+                    ?.optJSONArray("runs")
+                    ?.optJSONObject(0)
+                    ?.optString("text")
+                    ?: video.optJSONObject("title")?.optString("simpleText", "YouTube Video")
+                    ?: "YouTube Video"
+                val rawAuthor = video.optJSONObject("ownerText")
+                    ?.optJSONArray("runs")
+                    ?.optJSONObject(0)
+                    ?.optString("text")
+                    ?: video.optJSONObject("longBylineText")
+                        ?.optJSONArray("runs")
+                        ?.optJSONObject(0)
+                        ?.optString("text")
+                    ?: "YouTube Artist"
+                val (title, artist) = formatTitleAndArtist(rawTitle, rawAuthor)
+                val thumbnails = video.optJSONObject("thumbnail")?.optJSONArray("thumbnails")
+                val artworkUrl = thumbnails?.let {
+                    if (it.length() > 0) it.optJSONObject(it.length() - 1)?.optString("url")
+                    else null
+                }
+                val durationMs = parseDurationTextToMs(
+                    video.optJSONObject("lengthText")?.optString("simpleText", "").orEmpty()
+                )
+
+                results.add(
+                    OnlineCatalogTrack(
+                        id = videoId,
+                        title = title,
+                        artist = artist,
+                        album = "YouTube",
+                        artworkUrl = artworkUrl,
+                        durationMs = durationMs,
+                        audioUrl = "https://www.youtube.com/watch?v=$videoId",
+                        provider = "YouTube"
+                    )
+                )
+                if (results.size >= 25) return results
+            }
+            if (results.isNotEmpty()) return results
+        }
+        return results
+    }
+
     suspend fun searchYouTube(query: String): List<OnlineCatalogTrack> = withContext(Dispatchers.IO) {
         val results = mutableListOf<OnlineCatalogTrack>()
         val trimmed = query.trim()
@@ -174,54 +230,7 @@ object YouTubeExtractor {
                             ?.optJSONObject("sectionListRenderer")
                             ?.optJSONArray("contents")
 
-                    if (contents != null) {
-                        for (i in 0 until contents.length()) {
-                            val section = contents.getJSONObject(i).optJSONObject("itemSectionRenderer") ?: continue
-                            val items = section.optJSONArray("contents") ?: continue
-
-                            for (j in 0 until items.length()) {
-                                val item = items.getJSONObject(j)
-                                val videoRenderer = item.optJSONObject("compactVideoRenderer")
-                                    ?: item.optJSONObject("videoRenderer") ?: continue
-                                val videoId = videoRenderer.optString("videoId") ?: continue
-                                if (videoId.isEmpty()) continue
-
-                                val rawTitle = videoRenderer.optJSONObject("title")?.optJSONArray("runs")?.optJSONObject(0)?.optString("text")
-                                    ?: videoRenderer.optJSONObject("title")?.optString("simpleText", "YouTube Video") ?: "YouTube Video"
-
-                                val rawAuthor = videoRenderer.optJSONObject("ownerText")?.optJSONArray("runs")?.optJSONObject(0)?.optString("text")
-                                    ?: videoRenderer.optJSONObject("longBylineText")?.optJSONArray("runs")?.optJSONObject(0)?.optString("text")
-                                    ?: "YouTube Artist"
-
-                                val (cleanTitle, cleanArtist) = formatTitleAndArtist(rawTitle, rawAuthor)
-
-                                var artworkUrl: String? = null
-                                val thumbArray = videoRenderer.optJSONObject("thumbnail")?.optJSONArray("thumbnails")
-                                if (thumbArray != null && thumbArray.length() > 0) {
-                                    artworkUrl = thumbArray.getJSONObject(thumbArray.length() - 1).optString("url")
-                                }
-
-                                val lengthText = videoRenderer.optJSONObject("lengthText")?.optString("simpleText", "") ?: ""
-                                val durationMs = parseDurationTextToMs(lengthText)
-
-                                results.add(
-                                    OnlineCatalogTrack(
-                                        id = videoId,
-                                        title = cleanTitle,
-                                        artist = cleanArtist,
-                                        album = "YouTube",
-                                        artworkUrl = artworkUrl,
-                                        durationMs = durationMs,
-                                        audioUrl = "https://www.youtube.com/watch?v=$videoId",
-                                        provider = "YouTube"
-                                    )
-                                )
-
-                                if (results.size >= 25) break
-                            }
-                            if (results.isNotEmpty()) break
-                        }
-                    }
+                    if (contents != null) results.addAll(parseSearchContents(contents))
                 }
             }
         } catch (e: Exception) {
@@ -253,48 +262,7 @@ object YouTubeExtractor {
                                 ?.optJSONObject("sectionListRenderer")
                                 ?.optJSONArray("contents")
 
-                            if (contents != null) {
-                                for (i in 0 until contents.length()) {
-                                    val sec = contents.getJSONObject(i).optJSONObject("itemSectionRenderer") ?: continue
-                                    val items = sec.optJSONArray("contents") ?: continue
-                                    for (j in 0 until items.length()) {
-                                        val item = items.getJSONObject(j)
-                                        val video = item.optJSONObject("videoRenderer")
-                                            ?: item.optJSONObject("compactVideoRenderer") ?: continue
-                                        val vidId = video.optString("videoId")
-                                        if (vidId.isEmpty()) continue
-
-                                        val rawTitle = video.optJSONObject("title")?.optJSONArray("runs")?.optJSONObject(0)?.optString("text")
-                                            ?: video.optJSONObject("title")?.optString("simpleText", "YouTube Video") ?: "YouTube Video"
-
-                                        val rawAuthor = video.optJSONObject("ownerText")?.optJSONArray("runs")?.optJSONObject(0)?.optString("text")
-                                            ?: "YouTube Artist"
-
-                                        val (cleanTitle, cleanArtist) = formatTitleAndArtist(rawTitle, rawAuthor)
-
-                                        var artworkUrl: String? = null
-                                        val thumbArray = video.optJSONObject("thumbnail")?.optJSONArray("thumbnails")
-                                        if (thumbArray != null && thumbArray.length() > 0) {
-                                            artworkUrl = thumbArray.getJSONObject(thumbArray.length() - 1).optString("url")
-                                        }
-
-                                        results.add(
-                                            OnlineCatalogTrack(
-                                                id = vidId,
-                                                title = cleanTitle,
-                                                artist = cleanArtist,
-                                                album = "YouTube",
-                                                artworkUrl = artworkUrl,
-                                                durationMs = 180000L,
-                                                audioUrl = "https://www.youtube.com/watch?v=$vidId",
-                                                provider = "YouTube"
-                                            )
-                                        )
-                                        if (results.size >= 25) break
-                                    }
-                                    if (results.isNotEmpty()) break
-                                }
-                            }
+                            if (contents != null) results.addAll(parseSearchContents(contents))
                         }
                     }
                 }

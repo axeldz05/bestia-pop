@@ -944,25 +944,12 @@ private fun CandidateTrackCard(
 
                 Spacer(modifier = Modifier.width(6.dp))
 
-                Box(
-                    modifier = Modifier
-                        .size(50.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(MaterialTheme.colorScheme.secondaryContainer),
-                    contentAlignment = Alignment.Center
-                ) {
-                    val thumb = currentYt?.artworkUrl ?: item.coverUrl
-                    if (!thumb.isNullOrEmpty()) {
-                        AsyncImage(
-                            model = thumb,
-                            contentDescription = item.trackTitle,
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    } else {
-                        Icon(Icons.Default.MusicNote, contentDescription = null)
-                    }
-                }
+                ArtworkThumbnail(
+                    artworkUri = currentYt?.artworkUrl ?: item.coverUrl,
+                    size = 50.dp,
+                    cornerRadius = 10.dp,
+                    contentDescription = item.trackTitle
+                )
 
                 Spacer(modifier = Modifier.width(10.dp))
 
@@ -1052,44 +1039,16 @@ private fun CandidateTrackCard(
 
                 when (item.downloadState) {
                     com.bestiapop.android.data.model.CandidateDownloadState.IDLE -> {
-                        OutlinedButton(
+                        DownloadOutlinedActionButton(
+                            label = "Buscar otro",
                             onClick = onCycleCandidate,
-                            shape = RoundedCornerShape(12.dp),
-                            contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                                horizontal = 10.dp,
-                                vertical = 4.dp
-                            )
-                        ) {
-                            Icon(
-                                Icons.Default.Refresh,
-                                contentDescription = "Buscar otro",
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Buscar otro", style = MaterialTheme.typography.labelSmall)
-                        }
-                    }
-                    com.bestiapop.android.data.model.CandidateDownloadState.QUEUED -> {
-                        Text(
-                            text = "En cola",
-                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f)
+                            contentDescription = "Buscar otro",
+                            horizontalPadding = 10
                         )
                     }
+                    com.bestiapop.android.data.model.CandidateDownloadState.QUEUED -> DownloadQueuedLabel()
                     com.bestiapop.android.data.model.CandidateDownloadState.DOWNLOADING -> {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(20.dp),
-                                strokeWidth = 2.dp,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "${item.downloadProgressPercent}%",
-                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
+                        DownloadProgressPercent(item.downloadProgressPercent)
                     }
                     com.bestiapop.android.data.model.CandidateDownloadState.SUCCESS -> {
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1108,35 +1067,10 @@ private fun CandidateTrackCard(
                         }
                     }
                     com.bestiapop.android.data.model.CandidateDownloadState.ERROR -> {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            OutlinedButton(
-                                onClick = onRetryDownload,
-                                shape = RoundedCornerShape(12.dp),
-                                colors = ButtonDefaults.outlinedButtonColors(
-                                    contentColor = MaterialTheme.colorScheme.primary
-                                ),
-                                contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                                    horizontal = 8.dp,
-                                    vertical = 4.dp
-                                )
-                            ) {
-                                Icon(
-                                    Icons.Default.Refresh,
-                                    contentDescription = "Reintentar",
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Reintentar", style = MaterialTheme.typography.labelSmall)
-                            }
-                            Spacer(modifier = Modifier.width(4.dp))
-                            IconButton(onClick = onCycleCandidate) {
-                                Icon(
-                                    Icons.Default.Search,
-                                    contentDescription = "Buscar otro",
-                                    tint = MaterialTheme.colorScheme.primary
-                                )
-                            }
-                        }
+                        RetryCycleDismissActions(
+                            onRetry = onRetryDownload,
+                            onCycle = onCycleCandidate
+                        )
                     }
                 }
             }
@@ -1146,8 +1080,11 @@ private fun CandidateTrackCard(
 
 
 @Composable
-private fun CatalogAlbumItem(
-    album: com.bestiapop.android.data.model.CatalogAlbum,
+private fun CatalogCollectionRow(
+    coverUrl: String?,
+    title: String,
+    subtitle: String,
+    fallbackIcon: androidx.compose.ui.graphics.vector.ImageVector,
     onClick: () -> Unit
 ) {
     Card(
@@ -1161,37 +1098,26 @@ private fun CatalogAlbumItem(
             modifier = Modifier.padding(10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Box(
-                modifier = Modifier
-                    .size(56.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(MaterialTheme.colorScheme.primaryContainer),
-                contentAlignment = Alignment.Center
-            ) {
-                if (!album.coverUrl.isNullOrEmpty()) {
-                    AsyncImage(
-                        model = album.coverUrl,
-                        contentDescription = album.title,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize()
-                    )
-                } else {
-                    Icon(Icons.Default.Album, contentDescription = null)
-                }
-            }
+            ArtworkThumbnail(
+                artworkUri = coverUrl,
+                size = 56.dp,
+                cornerRadius = 10.dp,
+                fallbackIcon = fallbackIcon,
+                contentDescription = title
+            )
 
             Spacer(modifier = Modifier.width(12.dp))
 
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = album.title,
+                    text = title,
                     style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                     color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    text = "${album.artist} • ${album.trackCount} canciones",
+                    text = subtitle,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
                     maxLines = 1,
@@ -1212,69 +1138,31 @@ private fun CatalogAlbumItem(
 }
 
 @Composable
+private fun CatalogAlbumItem(
+    album: com.bestiapop.android.data.model.CatalogAlbum,
+    onClick: () -> Unit
+) {
+    CatalogCollectionRow(
+        coverUrl = album.coverUrl,
+        title = album.title,
+        subtitle = "${album.artist} • ${album.trackCount} canciones",
+        fallbackIcon = Icons.Default.Album,
+        onClick = onClick
+    )
+}
+
+@Composable
 private fun CatalogPlaylistItem(
     playlist: com.bestiapop.android.data.model.CatalogPlaylist,
     onClick: () -> Unit
 ) {
-    Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
-        shape = RoundedCornerShape(14.dp),
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp)
-    ) {
-        Row(
-            modifier = Modifier.padding(10.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(56.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(MaterialTheme.colorScheme.secondaryContainer),
-                contentAlignment = Alignment.Center
-            ) {
-                if (!playlist.coverUrl.isNullOrEmpty()) {
-                    AsyncImage(
-                        model = playlist.coverUrl,
-                        contentDescription = playlist.title,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize()
-                    )
-                } else {
-                    Icon(Icons.Default.QueueMusic, contentDescription = null)
-                }
-            }
-
-            Spacer(modifier = Modifier.width(12.dp))
-
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = playlist.title,
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = "Por ${playlist.creator} • ${playlist.trackCount} canciones",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-
-            Spacer(modifier = Modifier.width(8.dp))
-
-            Button(
-                onClick = onClick,
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Text("Ver Canciones", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
-            }
-        }
-    }
+    CatalogCollectionRow(
+        coverUrl = playlist.coverUrl,
+        title = playlist.title,
+        subtitle = "Por ${playlist.creator} • ${playlist.trackCount} canciones",
+        fallbackIcon = Icons.Default.QueueMusic,
+        onClick = onClick
+    )
 }
 
 @Composable
@@ -1330,28 +1218,12 @@ private fun CatalogTrackItem(
                 modifier = Modifier.padding(10.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Box(
-                    modifier = Modifier
-                        .size(50.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(MaterialTheme.colorScheme.primaryContainer),
-                    contentAlignment = Alignment.Center
-                ) {
-                    if (!track.artworkUrl.isNullOrEmpty()) {
-                        AsyncImage(
-                            model = track.artworkUrl,
-                            contentDescription = track.title,
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    } else {
-                        Icon(
-                            imageVector = Icons.Default.MusicNote,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onPrimaryContainer
-                        )
-                    }
-                }
+                ArtworkThumbnail(
+                    artworkUri = track.artworkUrl,
+                    size = 50.dp,
+                    cornerRadius = 10.dp,
+                    contentDescription = track.title
+                )
 
                 Spacer(modifier = Modifier.width(12.dp))
 
@@ -1480,28 +1352,12 @@ private fun CatalogPreviewBar(
                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Box(
-                    modifier = Modifier
-                        .size(44.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(MaterialTheme.colorScheme.primaryContainer),
-                    contentAlignment = Alignment.Center
-                ) {
-                    if (!artworkUri.isNullOrEmpty()) {
-                        AsyncImage(
-                            model = artworkUri,
-                            contentDescription = title,
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    } else {
-                        Icon(
-                            imageVector = Icons.Default.MusicNote,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onPrimaryContainer
-                        )
-                    }
-                }
+                ArtworkThumbnail(
+                    artworkUri = artworkUri,
+                    size = 44.dp,
+                    cornerRadius = 8.dp,
+                    contentDescription = title
+                )
 
                 Spacer(modifier = Modifier.width(10.dp))
 

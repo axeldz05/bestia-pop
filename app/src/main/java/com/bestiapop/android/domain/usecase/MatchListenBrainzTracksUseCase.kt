@@ -18,17 +18,6 @@ class MatchListenBrainzTracksUseCase {
         return MatchedLbPlaylist(detail = detail, matches = matches)
     }
 
-    private fun buildLibraryIndex(library: List<Song>): Map<String, Song> {
-        val map = HashMap<String, Song>(library.size)
-        for (song in library) {
-            val key = matchKey(song.artist, song.title)
-            if (key.isNotEmpty() && !map.containsKey(key)) {
-                map[key] = song
-            }
-        }
-        return map
-    }
-
     companion object {
         fun normalize(value: String): String {
             return value
@@ -43,6 +32,17 @@ class MatchListenBrainzTracksUseCase {
             val t = normalize(title)
             if (a.isEmpty() || t.isEmpty()) return ""
             return "$a|$t"
+        }
+
+        fun buildLibraryIndex(library: List<Song>): Map<String, Song> {
+            val map = HashMap<String, Song>(library.size)
+            for (song in library) {
+                val key = matchKey(song.artist, song.title)
+                if (key.isNotEmpty() && !map.containsKey(key)) {
+                    map[key] = song
+                }
+            }
+            return map
         }
     }
 }

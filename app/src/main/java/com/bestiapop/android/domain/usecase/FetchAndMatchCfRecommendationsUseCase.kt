@@ -54,7 +54,7 @@ class FetchAndMatchCfRecommendationsUseCase(
             is LbApiResult.Failure -> emptyMap()
         }
 
-        val libraryIndex = buildLibraryIndex(library)
+        val libraryIndex = MatchListenBrainzTracksUseCase.buildLibraryIndex(library)
         val scoreByMbid = payload.recordings.associate { it.recordingMbid to it.score }
         val matches = ArrayList<MatchedCfTrack>(payload.recordings.size)
 
@@ -86,7 +86,7 @@ class FetchAndMatchCfRecommendationsUseCase(
         metaByMbid: Map<String, LbRecordingMetadata>,
         library: List<Song>
     ): MatchedCfRecommendations {
-        val libraryIndex = buildLibraryIndex(library)
+        val libraryIndex = MatchListenBrainzTracksUseCase.buildLibraryIndex(library)
         val matches = ArrayList<MatchedCfTrack>(payload.recordings.size)
         for (rec in payload.recordings) {
             val meta = metaByMbid[rec.recordingMbid] ?: continue
@@ -105,17 +105,6 @@ class FetchAndMatchCfRecommendationsUseCase(
             )
         }
         return MatchedCfRecommendations(payload = payload, matches = matches)
-    }
-
-    private fun buildLibraryIndex(library: List<Song>): Map<String, Song> {
-        val map = HashMap<String, Song>(library.size)
-        for (song in library) {
-            val key = MatchListenBrainzTracksUseCase.matchKey(song.artist, song.title)
-            if (key.isNotEmpty() && !map.containsKey(key)) {
-                map[key] = song
-            }
-        }
-        return map
     }
 
     companion object {

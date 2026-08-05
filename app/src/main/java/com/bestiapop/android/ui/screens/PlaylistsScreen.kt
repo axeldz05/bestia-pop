@@ -1,15 +1,14 @@
 package com.bestiapop.android.ui.screens
 
-import android.net.Uri
 import androidx.activity.compose.BackHandler
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -62,6 +61,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -81,7 +81,10 @@ import com.bestiapop.android.ui.CfRecommendationsUiState
 import com.bestiapop.android.ui.LbDiscoverListUiState
 import com.bestiapop.android.ui.LbPlaylistDetailUiState
 import com.bestiapop.android.ui.MusicPlayerViewModel
+import com.bestiapop.android.ui.components.ArtworkPickerBlock
+import com.bestiapop.android.ui.components.ArtworkThumbnail
 import com.bestiapop.android.ui.components.SongListItem
+import com.bestiapop.android.ui.components.rememberImagePicker
 
 import androidx.compose.material.icons.filled.Recommend
 import androidx.compose.runtime.LaunchedEffect
@@ -530,15 +533,77 @@ fun PlaylistsScreen(
 }
 
 @Composable
-private fun CfRecommendationsCardItem(
-    matched: MatchedCfRecommendations,
-    onClick: () -> Unit
+fun ScreenBackHeader(
+    title: String,
+    onBack: () -> Unit,
+    trailing: @Composable RowScope.() -> Unit = {}
 ) {
-    val lastUpdatedLabel = matched.payload.lastUpdatedEpochSec?.let { epochSec ->
-        val formatter = DateFormat.getDateInstance(DateFormat.MEDIUM, Locale.getDefault())
-        " · actualizado ${formatter.format(Date(epochSec * 1000L))}"
-    }.orEmpty()
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        IconButton(onClick = onBack) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                contentDescription = "Volver",
+                tint = MaterialTheme.colorScheme.onBackground
+            )
+        }
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+            color = MaterialTheme.colorScheme.onBackground,
+            modifier = Modifier.weight(1f),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        trailing()
+    }
+}
 
+@Composable
+fun LabeledPlayShuffleButtons(
+    onPlay: () -> Unit,
+    onShuffle: () -> Unit,
+    enabled: Boolean = true
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Button(
+            onClick = onPlay,
+            enabled = enabled,
+            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier.weight(1f)
+        ) {
+            Icon(imageVector = Icons.Default.PlayArrow, contentDescription = null)
+            Spacer(modifier = Modifier.width(4.dp))
+            Text("Reproducir")
+        }
+        OutlinedButton(
+            onClick = onShuffle,
+            enabled = enabled,
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier.weight(1f)
+        ) {
+            Icon(imageVector = Icons.Default.Shuffle, contentDescription = null)
+            Spacer(modifier = Modifier.width(4.dp))
+            Text("Aleatorio")
+        }
+    }
+}
+
+@Composable
+fun PlaylistSurfaceCard(
+    title: String,
+    onClick: () -> Unit,
+    leading: @Composable () -> Unit,
+    lines: @Composable ColumnScope.() -> Unit,
+    trailing: @Composable RowScope.() -> Unit = {}
+) {
     Surface(
         color = MaterialTheme.colorScheme.surface,
         shape = RoundedCornerShape(14.dp),
@@ -550,6 +615,148 @@ private fun CfRecommendationsCardItem(
             modifier = Modifier.padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            leading()
+            Spacer(modifier = Modifier.width(14.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                lines()
+            }
+            trailing()
+        }
+    }
+}
+
+@Composable
+fun RemoteTrackPlaceholderRow(
+    title: String,
+    artist: String,
+    badge: String,
+    leadingIcon: ImageVector,
+    highlighted: Boolean,
+    onClick: (() -> Unit)? = null
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .alpha(if (onClick == null) 0.55f else 0.85f)
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .padding(vertical = 10.dp, horizontal = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(48.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(
+                    if (highlighted) {
+                        MaterialTheme.colorScheme.primaryContainer
+                    } else {
+                        MaterialTheme.colorScheme.surfaceVariant
+                    }
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = leadingIcon,
+                contentDescription = null,
+                tint = if (highlighted) {
+                    MaterialTheme.colorScheme.onPrimaryContainer
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                }
+            )
+        }
+        Spacer(modifier = Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = artist,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = badge,
+                style = MaterialTheme.typography.labelSmall,
+                color = if (onClick == null) {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                } else {
+                    MaterialTheme.colorScheme.tertiary.copy(alpha = 0.9f)
+                }
+            )
+        }
+    }
+}
+
+@Composable
+private fun MatchedPlaylistDetailScaffold(
+    title: String,
+    onBack: () -> Unit,
+    loading: Boolean,
+    errorMessage: String?,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Surface(
+        modifier = Modifier.fillMaxSize(),
+        color = MaterialTheme.colorScheme.background
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(top = 16.dp, start = 16.dp, end = 16.dp)
+        ) {
+            ScreenBackHeader(title = title, onBack = onBack)
+            Spacer(modifier = Modifier.height(12.dp))
+            when {
+                loading -> Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator()
+                }
+                errorMessage != null -> Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = errorMessage,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+                else -> content()
+            }
+        }
+    }
+}
+
+@Composable
+private fun CfRecommendationsCardItem(
+    matched: MatchedCfRecommendations,
+    onClick: () -> Unit
+) {
+    val lastUpdatedLabel = matched.payload.lastUpdatedEpochSec?.let { epochSec ->
+        val formatter = DateFormat.getDateInstance(DateFormat.MEDIUM, Locale.getDefault())
+        " · actualizado ${formatter.format(Date(epochSec * 1000L))}"
+    }.orEmpty()
+
+    PlaylistSurfaceCard(
+        title = "Recomendados para vos",
+        onClick = onClick,
+        leading = {
             Box(
                 modifier = Modifier
                     .size(60.dp)
@@ -564,34 +771,24 @@ private fun CfRecommendationsCardItem(
                     modifier = Modifier.size(28.dp)
                 )
             }
-
-            Spacer(modifier = Modifier.width(14.dp))
-
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = "Recomendados para vos",
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = "${matched.matchedCount} en biblioteca · ${matched.streamCount} en stream",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = "${matched.totalCount} tracks · CF$lastUpdatedLabel",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.9f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
+        },
+        lines = {
+            Text(
+                text = "${matched.matchedCount} en biblioteca · ${matched.streamCount} en stream",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = "${matched.totalCount} tracks · CF$lastUpdatedLabel",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.9f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
         }
-    }
+    )
 }
 
 @Composable
@@ -607,129 +804,52 @@ private fun CfRecommendationsDetailScreen(
     onAddToQueue: (Song) -> Unit,
     onStartRadio: (Song) -> Unit
 ) {
-    Surface(
-        modifier = Modifier.fillMaxSize(),
-        color = MaterialTheme.colorScheme.background
+    MatchedPlaylistDetailScaffold(
+        title = "Recomendados",
+        onBack = onBack,
+        loading = detailState is CfRecommendationsUiState.Loading ||
+            detailState is CfRecommendationsUiState.Idle,
+        errorMessage = (detailState as? CfRecommendationsUiState.Error)?.message
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(top = 16.dp, start = 16.dp, end = 16.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
+        if (matched == null || matched.matches.isEmpty()) {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
             ) {
-                IconButton(onClick = onBack) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "Volver",
-                        tint = MaterialTheme.colorScheme.onBackground
-                    )
-                }
-                Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = "Recomendados",
-                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                    color = MaterialTheme.colorScheme.onBackground,
-                    modifier = Modifier.weight(1f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    text = "Aún no hay recomendaciones CF para tu cuenta.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodyMedium
                 )
             }
+        } else {
+            Text(
+                text = "${matched.matchedCount} en biblioteca · ${matched.streamCount} en stream",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+            )
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            when (detailState) {
-                is CfRecommendationsUiState.Loading, is CfRecommendationsUiState.Idle -> {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        CircularProgressIndicator()
+            LabeledPlayShuffleButtons(onPlay = onPlay, onShuffle = onShuffle)
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            LazyColumn(modifier = Modifier.fillMaxSize()) {
+                items(
+                    items = matched.matches.withIndex().toList(),
+                    key = { (index, match) ->
+                        "${index}|${match.recordingMbid}|${match.title}|${match.artist}|${match.localSong?.id}"
                     }
-                }
-                is CfRecommendationsUiState.Error -> {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = detailState.message,
-                            color = MaterialTheme.colorScheme.error,
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                    }
-                }
-                is CfRecommendationsUiState.Success -> {
-                    if (matched == null || matched.matches.isEmpty()) {
-                        Box(
-                            modifier = Modifier.fillMaxSize(),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = "Aún no hay recomendaciones CF para tu cuenta.",
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                style = MaterialTheme.typography.bodyMedium
-                            )
-                        }
-                    } else {
-                        Text(
-                            text = "${matched.matchedCount} en biblioteca · ${matched.streamCount} en stream",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                        )
-
-                        Spacer(modifier = Modifier.height(12.dp))
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Button(
-                                onClick = onPlay,
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = MaterialTheme.colorScheme.primary
-                                ),
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Icon(imageVector = Icons.Default.PlayArrow, contentDescription = null)
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Reproducir")
-                            }
-
-                            OutlinedButton(
-                                onClick = onShuffle,
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Icon(imageVector = Icons.Default.Shuffle, contentDescription = null)
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Aleatorio")
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(16.dp))
-
-                        LazyColumn(modifier = Modifier.fillMaxSize()) {
-                            items(
-                                items = matched.matches.withIndex().toList(),
-                                key = { (index, match) ->
-                                    "${index}|${match.recordingMbid}|${match.title}|${match.artist}|${match.localSong?.id}"
-                                }
-                            ) { (index, match) ->
-                                CfMatchedTrackRow(
-                                    match = match,
-                                    isCurrentPlaying = isCfMatchPlaying(match, currentItem),
-                                    onPlayAt = { onPlayAt(index) },
-                                    onPlayNext = onPlayNext,
-                                    onAddToQueue = onAddToQueue,
-                                    onStartRadio = onStartRadio
-                                )
-                            }
-                        }
-                    }
+                ) { (index, match) ->
+                    CfMatchedTrackRow(
+                        match = match,
+                        isCurrentPlaying = isCfMatchPlaying(match, currentItem),
+                        onPlayAt = { onPlayAt(index) },
+                        onPlayNext = onPlayNext,
+                        onAddToQueue = onAddToQueue,
+                        onStartRadio = onStartRadio
+                    )
                 }
             }
         }
@@ -768,60 +888,14 @@ private fun CfMatchedTrackRow(
             onStartRadio = { onStartRadio(local) }
         )
     } else {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .alpha(0.85f)
-                .clickable(onClick = onPlayAt)
-                .padding(vertical = 10.dp, horizontal = 4.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(48.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(
-                        if (isCurrentPlaying) {
-                            MaterialTheme.colorScheme.primaryContainer
-                        } else {
-                            MaterialTheme.colorScheme.surfaceVariant
-                        }
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Default.PlayArrow,
-                    contentDescription = null,
-                    tint = if (isCurrentPlaying) {
-                        MaterialTheme.colorScheme.onPrimaryContainer
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    }
-                )
-            }
-            Spacer(modifier = Modifier.width(12.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = match.title,
-                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = match.artist,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-            Text(
-                text = "Stream",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.tertiary
-            )
-        }
+        RemoteTrackPlaceholderRow(
+            title = match.title,
+            artist = match.artist,
+            badge = "Stream",
+            leadingIcon = Icons.Default.PlayArrow,
+            highlighted = isCurrentPlaying,
+            onClick = onPlayAt
+        )
     }
 }
 
@@ -830,17 +904,10 @@ private fun LbPlaylistCardItem(
     playlist: LbPlaylistSummary,
     onClick: () -> Unit
 ) {
-    Surface(
-        color = MaterialTheme.colorScheme.surface,
-        shape = RoundedCornerShape(14.dp),
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-    ) {
-        Row(
-            modifier = Modifier.padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
+    PlaylistSurfaceCard(
+        title = playlist.title,
+        onClick = onClick,
+        leading = {
             Box(
                 modifier = Modifier
                     .size(60.dp)
@@ -855,38 +922,28 @@ private fun LbPlaylistCardItem(
                     modifier = Modifier.size(28.dp)
                 )
             }
-
-            Spacer(modifier = Modifier.width(14.dp))
-
-            Column(modifier = Modifier.weight(1f)) {
+        },
+        lines = {
+            if (!playlist.description.isNullOrBlank()) {
                 Text(
-                    text = playlist.title,
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                    color = MaterialTheme.colorScheme.onSurface,
+                    text = playlist.description,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                if (!playlist.description.isNullOrBlank()) {
-                    Text(
-                        text = playlist.description,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-                Text(
-                    text = if (playlist.trackCount > 0) {
-                        "${playlist.trackCount} tracks · ListenBrainz"
-                    } else {
-                        "ListenBrainz"
-                    },
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.9f)
-                )
             }
+            Text(
+                text = if (playlist.trackCount > 0) {
+                    "${playlist.trackCount} tracks · ListenBrainz"
+                } else {
+                    "ListenBrainz"
+                },
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.9f)
+            )
         }
-    }
+    )
 }
 
 @Composable
@@ -904,200 +961,118 @@ private fun LbPlaylistDetailScreen(
     onAddToQueue: (Song) -> Unit,
     onStartRadio: (Song) -> Unit
 ) {
-    Surface(
-        modifier = Modifier.fillMaxSize(),
-        color = MaterialTheme.colorScheme.background
+    MatchedPlaylistDetailScaffold(
+        title = matchedPlaylist?.detail?.summary?.title ?: "Para Ti",
+        onBack = onBack,
+        loading = detailState is LbPlaylistDetailUiState.Loading ||
+            detailState is LbPlaylistDetailUiState.Idle,
+        errorMessage = (detailState as? LbPlaylistDetailUiState.Error)?.message
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(top = 16.dp, start = 16.dp, end = 16.dp)
-        ) {
-            val title = matchedPlaylist?.detail?.summary?.title ?: "Para Ti"
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
+        val matched = matchedPlaylist
+        if (matched == null) {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
             ) {
-                IconButton(onClick = onBack) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "Volver",
-                        tint = MaterialTheme.colorScheme.onBackground
-                    )
-                }
-                Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                    color = MaterialTheme.colorScheme.onBackground,
-                    modifier = Modifier.weight(1f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    text = "No se pudo cargar la playlist",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
+            return@MatchedPlaylistDetailScaffold
+        }
 
-            Spacer(modifier = Modifier.height(12.dp))
+        val description = matched.detail.summary.description
+        val hasTracks = matched.matches.isNotEmpty()
+        val hasMatched = matched.matchedCount > 0
+        val hasUnmatched = matched.streamCount > 0
 
-            when (detailState) {
-                is LbPlaylistDetailUiState.Loading, is LbPlaylistDetailUiState.Idle -> {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        CircularProgressIndicator()
-                    }
+        if (!description.isNullOrBlank()) {
+            Text(
+                text = description,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+        }
+
+        Text(
+            text = "${matched.matchedCount} en biblioteca · ${matched.streamCount} en stream",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+        )
+
+        Spacer(modifier = Modifier.height(12.dp))
+        LabeledPlayShuffleButtons(
+            onPlay = onPlay,
+            onShuffle = onShuffle,
+            enabled = hasTracks
+        )
+
+        if (hasMatched || hasUnmatched) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedButton(
+                    onClick = onSaveAsLocal,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(imageVector = Icons.Default.PlaylistAdd, contentDescription = null)
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Guardar", maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
-                is LbPlaylistDetailUiState.Error -> {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
+                if (hasUnmatched) {
+                    OutlinedButton(
+                        onClick = onImportWithDownloads,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.weight(1f)
                     ) {
+                        Icon(imageVector = Icons.Default.Download, contentDescription = null)
+                        Spacer(modifier = Modifier.width(4.dp))
                         Text(
-                            text = detailState.message,
-                            color = MaterialTheme.colorScheme.error,
-                            style = MaterialTheme.typography.bodyMedium
+                            "Descargar faltantes",
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 }
-                is LbPlaylistDetailUiState.Success -> {
-                    val matched = matchedPlaylist
-                    if (matched == null) {
-                        Box(
-                            modifier = Modifier.fillMaxSize(),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = "No se pudo cargar la playlist",
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    } else {
-                        val description = matched.detail.summary.description
-                        val hasTracks = matched.matches.isNotEmpty()
-                        val hasMatched = matched.matchedCount > 0
-                        val hasUnmatched = matched.streamCount > 0
+            }
+        }
 
-                        if (!description.isNullOrBlank()) {
-                            Text(
-                                text = description,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
-                                maxLines = 3,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                        }
+        Spacer(modifier = Modifier.height(16.dp))
 
-                        Text(
-                            text = "${matched.matchedCount} en biblioteca · ${matched.streamCount} en stream",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                        )
-
-                        Spacer(modifier = Modifier.height(12.dp))
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Button(
-                                onClick = onPlay,
-                                enabled = hasTracks,
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = MaterialTheme.colorScheme.primary
-                                ),
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Icon(imageVector = Icons.Default.PlayArrow, contentDescription = null)
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Reproducir")
-                            }
-
-                            OutlinedButton(
-                                onClick = onShuffle,
-                                enabled = hasTracks,
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Icon(imageVector = Icons.Default.Shuffle, contentDescription = null)
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Aleatorio")
-                            }
-                        }
-
-                        if (hasMatched || hasUnmatched) {
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                OutlinedButton(
-                                    onClick = onSaveAsLocal,
-                                    shape = RoundedCornerShape(12.dp),
-                                    modifier = Modifier.weight(1f)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.PlaylistAdd,
-                                        contentDescription = null
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text("Guardar", maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                }
-                                if (hasUnmatched) {
-                                    OutlinedButton(
-                                        onClick = onImportWithDownloads,
-                                        shape = RoundedCornerShape(12.dp),
-                                        modifier = Modifier.weight(1f)
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Download,
-                                            contentDescription = null
-                                        )
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Text(
-                                            "Descargar faltantes",
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                    }
-                                }
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(16.dp))
-
-                        if (matched.matches.isEmpty()) {
-                            Box(
-                                modifier = Modifier.fillMaxSize(),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = "Esta playlist no tiene tracks",
-                                    style = MaterialTheme.typography.titleSmall,
-                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                                )
-                            }
-                        } else {
-                            LazyColumn(modifier = Modifier.fillMaxSize()) {
-                                items(
-                                    items = matched.matches.withIndex().toList(),
-                                    key = { (index, match) ->
-                                        "${index}|${match.track.recordingMbid ?: match.track.title}|${match.track.artist}|${match.localSong?.id}"
-                                    }
-                                ) { (index, match) ->
-                                    LbMatchedTrackRow(
-                                        match = match,
-                                        isCurrentPlaying = isLbMatchPlaying(match, currentItem),
-                                        onPlayAt = { onPlayAt(index) },
-                                        onPlayNext = onPlayNext,
-                                        onAddToQueue = onAddToQueue,
-                                        onStartRadio = onStartRadio
-                                    )
-                                }
-                            }
-                        }
+        if (matched.matches.isEmpty()) {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "Esta playlist no tiene tracks",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                )
+            }
+        } else {
+            LazyColumn(modifier = Modifier.fillMaxSize()) {
+                items(
+                    items = matched.matches.withIndex().toList(),
+                    key = { (index, match) ->
+                        "${index}|${match.track.recordingMbid ?: match.track.title}|${match.track.artist}|${match.localSong?.id}"
                     }
+                ) { (index, match) ->
+                    LbMatchedTrackRow(
+                        match = match,
+                        isCurrentPlaying = isLbMatchPlaying(match, currentItem),
+                        onPlayAt = { onPlayAt(index) },
+                        onPlayNext = onPlayNext,
+                        onAddToQueue = onAddToQueue,
+                        onStartRadio = onStartRadio
+                    )
                 }
             }
         }
@@ -1136,60 +1111,14 @@ private fun LbMatchedTrackRow(
             onStartRadio = { onStartRadio(local) }
         )
     } else {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .alpha(0.85f)
-                .clickable(onClick = onPlayAt)
-                .padding(vertical = 10.dp, horizontal = 4.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(48.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(
-                        if (isCurrentPlaying) {
-                            MaterialTheme.colorScheme.primaryContainer
-                        } else {
-                            MaterialTheme.colorScheme.surfaceVariant
-                        }
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Default.PlayArrow,
-                    contentDescription = null,
-                    tint = if (isCurrentPlaying) {
-                        MaterialTheme.colorScheme.onPrimaryContainer
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    }
-                )
-            }
-            Spacer(modifier = Modifier.width(12.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = match.track.title,
-                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = match.track.artist,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = "No en biblioteca · stream",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.9f)
-                )
-            }
-        }
+        RemoteTrackPlaceholderRow(
+            title = match.track.title,
+            artist = match.track.artist,
+            badge = "No en biblioteca · stream",
+            leadingIcon = Icons.Default.PlayArrow,
+            highlighted = isCurrentPlaying,
+            onClick = onPlayAt
+        )
     }
 }
 
@@ -1199,67 +1128,35 @@ private fun PlaylistCardItem(
     onClick: () -> Unit,
     onDelete: () -> Unit
 ) {
-    Surface(
-        color = MaterialTheme.colorScheme.surface,
-        shape = RoundedCornerShape(14.dp),
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-    ) {
-        Row(
-            modifier = Modifier.padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(60.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(MaterialTheme.colorScheme.primaryContainer),
-                contentAlignment = Alignment.Center
-            ) {
-                if (!playlist.coverUri.isNullOrEmpty()) {
-                    AsyncImage(
-                        model = playlist.coverUri,
-                        contentDescription = playlist.name,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize()
-                    )
-                } else {
-                    Icon(
-                        imageVector = Icons.Default.QueueMusic,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                        modifier = Modifier.size(28.dp)
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.width(14.dp))
-
-            Column(modifier = Modifier.weight(1f)) {
+    PlaylistSurfaceCard(
+        title = playlist.name,
+        onClick = onClick,
+        leading = {
+            ArtworkThumbnail(
+                artworkUri = playlist.coverUri,
+                size = 60.dp,
+                cornerRadius = 10.dp,
+                fallbackIcon = Icons.Default.QueueMusic,
+                contentDescription = playlist.name
+            )
+        },
+        lines = {
+            if (!playlist.description.isNullOrBlank()) {
                 Text(
-                    text = playlist.name,
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                    color = MaterialTheme.colorScheme.onSurface,
+                    text = playlist.description,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                if (!playlist.description.isNullOrBlank()) {
-                    Text(
-                        text = playlist.description,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-                Text(
-                    text = "Playlist personalizada",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f)
-                )
             }
-
+            Text(
+                text = "Playlist personalizada",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f)
+            )
+        },
+        trailing = {
             IconButton(onClick = onDelete) {
                 Icon(
                     imageVector = Icons.Default.Delete,
@@ -1268,7 +1165,7 @@ private fun PlaylistCardItem(
                 )
             }
         }
-    }
+    )
 }
 
 @Composable
@@ -1295,27 +1192,7 @@ private fun PlaylistDetailScreen(
                 .fillMaxSize()
                 .padding(top = 16.dp, start = 16.dp, end = 16.dp)
         ) {
-            // Header bar
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                IconButton(onClick = onBack) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "Volver",
-                        tint = MaterialTheme.colorScheme.onBackground
-                    )
-                }
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = playlist.name,
-                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                    color = MaterialTheme.colorScheme.onBackground,
-                    modifier = Modifier.weight(1f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+            ScreenBackHeader(title = playlist.name, onBack = onBack) {
                 IconButton(onClick = { showEditDialog = true }) {
                     Icon(
                         imageVector = Icons.Default.Edit,
@@ -1525,49 +1402,13 @@ private fun PlaylistDetailScreen(
 
 @Composable
 private fun PlaylistPendingTrackRow(pending: PlaylistPendingTrack) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .alpha(0.55f)
-            .padding(vertical = 10.dp, horizontal = 4.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Box(
-            modifier = Modifier
-                .size(48.dp)
-                .clip(RoundedCornerShape(8.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                imageVector = Icons.Default.Download,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-        Spacer(modifier = Modifier.width(12.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = pending.title,
-                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Text(
-                text = pending.artist,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Text(
-                text = "Pendiente de descarga",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-    }
+    RemoteTrackPlaceholderRow(
+        title = pending.title,
+        artist = pending.artist,
+        badge = "Pendiente de descarga",
+        leadingIcon = Icons.Default.Download,
+        highlighted = false
+    )
 }
 
 @Composable
@@ -1584,11 +1425,7 @@ private fun PlaylistFormDialog(
     var descInput by remember { mutableStateOf(initialDescription) }
     var coverUriInput by remember { mutableStateOf(initialCoverUri) }
 
-    val imagePickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri: Uri? ->
-        uri?.let { coverUriInput = it.toString() }
-    }
+    val imagePickerLauncher = rememberImagePicker { coverUriInput = it }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1601,48 +1438,51 @@ private fun PlaylistFormDialog(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // Cover Image Picker
-                Box(
-                    modifier = Modifier
-                        .size(110.dp)
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant)
-                        .clickable { imagePickerLauncher.launch("image/*") },
-                    contentAlignment = Alignment.Center
-                ) {
-                    if (!coverUriInput.isNullOrEmpty()) {
-                        AsyncImage(
-                            model = coverUriInput,
-                            contentDescription = "Portada de Playlist",
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize()
-                        )
+                ArtworkPickerBlock(
+                    artworkUri = coverUriInput,
+                    onPick = { imagePickerLauncher.launch("image/*") },
+                    buttonText = if (coverUriInput.isNullOrEmpty()) {
+                        "Seleccionar imagen"
                     } else {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Icon(
-                                imageVector = Icons.Default.AddPhotoAlternate,
-                                contentDescription = "Elegir Portada",
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(36.dp)
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = "Portada local",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                        "Cambiar imagen"
+                    },
+                    spacing = 12.dp,
+                    preview = { uri ->
+                        Box(
+                            modifier = Modifier
+                                .size(110.dp)
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(MaterialTheme.colorScheme.surfaceVariant)
+                                .clickable { imagePickerLauncher.launch("image/*") },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (!uri.isNullOrEmpty()) {
+                                AsyncImage(
+                                    model = uri,
+                                    contentDescription = "Portada de Playlist",
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            } else {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Icon(
+                                        imageVector = Icons.Default.AddPhotoAlternate,
+                                        contentDescription = "Elegir Portada",
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(36.dp)
+                                    )
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = "Portada local",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
                         }
-                    }
-                }
-
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    OutlinedButton(onClick = { imagePickerLauncher.launch("image/*") }) {
-                        Text(if (coverUriInput.isNullOrEmpty()) "Seleccionar imagen" else "Cambiar imagen")
-                    }
-
+                    },
+                    buttonLeading = {},
+                    trailing = {
                     if (!coverUriInput.isNullOrEmpty()) {
                         IconButton(onClick = { coverUriInput = null }) {
                             Icon(
@@ -1652,7 +1492,8 @@ private fun PlaylistFormDialog(
                             )
                         }
                     }
-                }
+                    }
+                )
 
                 OutlinedTextField(
                     value = nameInput,

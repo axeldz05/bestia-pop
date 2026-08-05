@@ -6,15 +6,14 @@ import android.app.NotificationManager
 import android.app.Service
 import android.content.Context
 import android.content.Intent
-import android.media.MediaMetadataRetriever
 import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
-import com.bestiapop.android.data.db.SongEntity
 import com.bestiapop.android.data.model.WifiTransferItem
 import com.bestiapop.android.data.model.WifiTransferState
 import com.bestiapop.android.data.repository.MusicRepository
+import com.bestiapop.android.data.util.AudioFileMetadata
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.call
@@ -224,51 +223,30 @@ class WebServerService : Service() {
                                 }
 
                                 try {
-                                    val retriever = MediaMetadataRetriever()
-                                    try {
-                                        retriever.setDataSource(destinationFile.absolutePath)
-                                        val title = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE)
-                                            ?: safeName.substringBeforeLast(".")
-                                        val artist = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST)
-                                            ?: "Unknown Artist"
-                                        val album = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM)
-                                            ?: "Unknown Album"
-                                        val genre = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_GENRE)
-                                            ?: "Music"
-                                        val durationMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
-                                            ?.toLongOrNull() ?: 0L
-
-                                        val embeddedArt = repository.extractAndSaveEmbeddedArtwork(destinationFile.absolutePath, destinationFile.name)
-
-                                        val songEntity = SongEntity(
-                                            uriString = destinationFile.absolutePath,
-                                            title = title,
-                                            artist = artist,
-                                            album = album,
-                                            genre = genre,
-                                            durationMs = durationMs,
-                                            year = 0,
-                                            trackNumber = 0,
-                                            artworkUri = embeddedArt,
-                                            lyrics = null,
-                                            folderPath = destinationFile.parent ?: "",
-                                            dateAdded = System.currentTimeMillis()
+                                    val path = destinationFile.absolutePath
+                                    val metadata = AudioFileMetadata.fromPath(
+                                        context = applicationContext,
+                                        path = path,
+                                        fallbackTitle = safeName.substringBeforeLast("."),
+                                        artworkIdentifier = destinationFile.name,
+                                        extractEmbeddedArtwork = repository::extractAndSaveEmbeddedArtwork
+                                    )
+                                    val songId = repository.saveUploadedSong(
+                                        metadata.toSongEntity(
+                                            uriString = path,
+                                            folderPath = destinationFile.parent ?: ""
                                         )
-
-                                        val songId = repository.saveUploadedSong(songEntity)
-                                        updateTransfer(transferId) {
-                                            it.copy(
-                                                title = title,
-                                                artist = artist,
-                                                state = WifiTransferState.DONE,
-                                                progressPercent = 100,
-                                                songId = songId,
-                                                artworkUri = embeddedArt,
-                                                errorMessage = null
-                                            )
-                                        }
-                                    } finally {
-                                        try { retriever.release() } catch (_: Exception) {}
+                                    )
+                                    updateTransfer(transferId) {
+                                        it.copy(
+                                            title = metadata.title,
+                                            artist = metadata.artist,
+                                            state = WifiTransferState.DONE,
+                                            progressPercent = 100,
+                                            songId = songId,
+                                            artworkUri = metadata.artworkUri,
+                                            errorMessage = null
+                                        )
                                     }
                                 } catch (e: Exception) {
                                     e.printStackTrace()

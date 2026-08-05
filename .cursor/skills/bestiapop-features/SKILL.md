@@ -15,15 +15,15 @@ Cada feature lista **invariantes** + **entry points**. Si el código diverge, ac
 
 **Invariante:** Listas, álbumes, artistas, playlists y colas usan el mismo pipeline de reproducción.
 
-| Acción | ViewModel | Use case |
+| Acción | ViewModel | Pipeline |
 |--------|-----------|----------|
-| Reproducir colección | `playCollection(songs, startIndex)` / `playCollection(songs, startSong)` | `PlayCollectionUseCase.playCollection` |
-| Reproducir Local\|Remote | `playPlayableCollection(items, startIndex)` | (ViewModel + `StreamResolver`) |
-| Shuffle | `shuffleCollection(songs)` | `PlayCollectionUseCase.shuffleCollection` |
-| Encolar | `enqueueCollection(songs)` | `PlayCollectionUseCase.prepareQueueAppend` |
+| Reproducir colección | `playCollection(songs, startIndex)` / `playCollection(songs, startSong)` | `playPlayableCollection` |
+| Reproducir Local\|Remote | `playPlayableCollection(items, startIndex)` | ViewModel + `StreamResolver` |
+| Shuffle | `shuffleCollection(songs)` | `applyShuffledQueue` |
+| Encolar | `enqueueCollection(songs)` | append a cola `PlayableItem` |
 | Una canción | `playSong(song, playlistOrQueue)` | (arma cola + MediaController) |
 
-Archivos: `domain/usecase/PlayCollectionUseCase.kt`, `ui/MusicPlayerViewModel.kt`.
+Archivos: `ui/MusicPlayerViewModel.kt` (`playPlayableCollection` / `applyShuffledQueue`).
 
 ## 2. Búsqueda online y descarga de audio
 
@@ -31,13 +31,13 @@ Archivos: `domain/usecase/PlayCollectionUseCase.kt`, `ui/MusicPlayerViewModel.kt
 
 | Paso | Dónde |
 |------|--------|
-| Search catálogo tracks | `MetadataFetcher.searchOnlineCatalog` / `YouTubeExtractor.searchYouTube` |
+| Search catálogo tracks | `MetadataFetcher.searchOnlineCatalog` / `YouTubeExtractor.searchYouTube` (`parseSearchContents` comparte parse InnerTube/HTML) |
 | Álbumes / playlists online | `MetadataFetcher.searchAlbums` / `searchPlaylists` + `fetchAlbumTrackCandidates` / `fetchPlaylistTrackCandidates` |
 | Extraer stream | `YouTubeExtractor.extractAudioStream` / `extractAudioStreamDetailed` |
 | Descargar + persistir | `DownloadAudioTrackUseCase.execute` → `IMusicRepository.downloadAndSaveOnlineTrack` |
 | UI diálogo | `ui/components/AddMusicDialog.kt` |
 | Centro de descargas | `DownloadsScreen` + `ActiveDownloadRow`; persistencia `ActiveDownloadsStore` / `ActiveDownloadCodec`; notif `DownloadNotificationHelper`; badge `activeDownloadBadgeCount` en tab Descargas (`MainScreen`) |
-| Orquestación VM | `runTrackedDownload` ← `downloadSingleCandidate`, `downloadSelectedCandidatesBatch`, `downloadFromUrl`, `downloadOnlineTrack`, `maybeEnqueueSaveWhileListening`; acciones `retryActiveDownload` / `cycleActiveDownload` / `previewActiveDownload` / `playActiveDownload` / `dismissActiveDownload`; deep-link `requestOpenDownloads` / `pendingOpenDownloads` |
+| Orquestación VM | `enqueueTrackedBatch` → `runTrackedDownload` ← `downloadSingleCandidate`, `downloadSelectedCandidatesBatch`, `downloadFromUrl`, `downloadOnlineTrack`, `maybeEnqueueSaveWhileListening`; candidatos vía `expandCandidates`; acciones `retryActiveDownload` / `cycleActiveDownload` / `previewActiveDownload` / `playActiveDownload` / `dismissActiveDownload`; deep-link `requestOpenDownloads` / `pendingOpenDownloads` |
 
 Modelo clave: `OnlineCatalogTrack`, `CatalogTrackCandidate`, `DownloadStatus` (legacy Idle), `ActiveDownload` / `ActiveDownloadSource` (`CATALOG`, `LINK`, `SAVE_WHILE_LISTENING`, `BATCH`, `LB_IMPORT`), cola `activeDownloads` (+ `targetPlaylistId` opcional, `resultSongId` en SUCCESS).
 
@@ -72,7 +72,7 @@ Herencia visual en lista: `GetLibrarySongsUseCase.execute` unifica artwork falta
 
 ## 5. Playlists locales
 
-CRUD + membresía vía `IMusicRepository` / `ManagePlaylistUseCase`:
+CRUD + membresía vía `IMusicRepository`:
 `createPlaylist`, `updatePlaylist`, `deletePlaylist`, `addSongToPlaylist`, `removeSongFromPlaylist`.
 Import LB: matched + `PlaylistPendingTrack` (`getPlaylistPendingTracksFlow` / `downloadPlaylistPendingTracks`).
 Flows: `playlistsFlow`, `getPlaylistSongsFlow`, `getPlaylistDetailsFlow`.
@@ -91,6 +91,7 @@ UI: `PlaylistsScreen`.
 |--------|-----|
 | Scan MediaStore | `scanMediaStore()` (skip BestiaPop + path/matchKey conocidos) |
 | Scan carpeta SAF | `scanFolderUri(treeUri)` |
+| Metadata archivo → Room | `AudioFileMetadata.fromPath` / `toSongEntity` (scan SAF + upload directo; sin MediaStore intermedio) |
 | Upload WiFi → DB | `saveUploadedSong` (`absolutePath`; merge por matchKey) |
 | Lookup duplicado | `findSongByArtistTitle` |
 | Descarga + política | `downloadAndSaveOnlineTrack(..., conflictPolicy)` |

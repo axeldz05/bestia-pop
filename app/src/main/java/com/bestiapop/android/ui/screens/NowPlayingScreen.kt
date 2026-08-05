@@ -102,6 +102,7 @@ import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.data.model.RepeatMode
 import com.bestiapop.android.domain.radio.RadioMode
 import com.bestiapop.android.ui.MusicPlayerViewModel
+import com.bestiapop.android.ui.components.ArtworkThumbnail
 import com.bestiapop.android.ui.components.formatDuration
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
@@ -637,30 +638,12 @@ fun NowPlayingScreen(
                                             }
                                         }
 
-                                        // Artwork thumbnail
-                                        Box(
-                                            modifier = Modifier
-                                                .size(40.dp)
-                                                .clip(RoundedCornerShape(8.dp))
-                                                .background(MaterialTheme.colorScheme.surfaceVariant),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            if (!queueSong.artworkUri.isNullOrEmpty()) {
-                                                AsyncImage(
-                                                    model = queueSong.artworkUri,
-                                                    contentDescription = null,
-                                                    contentScale = ContentScale.Crop,
-                                                    modifier = Modifier.fillMaxSize()
-                                                )
-                                            } else {
-                                                Icon(
-                                                    imageVector = Icons.Default.MusicNote,
-                                                    contentDescription = null,
-                                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                    modifier = Modifier.size(18.dp)
-                                                )
-                                            }
-                                        }
+                                        ArtworkThumbnail(
+                                            artworkUri = queueSong.artworkUri,
+                                            size = 40.dp,
+                                            cornerRadius = 8.dp,
+                                            contentDescription = null
+                                        )
 
                                         Spacer(modifier = Modifier.width(10.dp))
 

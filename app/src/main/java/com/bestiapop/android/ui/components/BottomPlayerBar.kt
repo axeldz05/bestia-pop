@@ -34,7 +34,6 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImage
 import com.bestiapop.android.data.model.PlayableItem
 
 @Composable
@@ -92,34 +91,12 @@ fun BottomPlayerBar(
                     modifier = Modifier.padding(start = 16.dp, top = 8.dp, bottom = 8.dp, end = 4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .size(44.dp)
-                            .clip(RoundedCornerShape(8.dp)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        if (!currentItem.artworkUri.isNullOrEmpty()) {
-                            AsyncImage(
-                                model = currentItem.artworkUri,
-                                contentDescription = currentItem.title,
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.size(44.dp)
-                            )
-                        } else {
-                            Surface(
-                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
-                                modifier = Modifier.size(44.dp)
-                            ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Icon(
-                                        imageVector = Icons.Default.MusicNote,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.primary
-                                    )
-                                }
-                            }
-                        }
-                    }
+                    ArtworkThumbnail(
+                        artworkUri = currentItem.artworkUri,
+                        size = 44.dp,
+                        cornerRadius = 8.dp,
+                        contentDescription = currentItem.title
+                    )
 
                     Spacer(modifier = Modifier.width(12.dp))
 

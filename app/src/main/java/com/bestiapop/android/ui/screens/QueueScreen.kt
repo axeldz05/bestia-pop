@@ -32,9 +32,9 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImage
 import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.ui.MusicPlayerViewModel
+import com.bestiapop.android.ui.components.ArtworkThumbnail
 
 @Composable
 fun QueueScreen(
@@ -148,27 +148,12 @@ private fun PlayableQueueRow(
             modifier = Modifier.padding(10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Box(
-                modifier = Modifier
-                    .size(48.dp)
-                    .clip(RoundedCornerShape(8.dp)),
-                contentAlignment = Alignment.Center
-            ) {
-                if (!item.artworkUri.isNullOrEmpty()) {
-                    AsyncImage(
-                        model = item.artworkUri,
-                        contentDescription = item.title,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.size(48.dp)
-                    )
-                } else {
-                    Icon(
-                        imageVector = Icons.Default.MusicNote,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                }
-            }
+            ArtworkThumbnail(
+                artworkUri = item.artworkUri,
+                size = 48.dp,
+                cornerRadius = 8.dp,
+                contentDescription = item.title
+            )
             Spacer(modifier = Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(

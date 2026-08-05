@@ -14,10 +14,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -31,6 +28,7 @@ import androidx.compose.ui.unit.dp
 import com.bestiapop.android.data.model.Artist
 import com.bestiapop.android.ui.SortOption
 import com.bestiapop.android.ui.components.ArtworkThumbnail
+import com.bestiapop.android.ui.components.PlayShuffleIconPair
 import com.bestiapop.android.ui.components.formatSortRelevantInfo
 
 @Composable
@@ -130,21 +128,12 @@ fun ArtistListItem(
                 )
             }
 
-            Row {
-                IconButton(onClick = onPlay) {
-                    Icon(
-                        imageVector = Icons.Default.PlayArrow,
-                        contentDescription = "Reproducir artista",
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                }
-                IconButton(onClick = onShuffle) {
-                    Icon(
-                        imageVector = Icons.Default.Shuffle,
-                        contentDescription = "Mezclar artista"
-                    )
-                }
-            }
+            PlayShuffleIconPair(
+                onPlay = onPlay,
+                onShuffle = onShuffle,
+                playDescription = "Reproducir artista",
+                shuffleDescription = "Mezclar artista"
+            )
         }
     }
 }

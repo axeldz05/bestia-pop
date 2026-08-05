@@ -10,6 +10,7 @@ import com.bestiapop.android.data.model.ActiveDownload
 import com.bestiapop.android.data.model.ActiveDownloadSource
 import com.bestiapop.android.data.model.CandidateDownloadState
 import com.bestiapop.android.data.model.OnlineCatalogTrack
+import com.bestiapop.android.data.util.optNullableString
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -171,13 +172,8 @@ object ActiveDownloadCodec {
             audioUrl = obj.optString("audioUrl", ""),
             provider = obj.optString("provider", "YouTube")
         )
-
-    private fun JSONObject.optNullableString(key: String): String? {
-        if (!has(key) || isNull(key)) return null
-        val value = optString(key, "")
-        return value.ifBlank { null }
-    }
 }
+
 
 class ActiveDownloadsStore(private val context: Context) {
 

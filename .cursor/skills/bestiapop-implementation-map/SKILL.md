@@ -28,7 +28,7 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 | System back (exit doble + orquestación) | `MainScreen` `BackHandler` + `SnackbarHost`; nested en screens abajo |
 | Biblioteca | `ui/screens/LibraryScreen.kt` (`BackHandler`: multi-select / addition / album-artist / search) |
 | Lista canciones / álbumes / artistas | `ui/screens/library/LibrarySongList.kt`, `LibraryAlbumGrid.kt`, `LibraryArtistList.kt`, `LibraryDialogs.kt` |
-| Playlists | `ui/screens/PlaylistsScreen.kt` (`BackHandler`: CF → LB → local detail) |
+| Playlists | `ui/screens/PlaylistsScreen.kt` (`BackHandler`: CF → LB → local detail; primitives `ScreenBackHeader`, `LabeledPlayShuffleButtons`, `PlaylistSurfaceCard`, `RemoteTrackPlaceholderRow`) |
 | Ajustes / ListenBrainz | `ui/screens/SettingsScreen.kt` (`BackHandler` sección), `ListenBrainzSettingsScreen.kt` |
 | Now playing | `ui/screens/NowPlayingScreen.kt` (`BackHandler` → `onDismiss`) |
 | Cola | `ui/screens/QueueScreen.kt` |
@@ -46,7 +46,9 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 | Download conflict dialog | `ui/components/DownloadConflictDialog.kt` |
 | Add / download music | `ui/components/AddMusicDialog.kt` (banners vía `activeDownloads` + `ActiveDownloadsSummaryBanner`; `BackHandler` step-back colección) |
 | Song row | `ui/components/SongListItem.kt` |
-| Artwork thumb | `ui/components/ArtworkThumbnail.kt` |
+| Artwork UI | `ui/components/ArtworkThumbnail.kt`; `ui/components/ArtworkPicker.kt` (`ArtworkPickerBlock`, `rememberImagePicker`) |
+| Play / shuffle icons | `ui/components/PlayShuffleButtons.kt` (`PlayIconButton`, `ShuffleIconButton`, `PlayShuffleIconPair`) |
+| Download action widgets | `ui/components/DownloadActionWidgets.kt` (`DownloadProgressPercent`, `DownloadQueuedLabel`, `RetryCycleDismissActions`, `PreviewPlayPauseButton`) |
 | Multi-select bar | `ui/components/MultiSelectActionBar.kt` |
 | Sort helper UI | `ui/components/SortRelevantInfo.kt` |
 | Color picker | `ui/components/ColorPickerDialog.kt` |
@@ -57,12 +59,9 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 
 | Use case | Archivo | Responsabilidad |
 |----------|---------|-----------------|
-| `PlayCollectionUseCase` | `domain/usecase/PlayCollectionUseCase.kt` | play / shuffle / append queue plans |
 | `GetLibrarySongsUseCase` | `domain/usecase/GetLibrarySongsUseCase.kt` | filter, sort, album groups, extract albums/artists |
 | `DownloadAudioTrackUseCase` | `domain/usecase/DownloadAudioTrackUseCase.kt` | wrap download Result |
-| `ManageArtworkUseCase` | `domain/usecase/ManageArtworkUseCase.kt` | album artwork propagation |
-| `ManagePlaylistUseCase` | `domain/usecase/ManagePlaylistUseCase.kt` | playlist ops over repo |
-| `MatchListenBrainzTracksUseCase` | `domain/usecase/MatchListenBrainzTracksUseCase.kt` | match LB tracks → local `Song` (`normalize` / `matchKey`) |
+| `MatchListenBrainzTracksUseCase` | `domain/usecase/MatchListenBrainzTracksUseCase.kt` | match LB tracks → local `Song` (`normalize` / `matchKey` / `buildLibraryIndex`) |
 | `ImportListenBrainzPlaylistUseCase` | `domain/usecase/ImportListenBrainzPlaylistUseCase.kt` | create Room playlist: matched + `PlaylistPendingTrack` metadata |
 | `FetchAndMatchCfRecommendationsUseCase` | `domain/usecase/FetchAndMatchCfRecommendationsUseCase.kt` | CF mbids → metadata → Local/Remote |
 | `RadioEngine` | `domain/radio/RadioEngine.kt` | orquesta local → LB → CF; `RadioSuggestResult` |
@@ -77,7 +76,7 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 | Concern | Archivo |
 |---------|---------|
 | Repo impl | `data/repository/MusicRepository.kt` |
-| Modelos dominio UI | `data/model/Models.kt` (`OnlineCatalogTrack`, `CatalogTrackCandidate`, `DownloadStatus`, `ActiveDownload` + `targetPlaylistId` / `resultSongId`, `ActiveDownloadSource` incl. `LB_IMPORT`, `CandidateDownloadState` incl. `QUEUED`, `PlaylistPendingTrack`, `AlbumOverride`, `WifiTransferItem` / `WifiTransferState`, `Album.displayName`) |
+| Modelos dominio UI | `data/model/Models.kt` (`OnlineCatalogTrack`, `CatalogTrackCandidate`, `DownloadStatus`, `ActiveDownload` + factories `queued`/`downloading`/`conflict`/`success`/`error` + `targetPlaylistId` / `resultSongId`, `ActiveDownloadSource` incl. `LB_IMPORT`, `CandidateDownloadState` incl. `QUEUED`, `PlaylistPendingTrack`, `AlbumOverride`, `WifiTransferItem` / `WifiTransferState`, `Album.displayName`) |
 | Cola Local/Remote | `data/model/PlayableItem.kt` (`PlayableItem`, `ResolvedStream`, `Song.toPlayable`) |
 | Room DB | `data/db/AppDatabase.kt` (v6) |
 | DAO | `data/db/MusicDao.kt` |
@@ -85,7 +84,7 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 | Album overrides | `data/db/AlbumOverrideEntity.kt` |
 | Playlist entities | `data/db/PlaylistEntities.kt` (`PlaylistPendingTrackEntity`) |
 | Catálogo / lyrics / covers web | `data/network/MetadataFetcher.kt` |
-| YouTube search + stream | `data/network/YouTubeExtractor.kt` |
+| YouTube search + stream | `data/network/YouTubeExtractor.kt` (`searchYouTube`, `parseSearchContents`) |
 | Stream resolve + cache TTL | `data/stream/StreamResolver.kt` |
 | Theme DataStore | `data/preferences/ThemePreferencesRepository.kt` |
 | Active downloads persist | `data/preferences/ActiveDownloadsStore.kt` (`ActiveDownloadCodec`, `activeDownloadBadgeCount`) |
@@ -95,7 +94,7 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 | LB models + sync | `data/listenbrainz/LbPlaylistModels.kt` (`MatchedLbPlaylist.toPlayableItems`, `streamCount`), `LbRadioModels.kt`, `CfRecommendationModels.kt` (`MatchedCfRecommendations`), `ListenTracker.kt`, `ListenSyncCoordinator.kt` |
 | Connectivity | `data/network/ConnectivityObserver.kt` |
 | Pending listens Room | `data/db/PendingListenEntity.kt`, `PendingListenDao.kt` |
-| Storage helpers | `data/util/StorageUtils.kt`, `data/util/SongPathNormalizer.kt` |
+| Storage helpers | `data/util/StorageUtils.kt`, `data/util/SongPathNormalizer.kt`, `data/util/JsonExt.kt` (`optNullableString`), `data/util/AudioFileMetadata.kt` (`AudioFileMetadata.fromPath` / `toSongEntity`) |
 | Download conflict models | `data/model/Models.kt` (`DownloadConflictPolicy`, `DuplicateSongException`, `DownloadConflict`) |
 | One-shot dedup archive | branch `archive/library-dedup-v1-migrator` (`LibraryDedupMigrator` / `LibraryDedupLogic` / prefs; not on LB) |
 
@@ -130,10 +129,10 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 Mantener esta lista alineada con `MusicPlayerViewModel.kt`:
 
 - Biblioteca: `songsState`, `albumsState`, `artistsState`, `searchQuery`, `sortOption`, `buildLibraryListItems`
-- Playback: `playSong`, `playCollection`, `playPlayableCollection`, `shuffleCollection`, `enqueueCollection`, `playNextInQueue`, `playNextBatch`, `currentItem`, `currentSong`, `queue`, `resolvingRemote`, `repeatMode`, `isShuffle`, `syncUiFromController`, `maybeSeedIdlePlayer`, `togglePlayPause`
+- Playback: `playSong`, `playCollection`, `playPlayableCollection`, `applyShuffledQueue`, `playMatchedCollection`, `shuffleMatchedCollection`, `shuffleCollection`, `enqueueCollection`, `playNextInQueue`, `playNextBatch`, `currentItem`, `currentSong`, `queue`, `resolvingRemote`, `repeatMode`, `isShuffle`, `syncUiFromController`, `maybeSeedIdlePlayer`, `togglePlayPause`
 - Radio: `startRadio` / `stopRadio` / `setRadioPreferredMode` / `setRadioForceOnline`, `radioMode`, `radioForceOnline`, `radioStatusLabel`, `replaceUpcomingWithRadio`, `maybeAutoStartRadioOnQueueEnd`
 - Artwork: `setAlbumArtwork`, `saveAlbumMetadata`
-- Online: `searchCatalog`, `searchOnlineCatalog`, `downloadSingleCandidate`, `downloadSelectedCandidatesBatch`, `downloadFromUrl`, `downloadOnlineTrack`, `activeDownloads`, `downloadConflict`, `resolveDownloadConflictOverwrite` / `resolveDownloadConflictSaveAs` / `cancelDownloadConflict`, `retryActiveDownload`, `cycleActiveDownload`, `previewActiveDownload`, `playActiveDownload`, `dismissActiveDownload`, `requestOpenDownloads` / `pendingOpenDownloads`, `playOnlineCatalogTrackAsStream`, `cycleSongCatalogResult`, `cycleTrackCandidate`, `catalogPreviewKey`
+- Online: `searchCatalog`, `searchOnlineCatalog`, `downloadSingleCandidate`, `downloadSelectedCandidatesBatch`, `enqueueTrackedBatch`, `downloadFromUrl`, `downloadOnlineTrack`, `activeDownloads`, `downloadConflict`, `resolveDownloadConflictOverwrite` / `resolveDownloadConflictSaveAs` / `cancelDownloadConflict`, `retryActiveDownload`, `cycleActiveDownload`, `previewActiveDownload`, `playActiveDownload`, `dismissActiveDownload`, `requestOpenDownloads` / `pendingOpenDownloads`, `playOnlineCatalogTrackAsStream`, `expandCandidates`, `cycleSongCatalogResult`, `cycleTrackCandidate`, `catalogPreviewKey`
 - ListenBrainz: `listenBrainzSettings`, `setListenBrainzEnabled`, `setListenBrainzDiscoverEnabled`, `setListenBrainzSaveWhileListening`, `setListenBrainzSaveWhileListeningPercent`, `refreshListenBrainzDiscoverPlaylists`, `openListenBrainzPlaylist`, `playListenBrainzPlaylist`, `shuffleListenBrainzPlaylist`, `playListenBrainzPlaylistAt`, `saveListenBrainzPlaylistAsLocal`, `importListenBrainzPlaylistWithDownloads`, `downloadPlaylistPendingTracks`, `getPlaylistPendingTracksFlow`, `refreshCfRecommendations`, `openCfRecommendations`, `closeCfRecommendations`, `playCfRecommendations`, `shuffleCfRecommendations`, `playCfAt`, `cfRecommendations`, `cfListState`, `cfDetailOpen`
 
 ## Cómo actualizar este mapa

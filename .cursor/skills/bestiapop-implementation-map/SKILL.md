@@ -30,6 +30,7 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 | Lista canciones / álbumes / artistas | `ui/screens/library/LibrarySongList.kt`, `LibraryAlbumGrid.kt`, `LibraryArtistList.kt`, `LibraryDialogs.kt` |
 | Playlists | `ui/screens/PlaylistsScreen.kt` (`BackHandler`: CF → LB → local detail; primitives `ScreenBackHeader`, `LabeledPlayShuffleButtons`, `PlaylistSurfaceCard`, `RemoteTrackPlaceholderRow`) |
 | Ajustes / ListenBrainz | `ui/screens/SettingsScreen.kt` (`BackHandler` sección), `ListenBrainzSettingsScreen.kt` |
+| Ajustes / Sonido | `ui/screens/VolumeBoostSettingsScreen.kt` (`SettingsScreen` sección `Sound`) |
 | Now playing | `ui/screens/NowPlayingScreen.kt` (`BackHandler` → `onDismiss`) |
 | Cola | `ui/screens/QueueScreen.kt` |
 | WiFi sync | `ui/screens/WebServerScreen.kt` (`WebServerScreen(viewModel)` + transferencias) |
@@ -87,6 +88,7 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 | YouTube search + stream | `data/network/YouTubeExtractor.kt` (`searchYouTube`, `parseSearchContents`) |
 | Stream resolve + cache TTL | `data/stream/StreamResolver.kt` |
 | Theme DataStore | `data/preferences/ThemePreferencesRepository.kt` |
+| Playback / sonido | `data/preferences/PlaybackPreferencesRepository.kt` (`PlaybackSettings`, `MAX_VOLUME_BOOST_GAIN_MB`, `stereoLeftGain` / `stereoRightGain`) |
 | Active downloads persist | `data/preferences/ActiveDownloadsStore.kt` (`ActiveDownloadCodec`, `activeDownloadBadgeCount`) |
 | Last-played / idle seed | `data/preferences/PlaybackSessionStore.kt` (`LastPlayedCodec`, `PlaybackHydration`, `LastPlayedSnapshot`) |
 | ListenBrainz prefs | `data/preferences/ListenBrainzPreferencesRepository.kt` |
@@ -103,6 +105,8 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 | Servicio | Archivo |
 |----------|---------|
 | Playback Media3 + UA HTTP | `service/MusicService.kt`, `service/StreamPlaybackTag.kt` |
+| Stereo balance (PCM) | `service/StereoBalanceAudioProcessor.kt` + `MusicService.applyStereoBalance` |
+| Volume boost (LoudnessEnhancer) | `MusicService.applyBoost` + `PlaybackPreferencesRepository` |
 | Ktor WiFi server | `service/WebServerService.kt` (`serverState`, `transfers`, `dismissTransfer`) |
 | Download progress notif | `service/DownloadNotificationHelper.kt` (`EXTRA_OPEN_TAB` / `TAB_DOWNLOADS`) |
 
@@ -129,7 +133,7 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 Mantener esta lista alineada con `MusicPlayerViewModel.kt`:
 
 - Biblioteca: `songsState`, `albumsState`, `artistsState`, `searchQuery`, `sortOption`, `buildLibraryListItems`
-- Playback: `playSong`, `playCollection`, `playPlayableCollection`, `applyShuffledQueue`, `playMatchedCollection`, `shuffleMatchedCollection`, `shuffleCollection`, `enqueueCollection`, `playNextInQueue`, `playNextBatch`, `currentItem`, `currentSong`, `queue`, `resolvingRemote`, `repeatMode`, `isShuffle`, `syncUiFromController`, `maybeSeedIdlePlayer`, `togglePlayPause`
+- Playback: `playSong`, `playCollection`, `playPlayableCollection`, `applyShuffledQueue`, `playMatchedCollection`, `shuffleMatchedCollection`, `shuffleCollection`, `enqueueCollection`, `playNextInQueue`, `playNextBatch`, `currentItem`, `currentSong`, `queue`, `resolvingRemote`, `repeatMode`, `isShuffle`, `syncUiFromController`, `maybeSeedIdlePlayer`, `togglePlayPause`, `volumeLevel`, `volumeBoostEnabled`, `setVolume`, `setVolumeBoostEnabled`, `stereoLeftGain`, `stereoRightGain`, `setStereoLeftGain`, `setStereoRightGain`, `resetStereoBalance`
 - Radio: `startRadio` / `stopRadio` / `setRadioPreferredMode` / `setRadioForceOnline`, `radioMode`, `radioForceOnline`, `radioStatusLabel`, `replaceUpcomingWithRadio`, `maybeAutoStartRadioOnQueueEnd`
 - Artwork: `setAlbumArtwork`, `saveAlbumMetadata`
 - Online: `searchCatalog`, `searchOnlineCatalog`, `downloadSingleCandidate`, `downloadSelectedCandidatesBatch`, `enqueueTrackedBatch`, `downloadFromUrl`, `downloadOnlineTrack`, `activeDownloads`, `downloadConflict`, `resolveDownloadConflictOverwrite` / `resolveDownloadConflictSaveAs` / `cancelDownloadConflict`, `retryActiveDownload`, `cycleActiveDownload`, `previewActiveDownload`, `playActiveDownload`, `dismissActiveDownload`, `requestOpenDownloads` / `pendingOpenDownloads`, `playOnlineCatalogTrackAsStream`, `expandCandidates`, `cycleSongCatalogResult`, `cycleTrackCandidate`, `catalogPreviewKey`

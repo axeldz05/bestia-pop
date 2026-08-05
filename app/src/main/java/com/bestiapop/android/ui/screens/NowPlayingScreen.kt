@@ -144,6 +144,7 @@ fun NowPlayingScreen(
     val repeatMode by viewModel.repeatMode.collectAsState()
     val isShuffle by viewModel.isShuffle.collectAsState()
     val volumeLevel by viewModel.volumeLevel.collectAsState()
+    val volumeBoostEnabled by viewModel.volumeBoostEnabled.collectAsState()
     val queueItems by viewModel.queue.collectAsState()
     val queueFocusEpoch by viewModel.queueFocusEpoch.collectAsState()
     val resolvingRemote by viewModel.resolvingRemote.collectAsState()
@@ -890,13 +891,19 @@ fun NowPlayingScreen(
                     )
                 }
 
+                val volumeBoosted = volumeBoostEnabled && volumeLevel > 1f
+                val volumeActiveColor = if (volumeBoosted) {
+                    MaterialTheme.colorScheme.tertiary
+                } else {
+                    MaterialTheme.colorScheme.primary
+                }
                 Slider(
-                    value = volumeLevel,
+                    value = volumeLevel.coerceIn(0f, if (volumeBoostEnabled) 2f else 1f),
                     onValueChange = { viewModel.setVolume(it) },
-                    valueRange = 0f..1f,
+                    valueRange = if (volumeBoostEnabled) 0f..2f else 0f..1f,
                     colors = SliderDefaults.colors(
-                        thumbColor = MaterialTheme.colorScheme.primary,
-                        activeTrackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f),
+                        thumbColor = volumeActiveColor,
+                        activeTrackColor = volumeActiveColor.copy(alpha = 0.8f),
                         inactiveTrackColor = MaterialTheme.colorScheme.surfaceVariant
                     ),
                     modifier = Modifier

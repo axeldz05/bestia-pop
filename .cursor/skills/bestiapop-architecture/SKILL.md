@@ -20,7 +20,7 @@ Módulo único Gradle: `:app`. Nombre del proyecto: **BestiaPop**.
 | Estado UI | `MusicPlayerViewModel` (AndroidViewModel) + StateFlow |
 | Reproducción | Media3 ExoPlayer + `MediaLibraryService` (`MusicService`) |
 | Persistencia | Room (`bestiapop_music_db`, v3) |
-| Preferencias | DataStore (`ThemePreferencesRepository`, `ListenBrainzPreferencesRepository`, `ActiveDownloadsStore`) |
+| Preferencias | DataStore (`ThemePreferencesRepository`, `ListenBrainzPreferencesRepository`, `PlaybackPreferencesRepository`, `ActiveDownloadsStore`) |
 | Red / catálogo | OkHttp + `MetadataFetcher` (iTunes/Deezer) + `YouTubeExtractor` + `ListenBrainzClient` |
 | Sync WiFi | Ktor CIO embebido (`WebServerService`) |
 | Imágenes | Coil |
@@ -56,7 +56,7 @@ service/     MusicService (playback), WebServerService (WiFi sync)
 1. Playlists (`PlaylistsScreen`)
 2. Descargas (`DownloadsScreen`)
 3. WiFi Sync (`WebServerScreen`)
-4. Ajustes (`SettingsScreen` / temas / ListenBrainz)
+4. Ajustes (`SettingsScreen` / temas / ListenBrainz / Sonido)
 
 Overlay: `BottomPlayerBar` → `NowPlayingScreen`; cola en `QueueScreen`.
 Mini player se rehidrata desde `MediaController` (sesión viva) o `PlaybackSessionStore` / seed idle (ver features §10b).
@@ -78,7 +78,7 @@ Mini player se rehidrata desde `MediaController` (sesión viva) o `PlaybackSessi
 
 | Servicio | Rol |
 |----------|-----|
-| `MusicService` | `MediaLibraryService` + ExoPlayer; `UserAgentMediaSourceFactory` lee UA de `StreamPlaybackTag` |
+| `MusicService` | `MediaLibraryService` + ExoPlayer; `UserAgentMediaSourceFactory` lee UA de `StreamPlaybackTag`; `StereoBalanceAudioProcessor` + `LoudnessEnhancer` desde `PlaybackPreferencesRepository` |
 | `WebServerService` | Servidor Ktor local para sync/upload por WiFi |
 
 ## Base de datos

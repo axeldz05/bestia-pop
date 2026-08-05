@@ -104,6 +104,24 @@ UI: `PlaylistsScreen`.
 `ThemePreferencesRepository` + `ThemePresets` + `ThemeSettingsScreen` + `CustomTheme` / `ColorSchemeData`.
 State: `currentThemeState`.
 
+## 7b. Sonido: amplificar + balance estéreo
+
+**Invariantes:**
+- Boost solo si `PlaybackSettings.volumeBoostEnabled` (Ajustes → Sonido; off por defecto).
+- Now Playing: barra `0..1` (sistema) o `0..2` si enabled; `>1` = sistema al máximo + `LoudnessEnhancer` (0…`MAX_VOLUME_BOOST_GAIN_MB`). Volumen general; no faders L/R en Now Playing.
+- Persistir `volumeBoostAmount` (`0f..1f`); al desactivar el flag se conserva el amount para reactivar.
+- Balance L/R: `stereoLeftGain` / `stereoRightGain` (`0f..1f`, default `1f`); faders **independientes** (bajar uno no sube el otro). Atenuación PCM vía `StereoBalanceAudioProcessor` **antes** del `AudioTrack`; el boost (`LoudnessEnhancer`) se aplica después a ambos canales por igual (relación L/R se conserva).
+
+| Capacidad | Entry point |
+|-----------|-------------|
+| Prefs | `PlaybackPreferencesRepository` / `PlaybackSettings` (`playback_settings`) |
+| Settings UI | `VolumeBoostSettingsScreen` vía `SettingsScreen` sección Sonido |
+| Aplicar boost | `MusicService.applyBoost` + `LoudnessEnhancer` en `ExoPlayer.audioSessionId` |
+| Aplicar balance | `MusicService.applyStereoBalance` + `StereoBalanceAudioProcessor` en `DefaultAudioSink` |
+| UI / persistir boost | `MusicPlayerViewModel.setVolume` / `setVolumeBoostEnabled` / `restoreVolumeBoostIfNeeded` |
+| UI / persistir balance | `setStereoLeftGain` / `setStereoRightGain` / `resetStereoBalance` |
+| UI slider general | `NowPlayingScreen` (`volumeBoostEnabled`, `valueRange` 0…2) |
+
 ## 8. WiFi Sync
 
 `WebServerService` (Ktor) + `WebServerScreen(viewModel)`.
@@ -220,7 +238,7 @@ Centro de descargas online → sección 2 (`DownloadsScreen`, tab Descargas).
 | Now Playing | `dismissFullPlayer` | `NowPlayingScreen` `BackHandler` |
 | Library nested | multi-select → cancel addition → album/artist → clear search | `LibraryScreen` `BackHandler` |
 | Playlists nested | CF → LB Discover → playlist local | `PlaylistsScreen` `BackHandler` |
-| Settings nested | Temas / LB → home | `SettingsScreen` `BackHandler` |
+| Settings nested | Temas / LB / Sonido → home | `SettingsScreen` `BackHandler` |
 | Raíz de tab | Doble atrás (~2s) + snackbar “Pulsa otra vez para salir” | `MainScreen` `BackHandler` + `SnackbarHost` |
 
 Manifest: `android:enableOnBackInvokedCallback="true"` en `MainActivity`.

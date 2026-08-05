@@ -15,6 +15,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Headset
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Settings
@@ -38,7 +39,8 @@ import com.bestiapop.android.ui.MusicPlayerViewModel
 
 private enum class SettingsSection {
     Themes,
-    ListenBrainz
+    ListenBrainz,
+    Sound
 }
 
 @Composable
@@ -52,7 +54,8 @@ fun SettingsScreen(viewModel: MusicPlayerViewModel) {
     when (section) {
         null -> SettingsHome(
             onOpenThemes = { section = SettingsSection.Themes },
-            onOpenListenBrainz = { section = SettingsSection.ListenBrainz }
+            onOpenListenBrainz = { section = SettingsSection.ListenBrainz },
+            onOpenSound = { section = SettingsSection.Sound }
         )
         SettingsSection.Themes -> Column(modifier = Modifier.fillMaxSize()) {
             SettingsSubHeader(
@@ -68,13 +71,21 @@ fun SettingsScreen(viewModel: MusicPlayerViewModel) {
             )
             ListenBrainzSettingsScreen(viewModel = viewModel)
         }
+        SettingsSection.Sound -> Column(modifier = Modifier.fillMaxSize()) {
+            SettingsSubHeader(
+                title = "Sonido",
+                onBack = { section = null }
+            )
+            VolumeBoostSettingsScreen(viewModel = viewModel)
+        }
     }
 }
 
 @Composable
 private fun SettingsHome(
     onOpenThemes: () -> Unit,
-    onOpenListenBrainz: () -> Unit
+    onOpenListenBrainz: () -> Unit,
+    onOpenSound: () -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -121,6 +132,15 @@ private fun SettingsHome(
             subtitle = "Registrar canciones escuchadas",
             icon = Icons.Default.Headset,
             onClick = onOpenListenBrainz
+        )
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        SettingsEntryCard(
+            title = "Sonido",
+            subtitle = "Amplificar y balance estéreo",
+            icon = Icons.AutoMirrored.Filled.VolumeUp,
+            onClick = onOpenSound
         )
     }
 }

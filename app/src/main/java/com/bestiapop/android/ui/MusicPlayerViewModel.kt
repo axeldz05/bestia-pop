@@ -32,6 +32,8 @@ import com.bestiapop.android.data.preferences.ListenBrainzPreferencesRepository
 import com.bestiapop.android.data.preferences.ListenBrainzSettings
 import com.bestiapop.android.data.preferences.MAX_SAVE_WHILE_LISTENING_PERCENT
 import com.bestiapop.android.data.preferences.MIN_SAVE_WHILE_LISTENING_PERCENT
+import com.bestiapop.android.data.preferences.PlaybackPreferencesRepository
+import com.bestiapop.android.data.preferences.PlaybackSettings
 import com.bestiapop.android.data.preferences.PlaybackHydration
 import com.bestiapop.android.data.preferences.PlaybackSessionStore
 import com.bestiapop.android.data.preferences.ThemePreferencesRepository
@@ -121,6 +123,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private val repository = MusicRepository(application)
     private val themeRepository = ThemePreferencesRepository(application)
     private val listenBrainzPreferences = ListenBrainzPreferencesRepository(application)
+    private val playbackPreferences = PlaybackPreferencesRepository(application)
     private val activeDownloadsStore = ActiveDownloadsStore(application)
     private val playbackSessionStore = PlaybackSessionStore(application)
     private val downloadNotificationHelper = DownloadNotificationHelper(application)
@@ -152,6 +155,25 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     val listenBrainzSettings: StateFlow<ListenBrainzSettings> =
         listenBrainzPreferences.settingsFlow
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ListenBrainzSettings())
+
+    private val playbackSettings: StateFlow<PlaybackSettings> =
+        playbackPreferences.settingsFlow
+            .stateIn(viewModelScope, SharingStarted.Eagerly, PlaybackSettings())
+
+    val volumeBoostEnabled: StateFlow<Boolean> =
+        playbackSettings
+            .map { it.volumeBoostEnabled }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
+    val stereoLeftGain: StateFlow<Float> =
+        playbackSettings
+            .map { it.stereoLeftGain }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 1f)
+
+    val stereoRightGain: StateFlow<Float> =
+        playbackSettings
+            .map { it.stereoRightGain }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 1f)
 
     val pendingListenCount: StateFlow<Int> = pendingListenDao.countFlow()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
@@ -407,21 +429,90 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     private fun getDeviceVolumeRatio(): Float {
-
         val current = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
         val max = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
         return (current.toFloat() / max.toFloat()).coerceIn(0f, 1f)
     }
 
-    fun setVolume(ratio: Float) {
+    private fun setSystemVolumeRatio(systemRatio: Float) {
         val max = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
-        val targetVolume = (ratio * max).toInt().coerceIn(0, max)
+        val targetVolume = (systemRatio.coerceIn(0f, 1f) * max).toInt().coerceIn(0, max)
         try {
             audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, targetVolume, 0)
         } catch (e: Exception) {
             e.printStackTrace()
         }
-        _volumeLevel.value = ratio
+    }
+
+    fun setVolume(ratio: Float) {
+        val boostEnabled = volumeBoostEnabled.value
+        val clamped = if (boostEnabled) ratio.coerceIn(0f, 2f) else ratio.coerceIn(0f, 1f)
+        val systemRatio = clamped.coerceAtMost(1f)
+        setSystemVolumeRatio(systemRatio)
+
+        val boostAmount = if (boostEnabled && clamped > 1f) (clamped - 1f).coerceIn(0f, 1f) else 0f
+        if (boostEnabled) {
+            _volumeLevel.value = clamped
+            viewModelScope.launch {
+                playbackPreferences.setVolumeBoostAmount(boostAmount)
+            }
+        } else {
+            _volumeLevel.value = systemRatio
+        }
+    }
+
+    fun setVolumeBoostEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            playbackPreferences.setVolumeBoostEnabled(enabled)
+            if (enabled) {
+                val amount = playbackSettings.value.volumeBoostAmount.coerceIn(0f, 1f)
+                if (amount > 0f) {
+                    setSystemVolumeRatio(1f)
+                    _volumeLevel.value = 1f + amount
+                } else {
+                    _volumeLevel.value = getDeviceVolumeRatio().coerceAtMost(1f)
+                }
+            } else {
+                // Clearing amount in prefs is intentionally skipped so re-enable restores boost.
+                // Force MusicService to drop gain while disabled by writing amount unchanged + enabled flag.
+                _volumeLevel.value = getDeviceVolumeRatio().coerceAtMost(1f)
+            }
+        }
+    }
+
+    fun setStereoLeftGain(gain: Float) {
+        viewModelScope.launch {
+            playbackPreferences.setStereoLeftGain(gain)
+        }
+    }
+
+    fun setStereoRightGain(gain: Float) {
+        viewModelScope.launch {
+            playbackPreferences.setStereoRightGain(gain)
+        }
+    }
+
+    fun resetStereoBalance() {
+        viewModelScope.launch {
+            playbackPreferences.resetStereoBalance()
+        }
+    }
+
+    private fun restoreVolumeBoostIfNeeded() {
+        val settings = playbackSettings.value
+        if (!settings.volumeBoostEnabled) {
+            if (_volumeLevel.value > 1f) {
+                _volumeLevel.value = getDeviceVolumeRatio().coerceAtMost(1f)
+            }
+            return
+        }
+        val amount = settings.volumeBoostAmount.coerceIn(0f, 1f)
+        if (amount > 0f) {
+            setSystemVolumeRatio(1f)
+            _volumeLevel.value = 1f + amount
+        } else {
+            _volumeLevel.value = getDeviceVolumeRatio().coerceAtMost(1f)
+        }
     }
 
     init {
@@ -535,6 +626,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 mediaController = controllerFuture?.get()
                 setupPlayerListener()
                 syncUiFromController()
+                restoreVolumeBoostIfNeeded()
             } catch (e: Exception) {
                 e.printStackTrace()
             }

@@ -31,7 +31,7 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 | Shell + bottom nav | `ui/screens/MainScreen.kt` |
 | System back (exit doble + orquestación) | `MainScreen` `BackHandler` + `SnackbarHost`; nested en screens abajo |
 | Biblioteca | `ui/screens/LibraryScreen.kt` (`BackHandler`: multi-select / addition / album-artist / search; `LibrarySongListHost` + `SongActionDialogsHost`) |
-| Lista canciones / álbumes / artistas | `ui/screens/library/LibrarySongList.kt`, `LibrarySongListHost.kt` (`LibrarySongListActions`, `SongActionDialogsHost`), `LibraryAlbumGrid.kt` (`AlbumEditCoverMenuItems`), `LibraryArtistList.kt`, `LibraryDialogs.kt` (`EditAlbumMetadataDialog`, `ConfirmMergeAlbumsDialog`, `SetAlbumArtworkDialog`) |
+| Lista canciones / álbumes / artistas | `ui/screens/library/LibrarySongList.kt`, `LibrarySongListHost.kt` (`LibrarySongListActions`, `SongActionDialogsHost`), `LibraryAlbumGrid.kt` (`AlbumEditCoverMenuItems`), `LibraryArtistList.kt`, `LibraryDialogs.kt` (`EditAlbumMetadataDialog`, `ConfirmMergeAlbumsDialog`, `SetAlbumArtworkDialog`), `LibraryProgressBanner.kt` |
 | Playlists | `ui/screens/PlaylistsScreen.kt` (`BackHandler`: CF → LB → local detail; play/shuffle vía `LabeledPlayShuffleButtons` + `playCollection`/`shuffleCollection`; `MatchedTrackRow`; `matchedStreamCountLabel`; `rememberSongQueueActions`) |
 | Ajustes / ListenBrainz | `ui/screens/SettingsScreen.kt` (`BackHandler` sección), `ListenBrainzSettingsScreen.kt` |
 | Ajustes / Sonido | `ui/screens/VolumeBoostSettingsScreen.kt` (`SettingsScreen` sección `Sound`) |
@@ -58,7 +58,7 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 | Artwork UI | `ui/components/ArtworkThumbnail.kt`; `ui/components/ArtworkPicker.kt` (`ArtworkPickerBlock`, `rememberImagePicker`) |
 | Play / shuffle icons | `ui/components/PlayShuffleButtons.kt` (`PlayIconButton`, `ShuffleIconButton`, `PlayShuffleIconPair`, `LabeledPlayShuffleButtons`) |
 | Download action widgets | `ui/components/DownloadActionWidgets.kt` (`DownloadProgressPercent`, `DownloadQueuedLabel`, `RetryCycleDismissActions`, `PreviewPlayPauseButton(enabled)`) |
-| Multi-select bar | `ui/components/MultiSelectActionBar.kt` |
+| Multi-select bar | `ui/components/MultiSelectActionBar.kt` (`onIdentifySelected`) |
 | Sort helper UI | `ui/components/SortRelevantInfo.kt` |
 | Color picker | `ui/components/ColorPickerDialog.kt` |
 | Library list model | `ui/state/LibraryListItem.kt`, `LibraryUiState.kt` |
@@ -82,14 +82,14 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 | `CfRecommendationsRadio` | `domain/radio/CfRecommendationsRadio.kt` | CF pool cache → Local/Remote (fill Radio NEW/BOTH) |
 | `DeezerSimilarRadio` | `domain/radio/DeezerSimilarRadio.kt` | Deezer radio/related + iTunes same-artist fill → Remote |
 | `RadioMode` | `domain/radio/RadioMode.kt` | `KNOWN` / `NEW` / `BOTH` |
-| Puerto | `domain/repository/IMusicRepository.kt` | contrato repositorio (`getCoPlaylistSongIds`) |
+| Puerto | `domain/repository/IMusicRepository.kt` | contrato repositorio (`getCoPlaylistSongIds`, `LibraryScanProgress`, `identifySongMetadata`) |
 
 ## Data
 
 | Concern | Archivo |
 |---------|---------|
-| Repo impl | `data/repository/MusicRepository.kt` (`scanMediaStore`, `resyncAppManagedMusic`, `scanFolderUri`) |
-| Modelos dominio UI | `data/model/Models.kt` (`OnlineCatalogTrack`, `CatalogTrackCandidate`, `DownloadStatus`, `ActiveDownload` + factories `queued`/`downloading`/`conflict`/`success`/`error` + `targetPlaylistId` / `resultSongId`, `ActiveDownloadSource` incl. `LB_IMPORT` / `DISCOVER`, `CandidateDownloadState` incl. `QUEUED`, `PlaylistPendingTrack`, `AlbumOverride`, `WifiTransferItem` / `WifiTransferState`, `Album.displayName`) |
+| Repo impl | `data/repository/MusicRepository.kt` (`scanMediaStore`, `resyncAppManagedMusic`, `scanFolderUri`, `identifySongMetadata`) |
+| Modelos dominio UI | `data/model/Models.kt` (`OnlineCatalogTrack`, `CatalogTrackCandidate`, `DownloadStatus`, `ActiveDownload` + factories `queued`/`downloading`/`conflict`/`success`/`error` + `targetPlaylistId` / `resultSongId`, `ActiveDownloadSource` incl. `LB_IMPORT` / `DISCOVER`, `CandidateDownloadState` incl. `QUEUED`, `PlaylistPendingTrack`, `AlbumOverride`, `WifiTransferItem` / `WifiTransferState`, `Album.displayName`, `LibraryJobProgress` / `LibraryJobKind`, `IdentifyResult`) |
 | Cola Local/Remote | `data/model/PlayableItem.kt` (`PlayableItem`, `ResolvedStream`, `Song.toPlayable`, `remoteFrom`, `fromLibraryOrRemote`, `Remote.toOnlineCatalogTrack`) |
 | Room DB | `data/db/AppDatabase.kt` (v6) |
 | DAO | `data/db/MusicDao.kt` (`getCoPlaylistSongIds`) |
@@ -110,7 +110,7 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 | LB models + sync | `data/listenbrainz/LbPlaylistModels.kt` (`MatchedLbPlaylist.toPlayableItems`, `streamCount`), `LbRadioModels.kt`, `CfRecommendationModels.kt` (`MatchedCfRecommendations`), `ListenTracker.kt`, `ListenSyncCoordinator.kt` |
 | Connectivity | `data/network/ConnectivityObserver.kt` |
 | Pending listens Room | `data/db/PendingListenEntity.kt`, `PendingListenDao.kt` |
-| Storage helpers | `data/util/StorageUtils.kt`, `data/util/SongPathNormalizer.kt` (`hasUsableArtwork`, path normalize / app-owned checks), `data/util/JsonExt.kt` (`optNullableString`), `data/util/AudioFileMetadata.kt` (`AudioFileMetadata.fromPath` / `toSongEntity`) |
+| Storage helpers | `data/util/StorageUtils.kt`, `data/util/SongPathNormalizer.kt` (`hasUsableArtwork`, path normalize / app-owned checks), `data/util/JsonExt.kt` (`optNullableString`), `data/util/AudioFileMetadata.kt` (`AudioFileMetadata.fromPath` / `applyFilenameHints` / `toSongEntity`, `parseFilenameMetadataHints`) |
 | Download conflict models | `data/model/Models.kt` (`DownloadConflictPolicy`, `DuplicateSongException`, `DownloadConflict`) |
 | One-shot dedup archive | branch `archive/library-dedup-v1-migrator` (`LibraryDedupMigrator` / `LibraryDedupLogic` / prefs; not on LB) |
 
@@ -141,13 +141,14 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 | Last-played / idle hydration | `app/src/test/.../PlaybackSessionStoreTest.kt` |
 | Import LB playlist | `app/src/test/.../ImportListenBrainzPlaylistUseCaseTest.kt` |
 | Path normalize | `app/src/test/.../SongPathNormalizerTest.kt` |
+| Filename metadata hints | `app/src/test/.../FilenameMetadataHintsTest.kt` |
 | UI functional library | `app/src/androidTest/.../LibraryScreenFunctionalTest.kt` |
 
 ## Símbolos ViewModel frecuentes
 
 Mantener esta lista alineada con `MusicPlayerViewModel.kt`:
 
-- Biblioteca: `songsState`, `albumsState`, `artistsState`, `searchQuery`, `sortOption`, `buildLibraryListItems`
+- Biblioteca: `songsState`, `albumsState`, `artistsState`, `searchQuery`, `sortOption`, `buildLibraryListItems`, `libraryJobProgress`, `importFolder`, `refreshLibraryFromDisk`, `identifySongs`
 - Playback: `playSong`, `playCollection`, `playPlayableCollection`, `applyShuffledQueue`, `playMatchedCollection`, `shuffleMatchedCollection`, `shuffleCollection`, `enqueueCollection`, `playNextInQueue`, `playNextBatch`, `currentItem`, `currentSong`, `queue`, `resolvingRemote`, `repeatMode`, `isShuffle`, `syncUiFromController`, `maybeSeedIdlePlayer`, `togglePlayPause`, `volumeLevel`, `volumeBoostEnabled`, `setVolume`, `setVolumeBoostEnabled`, `stereoLeftGain`, `stereoRightGain`, `setStereoLeftGain`, `setStereoRightGain`, `resetStereoBalance`
 - Radio: `startRadio` / `stopRadio` / `setRadioPreferredMode`, `suggestRadioWithRetry`, `radioMode`, `radioStatusLabel`, `RADIO_LOADING_LABEL`, `radioModeLabel`, `replaceUpcomingWithRadio`, `maybeAutoStartRadioOnQueueEnd`
 - Artwork: `setAlbumArtwork`, `saveAlbumMetadata`, `requestSaveAlbumMetadata`, `confirmPendingAlbumMerge`, `dismissPendingAlbumMerge`, `mergeAlbumInto`

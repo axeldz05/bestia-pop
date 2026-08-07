@@ -91,19 +91,24 @@ UI: `PlaylistsScreen`.
 - Playlists/overrides viven en Room (app-private): **no** sobreviven uninstall (solo los archivos de audio en `Music/BestiaPop`).
 - Descarga con conflicto → `DuplicateSongException` / `DownloadConflict` → diálogo Sobrescribir | Crear nueva | Cancelar (`DownloadConflictPolicy`).
 - One-shot migrator histórico: branch `archive/library-dedup-v1-migrator` (no compila en LB).
+- Tags Unknown en reimport: `AudioFileMetadata.applyFilenameHints` / `parseFilenameMetadataHints` recuperan artist/title de `Artist_Title` (sin inventar álbum).
+- Identificar online (manual, multi-select): auto-aplica mejor match Deezer/iTunes; progreso en `libraryJobProgress` + `LibraryProgressBanner`.
+- Import/resync/identify reportan progreso vía `LibraryScanProgress` / `LibraryJobProgress` (banner en biblioteca).
 
 | Acción | API |
 |--------|-----|
-| Scan MediaStore | `scanMediaStore()` (skip BestiaPop + path/matchKey conocidos) |
-| Reindex app music | `resyncAppManagedMusic()` → `Music/BestiaPop` filesystem walk; VM `refreshLibraryFromDisk` (init + post-permiso) |
-| Scan carpeta SAF | `scanFolderUri(treeUri): Int` (incluye BestiaPop; toast en `importFolder`) |
-| Metadata archivo → Room | `AudioFileMetadata.fromPath` / `toSongEntity` (scan SAF + upload directo; sin MediaStore intermedio) |
+| Scan MediaStore | `scanMediaStore(onProgress?)` (skip BestiaPop + path/matchKey conocidos) |
+| Reindex app music | `resyncAppManagedMusic(onProgress?)` → `Music/BestiaPop` filesystem walk; VM `refreshLibraryFromDisk` (init + post-permiso) |
+| Scan carpeta SAF | `scanFolderUri(treeUri, onProgress?): Int` (incluye BestiaPop; toast en `importFolder`) |
+| Metadata archivo → Room | `AudioFileMetadata.fromPath` / `toSongEntity` (+ filename hints si Unknown) |
 | Upload WiFi → DB | `saveUploadedSong` (`absolutePath`; merge por matchKey) |
 | Lookup duplicado | `findSongByArtistTitle` |
 | Descarga + política | `downloadAndSaveOnlineTrack(..., conflictPolicy)` |
 | Conflicto UI | `downloadConflict` / `resolveDownloadConflictOverwrite` / `resolveDownloadConflictSaveAs` / `cancelDownloadConflict` + `DownloadConflictDialog` |
 | Borrar app / dispositivo | `deleteSongsFromApp` / `deleteSongsFromDevice` |
-| Enriquecer meta/letras | `enhanceSongMetadataAndLyrics` |
+| Enriquecer meta/letras | `enhanceSongMetadataAndLyrics` (portada/letras/duración; **no** artist/álbum) |
+| Identificar artist/álbum | `identifySongMetadata` → `IdentifyResult`; VM `identifySongs`; UI multi-select `onIdentifySelected` |
+| Progreso biblioteca | `libraryJobProgress` (`LibraryJobKind.IMPORT` \| `IDENTIFY`) + `LibraryProgressBanner` |
 
 ## 7. Temas
 

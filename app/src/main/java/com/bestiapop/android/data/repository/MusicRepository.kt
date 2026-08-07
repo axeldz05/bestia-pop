@@ -17,14 +17,19 @@ import com.bestiapop.android.data.model.Album
 import com.bestiapop.android.data.model.Artist
 import com.bestiapop.android.data.model.DownloadConflictPolicy
 import com.bestiapop.android.data.model.DuplicateSongException
+import com.bestiapop.android.data.model.IdentifyResult
 import com.bestiapop.android.data.model.OnlineCatalogTrack
 import com.bestiapop.android.data.model.Playlist
 import com.bestiapop.android.data.model.PlaylistPendingTrack
 import com.bestiapop.android.data.model.Song
+import com.bestiapop.android.data.network.FullTrackMetadata
 import com.bestiapop.android.data.network.MetadataFetcher
 import com.bestiapop.android.data.stream.StreamResolver
 import com.bestiapop.android.data.util.AudioFileMetadata
 import com.bestiapop.android.data.util.SongPathNormalizer
+import com.bestiapop.android.data.util.parseFilenameMetadataHints
+import com.bestiapop.android.domain.repository.IMusicRepository
+import com.bestiapop.android.domain.repository.LibraryScanProgress
 import com.bestiapop.android.domain.usecase.MatchListenBrainzTracksUseCase
 import com.bestiapop.android.domain.util.TrackMatchKeys
 import kotlinx.coroutines.Dispatchers
@@ -34,8 +39,17 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.util.concurrent.atomic.AtomicInteger
 
-import com.bestiapop.android.domain.repository.IMusicRepository
+private class ScanProgressTicker(
+    private val total: Int,
+    private val onProgress: LibraryScanProgress?
+) {
+    private val done = AtomicInteger(0)
+    fun tick(fileName: String) {
+        onProgress?.invoke(done.incrementAndGet(), total, fileName)
+    }
+}
 
 private fun PlaylistPendingTrackEntity.toPendingTrack() = PlaylistPendingTrack(
     id = id,
@@ -117,7 +131,7 @@ class MusicRepository(private val context: Context) : IMusicRepository {
         }
     }
 
-    override suspend fun scanMediaStore() = withContext(Dispatchers.IO) {
+    override suspend fun scanMediaStore(onProgress: LibraryScanProgress?) = withContext(Dispatchers.IO) {
         val existing = musicDao.getAllSongs()
         val existingKeys = existing.mapNotNull { song ->
             MatchListenBrainzTracksUseCase.matchKey(song.artist, song.title).takeIf { it.isNotEmpty() }
@@ -148,10 +162,13 @@ class MusicRepository(private val context: Context) : IMusicRepository {
         )
 
         val scannedEntities = mutableListOf<SongEntity>()
+        val ticker = ScanProgressTicker(cursor?.count ?: 0, onProgress)
 
         cursor?.use {
             while (it.moveToNext()) {
                 val entity = it.toSongEntity()
+                val tickName = entity.title.ifBlank { entity.folderPath.substringAfterLast('/') }
+                ticker.tick(tickName)
                 if (!isRealMusicTrack(entity.durationMs, entity.folderPath)) continue
                 if (SongPathNormalizer.isUnderBestiaPop(entity.folderPath) ||
                     SongPathNormalizer.isUnderBestiaPop(entity.uriString)
@@ -177,47 +194,90 @@ class MusicRepository(private val context: Context) : IMusicRepository {
         }
     }
 
-    override suspend fun resyncAppManagedMusic(): Int = withContext(Dispatchers.IO) {
-        val musicDir = com.bestiapop.android.data.util.StorageUtils.getPublicMusicDirectory(context)
-        if (!musicDir.exists() || !musicDir.isDirectory) return@withContext 0
+    override suspend fun resyncAppManagedMusic(onProgress: LibraryScanProgress?): Int =
+        withContext(Dispatchers.IO) {
+            val musicDir = com.bestiapop.android.data.util.StorageUtils.getPublicMusicDirectory(context)
+            if (!musicDir.exists() || !musicDir.isDirectory) return@withContext 0
 
-        val existing = musicDao.getAllSongs()
-        val existingKeys = existing.mapNotNull { song ->
-            MatchListenBrainzTracksUseCase.matchKey(song.artist, song.title).takeIf { it.isNotEmpty() }
-        }.toHashSet()
-        val existingPaths = existing.mapNotNull { song ->
-            SongPathNormalizer.resolveFilePath(song.uriString, song.folderPath)
-        }.map { it.lowercase() }.toHashSet()
+            val existing = musicDao.getAllSongs()
+            val existingKeys = existing.mapNotNull { song ->
+                MatchListenBrainzTracksUseCase.matchKey(song.artist, song.title).takeIf { it.isNotEmpty() }
+            }.toHashSet()
+            val existingPaths = existing.mapNotNull { song ->
+                SongPathNormalizer.resolveFilePath(song.uriString, song.folderPath)
+            }.map { it.lowercase() }.toHashSet()
 
-        val scanned = mutableListOf<SongEntity>()
-        scanFilesystemFolderRecursively(musicDir, scanned, existingKeys, existingPaths)
-        if (scanned.isNotEmpty()) {
-            musicDao.insertSongs(scanned)
+            val total = countAudioFiles(musicDir)
+            val ticker = ScanProgressTicker(total, onProgress)
+            val scanned = mutableListOf<SongEntity>()
+            scanFilesystemFolderRecursively(
+                folder = musicDir,
+                list = scanned,
+                existingKeys = existingKeys,
+                existingPaths = existingPaths,
+                onFileVisited = ticker::tick
+            )
+            if (scanned.isNotEmpty()) {
+                musicDao.insertSongs(scanned)
+            }
+            scanned.size
         }
-        scanned.size
-    }
 
     override suspend fun findSongByArtistTitle(artist: String, title: String): Song? =
         withContext(Dispatchers.IO) {
             findSongEntityByArtistTitle(artist, title)?.toSong()
         }
 
-    override suspend fun scanFolderUri(treeUri: Uri): Int = withContext(Dispatchers.IO) {
-        val rootFolder = DocumentFile.fromTreeUri(context, treeUri) ?: return@withContext 0
-        val existing = musicDao.getAllSongs()
-        val existingKeys = existing.mapNotNull { song ->
-            MatchListenBrainzTracksUseCase.matchKey(song.artist, song.title).takeIf { it.isNotEmpty() }
-        }.toHashSet()
-        val existingPaths = existing.mapNotNull { song ->
-            SongPathNormalizer.resolveFilePath(song.uriString, song.folderPath)
-        }.map { it.lowercase() }.toHashSet()
+    override suspend fun scanFolderUri(treeUri: Uri, onProgress: LibraryScanProgress?): Int =
+        withContext(Dispatchers.IO) {
+            val rootFolder = DocumentFile.fromTreeUri(context, treeUri) ?: return@withContext 0
+            val existing = musicDao.getAllSongs()
+            val existingKeys = existing.mapNotNull { song ->
+                MatchListenBrainzTracksUseCase.matchKey(song.artist, song.title).takeIf { it.isNotEmpty() }
+            }.toHashSet()
+            val existingPaths = existing.mapNotNull { song ->
+                SongPathNormalizer.resolveFilePath(song.uriString, song.folderPath)
+            }.map { it.lowercase() }.toHashSet()
 
-        val scanned = mutableListOf<SongEntity>()
-        scanDocumentFolderRecursively(rootFolder, scanned, existingKeys, existingPaths)
-        if (scanned.isNotEmpty()) {
-            musicDao.insertSongs(scanned)
+            val total = countAudioDocuments(rootFolder)
+            val ticker = ScanProgressTicker(total, onProgress)
+            val scanned = mutableListOf<SongEntity>()
+            scanDocumentFolderRecursively(
+                folder = rootFolder,
+                list = scanned,
+                existingKeys = existingKeys,
+                existingPaths = existingPaths,
+                onFileVisited = ticker::tick
+            )
+            if (scanned.isNotEmpty()) {
+                musicDao.insertSongs(scanned)
+            }
+            scanned.size
         }
-        scanned.size
+
+    private fun countAudioFiles(folder: File): Int {
+        val children = folder.listFiles() ?: return 0
+        var count = 0
+        for (file in children) {
+            if (file.isDirectory) {
+                count += countAudioFiles(file)
+            } else if (file.isFile && isAudioFile(file.name)) {
+                count++
+            }
+        }
+        return count
+    }
+
+    private fun countAudioDocuments(folder: DocumentFile): Int {
+        var count = 0
+        for (file in folder.listFiles()) {
+            if (file.isDirectory) {
+                count += countAudioDocuments(file)
+            } else if (file.isFile && isAudioFile(file.name ?: "")) {
+                count++
+            }
+        }
+        return count
     }
 
     /** Walk public Music/BestiaPop (absolute file paths, same as downloads). */
@@ -225,15 +285,19 @@ class MusicRepository(private val context: Context) : IMusicRepository {
         folder: File,
         list: MutableList<SongEntity>,
         existingKeys: MutableSet<String>,
-        existingPaths: MutableSet<String>
+        existingPaths: MutableSet<String>,
+        onFileVisited: ((String) -> Unit)? = null
     ) {
         val children = folder.listFiles() ?: return
         for (file in children) {
             if (file.isDirectory) {
-                scanFilesystemFolderRecursively(file, list, existingKeys, existingPaths)
+                scanFilesystemFolderRecursively(
+                    file, list, existingKeys, existingPaths, onFileVisited
+                )
                 continue
             }
             if (!file.isFile || !isAudioFile(file.name)) continue
+            onFileVisited?.invoke(file.name)
             val path = file.absolutePath
             val pathKey = path.lowercase()
             if (existingPaths.contains(pathKey)) continue
@@ -278,14 +342,19 @@ class MusicRepository(private val context: Context) : IMusicRepository {
         folder: DocumentFile,
         list: MutableList<SongEntity>,
         existingKeys: MutableSet<String>,
-        existingPaths: MutableSet<String>
+        existingPaths: MutableSet<String>,
+        onFileVisited: ((String) -> Unit)? = null
     ) {
         val files = folder.listFiles()
 
         for (file in files) {
             if (file.isDirectory) {
-                scanDocumentFolderRecursively(file, list, existingKeys, existingPaths)
+                scanDocumentFolderRecursively(
+                    file, list, existingKeys, existingPaths, onFileVisited
+                )
             } else if (file.isFile && isAudioFile(file.name ?: "")) {
+                val fileName = file.name ?: "audio"
+                onFileVisited?.invoke(fileName)
                 val uri = file.uri
                 try {
                     val path = uri.toString()
@@ -524,6 +593,73 @@ class MusicRepository(private val context: Context) : IMusicRepository {
             }
         }
     }
+
+    override suspend fun identifySongMetadata(song: Song): IdentifyResult = withContext(Dispatchers.IO) {
+        if (!needsMetadataIdentify(song.artist, song.album)) {
+            return@withContext IdentifyResult.Skipped
+        }
+
+        var queryArtist = song.artist
+        var queryTitle = song.title
+        if (isPlaceholderArtist(queryArtist)) {
+            val path = SongPathNormalizer.resolveFilePath(song.uriString, song.folderPath)
+            val baseName = path
+                ?.substringAfterLast('/')
+                ?.substringBeforeLast('.')
+                ?: song.uriString.substringAfterLast('/').substringBeforeLast('.')
+            val hints = parseFilenameMetadataHints(baseName)
+            if (!hints.artist.isNullOrBlank()) queryArtist = hints.artist
+            if (!hints.title.isNullOrBlank()) queryTitle = hints.title
+        }
+
+        val fullMeta = lookupIdentifyMetadata(queryArtist, queryTitle)
+            ?: return@withContext IdentifyResult.NoMatch
+
+        val entity = musicDao.getSongById(song.id) ?: return@withContext IdentifyResult.NoMatch
+        val newArtist = fullMeta.artistName?.takeIf { it.isNotBlank() } ?: entity.artist
+        val newAlbum = fullMeta.album?.takeIf { it.isNotBlank() }
+            ?: entity.album.takeUnless { isUnknownAlbum(it) || isGenericAlbum(it) }
+            ?: "$newArtist - Single"
+        val newTitle = fullMeta.title?.takeIf { it.isNotBlank() } ?: entity.title
+        val newArt = fullMeta.artworkUrl?.takeIf { it.isNotBlank() } ?: entity.artworkUri
+        val newDuration = if (fullMeta.durationMs > 0) fullMeta.durationMs else entity.durationMs
+
+        musicDao.updateSong(
+            entity.copy(
+                title = newTitle,
+                artist = newArtist,
+                album = newAlbum,
+                artworkUri = newArt,
+                durationMs = newDuration
+            )
+        )
+        IdentifyResult.Updated(
+            songId = song.id,
+            title = newTitle,
+            artist = newArtist,
+            album = newAlbum
+        )
+    }
+
+    private suspend fun lookupIdentifyMetadata(artist: String, title: String): FullTrackMetadata? {
+        MetadataFetcher.fetchFullTrackMetadata(artist, title)?.let { return it }
+        val query = if (isPlaceholderArtist(artist)) title else "$artist $title"
+        val track = MetadataFetcher.searchOnlineCatalog(query.trim()).firstOrNull() ?: return null
+        return FullTrackMetadata(
+            album = track.album.takeIf { it.isNotBlank() },
+            artworkUrl = track.artworkUrl,
+            artistName = track.artist.takeIf { it.isNotBlank() },
+            title = track.title.takeIf { it.isNotBlank() },
+            durationMs = track.durationMs
+        )
+    }
+
+    private fun needsMetadataIdentify(artist: String, album: String): Boolean {
+        return isPlaceholderArtist(artist) || isUnknownAlbum(album) || isGenericAlbum(album)
+    }
+
+    private fun isUnknownAlbum(album: String): Boolean =
+        album.isBlank() || album.equals("Unknown Album", ignoreCase = true)
 
     fun calculateAudioDurationMs(audioPathOrUri: String): Long {
         val uri = Uri.parse(audioPathOrUri)
@@ -1041,17 +1177,7 @@ class MusicRepository(private val context: Context) : IMusicRepository {
             if (legacySongs.isEmpty()) return@withContext
 
             for (song in legacySongs) {
-                val fullMeta = MetadataFetcher.fetchFullTrackMetadata(song.artist, song.title)
-                val realAlbum = fullMeta?.album?.ifBlank { null } ?: "${song.artist} - Single"
-                val realArtwork = fullMeta?.artworkUrl?.ifBlank { null } ?: song.artworkUri
-                val realArtist = fullMeta?.artistName?.ifBlank { null } ?: song.artist
-
-                val updated = song.copy(
-                    artist = realArtist,
-                    album = realAlbum,
-                    artworkUri = realArtwork
-                )
-                musicDao.updateSong(updated)
+                identifySongMetadata(song.toSong())
             }
         } catch (e: Exception) {
             e.printStackTrace()
@@ -1062,7 +1188,10 @@ class MusicRepository(private val context: Context) : IMusicRepository {
         title.isBlank() || title == "YouTube Track" || title == "Canción desde Link"
 
     private fun isPlaceholderArtist(artist: String): Boolean =
-        artist.isBlank() || artist == "YouTube Artist" || artist == "Enlace Web"
+        artist.isBlank() ||
+            artist.equals("Unknown Artist", ignoreCase = true) ||
+            artist == "YouTube Artist" ||
+            artist == "Enlace Web"
 
     private fun isGenericAlbum(album: String): Boolean =
         album.isBlank() ||

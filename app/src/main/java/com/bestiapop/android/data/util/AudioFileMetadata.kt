@@ -5,6 +5,25 @@ import android.media.MediaMetadataRetriever
 import android.net.Uri
 import com.bestiapop.android.data.db.SongEntity
 
+data class FilenameMetadataHints(
+    val artist: String?,
+    val title: String?
+)
+
+/** Parse BestiaPop-style `Artist_Title` filenames (underscores → spaces). */
+fun parseFilenameMetadataHints(nameWithoutExtension: String): FilenameMetadataHints {
+    val cleaned = nameWithoutExtension.trim()
+    if (cleaned.isEmpty()) return FilenameMetadataHints(artist = null, title = null)
+    val idx = cleaned.indexOf('_')
+    if (idx <= 0 || idx >= cleaned.length - 1) {
+        val titleOnly = cleaned.replace('_', ' ').trim().ifBlank { null }
+        return FilenameMetadataHints(artist = null, title = titleOnly)
+    }
+    val artist = cleaned.substring(0, idx).replace('_', ' ').trim().ifBlank { null }
+    val title = cleaned.substring(idx + 1).replace('_', ' ').trim().ifBlank { null }
+    return FilenameMetadataHints(artist = artist, title = title)
+}
+
 data class AudioFileMetadata(
     val title: String,
     val artist: String,
@@ -33,6 +52,12 @@ data class AudioFileMetadata(
     )
 
     companion object {
+        private fun isUnknownArtist(artist: String): Boolean =
+            artist.isBlank() || artist.equals("Unknown Artist", ignoreCase = true)
+
+        private fun isUnknownAlbum(album: String): Boolean =
+            album.isBlank() || album.equals("Unknown Album", ignoreCase = true)
+
         fun fromPath(
             context: Context,
             path: String,
@@ -47,7 +72,7 @@ data class AudioFileMetadata(
                 } else {
                     retriever.setDataSource(path)
                 }
-                return AudioFileMetadata(
+                val tagged = AudioFileMetadata(
                     title = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE)
                         ?: fallbackTitle,
                     artist = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST)
@@ -62,6 +87,7 @@ data class AudioFileMetadata(
                         ?: 0L,
                     artworkUri = extractEmbeddedArtwork(path, artworkIdentifier)
                 )
+                return applyFilenameHints(tagged, fallbackTitle)
             } finally {
                 try {
                     retriever.release()
@@ -69,6 +95,29 @@ data class AudioFileMetadata(
                     // Best effort: some platform retrievers throw while releasing invalid media.
                 }
             }
+        }
+
+        /**
+         * When embedded tags are Unknown, recover artist/title from BestiaPop `Artist_Title` filenames.
+         * Does not invent an album name.
+         */
+        internal fun applyFilenameHints(
+            metadata: AudioFileMetadata,
+            fallbackTitle: String
+        ): AudioFileMetadata {
+            if (!isUnknownArtist(metadata.artist) && !isUnknownAlbum(metadata.album)) {
+                return metadata
+            }
+            val hints = parseFilenameMetadataHints(fallbackTitle)
+            val artist = if (isUnknownArtist(metadata.artist) && !hints.artist.isNullOrBlank()) {
+                hints.artist
+            } else {
+                metadata.artist
+            }
+            val titleFromFile = !hints.title.isNullOrBlank() &&
+                (metadata.title.isBlank() || metadata.title.equals(fallbackTitle, ignoreCase = true))
+            val title = if (titleFromFile) hints.title!! else metadata.title
+            return metadata.copy(artist = artist, title = title)
         }
     }
 }

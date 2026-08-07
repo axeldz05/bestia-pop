@@ -142,14 +142,20 @@ class ImportListenBrainzPlaylistUseCaseTest {
         override val albumOverridesFlow: Flow<List<com.bestiapop.android.data.model.AlbumOverride>> = emptyFlow()
         override fun getPlaylistSongsFlow(playlistId: Long): Flow<List<Song>> = emptyFlow()
         override fun getPlaylistDetailsFlow(playlistId: Long): Flow<Pair<Playlist, List<Song>>?> = emptyFlow()
-        override suspend fun scanMediaStore() = Unit
-        override suspend fun scanFolderUri(treeUri: Uri) = Unit
+        override suspend fun scanMediaStore(onProgress: com.bestiapop.android.domain.repository.LibraryScanProgress?) = Unit
+        override suspend fun resyncAppManagedMusic(onProgress: com.bestiapop.android.domain.repository.LibraryScanProgress?): Int = 0
+        override suspend fun scanFolderUri(
+            treeUri: Uri,
+            onProgress: com.bestiapop.android.domain.repository.LibraryScanProgress?
+        ) = 0
         override suspend fun getAllSongsSync(): List<Song> = emptyList()
         override suspend fun findSongByArtistTitle(artist: String, title: String): Song? = null
         override suspend fun saveUploadedSong(song: SongEntity): Long = 0L
         override suspend fun deleteSongsFromApp(songs: List<Song>) = Unit
         override suspend fun deleteSongsFromDevice(songs: List<Song>) = Unit
         override suspend fun enhanceSongMetadataAndLyrics(song: Song) = Unit
+        override suspend fun identifySongMetadata(song: Song) =
+            com.bestiapop.android.data.model.IdentifyResult.Skipped
         override suspend fun updateSongDuration(songId: Long, durationMs: Long) = Unit
         override suspend fun updateSongMetadata(
             songId: Long,

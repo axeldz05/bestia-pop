@@ -52,6 +52,7 @@ class LibraryScreenFunctionalTest {
                 onPlaySelected = { playClicked = true },
                 onEnqueueSelected = {},
                 onAddToPlaylist = {},
+                onIdentifySelected = {},
                 onDeleteSelected = {},
                 onSelectAll = {},
                 onClearSelection = {}

@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoFixHigh
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.PlayArrow
@@ -32,6 +33,7 @@ fun MultiSelectActionBar(
     onPlaySelected: () -> Unit,
     onEnqueueSelected: () -> Unit,
     onAddToPlaylist: () -> Unit,
+    onIdentifySelected: () -> Unit,
     onDeleteSelected: () -> Unit,
     onSelectAll: () -> Unit,
     onClearSelection: () -> Unit,
@@ -85,6 +87,12 @@ fun MultiSelectActionBar(
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.PlaylistAdd,
                         contentDescription = "Agregar a playlist"
+                    )
+                }
+                IconButton(onClick = onIdentifySelected) {
+                    Icon(
+                        imageVector = Icons.Default.AutoFixHigh,
+                        contentDescription = "Identificar metadata"
                     )
                 }
                 IconButton(onClick = onDeleteSelected) {

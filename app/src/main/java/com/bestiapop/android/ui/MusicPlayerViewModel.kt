@@ -444,6 +444,8 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     /** Set when MainActivity should switch to Descargas (notification / dialog deep-link). */
     private val _pendingOpenDownloads = MutableStateFlow(false)
+    private val _libraryJobProgress = MutableStateFlow<LibraryJobProgress?>(null)
+    val libraryJobProgress: StateFlow<LibraryJobProgress?> = _libraryJobProgress.asStateFlow()
     val pendingOpenDownloads = _pendingOpenDownloads.asStateFlow()
 
     fun requestOpenDownloads() {
@@ -1992,12 +1994,30 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         _sortOption.value = option
     }
 
+    private fun reportLibraryProgress(
+        kind: LibraryJobKind,
+        done: Int,
+        total: Int,
+        label: String
+    ) {
+        _libraryJobProgress.value = LibraryJobProgress(kind, done, total, label)
+    }
+
+    private fun clearLibraryProgress() {
+        _libraryJobProgress.value = null
+    }
+
+    private fun importScanProgress(): (Int, Int, String) -> Unit = { done, total, fileName ->
+        reportLibraryProgress(LibraryJobKind.IMPORT, done, total, fileName)
+    }
+
     // SAF Import
     fun importFolder(treeUri: Uri) {
         viewModelScope.launch {
             val count = withContext(Dispatchers.IO) {
-                repository.scanFolderUri(treeUri)
+                repository.scanFolderUri(treeUri, importScanProgress())
             }
+            clearLibraryProgress()
             toast(
                 when {
                     count <= 0 -> "No se encontraron canciones nuevas en esa carpeta"
@@ -2015,16 +2035,48 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     fun refreshLibraryFromDisk(showRecoveryToast: Boolean = false) {
         viewModelScope.launch {
             val recovered = withContext(Dispatchers.IO) {
-                val n = repository.resyncAppManagedMusic()
-                repository.scanMediaStore()
+                val n = repository.resyncAppManagedMusic(importScanProgress())
+                repository.scanMediaStore(importScanProgress())
                 n
             }
+            clearLibraryProgress()
             if (showRecoveryToast && recovered > 0) {
                 toast(
                     if (recovered == 1) "Se recuperó 1 canción de Music/BestiaPop"
                     else "Se recuperaron $recovered canciones de Music/BestiaPop"
                 )
             }
+        }
+    }
+
+    /**
+     * Online identify for selected songs: auto-applies best Deezer/iTunes match.
+     * Shows [libraryJobProgress] while running; toast summary when done.
+     */
+    fun identifySongs(songs: List<Song>) {
+        if (songs.isEmpty()) return
+        viewModelScope.launch {
+            val total = songs.size
+            var updated = 0
+            var noMatch = 0
+            var skipped = 0
+            songs.forEachIndexed { index, song ->
+                reportLibraryProgress(LibraryJobKind.IDENTIFY, index, total, song.title)
+                when (withContext(Dispatchers.IO) { repository.identifySongMetadata(song) }) {
+                    is IdentifyResult.Updated -> updated++
+                    IdentifyResult.NoMatch -> noMatch++
+                    IdentifyResult.Skipped -> skipped++
+                }
+            }
+            clearLibraryProgress()
+            toast(
+                buildString {
+                    append(if (updated == 1) "1 actualizada" else "$updated actualizadas")
+                    if (noMatch > 0) append(", $noMatch sin match")
+                    if (skipped == 1) append(", 1 omitida")
+                    else if (skipped > 1) append(", $skipped omitidas")
+                }
+            )
         }
     }
 

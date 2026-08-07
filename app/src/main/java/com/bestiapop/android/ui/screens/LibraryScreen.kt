@@ -68,6 +68,7 @@ import com.bestiapop.android.ui.screens.library.ConfirmMergeAlbumsDialog
 import com.bestiapop.android.ui.screens.library.EditAlbumMetadataDialog
 import com.bestiapop.android.ui.screens.library.LibraryAlbumGrid
 import com.bestiapop.android.ui.screens.library.LibraryArtistList
+import com.bestiapop.android.ui.screens.library.LibraryProgressBanner
 import com.bestiapop.android.ui.screens.library.LibrarySongListActions
 import com.bestiapop.android.ui.screens.library.LibrarySongListHost
 import com.bestiapop.android.ui.screens.library.SetAlbumArtworkDialog
@@ -92,6 +93,7 @@ fun LibraryScreen(
     val searchQuery by viewModel.searchQuery.collectAsState()
     val sortOption by viewModel.sortOption.collectAsState()
     val pendingAlbumMerge by viewModel.pendingAlbumMerge.collectAsState()
+    val libraryJobProgress by viewModel.libraryJobProgress.collectAsState()
 
     var selectedTabIndex by remember { mutableIntStateOf(0) }
     var sortMenuExpanded by remember { mutableStateOf(false) }
@@ -357,6 +359,10 @@ fun LibraryScreen(
             }
         }
 
+        libraryJobProgress?.let { job ->
+            LibraryProgressBanner(progress = job)
+        }
+
         // Main Quick Play/Shuffle Action Header
         if (!isMultiSelectMode && !isPlaylistAdditionMode && selectedAlbumName == null && selectedArtistName == null) {
             Row(
@@ -418,6 +424,10 @@ fun LibraryScreen(
                 },
                 onAddToPlaylist = {
                     songForPlaylistAddition = selectedSongs.firstOrNull()
+                },
+                onIdentifySelected = {
+                    viewModel.identifySongs(selectedSongs)
+                    clearSelection()
                 },
                 onDeleteSelected = {
                     songsForDeletion = selectedSongs

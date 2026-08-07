@@ -22,6 +22,34 @@ data class Song(
     val dateAdded: Long = System.currentTimeMillis()
 )
 
+enum class LibraryJobKind {
+    IMPORT,
+    IDENTIFY
+}
+
+/** In-progress library job (folder import / disk resync / batch identify). */
+data class LibraryJobProgress(
+    val kind: LibraryJobKind,
+    val done: Int,
+    val total: Int,
+    val label: String
+) {
+    val fraction: Float
+        get() = if (total <= 0) 0f else (done.toFloat() / total).coerceIn(0f, 1f)
+}
+
+sealed class IdentifyResult {
+    data class Updated(
+        val songId: Long,
+        val title: String,
+        val artist: String,
+        val album: String
+    ) : IdentifyResult()
+
+    data object NoMatch : IdentifyResult()
+    data object Skipped : IdentifyResult()
+}
+
 data class Album(
     /** Storage key matching [Song.album] for filtering/grouping. */
     val name: String,

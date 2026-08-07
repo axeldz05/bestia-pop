@@ -3,11 +3,15 @@ package com.bestiapop.android.domain.repository
 import android.net.Uri
 import com.bestiapop.android.data.db.SongEntity
 import com.bestiapop.android.data.model.AlbumOverride
+import com.bestiapop.android.data.model.IdentifyResult
 import com.bestiapop.android.data.model.OnlineCatalogTrack
 import com.bestiapop.android.data.model.Playlist
 import com.bestiapop.android.data.model.PlaylistPendingTrack
 import com.bestiapop.android.data.model.Song
 import kotlinx.coroutines.flow.Flow
+
+/** Scan/import progress: done, total, current file label. */
+typealias LibraryScanProgress = (done: Int, total: Int, fileName: String) -> Unit
 
 interface IMusicRepository {
     val allSongsFlow: Flow<List<Song>>
@@ -17,17 +21,22 @@ interface IMusicRepository {
     fun getPlaylistSongsFlow(playlistId: Long): Flow<List<Song>>
     fun getPlaylistDetailsFlow(playlistId: Long): Flow<Pair<Playlist, List<Song>>?>
 
-    suspend fun scanMediaStore()
+    suspend fun scanMediaStore(onProgress: LibraryScanProgress? = null)
     /** Indexes audio under public Music/BestiaPop after reinstall (Room wipe). Returns inserted count. */
-    suspend fun resyncAppManagedMusic(): Int
+    suspend fun resyncAppManagedMusic(onProgress: LibraryScanProgress? = null): Int
     /** SAF folder import. Returns number of newly inserted songs. */
-    suspend fun scanFolderUri(treeUri: Uri): Int
+    suspend fun scanFolderUri(treeUri: Uri, onProgress: LibraryScanProgress? = null): Int
     suspend fun getAllSongsSync(): List<Song>
     suspend fun findSongByArtistTitle(artist: String, title: String): Song?
     suspend fun saveUploadedSong(song: SongEntity): Long
     suspend fun deleteSongsFromApp(songs: List<Song>)
     suspend fun deleteSongsFromDevice(songs: List<Song>)
     suspend fun enhanceSongMetadataAndLyrics(song: Song)
+    /**
+     * Look up artist/album online for a library song with missing/placeholder metadata.
+     * Auto-applies the best Deezer/iTunes match when found.
+     */
+    suspend fun identifySongMetadata(song: Song): IdentifyResult
     suspend fun updateSongDuration(songId: Long, durationMs: Long)
     suspend fun updateSongMetadata(
         songId: Long,

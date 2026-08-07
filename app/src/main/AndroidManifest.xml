@@ -17,6 +17,7 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
+        android:name=".BestiaPopApplication"
         android:allowBackup="true"
         android:icon="@android:drawable/ic_media_play"
         android:label="Bestia Pop"

@@ -26,8 +26,8 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.PlaylistAdd
-import androidx.compose.material.icons.filled.QueueMusic
+import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.Add
@@ -364,7 +364,7 @@ fun PlaylistsScreen(
                                 horizontalAlignment = Alignment.CenterHorizontally
                             ) {
                                 Icon(
-                                    imageVector = Icons.Default.QueueMusic,
+                                    imageVector = Icons.AutoMirrored.Filled.QueueMusic,
                                     contentDescription = null,
                                     modifier = Modifier.size(64.dp).padding(8.dp),
                                     tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
@@ -811,7 +811,7 @@ private fun LbPlaylistCardItem(
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
-                    imageVector = Icons.Default.QueueMusic,
+                    imageVector = Icons.AutoMirrored.Filled.QueueMusic,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.onTertiaryContainer,
                     modifier = Modifier.size(28.dp)
@@ -917,7 +917,7 @@ private fun LbPlaylistDetailScreen(
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.weight(1f)
                 ) {
-                    Icon(imageVector = Icons.Default.PlaylistAdd, contentDescription = null)
+                    Icon(imageVector = Icons.AutoMirrored.Filled.PlaylistAdd, contentDescription = null)
                     Spacer(modifier = Modifier.width(4.dp))
                     Text("Guardar", maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
@@ -1001,7 +1001,7 @@ private fun PlaylistCardItem(
                 artworkUri = playlist.coverUri,
                 size = 60.dp,
                 cornerRadius = 10.dp,
-                fallbackIcon = Icons.Default.QueueMusic,
+                fallbackIcon = Icons.AutoMirrored.Filled.QueueMusic,
                 contentDescription = playlist.name
             )
         },
@@ -1098,7 +1098,7 @@ private fun PlaylistDetailScreen(
                         )
                     } else {
                         Icon(
-                            imageVector = Icons.Default.QueueMusic,
+                            imageVector = Icons.AutoMirrored.Filled.QueueMusic,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.onPrimaryContainer,
                             modifier = Modifier.size(48.dp)
@@ -1189,7 +1189,7 @@ private fun PlaylistDetailScreen(
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         OutlinedButton(onClick = { onAddSongsRequest(playlist) }) {
-                            Icon(imageVector = Icons.Default.PlaylistAdd, contentDescription = null)
+                            Icon(imageVector = Icons.AutoMirrored.Filled.PlaylistAdd, contentDescription = null)
                             Spacer(modifier = Modifier.width(6.dp))
                             Text("Añadir canciones ahora")
                         }

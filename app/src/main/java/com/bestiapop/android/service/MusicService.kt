@@ -6,6 +6,7 @@ import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
@@ -23,6 +24,7 @@ import com.bestiapop.android.data.preferences.MAX_VOLUME_BOOST_GAIN_MB
 import com.bestiapop.android.data.preferences.PlaybackPreferencesRepository
 import com.bestiapop.android.data.preferences.PlaybackSettings
 import com.bestiapop.android.data.preferences.clampStereoGain
+import com.bestiapop.android.data.util.CrashReporter
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -75,6 +77,17 @@ class MusicService : MediaLibraryService() {
                     if (audioSessionId == 0 || audioSessionId == boundAudioSessionId) return
                     releaseLoudnessEnhancer()
                     applyBoost(latestPlaybackSettings)
+                }
+
+                override fun onPlayerError(error: PlaybackException) {
+                    CrashReporter.recordNonFatal(
+                        error,
+                        mapOf(
+                            "playback_phase" to "player_error",
+                            "error_code" to error.errorCodeName,
+                            "media_id" to (p.currentMediaItem?.mediaId ?: "none")
+                        )
+                    )
                 }
             })
             mediaLibrarySession = MediaLibrarySession.Builder(this, p, LibraryCallback())

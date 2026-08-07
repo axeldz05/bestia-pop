@@ -11,6 +11,7 @@ import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 import java.util.regex.Pattern
 import com.bestiapop.android.data.model.OnlineCatalogTrack
+import com.bestiapop.android.data.util.CrashReporter
 
 data class YouTubeStreamResult(
     val videoId: String,
@@ -426,6 +427,14 @@ object YouTubeExtractor {
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
+                CrashReporter.recordNonFatal(
+                    e,
+                    mapOf(
+                        "yt_phase" to "player_api",
+                        "yt_client" to clientProfile.name,
+                        "yt_video_id" to videoId
+                    )
+                )
             }
         }
 
@@ -434,6 +443,15 @@ object YouTubeExtractor {
         } else {
             "No se pudo extraer la pista de audio de este video de YouTube"
         }
+
+        CrashReporter.recordNonFatal(
+            IllegalStateException(finalErrorMsg),
+            mapOf(
+                "yt_phase" to "extract_exhausted",
+                "yt_video_id" to videoId,
+                "yt_last_reason" to lastErrorReason.ifBlank { "none" }
+            )
+        )
 
         return@withContext YouTubeExtractResult.Error(finalErrorMsg)
     }

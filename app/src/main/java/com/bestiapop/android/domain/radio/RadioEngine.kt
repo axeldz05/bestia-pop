@@ -202,9 +202,10 @@ class RadioEngine(
 
         val canUseLb = lbAvailable && !lbToken.isNullOrBlank()
         val lbRadio = listenBrainzRadio
-        val token = lbToken
+        // canUseLb already implies lbToken is non-null and non-blank
+        val token = lbToken.takeIf { canUseLb }
 
-        if (canUseLb && lbRadio != null && token != null) {
+        if (token != null && lbRadio != null) {
             val lbOutcome = runCatching {
                 lbRadio.suggest(
                     seed = seed,
@@ -223,8 +224,7 @@ class RadioEngine(
         }
 
         val cfRadio = cfRecommendationsRadio
-        if (canUseLb &&
-            token != null &&
+        if (token != null &&
             !lbUsername.isNullOrBlank() &&
             cfRadio != null &&
             remotes.size < limit

@@ -12,7 +12,7 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.LibraryMusic
-import androidx.compose.material.icons.filled.QueueMusic
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.Badge
@@ -105,7 +105,7 @@ fun MainScreen(
 
     val navItems = listOf(
         NavItem("Biblioteca", Icons.Default.LibraryMusic),
-        NavItem("Playlists", Icons.Default.QueueMusic),
+        NavItem("Playlists", Icons.AutoMirrored.Filled.QueueMusic),
         NavItem("Descargas", Icons.Default.Download),
         NavItem("WiFi Sync", Icons.Default.Wifi),
         NavItem("Ajustes", Icons.Default.Settings)

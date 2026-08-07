@@ -24,7 +24,7 @@ import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Shuffle
-import androidx.compose.material.icons.filled.Sort
+import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.UnfoldLess
 import androidx.compose.material.icons.filled.UnfoldMore
 import androidx.compose.material.icons.filled.ViewAgenda
@@ -305,7 +305,7 @@ fun LibraryScreen(
             // Sort Menu Trigger
             Box {
                 IconButton(onClick = { sortMenuExpanded = true }) {
-                    Icon(Icons.Default.Sort, contentDescription = "Ordenar")
+                    Icon(Icons.AutoMirrored.Filled.Sort, contentDescription = "Ordenar")
                 }
                 DropdownMenu(
                     expanded = sortMenuExpanded,

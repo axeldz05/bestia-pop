@@ -39,6 +39,7 @@ import com.bestiapop.android.data.preferences.PlaybackSessionStore
 import com.bestiapop.android.data.preferences.ThemePreferencesRepository
 import com.bestiapop.android.data.repository.MusicRepository
 import com.bestiapop.android.data.stream.StreamResolver
+import com.bestiapop.android.data.util.CrashReporter
 import com.bestiapop.android.data.util.SongPathNormalizer
 import com.bestiapop.android.domain.radio.CfRecommendationsRadio
 import com.bestiapop.android.domain.radio.DeezerSimilarRadio
@@ -123,7 +124,8 @@ sealed class CfRecommendationsUiState {
     data class Error(val message: String) : CfRecommendationsUiState()
 }
 
-@OptIn(UnstableApi::class, FlowPreview::class)
+@OptIn(UnstableApi::class)
+@kotlin.OptIn(FlowPreview::class)
 class MusicPlayerViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository = MusicRepository(application)
@@ -543,9 +545,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         initMediaController()
         startPositionTracker()
         viewModelScope.launch {
-            withContext(Dispatchers.IO) {
-                repository.scanMediaStore()
-            }
+            refreshLibraryFromDisk(showRecoveryToast = true)
         }
         viewModelScope.launch {
             _catalogSearchResults.value = MetadataFetcher.getFeaturedDemoCatalog()
@@ -1995,7 +1995,36 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     // SAF Import
     fun importFolder(treeUri: Uri) {
         viewModelScope.launch {
-            repository.scanFolderUri(treeUri)
+            val count = withContext(Dispatchers.IO) {
+                repository.scanFolderUri(treeUri)
+            }
+            toast(
+                when {
+                    count <= 0 -> "No se encontraron canciones nuevas en esa carpeta"
+                    count == 1 -> "1 canción agregada a la biblioteca"
+                    else -> "$count canciones agregadas a la biblioteca"
+                }
+            )
+        }
+    }
+
+    /**
+     * Reindexes public Music/BestiaPop (survives uninstall) then MediaStore.
+     * Call after storage permission is granted and on cold start.
+     */
+    fun refreshLibraryFromDisk(showRecoveryToast: Boolean = false) {
+        viewModelScope.launch {
+            val recovered = withContext(Dispatchers.IO) {
+                val n = repository.resyncAppManagedMusic()
+                repository.scanMediaStore()
+                n
+            }
+            if (showRecoveryToast && recovered > 0) {
+                toast(
+                    if (recovered == 1) "Se recuperó 1 canción de Music/BestiaPop"
+                    else "Se recuperaron $recovered canciones de Music/BestiaPop"
+                )
+            }
         }
     }
 
@@ -3082,6 +3111,16 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             onFailure = { e ->
                 if (e is DuplicateSongException) return@fold
                 e.printStackTrace()
+                CrashReporter.recordNonFatal(
+                    e,
+                    mapOf(
+                        "download_phase" to "tracked_download",
+                        "download_source" to source.name,
+                        "download_id" to downloadId,
+                        "track_title" to displayTitle,
+                        "track_artist" to displayArtist
+                    )
+                )
                 val error = mapDownloadError(e)
                 updateActiveDownload(downloadId) {
                     it.copy(

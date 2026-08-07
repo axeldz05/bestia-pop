@@ -15,10 +15,14 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 
 | Concern | Archivo |
 |---------|---------|
+| Application + Crashlytics init | `BestiaPopApplication.kt` |
+| Crash non-fatals / keys | `data/util/CrashReporter.kt` |
 | Activity | `MainActivity.kt` |
 | Manifest / permisos / services | `app/src/main/AndroidManifest.xml` |
-| Gradle app | `app/build.gradle.kts` |
-| Deploy script | `install.sh` (repo root) |
+| Gradle app | `app/build.gradle.kts` (`signingConfigs.release`, `versionCode`/`versionName`) |
+| Deploy script | `install.sh` (`--debug` default, `--release`) |
+| Firebase config template | `app/google-services.json.example` |
+| Release keystore template | `keystore.properties.example` |
 
 ## UI — screens
 
@@ -84,7 +88,7 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 
 | Concern | Archivo |
 |---------|---------|
-| Repo impl | `data/repository/MusicRepository.kt` |
+| Repo impl | `data/repository/MusicRepository.kt` (`scanMediaStore`, `resyncAppManagedMusic`, `scanFolderUri`) |
 | Modelos dominio UI | `data/model/Models.kt` (`OnlineCatalogTrack`, `CatalogTrackCandidate`, `DownloadStatus`, `ActiveDownload` + factories `queued`/`downloading`/`conflict`/`success`/`error` + `targetPlaylistId` / `resultSongId`, `ActiveDownloadSource` incl. `LB_IMPORT` / `DISCOVER`, `CandidateDownloadState` incl. `QUEUED`, `PlaylistPendingTrack`, `AlbumOverride`, `WifiTransferItem` / `WifiTransferState`, `Album.displayName`) |
 | Cola Local/Remote | `data/model/PlayableItem.kt` (`PlayableItem`, `ResolvedStream`, `Song.toPlayable`, `remoteFrom`, `fromLibraryOrRemote`, `Remote.toOnlineCatalogTrack`) |
 | Room DB | `data/db/AppDatabase.kt` (v6) |

@@ -12,8 +12,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.PlaylistAdd
-import androidx.compose.material.icons.filled.QueueMusic
+import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -77,13 +77,13 @@ fun MultiSelectActionBar(
                 }
                 IconButton(onClick = onEnqueueSelected) {
                     Icon(
-                        imageVector = Icons.Default.QueueMusic,
+                        imageVector = Icons.AutoMirrored.Filled.QueueMusic,
                         contentDescription = "Agregar a la cola"
                     )
                 }
                 IconButton(onClick = onAddToPlaylist) {
                     Icon(
-                        imageVector = Icons.Default.PlaylistAdd,
+                        imageVector = Icons.AutoMirrored.Filled.PlaylistAdd,
                         contentDescription = "Agregar a playlist"
                     )
                 }
@@ -159,7 +159,7 @@ fun PlaylistAdditionActionBar(
                     ),
                     shape = RoundedCornerShape(12.dp)
                 ) {
-                    Icon(Icons.Default.PlaylistAdd, contentDescription = null, modifier = Modifier.padding(end = 4.dp))
+                    Icon(Icons.AutoMirrored.Filled.PlaylistAdd, contentDescription = null, modifier = Modifier.padding(end = 4.dp))
                     Text(
                         text = "Añadir a $playlistName",
                         fontWeight = FontWeight.Bold,

@@ -6,7 +6,6 @@ import android.app.NotificationManager
 import android.app.Service
 import android.content.Context
 import android.content.Intent
-import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
@@ -14,6 +13,7 @@ import com.bestiapop.android.data.model.WifiTransferItem
 import com.bestiapop.android.data.model.WifiTransferState
 import com.bestiapop.android.data.repository.MusicRepository
 import com.bestiapop.android.data.util.AudioFileMetadata
+import com.bestiapop.android.data.util.CrashReporter
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.call
@@ -75,21 +75,8 @@ class WebServerService : Service() {
             _transfers.value = list
         }
 
-        fun getLocalIpAddress(context: Context): String? {
+        fun getLocalIpAddress(@Suppress("UNUSED_PARAMETER") context: Context): String? {
             try {
-                val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
-                val wifiInfo = wifiManager.connectionInfo
-                val ipInt = wifiInfo.ipAddress
-                if (ipInt != 0) {
-                    return String.format(
-                        "%d.%d.%d.%d",
-                        ipInt and 0xff,
-                        ipInt shr 8 and 0xff,
-                        ipInt shr 16 and 0xff,
-                        ipInt shr 24 and 0xff
-                    )
-                }
-
                 val interfaces = Collections.list(NetworkInterface.getNetworkInterfaces())
                 for (intf in interfaces) {
                     val addrs = Collections.list(intf.inetAddresses)
@@ -250,6 +237,13 @@ class WebServerService : Service() {
                                     }
                                 } catch (e: Exception) {
                                     e.printStackTrace()
+                                    CrashReporter.recordNonFatal(
+                                        e,
+                                        mapOf(
+                                            "wifi_phase" to "save_upload",
+                                            "transfer_id" to transferId
+                                        )
+                                    )
                                     updateTransfer(transferId) {
                                         it.copy(
                                             state = WifiTransferState.ERROR,
@@ -260,6 +254,13 @@ class WebServerService : Service() {
 
                                 call.respondText("""{"status":"ok","filename":"$safeName"}""", ContentType.Application.Json)
                             } catch (e: Exception) {
+                                CrashReporter.recordNonFatal(
+                                    e,
+                                    mapOf(
+                                        "wifi_phase" to "transfer",
+                                        "transfer_id" to transferId
+                                    )
+                                )
                                 updateTransfer(transferId) {
                                     it.copy(
                                         state = WifiTransferState.ERROR,
@@ -276,6 +277,10 @@ class WebServerService : Service() {
                 _serverState.value = "$ip:$PORT"
             } catch (e: Exception) {
                 e.printStackTrace()
+                CrashReporter.recordNonFatal(
+                    e,
+                    mapOf("wifi_phase" to "server_start")
+                )
                 _serverState.value = null
             }
         }

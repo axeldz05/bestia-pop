@@ -22,7 +22,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Album
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CloudDownload
@@ -33,7 +33,7 @@ import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Public
-import androidx.compose.material.icons.filled.QueueMusic
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Stop
@@ -628,7 +628,7 @@ private fun OnlineCatalogTab(
                 selected = category == CatalogCategory.PLAYLISTS,
                 onClick = { onCategorySelect(CatalogCategory.PLAYLISTS) },
                 label = { Text("Playlists", fontWeight = FontWeight.Bold) },
-                leadingIcon = { Icon(Icons.Default.QueueMusic, contentDescription = null, modifier = Modifier.size(16.dp)) },
+                leadingIcon = { Icon(Icons.AutoMirrored.Filled.QueueMusic, contentDescription = null, modifier = Modifier.size(16.dp)) },
                 shape = RoundedCornerShape(20.dp)
             )
         }
@@ -777,7 +777,7 @@ private fun CollectionTrackInspectionView(
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = onBack) {
-                Icon(Icons.Default.ArrowBack, contentDescription = "Volver")
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Volver")
             }
             Spacer(modifier = Modifier.width(4.dp))
             Column(modifier = Modifier.weight(1f)) {
@@ -1140,7 +1140,7 @@ private fun CatalogPlaylistItem(
         coverUrl = playlist.coverUrl,
         title = playlist.title,
         subtitle = "Por ${playlist.creator} • ${playlist.trackCount} canciones",
-        fallbackIcon = Icons.Default.QueueMusic,
+        fallbackIcon = Icons.AutoMirrored.Filled.QueueMusic,
         onClick = onClick
     )
 }

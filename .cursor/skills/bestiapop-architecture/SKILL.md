@@ -24,8 +24,9 @@ Módulo único Gradle: `:app`. Nombre del proyecto: **BestiaPop**.
 | Red / catálogo | OkHttp + `MetadataFetcher` (iTunes/Deezer) + `YouTubeExtractor` + `ListenBrainzClient` |
 | Sync WiFi | Ktor CIO embebido (`WebServerService`) |
 | Imágenes | Coil |
+| Crash reporting | Firebase Crashlytics vía `CrashReporter` (`BestiaPopApplication`) |
 
-minSdk 26 · target/compileSdk 35 · Java/Kotlin 17 · KSP para Room.
+minSdk 26 · targetSdk 35 · compileSdk 36 · Java/Kotlin 17 · AGP 9.3 + KSP · Room 2.8.
 
 ## Capas y paquetes
 
@@ -35,6 +36,8 @@ domain/      use cases + radio + IMusicRepository (puerto)
 data/        MusicRepository, Room, network, stream, preferences, models, util
 service/     MusicService (playback), WebServerService (WiFi sync)
 ```
+
+`BestiaPopApplication` inicializa Crashlytics (colección solo en builds no-debug). Non-fatals con contexto: `data/util/CrashReporter.kt`.
 
 **Regla de dependencia:** `ui` → `domain` → (interfaces). `data` implementa `domain.repository`. `ui` puede usar `data.model` y servicios Media3; la lógica de negocio nueva va en `domain/usecase` o `domain/radio`, no en pantallas.
 
@@ -85,7 +88,7 @@ Mini player se rehidrata desde `MediaController` (sesión viva) o `PlaybackSessi
 
 Entidades: `SongEntity`, `PlaylistEntity`, `PlaylistSongCrossRef`, `PlaylistPendingTrackEntity`, `PendingListenEntity`, `AlbumOverrideEntity`.
 Índice único Room: `songs.uriString`. Deduplicación lógica por `matchKey(artist, title)` en filtros de scan / download conflict (`Music/BestiaPop` app-managed). URIs app-owned: path absoluto (`SongPathNormalizer`). One-shot migrator archivado en branch `archive/library-dedup-v1-migrator`.
-Migraciones Room: 1→2 (dedupe + unique index), 2→3 (playlist description/coverUri), 3→4 (pending_listens), 4→5 (playlist_pending_tracks), 5→6 (`album_overrides`).
+Migraciones Room: 1→2 (dedupe + unique index), 2→3 (playlist description/coverUri), 3→4 (pending_listens), 4→5 (playlist_pending_tracks), 5→6 (`album_overrides`), 6→7 (index `playlist_song_cross_ref.songId`).
 
 ## Relacionado
 

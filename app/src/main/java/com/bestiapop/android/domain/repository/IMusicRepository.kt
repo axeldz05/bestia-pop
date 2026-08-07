@@ -18,7 +18,10 @@ interface IMusicRepository {
     fun getPlaylistDetailsFlow(playlistId: Long): Flow<Pair<Playlist, List<Song>>?>
 
     suspend fun scanMediaStore()
-    suspend fun scanFolderUri(treeUri: Uri)
+    /** Indexes audio under public Music/BestiaPop after reinstall (Room wipe). Returns inserted count. */
+    suspend fun resyncAppManagedMusic(): Int
+    /** SAF folder import. Returns number of newly inserted songs. */
+    suspend fun scanFolderUri(treeUri: Uri): Int
     suspend fun getAllSongsSync(): List<Song>
     suspend fun findSongByArtistTitle(artist: String, title: String): Song?
     suspend fun saveUploadedSong(song: SongEntity): Long

@@ -86,15 +86,17 @@ UI: `PlaylistsScreen`.
 
 **Invariantes:**
 - Unicidad lógica por `matchKey(artist, title)` (además del índice Room `uriString`).
-- `Music/BestiaPop` es app-managed: `scanMediaStore` **no** reinserta esos archivos (evita duplicar `file:`/path vs `content://`).
+- `Music/BestiaPop` es app-managed: `scanMediaStore` **no** reinserta esos archivos (evita duplicar `file:`/path vs `content://`). Tras reinstall, `resyncAppManagedMusic()` reindexa esos archivos por path absoluto.
 - URIs de descarga/upload se guardan como **path absoluto**.
+- Playlists/overrides viven en Room (app-private): **no** sobreviven uninstall (solo los archivos de audio en `Music/BestiaPop`).
 - Descarga con conflicto → `DuplicateSongException` / `DownloadConflict` → diálogo Sobrescribir | Crear nueva | Cancelar (`DownloadConflictPolicy`).
 - One-shot migrator histórico: branch `archive/library-dedup-v1-migrator` (no compila en LB).
 
 | Acción | API |
 |--------|-----|
 | Scan MediaStore | `scanMediaStore()` (skip BestiaPop + path/matchKey conocidos) |
-| Scan carpeta SAF | `scanFolderUri(treeUri)` |
+| Reindex app music | `resyncAppManagedMusic()` → `Music/BestiaPop` filesystem walk; VM `refreshLibraryFromDisk` (init + post-permiso) |
+| Scan carpeta SAF | `scanFolderUri(treeUri): Int` (incluye BestiaPop; toast en `importFolder`) |
 | Metadata archivo → Room | `AudioFileMetadata.fromPath` / `toSongEntity` (scan SAF + upload directo; sin MediaStore intermedio) |
 | Upload WiFi → DB | `saveUploadedSong` (`absolutePath`; merge por matchKey) |
 | Lookup duplicado | `findSongByArtistTitle` |
@@ -250,6 +252,19 @@ Centro de descargas online → sección 2 (`DownloadsScreen`, tab Descargas).
 | Raíz de tab | Doble atrás (~2s) + snackbar “Pulsa otra vez para salir” | `MainScreen` `BackHandler` + `SnackbarHost` |
 
 Manifest: `android:enableOnBackInvokedCallback="true"` en `MainActivity`.
+
+## 13. Beta / Crashlytics
+
+**Invariante:** builds para testers = `release` firmado (`./install.sh --release`), no debug. Crashes/non-fatals → Firebase Crashlytics (colección deshabilitada en `BuildConfig.DEBUG`).
+
+| Acción | Entry point |
+|--------|-------------|
+| Init | `BestiaPopApplication.onCreate` |
+| Non-fatal + keys | `CrashReporter.recordNonFatal` / `setKey` / `log` |
+| Call sites | `YouTubeExtractor.extractAudioStreamDetailed`, `MusicService` `onPlayerError`, `WebServerService` start/transfer, `MusicPlayerViewModel.runTrackedDownloadLocked` onFailure |
+| Config Firebase | `app/google-services.json` (gitignored; plantilla `.example`) |
+| Firma release | `keystore.properties` + `bestiapop-release.jks` (gitignored; plantilla `.example`) |
+| Distribución amigos | Firebase App Distribution (APK/AAB release) o Play Internal |
 
 ## Relacionado
 

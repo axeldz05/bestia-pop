@@ -177,39 +177,121 @@ class MusicRepository(private val context: Context) : IMusicRepository {
         }
     }
 
+    override suspend fun resyncAppManagedMusic(): Int = withContext(Dispatchers.IO) {
+        val musicDir = com.bestiapop.android.data.util.StorageUtils.getPublicMusicDirectory(context)
+        if (!musicDir.exists() || !musicDir.isDirectory) return@withContext 0
+
+        val existing = musicDao.getAllSongs()
+        val existingKeys = existing.mapNotNull { song ->
+            MatchListenBrainzTracksUseCase.matchKey(song.artist, song.title).takeIf { it.isNotEmpty() }
+        }.toHashSet()
+        val existingPaths = existing.mapNotNull { song ->
+            SongPathNormalizer.resolveFilePath(song.uriString, song.folderPath)
+        }.map { it.lowercase() }.toHashSet()
+
+        val scanned = mutableListOf<SongEntity>()
+        scanFilesystemFolderRecursively(musicDir, scanned, existingKeys, existingPaths)
+        if (scanned.isNotEmpty()) {
+            musicDao.insertSongs(scanned)
+        }
+        scanned.size
+    }
+
     override suspend fun findSongByArtistTitle(artist: String, title: String): Song? =
         withContext(Dispatchers.IO) {
             findSongEntityByArtistTitle(artist, title)?.toSong()
         }
 
-    override suspend fun scanFolderUri(treeUri: Uri) = withContext(Dispatchers.IO) {
-        val rootFolder = DocumentFile.fromTreeUri(context, treeUri) ?: return@withContext
+    override suspend fun scanFolderUri(treeUri: Uri): Int = withContext(Dispatchers.IO) {
+        val rootFolder = DocumentFile.fromTreeUri(context, treeUri) ?: return@withContext 0
         val existing = musicDao.getAllSongs()
         val existingKeys = existing.mapNotNull { song ->
             MatchListenBrainzTracksUseCase.matchKey(song.artist, song.title).takeIf { it.isNotEmpty() }
         }.toHashSet()
+        val existingPaths = existing.mapNotNull { song ->
+            SongPathNormalizer.resolveFilePath(song.uriString, song.folderPath)
+        }.map { it.lowercase() }.toHashSet()
 
         val scanned = mutableListOf<SongEntity>()
-        scanDocumentFolderRecursively(rootFolder, scanned, existingKeys)
+        scanDocumentFolderRecursively(rootFolder, scanned, existingKeys, existingPaths)
         if (scanned.isNotEmpty()) {
             musicDao.insertSongs(scanned)
+        }
+        scanned.size
+    }
+
+    /** Walk public Music/BestiaPop (absolute file paths, same as downloads). */
+    private fun scanFilesystemFolderRecursively(
+        folder: File,
+        list: MutableList<SongEntity>,
+        existingKeys: MutableSet<String>,
+        existingPaths: MutableSet<String>
+    ) {
+        val children = folder.listFiles() ?: return
+        for (file in children) {
+            if (file.isDirectory) {
+                scanFilesystemFolderRecursively(file, list, existingKeys, existingPaths)
+                continue
+            }
+            if (!file.isFile || !isAudioFile(file.name)) continue
+            val path = file.absolutePath
+            val pathKey = path.lowercase()
+            if (existingPaths.contains(pathKey)) continue
+            try {
+                val metadata = AudioFileMetadata.fromPath(
+                    context = context,
+                    path = path,
+                    fallbackTitle = file.nameWithoutExtension,
+                    extractEmbeddedArtwork = ::extractAndSaveEmbeddedArtwork
+                )
+                if (!isRealMusicTrack(
+                        durationMs = metadata.durationMs,
+                        filePath = path,
+                        fileName = file.name,
+                        allowUnknownDuration = true
+                    )
+                ) {
+                    continue
+                }
+                val key = MatchListenBrainzTracksUseCase.matchKey(metadata.artist, metadata.title)
+                if (key.isNotEmpty() && existingKeys.contains(key)) continue
+
+                list.add(
+                    metadata.toSongEntity(
+                        uriString = path,
+                        folderPath = folder.absolutePath
+                    )
+                )
+                if (key.isNotEmpty()) existingKeys.add(key)
+                existingPaths.add(pathKey)
+            } catch (e: Exception) {
+                e.printStackTrace()
+                com.bestiapop.android.data.util.CrashReporter.recordNonFatal(
+                    e,
+                    mapOf("scan_phase" to "app_music_file", "path" to path)
+                )
+            }
         }
     }
 
     private fun scanDocumentFolderRecursively(
         folder: DocumentFile,
         list: MutableList<SongEntity>,
-        existingKeys: MutableSet<String>
+        existingKeys: MutableSet<String>,
+        existingPaths: MutableSet<String>
     ) {
         val files = folder.listFiles()
 
         for (file in files) {
             if (file.isDirectory) {
-                scanDocumentFolderRecursively(file, list, existingKeys)
+                scanDocumentFolderRecursively(file, list, existingKeys, existingPaths)
             } else if (file.isFile && isAudioFile(file.name ?: "")) {
                 val uri = file.uri
                 try {
                     val path = uri.toString()
+                    val pathKey = path.lowercase()
+                    if (existingPaths.contains(pathKey)) continue
+
                     val metadata = AudioFileMetadata.fromPath(
                         context = context,
                         path = path,
@@ -217,8 +299,16 @@ class MusicRepository(private val context: Context) : IMusicRepository {
                         extractEmbeddedArtwork = ::extractAndSaveEmbeddedArtwork
                     )
 
-                    if (!isRealMusicTrack(metadata.durationMs, path, file.name ?: "")) continue
-                    if (SongPathNormalizer.isUnderBestiaPop(path)) continue
+                    // Folder import is explicit: do not skip Music/BestiaPop; allow unknown duration.
+                    if (!isRealMusicTrack(
+                            durationMs = metadata.durationMs,
+                            filePath = path,
+                            fileName = file.name ?: "",
+                            allowUnknownDuration = true
+                        )
+                    ) {
+                        continue
+                    }
                     val key = MatchListenBrainzTracksUseCase.matchKey(metadata.artist, metadata.title)
                     if (key.isNotEmpty() && existingKeys.contains(key)) continue
 
@@ -229,8 +319,13 @@ class MusicRepository(private val context: Context) : IMusicRepository {
                         )
                     )
                     if (key.isNotEmpty()) existingKeys.add(key)
+                    existingPaths.add(pathKey)
                 } catch (e: Exception) {
                     e.printStackTrace()
+                    com.bestiapop.android.data.util.CrashReporter.recordNonFatal(
+                        e,
+                        mapOf("scan_phase" to "folder_import_file", "uri" to uri.toString())
+                    )
                 }
             }
         }
@@ -262,11 +357,20 @@ class MusicRepository(private val context: Context) : IMusicRepository {
         return null
     }
 
-    private fun isRealMusicTrack(durationMs: Long, filePath: String, fileName: String = ""): Boolean {
-        // 1. Minimum duration: 30 seconds (filters out voice notes, ringtones, UI sound effects)
-        if (durationMs < 30_000) return false
+    private fun isRealMusicTrack(
+        durationMs: Long,
+        filePath: String,
+        fileName: String = "",
+        allowUnknownDuration: Boolean = false
+    ): Boolean {
+        // Minimum duration 30s; unknown duration (0) allowed for explicit folder / app-dir reindex.
+        if (durationMs < 30_000) {
+            val nameForExt = fileName.ifBlank { filePath.substringAfterLast('/') }
+            val unknownOk = allowUnknownDuration && durationMs == 0L && isAudioFile(nameForExt)
+            if (!unknownOk) return false
+        }
 
-        // 2. Exclude WhatsApp, Telegram, Notifications, Ringtones, Voice Notes folders
+        // Exclude WhatsApp, Telegram, Notifications, Ringtones, Voice Notes folders
         val pathLower = filePath.lowercase()
         val excludedFolders = listOf(
             "whatsapp", "telegram", "notifications", "ringtones",
@@ -275,7 +379,7 @@ class MusicRepository(private val context: Context) : IMusicRepository {
         )
         if (excludedFolders.any { pathLower.contains(it) }) return false
 
-        // 3. Exclude WhatsApp voice note filename patterns (e.g. AUD-..., PTT-...)
+        // Exclude WhatsApp voice note filename patterns (e.g. AUD-..., PTT-...)
         val fileLower = fileName.lowercase()
         if (fileLower.startsWith("aud-") || fileLower.startsWith("ptt-") || fileLower.startsWith("rec_")) {
             return false
@@ -287,7 +391,8 @@ class MusicRepository(private val context: Context) : IMusicRepository {
     private fun isAudioFile(fileName: String): Boolean {
         val lower = fileName.lowercase()
         return lower.endsWith(".mp3") || lower.endsWith(".flac") || lower.endsWith(".m4a") ||
-                lower.endsWith(".ogg") || lower.endsWith(".wav") || lower.endsWith(".aac")
+            lower.endsWith(".ogg") || lower.endsWith(".wav") || lower.endsWith(".aac") ||
+            lower.endsWith(".webm") || lower.endsWith(".opus")
     }
 
     override suspend fun getAllSongsSync(): List<Song> = withContext(Dispatchers.IO) {

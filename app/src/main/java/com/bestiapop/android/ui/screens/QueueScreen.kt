@@ -30,7 +30,7 @@ import com.bestiapop.android.ui.components.QueueItemRow
 fun QueueScreen(
     viewModel: MusicPlayerViewModel
 ) {
-    val queue by viewModel.queue.collectAsState()
+    val queue by viewModel.displayQueue.collectAsState()
     val currentItem by viewModel.currentItem.collectAsState()
 
     Column(
@@ -96,7 +96,9 @@ fun QueueScreen(
                         onClick = { viewModel.skipToQueueIndex(index) },
                         onRemove = { viewModel.removeFromQueue(index) },
                         removeIcon = Icons.Default.Delete,
-                        removeContentDescription = "Quitar"
+                        removeContentDescription = "Quitar",
+                        reorderCount = queue.size,
+                        onReorder = viewModel::moveDisplayQueueItem
                     )
                 }
             }

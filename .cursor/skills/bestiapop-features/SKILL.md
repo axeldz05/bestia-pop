@@ -19,12 +19,12 @@ Cada feature lista **invariantes** + **entry points**. Si el código diverge, ac
 |--------|-----------|----------|
 | Reproducir colección | `playCollection(songs, startIndex)` / `playCollection(songs, startSong)` | `playPlayableCollection` (`rotate=true`: tap queda índice 0, prefijo al final) |
 | Reproducir Local\|Remote | `playPlayableCollection(items, startIndex, rotate)` | ViewModel + `StreamResolver` |
-| Shuffle | `shuffleCollection(songs)` | `applyShuffledQueue` (ya arranca en 0; sin wrap extra) |
+| Shuffle | `shuffleCollection(songs)` | `playPlayableCollection(..., startShuffled=true)` + permutación current-first |
 | Encolar | `enqueueCollection(songs)` | append a cola `PlayableItem` |
 | Una canción | `playSong(song, playlistOrQueue)` | (arma cola + MediaController) |
-| Tap en Cola / NP | `skipToQueueIndex(index)` | seek in-place; **no** rota ni cambia origen |
+| Tap en Cola / NP | `skipToQueueIndex(index)` | índice **display**; seek timeline; **no** rota ni apaga shuffle |
 
-Archivos: `ui/MusicPlayerViewModel.kt` (`playPlayableCollection` / `applyShuffledQueue` / `skipToQueueIndex`); `data/playback/PlaybackQueueOrder.kt`; `ui/components/PlayShuffleButtons.kt`.
+Archivos: `ui/MusicPlayerViewModel.kt` (`playPlayableCollection` / `toggleShuffle` / `displayQueue` / `moveDisplayQueueItem` / `skipToQueueIndex`); `data/playback/PlaybackQueueOrder.kt` (`shufflePlayOrder`); `service/MusicService.kt` (`ACTION_SET_SHUFFLE_ORDER`); `ui/components/PlayShuffleButtons.kt`.
 
 ## 2. Búsqueda online y descarga de audio
 
@@ -151,18 +151,18 @@ State: `currentThemeState`.
 
 **Invariantes:**
 - Último `_isShuffle` + `RepeatMode` se persisten siempre (`lastShuffleEnabled` / `lastRepeatMode`).
-- Shuffle es flag de VM (cola reordenada en `applyShuffledQueue`); **no** `Player.shuffleModeEnabled`.
+- Shuffle es flag de VM + permutación de índices (`shufflePlayOrder`) sobre la cola fuente; UI observa `displayQueue`. Toggle **no** llama `setMediaItems`. Player: `shuffleModeEnabled` + `DefaultShuffleOrder` vía `MusicService.ACTION_SET_SHUFFLE_ORDER` (notif/auto-advance = mismo orden). Drag en cola visual: shuffle ON → solo permutación; OFF → `moveQueueItem` timeline. `queue_json` persiste `shufflePlayOrder`; hydrate remapea si caen locales.
 - Arranque en frío (sin timeline): restaurar según `rememberShuffleOnLaunch` / `rememberRepeatOnLaunch` (on por defecto). Off → ese modo arranca apagado.
 - **Autoplay al abrir** (`autoplayOnLaunch`, off por defecto): mismo flag para Local y Remote. Off → mini player / cola hidratada sin `play()`. On → `maybeAutoplayAfterIdleSeed` → `togglePlayPause`. Sesión FGS viva que ya suena no se toca.
 - Sesión viva: repeat del `MediaController`; shuffle desde prefs (única fuente). Switches de Ajustes no cambian la sesión actual.
-- Play/tap manual (`playCollection` / `playSong` / `skipToQueueIndex`) aplica `PlaybackModeClear.afterManualPlay`. Default: apaga shuffle + Repeat One; Repeat All se mantiene. Next/prev in-app: `afterSkip` (default: solo Repeat One; shuffle intacto). Resume / radio no aplican; radio apaga shuffle al armar cola. `shuffleCollection` enciende shuffle y aplica clears de repeat de manual play.
+- Play/tap manual (`playCollection` / `playSong`) aplica `PlaybackModeClear.afterManualPlay`. Default: apaga shuffle + Repeat One; Repeat All se mantiene. Tap en cola (`skipToQueueIndex`) **no** apaga shuffle (índice display→timeline). Next/prev in-app: `afterSkip` (default: solo Repeat One; shuffle intacto). Resume / radio no aplican; radio apaga shuffle al armar cola. `shuffleCollection` enciende shuffle (permutación) y aplica clears de repeat de manual play.
 
 | Capacidad | Entry point |
 |-----------|-------------|
 | Prefs | `PlaybackSettings` + `PlaybackModeRestore.resolve` / `PlaybackModeClear.afterManualPlay` / `afterSkip` / `parseRepeatModeName`; writes 1-key `DataStore.put` |
 | Settings UI | `PlaybackSettingsScreen` vía `SettingsScreen` sección Reproducción |
 | Restore | `MusicPlayerViewModel.restorePlaybackModes` tras `syncUiFromController` |
-| Persist | `setShuffleEnabled` / `setRepeatMode` / `toggleShuffle` / `toggleRepeatMode` / `applyShuffledQueue` / `finishPlayPlayableCollection` |
+| Persist | `setShuffleEnabled` / `setRepeatMode` / `toggleShuffle` / `toggleRepeatMode` / `finishPlayPlayableCollection` (`startShuffled`) / `QueueSnapshot.shufflePlayOrder` |
 | Remember flags | `setRememberShuffleOnLaunch` / `setRememberRepeatOnLaunch` / `setAutoplayOnLaunch` |
 | Clear-on-play | `setClearShuffleOnManualPlay` / `setClearRepeatAllOnManualPlay` / `setClearRepeatOneOnManualPlay` / `applyManualPlayModes` |
 | Clear-on-skip | `setClearShuffleOnSkip` / `setClearRepeatOneOnSkip` / `applySkipModes` / `skipToNext` / `skipToPrevious` |
@@ -255,7 +255,7 @@ Centro de descargas online → sección 2 (`DownloadsScreen`, tab Descargas).
 |-----------|-------------|
 | Resync sesión | `MusicPlayerViewModel.syncUiFromController` / `mediaItemToPlayable` / `loadHydratedQueueIntoController` |
 | Last-played + cola | `PlaybackSessionStore`, `LastPlayedCodec`, `QueueSnapshotCodec`, `PlaybackHydration.hydrateQueue` en `data/preferences/PlaybackSessionStore.kt` |
-| Wrap / trim | `PlaybackQueueOrder.rotateToStart` / `trimHistory` en `data/playback/PlaybackQueueOrder.kt` |
+| Wrap / trim | `PlaybackQueueOrder.rotateToStart` / `trimHistory` (+ remap `shufflePlayOrder`) en `data/playback/PlaybackQueueOrder.kt` |
 | Seed idle | `maybeSeedIdlePlayer` / `applyHydratedQueue` / `maybeAutoplayAfterIdleSeed` |
 | Mini bar UI | `BottomPlayerBar` (`statusLabel`, Previous); wiring en `MainScreen` |
 

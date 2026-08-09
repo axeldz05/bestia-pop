@@ -68,7 +68,7 @@ Mini player se rehidrata desde `MediaController` (sesión viva) o `PlaybackSessi
 
 ## Principios estructurales (invariantes)
 
-1. **Todo es colección** — play/shuffle/enqueue pasan por pipeline unificado (`playPlayableCollection` / `applyShuffledQueue` en ViewModel); cola interna es `PlayableItem`.
+1. **Todo es colección** — play/shuffle/enqueue pasan por pipeline unificado (`playPlayableCollection` + permutación `shufflePlayOrder` en ViewModel); cola interna es `PlayableItem` (orden fuente); UI de cola = `displayQueue`.
 2. **Catálogo ≠ audio** — metadatos de iTunes/Deezer; bytes de audio vía YouTube (re-extraer URL antes de descargar/stream por CDN 403).
 3. **Álbum vs playlist en portadas/metadata** — álbum tiene `album_overrides` (guardar solo álbum vs álbum+canciones); portada de playlist es entidad propia; editar canción no reescribe álbum.
 4. **Portadas locales** — copiar a `context.filesDir` (no depender de content URIs temporales).

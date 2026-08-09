@@ -37,8 +37,8 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 | Ajustes / ListenBrainz | `ui/screens/SettingsScreen.kt` (`BackHandler` sección), `ListenBrainzSettingsScreen.kt` |
 | Ajustes / Reproducción | `ui/screens/PlaybackSettingsScreen.kt` (`SettingsScreen` sección `Playback`) |
 | Ajustes / Sonido | `ui/screens/VolumeBoostSettingsScreen.kt` (`SettingsScreen` sección `Sound`) |
-| Now playing | `ui/screens/NowPlayingScreen.kt` (`BackHandler` → `onDismiss`; cola vía `QueueItemRow`) |
-| Cola | `ui/screens/QueueScreen.kt` (`QueueItemRow`) |
+| Now playing | `ui/screens/NowPlayingScreen.kt` (`BackHandler` → `onDismiss`; cola `displayQueue` vía `QueueItemRow`) |
+| Cola | `ui/screens/QueueScreen.kt` (`displayQueue`, drag → `moveDisplayQueueItem`) |
 | WiFi sync | `ui/screens/WebServerScreen.kt` (`WebServerScreen(viewModel)` + transferencias + botón conflictos + `SongActionDialogsHost`) |
 | Descargas | `ui/screens/DownloadsScreen.kt` (`DownloadsScreen(viewModel)` + `ActiveDownloadRow` + `dismissAllActiveDownloads`) |
 | Temas | `ui/screens/ThemeSettingsScreen.kt` |
@@ -56,7 +56,7 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 | Song queue actions | `ui/components/SongQueueActions.kt` (`SongQueueActions`, `rememberSongQueueActions`) |
 | Matched local/remote row | `ui/components/MatchedTrackRow.kt` (`isMatchedTrackPlaying`, `MatchedTrackRow` + `SongQueueActions`) |
 | Remote placeholder row | `ui/components/RemoteTrackPlaceholderRow.kt` |
-| Queue row | `ui/components/QueueItemRow.kt` (`PlayableItemRowContent`, `QueueItemRow`) |
+| Queue row | `ui/components/QueueItemRow.kt` (`PlayableItemRowContent`, `QueueItemRow` + drag handle) |
 | Artwork UI | `ui/components/ArtworkThumbnail.kt`; `ui/components/ArtworkPicker.kt` (`ArtworkPickerBlock`, `rememberImagePicker`) |
 | Play / shuffle icons | `ui/components/PlayShuffleButtons.kt` (`PlayIconButton`, `ShuffleIconButton`, `PlayShuffleIconPair`, `LabeledPlayShuffleButtons`) |
 | Settings switch row | `ui/components/SettingsSwitchRow.kt` (`SettingsSwitchRow`, `SettingsScrollColumn`) |
@@ -113,8 +113,8 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 | Library initial scan + UI prefs | `data/preferences/LibraryPreferencesRepository.kt` (`isInitialScanCompleted`, `displaySettingsFlow`, `navSnapshotFlow`, `setSortOptionName` / `setViewModeName` / `setNavSnapshot`); codec `LibraryUiPreferences.kt` (`LibraryUiPreferencesCodec`, `UiNavSnapshot`, `LibraryDisplaySettings`) |
 | Playback / sonido + modos | `data/preferences/PlaybackPreferencesRepository.kt` (`PlaybackSettings`, `PlaybackModeRestore`, `PlaybackModeClear.afterManualPlay` / `afterSkip`, `parseRepeatModeName`, `MAX_VOLUME_BOOST_GAIN_MB`, `stereoLeftGain` / `stereoRightGain`, `rememberShuffleOnLaunch` / `rememberRepeatOnLaunch` / `autoplayOnLaunch`, `lastShuffleEnabled` / `lastRepeatMode`, `clearShuffleOnManualPlay` / `clearRepeatAllOnManualPlay` / `clearRepeatOneOnManualPlay`, `clearShuffleOnSkip` / `clearRepeatOneOnSkip`); writes 1-key vía `DataStorePrefs.kt` `put` |
 | Active downloads persist | `data/preferences/ActiveDownloadsStore.kt` (`ActiveDownloadCodec` encode/decode `trackNumber` en OCT, `activeDownloadBadgeCount`) |
-| Last-played + cola persistida | `data/preferences/PlaybackSessionStore.kt` (`LastPlayedCodec`, `QueueSnapshotCodec`, `PlaybackHydration.hydrateQueue`, `saveSession`, `LastPlayedSnapshot`, `QueueSnapshot`, `PersistedQueueItem`, `HydratedQueue`) |
-| Wrap / trim cola | `data/playback/PlaybackQueueOrder.kt` (`rotateToStart`, `trimHistory`, `MAX_QUEUE_HISTORY`) |
+| Last-played + cola persistida | `data/preferences/PlaybackSessionStore.kt` (`LastPlayedCodec`, `QueueSnapshotCodec`, `PlaybackHydration.hydrateQueue`, `saveSession`, `LastPlayedSnapshot`, `QueueSnapshot` + `shufflePlayOrder`, `PersistedQueueItem`, `HydratedQueue`) |
+| Wrap / trim / shuffle índices | `data/playback/PlaybackQueueOrder.kt` (`rotateToStart`, `trimHistory`, `shufflePlayOrder`, `reshufflePlayOrder`, `insertAfterCurrent`, `appendToPlayOrder`, `removeFromPlayOrder`, `moveInPlayOrder`, `remapPlayOrder`, `MAX_QUEUE_HISTORY`) |
 | ListenBrainz prefs | `data/preferences/ListenBrainzPreferencesRepository.kt` |
 | ListenBrainz API | `data/network/ListenBrainzClient.kt` (`submitListens`, createdfor, playlist, `lookupRecordingMetadata`, `fetchLbRadioArtist`, `fetchRecordingMetadata`, `fetchCfRecordingRecommendations`, `parseCfRecommendations`) |
 | LB models + sync | `data/listenbrainz/LbPlaylistModels.kt` (`LbPlaylistTrack(identity, mbid)` + invoke plano, `MatchedLbTrack.toPlayableItem` → `fromLibraryOrRemote(identity)`, `MatchedLbPlaylist.toPlayableItems`, `streamCount`), `LbRadioModels.kt` (`LbRecordingMetadata(identity, mbid)` + invoke plano), `CfRecommendationModels.kt` (`MatchedCfTrack(identity, mbid, score, localSong)`, `MatchedCfRecommendations`), `ListenTracker.kt`, `ListenSyncCoordinator.kt` |
@@ -128,7 +128,7 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 
 | Servicio | Archivo |
 |----------|---------|
-| Playback Media3 + UA HTTP | `service/MusicService.kt` (`promotePlaybackForeground`, `PLAYBACK_CHANNEL_ID`, `setSessionActivity`); VM `playWithForegroundService` → `MediaController.play()`; `service/StreamPlaybackTag.kt` |
+| Playback Media3 + UA HTTP | `service/MusicService.kt` (`promotePlaybackForeground`, `PLAYBACK_CHANNEL_ID`, `setSessionActivity`, `ACTION_SET_SHUFFLE_ORDER` / `applyShuffleOrder`); VM `playWithForegroundService` → `MediaController.play()`; `service/StreamPlaybackTag.kt` |
 | Stereo balance (PCM) | `service/StereoBalanceAudioProcessor.kt` + `MusicService.applyStereoBalance` |
 | Volume boost (LoudnessEnhancer) | `MusicService.applyBoost` + `PlaybackPreferencesRepository` |
 | Ktor WiFi server | `service/WebServerService.kt` (`serverState`, `transfers`, `dismissTransfer`, `/existing-files` Room+BestiaPop); identify post-upload en VM vía `transfers` |
@@ -150,7 +150,7 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 | ActiveDownload cycle | `app/src/test/.../ActiveDownloadCycleTest.kt` |
 | ActiveDownload codec / badge | `app/src/test/.../ActiveDownloadCodecTest.kt` |
 | Last-played / idle / queue hydrate | `app/src/test/.../PlaybackSessionStoreTest.kt` |
-| Queue wrap / trim | `app/src/test/.../PlaybackQueueOrderTest.kt` |
+| Queue wrap / trim / shuffle índices | `app/src/test/.../PlaybackQueueOrderTest.kt` |
 | Queue snapshot codec | `app/src/test/.../QueueSnapshotCodecTest.kt` |
 | Shuffle/repeat restore | `app/src/test/.../PlaybackModeRestoreTest.kt` |
 | Shuffle/repeat clear-on-play | `app/src/test/.../PlaybackModeClearTest.kt` |
@@ -169,7 +169,7 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 Mantener esta lista alineada con `MusicPlayerViewModel.kt`:
 
 - Biblioteca: `songsState`, `albumsState`, `artistsState`, `searchQuery`, `sortOption`, `setSortOption`, `libraryViewMode`, `setLibraryViewMode`, `toggleLibraryViewMode`, `libraryTab`, `setLibraryTab`, `libraryArtistName`, `libraryAlbumName`, `openLibraryAlbum`, `openLibraryArtist`, `popLibraryNested`, `selectedNavIndex`, `setSelectedNavIndex`, `openDownloadsTabTransient`, `playlistDetail`, `openLocalPlaylist`, `openListenBrainzPlaylistDetail`, `openCfRecommendationsDetail`, `closePlaylistDetail`, `dismissDiscoverDetails`, `buildLibraryListItems`, `sortSongsWithinAlbum`, `songsForAlbum`, `songsFromLibraryListItems`, `libraryJobProgress`, `importFolder`, `ensureInitialLibraryImport`, `refreshLibraryFromDisk`, `identifySongs`, `identifySongForReview`, `identifyReview`, `previewIdentifyLocalSong`, `previewIdentifyCandidate`, `applySelectedIdentifyCandidate`, `skipIdentifyReviewItem`, `searchIdentifyCandidates`, `dismissIdentifyReview`, `showIdentifyReview`, `applyRemainingIdentifySuggestions`, `skipAllIdentifyReview`
-- Playback: `playSong`, `playCollection`, `playPlayableCollection` (`rotate`, `applyManualModes`), `applyShuffledQueue`, `playMatchedCollection`, `shuffleMatchedCollection`, `shuffleCollection`, `enqueueCollection`, `playNextInQueue`, `playNextBatch`, `skipToQueueIndex`, `currentItem`, `currentSong`, `queue`, `resolvingRemote`, `repeatMode`, `isShuffle`, `syncUiFromController`, `maybeSeedIdlePlayer`, `applyHydratedQueue`, `maybeAutoplayAfterIdleSeed`, `togglePlayPause`, `toggleShuffle`, `toggleRepeatMode`, `restorePlaybackModes`, `applyManualPlayModes`, `applySkipModes`, `volumeLevel`, `volumeBoostEnabled`, `setVolume`, `setVolumeBoostEnabled`, `stereoLeftGain`, `stereoRightGain`, `setStereoLeftGain`, `setStereoRightGain`, `resetStereoBalance`, `rememberShuffleOnLaunch`, `rememberRepeatOnLaunch`, `autoplayOnLaunch`, `setRememberShuffleOnLaunch`, `setRememberRepeatOnLaunch`, `setAutoplayOnLaunch`, `clearShuffleOnManualPlay`, `clearRepeatAllOnManualPlay`, `clearRepeatOneOnManualPlay`, `clearShuffleOnSkip`, `clearRepeatOneOnSkip`, `setClearShuffleOnManualPlay`, `setClearRepeatAllOnManualPlay`, `setClearRepeatOneOnManualPlay`, `setClearShuffleOnSkip`, `setClearRepeatOneOnSkip`
+- Playback: `playSong`, `playCollection`, `playPlayableCollection` (`rotate`, `applyManualModes`, `startShuffled`), `playMatchedCollection`, `shuffleMatchedCollection`, `shuffleCollection`, `enqueueCollection`, `playNextInQueue`, `playNextBatch`, `skipToQueueIndex`, `moveDisplayQueueItem`, `currentItem`, `currentSong`, `queue`, `displayQueue`, `resolvingRemote`, `repeatMode`, `isShuffle`, `syncUiFromController`, `maybeSeedIdlePlayer`, `applyHydratedQueue`, `maybeAutoplayAfterIdleSeed`, `togglePlayPause`, `toggleShuffle`, `toggleRepeatMode`, `restorePlaybackModes`, `applyManualPlayModes`, `applySkipModes`, `volumeLevel`, `volumeBoostEnabled`, `setVolume`, `setVolumeBoostEnabled`, `stereoLeftGain`, `stereoRightGain`, `setStereoLeftGain`, `setStereoRightGain`, `resetStereoBalance`, `rememberShuffleOnLaunch`, `rememberRepeatOnLaunch`, `autoplayOnLaunch`, `setRememberShuffleOnLaunch`, `setRememberRepeatOnLaunch`, `setAutoplayOnLaunch`, `clearShuffleOnManualPlay`, `clearRepeatAllOnManualPlay`, `clearRepeatOneOnManualPlay`, `clearShuffleOnSkip`, `clearRepeatOneOnSkip`, `setClearShuffleOnManualPlay`, `setClearRepeatAllOnManualPlay`, `setClearRepeatOneOnManualPlay`, `setClearShuffleOnSkip`, `setClearRepeatOneOnSkip`
 - Radio: `startRadio` / `stopRadio` / `setRadioPreferredMode`, `suggestRadioWithRetry`, `radioMode`, `radioStatusLabel`, `RADIO_LOADING_LABEL`, `radioModeLabel`, `replaceUpcomingWithRadio`, `maybeAutoStartRadioOnQueueEnd`
 - Artwork: `setAlbumArtwork`, `saveAlbumMetadata`, `requestSaveAlbumMetadata`, `confirmPendingAlbumMerge`, `dismissPendingAlbumMerge`, `mergeAlbumInto`
 - Online: `searchCatalog`, `searchOnlineCatalog`, `downloadSingleCandidate`, `downloadSelectedCandidatesBatch`, `enqueueTrackedBatch`, `downloadFromUrl`, `downloadOnlineTrack`, `activeDownloads`, `downloadConflict`, `resolveDownloadConflictOverwrite` / `resolveDownloadConflictSaveAs` / `cancelDownloadConflict`, `retryActiveDownload`, `cycleActiveDownload`, `previewActiveDownload`, `playActiveDownload`, `dismissActiveDownload`, `dismissAllActiveDownloads`, `requestOpenDownloads` / `pendingOpenDownloads`, `playOnlineCatalogTrackAsStream`, `expandCandidates`, `launchCycleYouTubeMatch`, `cycleSongCatalogResult`, `cycleTrackCandidate`, `catalogPreviewKey`, `toastSongInLibrary`, `toastDownloadsQueued`

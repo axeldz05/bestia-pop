@@ -156,6 +156,25 @@ class PlaybackSessionStoreTest {
     }
 
     @Test
+    fun hydrateQueue_remapsShufflePlayOrderWhenLocalDropped() {
+        val library = listOf(song(1), song(3), song(4))
+        val snapshot = QueueSnapshot(
+            currentIndex = 0,
+            positionMs = 0L,
+            items = listOf(
+                PersistedQueueItem.Local(songId = 1L, uriString = "content://song/1"),
+                PersistedQueueItem.Local(songId = 2L, uriString = "content://song/2"),
+                PersistedQueueItem.Local(songId = 3L, uriString = "content://song/3"),
+                PersistedQueueItem.Local(songId = 4L, uriString = "content://song/4")
+            ),
+            shufflePlayOrder = listOf(2, 0, 3, 1)
+        )
+        val hydrated = PlaybackHydration.hydrateQueue(snapshot, library)!!
+        assertEquals(3, hydrated.items.size)
+        assertEquals(listOf(1, 0, 2), hydrated.shufflePlayOrder)
+    }
+
+    @Test
     fun hydrateQueue_keepsRemoteAndCapsResumePosition() {
         val library = listOf(song(1).copy(durationMs = 10_000L))
         val snapshot = QueueSnapshot(

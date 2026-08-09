@@ -2,11 +2,13 @@ package com.bestiapop.android.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -14,6 +16,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -21,14 +24,22 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import com.bestiapop.android.data.model.PlayableItem
+import kotlin.math.roundToInt
 
 /** L1: artwork + title + artist for a queue/playable row. */
 @Composable
@@ -89,7 +100,7 @@ fun PlayableItemRowContent(
 }
 
 /**
- * L2: queue row with optional index / play icon and remove action.
+ * L2: queue row with optional index / play icon, drag handle and remove action.
  */
 @Composable
 fun QueueItemRow(
@@ -102,8 +113,39 @@ fun QueueItemRow(
     removeIcon: ImageVector = Icons.Default.Delete,
     removeContentDescription: String = "Quitar",
     trailingDuration: String? = null,
-    compact: Boolean = false
+    compact: Boolean = false,
+    reorderCount: Int = 0,
+    onReorder: ((from: Int, to: Int) -> Unit)? = null
 ) {
+    var dragOffsetY by remember { mutableFloatStateOf(0f) }
+    val rowModifier = if (onReorder != null && reorderCount > 1) {
+        Modifier
+            .zIndex(if (dragOffsetY != 0f) 1f else 0f)
+            .offset { IntOffset(0, dragOffsetY.roundToInt()) }
+    } else {
+        Modifier
+    }
+    val handleModifier = if (onReorder != null && reorderCount > 1) {
+        Modifier.pointerInput(index, reorderCount) {
+            detectVerticalDragGestures(
+                onDragEnd = {
+                    val rowPx = 56.dp.toPx()
+                    val deltaSlots = (dragOffsetY / rowPx).roundToInt()
+                    val to = (index + deltaSlots).coerceIn(0, reorderCount - 1)
+                    if (to != index) onReorder(index, to)
+                    dragOffsetY = 0f
+                },
+                onDragCancel = { dragOffsetY = 0f },
+                onVerticalDrag = { change, amount ->
+                    change.consume()
+                    dragOffsetY += amount
+                }
+            )
+        }
+    } else {
+        null
+    }
+
     if (compact) {
         val bgColor = if (isCurrentPlaying) {
             MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
@@ -111,13 +153,14 @@ fun QueueItemRow(
             MaterialTheme.colorScheme.surface.copy(alpha = 0f)
         }
         Row(
-            modifier = Modifier
+            modifier = rowModifier
                 .fillMaxWidth()
                 .background(bgColor)
                 .clickable(onClick = onClick)
                 .padding(horizontal = 12.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            QueueDragHandle(handleModifier)
             if (showIndex) {
                 Box(
                     modifier = Modifier.width(28.dp),
@@ -167,9 +210,10 @@ fun QueueItemRow(
         }
     } else {
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = rowModifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            QueueDragHandle(handleModifier)
             Surface(
                 onClick = onClick,
                 color = if (isCurrentPlaying) {
@@ -199,4 +243,17 @@ fun QueueItemRow(
             }
         }
     }
+}
+
+@Composable
+private fun QueueDragHandle(handleModifier: Modifier?) {
+    if (handleModifier == null) return
+    Icon(
+        imageVector = Icons.Default.DragHandle,
+        contentDescription = "Reordenar",
+        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f),
+        modifier = handleModifier
+            .size(28.dp)
+            .padding(end = 2.dp)
+    )
 }

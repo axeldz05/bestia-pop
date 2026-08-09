@@ -48,7 +48,8 @@ class QueueSnapshotCodecTest {
         val snapshot = QueueSnapshotCodec.fromPlayable(
             items = listOf(local, remote),
             currentIndex = 1,
-            positionMs = 12_000L
+            positionMs = 12_000L,
+            shufflePlayOrder = listOf(1, 0)
         )
         val encoded = QueueSnapshotCodec.encode(snapshot)
         assertFalse(encoded.contains("audioUrl"))
@@ -58,6 +59,7 @@ class QueueSnapshotCodecTest {
         assertEquals(1, restored.currentIndex)
         assertEquals(12_000L, restored.positionMs)
         assertEquals(2, restored.items.size)
+        assertEquals(listOf(1, 0), restored.shufflePlayOrder)
 
         val localItem = restored.items[0] as PersistedQueueItem.Local
         assertEquals(1L, localItem.songId)
@@ -94,5 +96,27 @@ class QueueSnapshotCodecTest {
         assertEquals("T", remote.identity.title)
         assertEquals("q", remote.youtubeQueryOrId)
         assertTrue(QueueSnapshotCodec.encode(restored).let { !it.contains("audioUrl") })
+        assertNull(restored.shufflePlayOrder)
+    }
+
+    @Test
+    fun decode_legacyJsonWithoutPlayOrder_isNull() {
+        val json = """{"currentIndex":0,"positionMs":0,"items":[
+            {"kind":"local","songId":1,"uriString":"content://song/1","title":"T","artist":"A"}
+        ]}"""
+        val restored = QueueSnapshotCodec.decode(json)!!
+        assertNull(restored.shufflePlayOrder)
+        assertEquals(1, restored.items.size)
+    }
+
+    @Test
+    fun fromPlayable_rejectsInvalidPlayOrder() {
+        val snapshot = QueueSnapshotCodec.fromPlayable(
+            items = listOf(song(1).toPlayable(), song(2).toPlayable()),
+            currentIndex = 0,
+            positionMs = 0L,
+            shufflePlayOrder = listOf(0, 0)
+        )
+        assertNull(snapshot.shufflePlayOrder)
     }
 }

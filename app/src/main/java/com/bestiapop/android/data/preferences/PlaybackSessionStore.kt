@@ -11,6 +11,7 @@ import com.bestiapop.android.data.model.ResolvedStream
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.data.model.TrackIdentity
 import com.bestiapop.android.data.model.toPlayable
+import com.bestiapop.android.data.playback.PlaybackQueueOrder
 import com.bestiapop.android.data.util.AudioPersistRef
 import com.bestiapop.android.data.util.SongPathNormalizer
 import com.bestiapop.android.data.util.optNullableString
@@ -62,13 +63,15 @@ sealed class PersistedQueueItem {
 data class QueueSnapshot(
     val currentIndex: Int,
     val positionMs: Long,
-    val items: List<PersistedQueueItem>
+    val items: List<PersistedQueueItem>,
+    val shufflePlayOrder: List<Int>? = null
 )
 
 data class HydratedQueue(
     val items: List<PlayableItem>,
     val currentIndex: Int,
-    val positionMs: Long
+    val positionMs: Long,
+    val shufflePlayOrder: List<Int>? = null
 )
 
 object LastPlayedCodec {
@@ -120,6 +123,11 @@ object QueueSnapshotCodec {
                 arr.put(encodeItem(item))
             }
             put("items", arr)
+            snapshot.shufflePlayOrder?.let { order ->
+                val orderArr = JSONArray()
+                for (idx in order) orderArr.put(idx)
+                put("shufflePlayOrder", orderArr)
+            }
         }.toString()
 
     fun decode(json: String): QueueSnapshot? {
@@ -136,7 +144,8 @@ object QueueSnapshotCodec {
             QueueSnapshot(
                 currentIndex = obj.optInt("currentIndex", 0).coerceAtLeast(0),
                 positionMs = obj.optLong("positionMs", 0L).coerceAtLeast(0L),
-                items = items
+                items = items,
+                shufflePlayOrder = decodePlayOrder(obj.optJSONArray("shufflePlayOrder"))
             )
         } catch (_: Exception) {
             null
@@ -146,12 +155,23 @@ object QueueSnapshotCodec {
     fun fromPlayable(
         items: List<PlayableItem>,
         currentIndex: Int,
-        positionMs: Long
+        positionMs: Long,
+        shufflePlayOrder: List<Int>? = null
     ): QueueSnapshot = QueueSnapshot(
         currentIndex = currentIndex.coerceAtLeast(0),
         positionMs = positionMs.coerceAtLeast(0L),
-        items = items.map { toPersisted(it) }
+        items = items.map { toPersisted(it) },
+        shufflePlayOrder = PlaybackQueueOrder.validPlayOrderOrNull(shufflePlayOrder, items.size)
     )
+
+    private fun decodePlayOrder(arr: JSONArray?): List<Int>? {
+        if (arr == null || arr.length() == 0) return null
+        return buildList {
+            for (i in 0 until arr.length()) {
+                add(arr.getInt(i))
+            }
+        }
+    }
 
     private fun toPersisted(item: PlayableItem): PersistedQueueItem = when (item) {
         is PlayableItem.Local -> PersistedQueueItem.Local(
@@ -359,7 +379,18 @@ object PlaybackHydration {
         } else {
             0L
         }
-        return HydratedQueue(items = items, currentIndex = newIndex, positionMs = positionMs)
+        val oldToNew = resolved.mapIndexed { newIdx, pair -> pair.first to newIdx }.toMap()
+        val remappedOrder = PlaybackQueueOrder.remapPlayOrder(
+            snapshot.shufflePlayOrder,
+            oldToNew,
+            items.size
+        )
+        return HydratedQueue(
+            items = items,
+            currentIndex = newIndex,
+            positionMs = positionMs,
+            shufflePlayOrder = remappedOrder
+        )
     }
 }
 

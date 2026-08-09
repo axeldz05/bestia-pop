@@ -155,7 +155,7 @@ fun NowPlayingScreen(
     val isShuffle by viewModel.isShuffle.collectAsState()
     val volumeLevel by viewModel.volumeLevel.collectAsState()
     val volumeBoostEnabled by viewModel.volumeBoostEnabled.collectAsState()
-    val queueItems by viewModel.queue.collectAsState()
+    val queueItems by viewModel.displayQueue.collectAsState()
     val queueFocusEpoch by viewModel.queueFocusEpoch.collectAsState()
     val resolvingRemote by viewModel.resolvingRemote.collectAsState()
     val radioActive by viewModel.radioActive.collectAsState()
@@ -504,6 +504,7 @@ fun NowPlayingScreen(
                         listState = queueListState,
                         onSkipTo = viewModel::skipToQueueIndex,
                         onRemove = viewModel::removeFromQueue,
+                        onReorder = viewModel::moveDisplayQueueItem,
                         onPanelPositioned = remember(scrollZoneCoords) {
                             { coords: LayoutCoordinates -> scrollZoneCoords.inner = coords }
                         }
@@ -873,6 +874,7 @@ private fun NowPlayingQueuePanel(
     listState: LazyListState,
     onSkipTo: (Int) -> Unit,
     onRemove: (Int) -> Unit,
+    onReorder: (Int, Int) -> Unit,
     onPanelPositioned: (LayoutCoordinates) -> Unit
 ) {
     Box(
@@ -922,7 +924,9 @@ private fun NowPlayingQueuePanel(
                         removeIcon = Icons.Default.Close,
                         removeContentDescription = "Quitar de la cola",
                         trailingDuration = formatDuration(queueSong.durationMs),
-                        compact = true
+                        compact = true,
+                        reorderCount = queueItems.size,
+                        onReorder = onReorder
                     )
                 }
             }

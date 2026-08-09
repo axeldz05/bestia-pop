@@ -6,6 +6,7 @@ import android.content.ComponentName
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import android.os.Bundle
 import androidx.annotation.OptIn
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
@@ -16,6 +17,7 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaController
+import androidx.media3.session.SessionCommand
 import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.MoreExecutors
@@ -360,6 +362,15 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private val _queue = MutableStateFlow<List<PlayableItem>>(emptyList())
     val queue = _queue.asStateFlow()
 
+    private val _shufflePlayOrder = MutableStateFlow<List<Int>?>(null)
+    val displayQueue: StateFlow<List<PlayableItem>> = combine(
+        _queue,
+        _isShuffle,
+        _shufflePlayOrder
+    ) { q, shuffle, order ->
+        if (!shuffle) q else PlaybackQueueOrder.applyPlayOrder(q, order)
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
     private val _resolvingRemote = MutableStateFlow(false)
     val resolvingRemote = _resolvingRemote.asStateFlow()
 
@@ -640,12 +651,57 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             if (resolved.applyRepeatToPlayer) {
                 applyRepeatModeToController(resolved.repeat)
             }
+            syncShuffleToPlayer()
         }
     }
 
     private fun setShuffleEnabled(enabled: Boolean) {
+        val wasEnabled = _isShuffle.value
         _isShuffle.value = enabled
         persistPlayback { setLastShuffleEnabled(enabled) }
+        if (!enabled && wasEnabled) {
+            _shufflePlayOrder.value = null
+            sendShuffleOrderToPlayer(null)
+        }
+    }
+
+    private fun displayToTimelineIndex(displayIndex: Int): Int {
+        val size = _queue.value.size
+        if (!_isShuffle.value) return displayIndex
+        return PlaybackQueueOrder.toTimelineIndex(_shufflePlayOrder.value, displayIndex, size)
+    }
+
+    private fun sendShuffleOrderToPlayer(order: List<Int>?) {
+        val controller = mediaController ?: return
+        val extras = Bundle()
+        if (order != null && order.isNotEmpty()) {
+            extras.putIntArray(MusicService.EXTRA_SHUFFLE_ORDER, order.toIntArray())
+        }
+        controller.sendCustomCommand(
+            SessionCommand(MusicService.ACTION_SET_SHUFFLE_ORDER, Bundle.EMPTY),
+            extras
+        )
+    }
+
+    private fun syncShuffleToPlayer() {
+        if (!_isShuffle.value) {
+            if (_shufflePlayOrder.value != null) _shufflePlayOrder.value = null
+            sendShuffleOrderToPlayer(null)
+            return
+        }
+        val size = _queue.value.size
+        if (size == 0) return
+        val order = PlaybackQueueOrder.validPlayOrderOrNull(_shufflePlayOrder.value, size)
+            ?: PlaybackQueueOrder.shufflePlayOrder(size, currentQueueIndex())
+        _shufflePlayOrder.value = order
+        sendShuffleOrderToPlayer(order)
+    }
+
+    private fun updateShufflePlayOrder(transform: (List<Int>) -> List<Int>) {
+        if (!_isShuffle.value) return
+        val prev = _shufflePlayOrder.value ?: return
+        _shufflePlayOrder.value = transform(prev)
+        sendShuffleOrderToPlayer(_shufflePlayOrder.value)
     }
 
     private fun setRepeatMode(mode: RepeatMode) {
@@ -892,13 +948,19 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             if (queue.isEmpty()) {
                 playbackSessionStore.saveSession(lastPlayed = lastPlayed, clearQueue = true)
             } else {
-                val trimmed = PlaybackQueueOrder.trimHistory(queue, index)
+                val playOrder = if (_isShuffle.value) _shufflePlayOrder.value else null
+                val trimmed = PlaybackQueueOrder.trimHistory(
+                    queue,
+                    index,
+                    shufflePlayOrder = playOrder
+                )
                 playbackSessionStore.saveSession(
                     lastPlayed = lastPlayed,
                     queue = QueueSnapshotCodec.fromPlayable(
                         items = trimmed.items,
                         currentIndex = trimmed.currentIndex,
-                        positionMs = positionMs
+                        positionMs = positionMs,
+                        shufflePlayOrder = trimmed.shufflePlayOrder
                     )
                 )
             }
@@ -941,6 +1003,10 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
         val index = controller.currentMediaItemIndex.coerceIn(0, rebuilt.lastIndex)
         _queue.value = rebuilt
+        val extrasOrder = controller.sessionExtras
+            .getIntArray(MusicService.EXTRA_SHUFFLE_ORDER)
+            ?.toList()
+        _shufflePlayOrder.value = PlaybackQueueOrder.validPlayOrderOrNull(extrasOrder, rebuilt.size)
         lastMediaItemIndex = index
         _isPlaying.value = controller.isPlaying
         _playbackPositionMs.value = controller.currentPosition.coerceAtLeast(0L)
@@ -1025,11 +1091,16 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private fun applyHydratedQueue(hydrated: HydratedQueue) {
         _queue.value = hydrated.items
         lastMediaItemIndex = hydrated.currentIndex
+        _shufflePlayOrder.value = PlaybackQueueOrder.validPlayOrderOrNull(
+            hydrated.shufflePlayOrder,
+            hydrated.items.size
+        )
         setCurrentItem(hydrated.items[hydrated.currentIndex], persistLastPlayed = false)
         _playbackPositionMs.value = hydrated.positionMs
         _isPlaying.value = false
         pendingResumePositionMs = hydrated.positionMs.takeIf { it > 0L }
         loadHydratedQueueIntoController()
+        if (_isShuffle.value) syncShuffleToPlayer()
     }
 
     private fun maybeSeedIdlePlayer() {
@@ -1102,14 +1173,15 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                 val controller = mediaController
                 val newIndex = controller?.currentMediaItemIndex ?: -1
+                val playOrder = _shufflePlayOrder.value
                 val wrappedShuffleCycle = !suppressShuffleWrapDetection &&
                     _isShuffle.value &&
                     _repeatMode.value == RepeatMode.ALL &&
                     reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO &&
                     lastMediaItemIndex >= 0 &&
-                    _queue.value.isNotEmpty() &&
-                    lastMediaItemIndex == _queue.value.lastIndex &&
-                    newIndex == 0
+                    !playOrder.isNullOrEmpty() &&
+                    lastMediaItemIndex == playOrder.last() &&
+                    newIndex == playOrder.first()
 
                 mediaItem?.let { item ->
                     val idOrUri = item.mediaId
@@ -1133,13 +1205,26 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 } ?: listenTracker.onTrackChanged(null)
 
                 if (wrappedShuffleCycle) {
-                    val avoid = _queue.value.getOrNull(lastMediaItemIndex)
-                    applyShuffledQueue(
-                        items = _queue.value,
-                        keepItemFirst = null,
-                        avoidStartingWith = avoid,
-                        startPlaying = true
+                    val avoid = lastMediaItemIndex
+                    val newOrder = PlaybackQueueOrder.reshufflePlayOrder(
+                        size = _queue.value.size,
+                        avoidStartingWith = avoid
                     )
+                    _shufflePlayOrder.value = newOrder
+                    sendShuffleOrderToPlayer(newOrder)
+                    val newFirst = newOrder.firstOrNull() ?: newIndex
+                    if (newFirst != newIndex) {
+                        suppressShuffleWrapDetection = true
+                        try {
+                            mediaController?.seekTo(newFirst, 0L)
+                        } finally {
+                            suppressShuffleWrapDetection = false
+                        }
+                        lastMediaItemIndex = newFirst
+                    } else {
+                        lastMediaItemIndex = newIndex
+                    }
+                    persistPlaybackSession(force = true)
                 } else {
                     lastMediaItemIndex = newIndex
                 }
@@ -1311,70 +1396,6 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
-    /**
-     * Builds a shuffled queue permutation. Optionally pins [keepItemFirst] at index 0,
-     * or avoids starting with [avoidStartingWith] after a full cycle.
-     */
-    fun applyShuffledQueue(
-        items: List<PlayableItem>,
-        keepItemFirst: PlayableItem?,
-        avoidStartingWith: PlayableItem? = null,
-        startPlaying: Boolean = true
-    ) {
-        if (items.isEmpty()) return
-        fun sameItem(a: PlayableItem, b: PlayableItem): Boolean {
-            if (a.mediaId == b.mediaId) return true
-            if (a is PlayableItem.Local && b is PlayableItem.Local) {
-                return a.song.id == b.song.id || a.song.uriString == b.song.uriString
-            }
-            return false
-        }
-        val shuffled = when {
-            keepItemFirst != null -> {
-                val rest = items.filter { !sameItem(it, keepItemFirst) }.shuffled()
-                listOf(keepItemFirst) + rest
-            }
-            avoidStartingWith != null && items.size > 1 -> {
-                var attempt = items.shuffled()
-                var tries = 0
-                while (tries < 5 && sameItem(attempt.first(), avoidStartingWith)) {
-                    attempt = items.shuffled()
-                    tries++
-                }
-                attempt
-            }
-            else -> items.shuffled()
-        }
-
-        suppressShuffleWrapDetection = true
-        try {
-            _queue.value = shuffled
-            lastMediaItemIndex = 0
-            setCurrentItem(shuffled.first())
-            setShuffleEnabled(true)
-            val (_, nextRepeat) = PlaybackModeClear.afterManualPlay(
-                shuffle = true,
-                repeat = _repeatMode.value,
-                settings = playbackSettings.value
-            )
-            if (nextRepeat != _repeatMode.value) setRepeatMode(nextRepeat)
-            mediaController?.let { controller ->
-                val resumePosition = if (keepItemFirst != null) {
-                    controller.currentPosition.coerceAtLeast(0L)
-                } else {
-                    0L
-                }
-                controller.shuffleModeEnabled = false
-                controller.setMediaItems(shuffled.map { playableToMediaItem(it) }, 0, resumePosition)
-                controller.prepare()
-                if (startPlaying) playWithForegroundService(controller)
-            }
-            prefetchAround(0)
-        } finally {
-            suppressShuffleWrapDetection = false
-        }
-    }
-
     private var lastSeekTimestamp = 0L
 
     private fun startPositionTracker() {
@@ -1538,7 +1559,8 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         startIndex: Int = 0,
         fromRadio: Boolean = false,
         rotate: Boolean = true,
-        applyManualModes: Boolean = true
+        applyManualModes: Boolean = true,
+        startShuffled: Boolean = false
     ) {
         if (items.isEmpty()) return
         if (!fromRadio) clearRadioSession()
@@ -1566,7 +1588,13 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                         for ((idx, remote) in nextRemote) {
                             val r = resolveRemote(remote as PlayableItem.Remote) ?: continue
                             working[idx] = r
-                            finishPlayPlayableCollection(working, idx, shouldApplyManualModes, fromRadio)
+                            finishPlayPlayableCollection(
+                                working,
+                                idx,
+                                shouldApplyManualModes,
+                                fromRadio,
+                                startShuffled
+                            )
                             played = true
                             break
                         }
@@ -1578,7 +1606,13 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                     _resolvingRemote.value = false
                 }
             }
-            finishPlayPlayableCollection(working, startAt, shouldApplyManualModes, fromRadio)
+            finishPlayPlayableCollection(
+                working,
+                startAt,
+                shouldApplyManualModes,
+                fromRadio,
+                startShuffled
+            )
             prefetchAround(startAt)
             if (fromRadio && _radioActive.value) {
                 maybeRefillRadio(startAt)
@@ -1590,15 +1624,26 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         items: List<PlayableItem>,
         index: Int,
         applyManualModes: Boolean,
-        fromRadio: Boolean
+        fromRadio: Boolean,
+        startShuffled: Boolean = false
     ) {
         _queue.value = items
         lastMediaItemIndex = index
-        setCurrentItem(items[index])
         when {
+            startShuffled -> {
+                setShuffleEnabled(true)
+                val (_, nextRepeat) = PlaybackModeClear.afterManualPlay(
+                    shuffle = true,
+                    repeat = _repeatMode.value,
+                    settings = playbackSettings.value
+                )
+                if (nextRepeat != _repeatMode.value) setRepeatMode(nextRepeat)
+                _shufflePlayOrder.value = PlaybackQueueOrder.shufflePlayOrder(items.size, index)
+            }
             applyManualModes -> applyManualPlayModes()
             fromRadio -> setShuffleEnabled(false)
         }
+        setCurrentItem(items[index])
         remoteErrorRetryUsed = false
         liveSessionHydrated = true
         idleSeedDone = true
@@ -1613,6 +1658,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             controller.prepare()
             playWithForegroundService(controller)
         }
+        syncShuffleToPlayer()
         if (startPositionMs > 0L) {
             _playbackPositionMs.value = startPositionMs
         }
@@ -1774,8 +1820,13 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     fun shuffleCollection(songs: List<Song>) {
         if (songs.isEmpty()) return
-        applyShuffledQueue(songs.toPlayableItems(), keepItemFirst = null)
-        bumpQueueFocus()
+        playPlayableCollection(
+            songs.toPlayableItems(),
+            startIndex = songs.indices.random(),
+            rotate = false,
+            applyManualModes = false,
+            startShuffled = true
+        )
     }
 
     fun enqueueCollection(songs: List<Song>) {
@@ -1854,19 +1905,20 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     fun toggleShuffle() {
         val newShuffle = !_isShuffle.value
         if (newShuffle) {
+            setShuffleEnabled(true)
             val queue = _queue.value
-            val current = _currentItem.value
-            if (queue.isEmpty()) {
-                setShuffleEnabled(true)
-                mediaController?.shuffleModeEnabled = false
-                return
+            if (queue.isNotEmpty()) {
+                _shufflePlayOrder.value = PlaybackQueueOrder.shufflePlayOrder(
+                    queue.size,
+                    currentQueueIndex()
+                )
+                sendShuffleOrderToPlayer(_shufflePlayOrder.value)
             }
-            applyShuffledQueue(queue, keepItemFirst = current)
-            bumpQueueFocus()
         } else {
             setShuffleEnabled(false)
-            mediaController?.shuffleModeEnabled = false
         }
+        bumpQueueFocus()
+        persistPlaybackSession(force = true)
     }
 
     // Queue Management
@@ -1882,11 +1934,14 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     fun addPlayableBatch(items: List<PlayableItem>) {
         if (items.isEmpty()) return
         val currentList = _queue.value.toMutableList()
+        val firstNew = currentList.size
         currentList.addAll(items)
         _queue.value = currentList
-
         mediaController?.let { controller ->
             controller.addMediaItems(items.map { playableToMediaItem(it) })
+        }
+        updateShufflePlayOrder { prev ->
+            PlaybackQueueOrder.appendToPlayOrder(prev, firstNew, items.size)
         }
         persistPlaybackSession(force = true)
     }
@@ -2203,9 +2258,11 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
         currentList.addAll(insertIndex, playables)
         _queue.value = currentList
-
         mediaController?.let { controller ->
             controller.addMediaItems(insertIndex, playables.map { playableToMediaItem(it) })
+        }
+        updateShufflePlayOrder { prev ->
+            PlaybackQueueOrder.insertAfterCurrent(prev, currentIndex, insertIndex, playables.size)
         }
         persistPlaybackSession(force = true)
     }
@@ -2254,11 +2311,15 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     fun removeFromQueue(index: Int) {
-        if (index in 0 until _queue.value.size) {
+        val timelineIndex = displayToTimelineIndex(index)
+        if (timelineIndex in _queue.value.indices) {
             val currentList = _queue.value.toMutableList()
-            currentList.removeAt(index)
+            currentList.removeAt(timelineIndex)
             _queue.value = currentList
-            mediaController?.removeMediaItem(index)
+            mediaController?.removeMediaItem(timelineIndex)
+            updateShufflePlayOrder { prev ->
+                PlaybackQueueOrder.removeFromPlayOrder(prev, timelineIndex)
+            }
             persistPlaybackSession(force = true)
         }
     }
@@ -2274,12 +2335,25 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
+    fun moveDisplayQueueItem(fromIndex: Int, toIndex: Int) {
+        if (fromIndex == toIndex) return
+        if (_isShuffle.value) {
+            val order = _shufflePlayOrder.value ?: return
+            if (fromIndex !in order.indices || toIndex !in order.indices) return
+            _shufflePlayOrder.value = PlaybackQueueOrder.moveInPlayOrder(order, fromIndex, toIndex)
+            sendShuffleOrderToPlayer(_shufflePlayOrder.value)
+            persistPlaybackSession(force = true)
+        } else {
+            moveQueueItem(fromIndex, toIndex)
+        }
+    }
+
     fun skipToQueueIndex(index: Int) {
-        if (index in 0 until _queue.value.size) {
+        val timelineIndex = displayToTimelineIndex(index)
+        if (timelineIndex in _queue.value.indices) {
             bumpQueueFocus()
-            applyManualPlayModes()
-            lastMediaItemIndex = index
-            val item = _queue.value[index]
+            lastMediaItemIndex = timelineIndex
+            val item = _queue.value[timelineIndex]
             if (item is PlayableItem.Remote && remoteNeedsResolve(item)) {
                 viewModelScope.launch {
                     _resolvingRemote.value = true
@@ -2289,19 +2363,19 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                             mediaController?.seekToNextMediaItem()
                             return@launch
                         }
-                        updateQueueItem(index, resolved)
-                        mediaController?.replaceMediaItem(index, playableToMediaItem(resolved))
-                        mediaController?.seekTo(index, 0L)
+                        updateQueueItem(timelineIndex, resolved)
+                        mediaController?.replaceMediaItem(timelineIndex, playableToMediaItem(resolved))
+                        mediaController?.seekTo(timelineIndex, 0L)
                         mediaController?.prepare()
                         mediaController?.play()
-                        prefetchAround(index)
+                        prefetchAround(timelineIndex)
                     } finally {
                         _resolvingRemote.value = false
                     }
                 }
             } else {
-                mediaController?.seekTo(index, 0L)
-                prefetchAround(index)
+                mediaController?.seekTo(timelineIndex, 0L)
+                prefetchAround(timelineIndex)
             }
             persistPlaybackSession(force = true)
         }
@@ -3214,7 +3288,13 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     private fun shuffleMatchedCollection(items: List<PlayableItem>) {
         if (items.isEmpty()) return
-        applyShuffledQueue(items, keepItemFirst = null)
+        playPlayableCollection(
+            items,
+            startIndex = items.indices.random(),
+            rotate = false,
+            applyManualModes = false,
+            startShuffled = true
+        )
     }
 
     fun playCfRecommendations() =

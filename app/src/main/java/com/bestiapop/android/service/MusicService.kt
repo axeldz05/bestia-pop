@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.media.audiofx.LoudnessEnhancer
 import android.os.Build
+import android.os.Bundle
 import androidx.annotation.OptIn
 import androidx.core.app.NotificationChannelCompat
 import androidx.core.app.NotificationCompat
@@ -25,11 +26,16 @@ import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.MediaSource
+import androidx.media3.exoplayer.source.ShuffleOrder
 import androidx.media3.extractor.DefaultExtractorsFactory
 import androidx.media3.session.DefaultMediaNotificationProvider
 import androidx.media3.session.MediaLibraryService
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaStyleNotificationHelper
+import androidx.media3.session.SessionCommand
+import androidx.media3.session.SessionResult
+import com.google.common.util.concurrent.Futures
+import com.google.common.util.concurrent.ListenableFuture
 import com.bestiapop.android.MainActivity
 import com.bestiapop.android.R
 import com.bestiapop.android.data.preferences.MAX_VOLUME_BOOST_GAIN_MB
@@ -287,10 +293,75 @@ class MusicService : MediaLibraryService() {
     companion object {
         const val PLAYBACK_CHANNEL_ID = "playback_channel"
         const val PLAYBACK_NOTIFICATION_ID = 1001
+        const val ACTION_SET_SHUFFLE_ORDER = "com.bestiapop.android.SET_SHUFFLE_ORDER"
+        const val EXTRA_SHUFFLE_ORDER = "shuffle_order"
+
+        fun shuffleOrderFromPlayer(player: Player): IntArray? {
+            if (!player.shuffleModeEnabled) return null
+            val timeline = player.currentTimeline
+            val n = timeline.windowCount
+            if (n <= 0) return null
+            val order = IntArray(n)
+            var idx = timeline.getFirstWindowIndex(true)
+            var i = 0
+            while (idx != C.INDEX_UNSET && i < n) {
+                order[i++] = idx
+                idx = timeline.getNextWindowIndex(idx, Player.REPEAT_MODE_OFF, true)
+            }
+            return if (i == n) order else null
+        }
+    }
+
+    private fun applyShuffleOrder(indices: IntArray?) {
+        val p = player ?: return
+        if (indices == null || indices.isEmpty()) {
+            p.shuffleModeEnabled = false
+        } else {
+            p.setShuffleOrder(ShuffleOrder.DefaultShuffleOrder(indices, /* randomSeed */ 0L))
+            p.shuffleModeEnabled = true
+        }
+        publishShuffleExtras()
+    }
+
+    private fun publishShuffleExtras() {
+        val session = mediaLibrarySession ?: return
+        val extras = Bundle()
+        val p = player
+        if (p != null && p.shuffleModeEnabled) {
+            shuffleOrderFromPlayer(p)?.let { extras.putIntArray(EXTRA_SHUFFLE_ORDER, it) }
+        }
+        session.setSessionExtras(extras)
     }
 
     private inner class LibraryCallback : MediaLibrarySession.Callback {
-        // Default media library session callbacks
+        override fun onConnect(
+            session: MediaSession,
+            controller: MediaSession.ControllerInfo
+        ): MediaSession.ConnectionResult {
+            publishShuffleExtras()
+            val sessionCommands = MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS
+                .buildUpon()
+                .add(SessionCommand(ACTION_SET_SHUFFLE_ORDER, Bundle.EMPTY))
+                .build()
+            return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
+                .setAvailableSessionCommands(sessionCommands)
+                .build()
+        }
+
+        override fun onCustomCommand(
+            session: MediaSession,
+            controller: MediaSession.ControllerInfo,
+            customCommand: SessionCommand,
+            args: Bundle
+        ): ListenableFuture<SessionResult> {
+            if (customCommand.customAction != ACTION_SET_SHUFFLE_ORDER) {
+                return super.onCustomCommand(session, controller, customCommand, args)
+            }
+            val indices = args.getIntArray(EXTRA_SHUFFLE_ORDER)
+                ?: customCommand.customExtras.getIntArray(EXTRA_SHUFFLE_ORDER)
+            applyShuffleOrder(indices)
+            return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+        }
     }
 }
 

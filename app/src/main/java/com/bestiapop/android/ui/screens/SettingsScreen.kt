@@ -18,6 +18,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Headset
 import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -40,6 +41,7 @@ import com.bestiapop.android.ui.MusicPlayerViewModel
 private enum class SettingsSection {
     Themes,
     ListenBrainz,
+    Playback,
     Sound
 }
 
@@ -54,29 +56,33 @@ fun SettingsScreen(viewModel: MusicPlayerViewModel) {
         null -> SettingsHome(
             onOpenThemes = { section = SettingsSection.Themes },
             onOpenListenBrainz = { section = SettingsSection.ListenBrainz },
+            onOpenPlayback = { section = SettingsSection.Playback },
             onOpenSound = { section = SettingsSection.Sound }
         )
-        SettingsSection.Themes -> Column(modifier = Modifier.fillMaxSize()) {
-            SettingsSubHeader(
-                title = "Temas",
-                onBack = { section = null }
-            )
+        SettingsSection.Themes -> SettingsSectionPage("Temas", onBack = { section = null }) {
             ThemeSettingsScreen(viewModel = viewModel, showTitle = false)
         }
-        SettingsSection.ListenBrainz -> Column(modifier = Modifier.fillMaxSize()) {
-            SettingsSubHeader(
-                title = "ListenBrainz",
-                onBack = { section = null }
-            )
+        SettingsSection.ListenBrainz -> SettingsSectionPage("ListenBrainz", onBack = { section = null }) {
             ListenBrainzSettingsScreen(viewModel = viewModel)
         }
-        SettingsSection.Sound -> Column(modifier = Modifier.fillMaxSize()) {
-            SettingsSubHeader(
-                title = "Sonido",
-                onBack = { section = null }
-            )
+        SettingsSection.Playback -> SettingsSectionPage("Reproducción", onBack = { section = null }) {
+            PlaybackSettingsScreen(viewModel = viewModel)
+        }
+        SettingsSection.Sound -> SettingsSectionPage("Sonido", onBack = { section = null }) {
             VolumeBoostSettingsScreen(viewModel = viewModel)
         }
+    }
+}
+
+@Composable
+private fun SettingsSectionPage(
+    title: String,
+    onBack: () -> Unit,
+    content: @Composable () -> Unit
+) {
+    Column(modifier = Modifier.fillMaxSize()) {
+        SettingsSubHeader(title = title, onBack = onBack)
+        content()
     }
 }
 
@@ -84,6 +90,7 @@ fun SettingsScreen(viewModel: MusicPlayerViewModel) {
 private fun SettingsHome(
     onOpenThemes: () -> Unit,
     onOpenListenBrainz: () -> Unit,
+    onOpenPlayback: () -> Unit,
     onOpenSound: () -> Unit
 ) {
     Column(
@@ -117,32 +124,45 @@ private fun SettingsHome(
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        SettingsEntryCard(
-            title = "Temas",
-            subtitle = "Colores y estilo visual",
-            icon = Icons.Default.Palette,
-            onClick = onOpenThemes
+        val entries = listOf(
+            SettingsHomeEntry("Temas", "Colores y estilo visual", Icons.Default.Palette, onOpenThemes),
+            SettingsHomeEntry(
+                "ListenBrainz",
+                "Registrar canciones escuchadas",
+                Icons.Default.Headset,
+                onOpenListenBrainz
+            ),
+            SettingsHomeEntry(
+                "Reproducción",
+                "Aleatorio y repetición al abrir",
+                Icons.Default.Repeat,
+                onOpenPlayback
+            ),
+            SettingsHomeEntry(
+                "Sonido",
+                "Amplificar y balance estéreo",
+                Icons.AutoMirrored.Filled.VolumeUp,
+                onOpenSound
+            )
         )
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        SettingsEntryCard(
-            title = "ListenBrainz",
-            subtitle = "Registrar canciones escuchadas",
-            icon = Icons.Default.Headset,
-            onClick = onOpenListenBrainz
-        )
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        SettingsEntryCard(
-            title = "Sonido",
-            subtitle = "Amplificar y balance estéreo",
-            icon = Icons.AutoMirrored.Filled.VolumeUp,
-            onClick = onOpenSound
-        )
+        entries.forEachIndexed { index, entry ->
+            if (index > 0) Spacer(modifier = Modifier.height(12.dp))
+            SettingsEntryCard(
+                title = entry.title,
+                subtitle = entry.subtitle,
+                icon = entry.icon,
+                onClick = entry.onClick
+            )
+        }
     }
 }
+
+private data class SettingsHomeEntry(
+    val title: String,
+    val subtitle: String,
+    val icon: ImageVector,
+    val onClick: () -> Unit
+)
 
 @Composable
 private fun SettingsSubHeader(title: String, onBack: () -> Unit) {

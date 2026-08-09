@@ -52,21 +52,21 @@ class LibraryPreferencesRepository(private val context: Context) {
         }.first()
 
     suspend fun setInitialScanCompleted(completed: Boolean = true) {
-        context.libraryDataStore.edit { prefs ->
-            prefs[Keys.INITIAL_SCAN_COMPLETED] = completed
-        }
+        context.libraryDataStore.put(Keys.INITIAL_SCAN_COMPLETED, completed)
     }
 
     suspend fun setSortOptionName(name: String) {
-        context.libraryDataStore.edit { prefs ->
-            prefs[Keys.SORT_OPTION] = LibraryUiPreferencesCodec.sanitizeSortOptionName(name)
-        }
+        context.libraryDataStore.put(
+            Keys.SORT_OPTION,
+            LibraryUiPreferencesCodec.sanitizeSortOptionName(name)
+        )
     }
 
     suspend fun setViewModeName(name: String) {
-        context.libraryDataStore.edit { prefs ->
-            prefs[Keys.VIEW_MODE] = LibraryUiPreferencesCodec.sanitizeViewModeName(name)
-        }
+        context.libraryDataStore.put(
+            Keys.VIEW_MODE,
+            LibraryUiPreferencesCodec.sanitizeViewModeName(name)
+        )
     }
 
     suspend fun setNavSnapshot(snapshot: UiNavSnapshot) {

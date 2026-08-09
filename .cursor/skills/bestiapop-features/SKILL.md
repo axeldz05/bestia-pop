@@ -146,6 +146,23 @@ State: `currentThemeState`.
 | UI / persistir balance | `setStereoLeftGain` / `setStereoRightGain` / `resetStereoBalance` |
 | UI slider general | `NowPlayingScreen` (`volumeBoostEnabled`, `valueRange` 0…2) |
 
+## 7c. Aleatorio y repetición entre sesiones
+
+**Invariantes:**
+- Último `_isShuffle` + `RepeatMode` se persisten siempre (`lastShuffleEnabled` / `lastRepeatMode`).
+- Shuffle es flag de VM (cola reordenada en `applyShuffledQueue`); **no** `Player.shuffleModeEnabled`.
+- Arranque en frío (sin timeline): restaurar según `rememberShuffleOnLaunch` / `rememberRepeatOnLaunch` (on por defecto). Off → ese modo arranca apagado.
+- Sesión viva: repeat del `MediaController`; shuffle desde prefs (única fuente). Switches de Ajustes no cambian la sesión actual.
+- `playCollection` sigue apagando shuffle; `shuffleCollection` lo enciende.
+
+| Capacidad | Entry point |
+|-----------|-------------|
+| Prefs | `PlaybackSettings` + `PlaybackModeRestore.resolve` (settings o campos) / `parseRepeatModeName`; writes 1-key `DataStore.put` |
+| Settings UI | `PlaybackSettingsScreen` vía `SettingsScreen` sección Reproducción |
+| Restore | `MusicPlayerViewModel.restorePlaybackModes` tras `syncUiFromController` |
+| Persist | `setShuffleEnabled` / `setRepeatMode` / `toggleShuffle` / `toggleRepeatMode` / `applyShuffledQueue` / `finishPlayPlayableCollection` |
+| Remember flags | `setRememberShuffleOnLaunch` / `setRememberRepeatOnLaunch` |
+
 ## 8. WiFi Sync
 
 `WebServerService` (Ktor) + `WebServerScreen(viewModel)`.
@@ -273,7 +290,7 @@ Centro de descargas online → sección 2 (`DownloadsScreen`, tab Descargas).
 | Now Playing | `dismissFullPlayer` | `NowPlayingScreen` `BackHandler` |
 | Library nested | multi-select → cancel addition → álbum (`closeLibraryAlbum`, conserva artista) → artista → clear search | `LibraryScreen` `BackHandler` / `popLibraryNested` |
 | Playlists nested | un detalle a la vez (local / LB / CF) → lista | `PlaylistsScreen` `BackHandler` → `closePlaylistDetail` |
-| Settings nested | Temas / LB / Sonido → home | `SettingsScreen` `BackHandler` |
+| Settings nested | Temas / LB / Reproducción / Sonido → home | `SettingsScreen` `BackHandler` |
 | Raíz de tab | Doble atrás (~2s) + snackbar “Pulsa otra vez para salir” | `MainScreen` `BackHandler` + `SnackbarHost` |
 
 Manifest: `android:enableOnBackInvokedCallback="true"` en `MainActivity`.

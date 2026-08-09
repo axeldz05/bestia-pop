@@ -53,9 +53,7 @@ class ThemePreferencesRepository(private val context: Context) {
     }
 
     suspend fun selectPreset(themeId: String) {
-        context.dataStore.edit { prefs ->
-            prefs[Keys.SELECTED_THEME_ID] = themeId
-        }
+        context.dataStore.put(Keys.SELECTED_THEME_ID, themeId)
     }
 
     suspend fun saveCustomColors(colors: ColorSchemeData) {

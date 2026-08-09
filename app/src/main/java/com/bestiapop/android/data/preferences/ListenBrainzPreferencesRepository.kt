@@ -64,27 +64,22 @@ class ListenBrainzPreferencesRepository(private val context: Context) {
     }
 
     suspend fun setEnabled(enabled: Boolean) {
-        context.listenBrainzDataStore.edit { prefs ->
-            prefs[Keys.ENABLED] = enabled
-        }
+        context.listenBrainzDataStore.put(Keys.ENABLED, enabled)
     }
 
     suspend fun setDiscoverEnabled(enabled: Boolean) {
-        context.listenBrainzDataStore.edit { prefs ->
-            prefs[Keys.DISCOVER_ENABLED] = enabled
-        }
+        context.listenBrainzDataStore.put(Keys.DISCOVER_ENABLED, enabled)
     }
 
     suspend fun setSaveWhileListening(enabled: Boolean) {
-        context.listenBrainzDataStore.edit { prefs ->
-            prefs[Keys.SAVE_WHILE_LISTENING] = enabled
-        }
+        context.listenBrainzDataStore.put(Keys.SAVE_WHILE_LISTENING, enabled)
     }
 
     suspend fun setSaveWhileListeningPercent(percent: Int) {
-        context.listenBrainzDataStore.edit { prefs ->
-            prefs[Keys.SAVE_WHILE_LISTENING_PERCENT] = clampSaveWhileListeningPercent(percent)
-        }
+        context.listenBrainzDataStore.put(
+            Keys.SAVE_WHILE_LISTENING_PERCENT,
+            clampSaveWhileListeningPercent(percent)
+        )
     }
 
     suspend fun setToken(token: String) {
@@ -106,9 +101,7 @@ class ListenBrainzPreferencesRepository(private val context: Context) {
     }
 
     suspend fun setLastSyncAt(epochMs: Long) {
-        context.listenBrainzDataStore.edit { prefs ->
-            prefs[Keys.LAST_SYNC_AT] = epochMs
-        }
+        context.listenBrainzDataStore.put(Keys.LAST_SYNC_AT, epochMs)
     }
 
     suspend fun clear() {

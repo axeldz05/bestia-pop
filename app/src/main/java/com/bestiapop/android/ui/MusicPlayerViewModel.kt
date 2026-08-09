@@ -41,6 +41,7 @@ import com.bestiapop.android.data.preferences.ListenBrainzPreferencesRepository
 import com.bestiapop.android.data.preferences.ListenBrainzSettings
 import com.bestiapop.android.data.preferences.MAX_SAVE_WHILE_LISTENING_PERCENT
 import com.bestiapop.android.data.preferences.MIN_SAVE_WHILE_LISTENING_PERCENT
+import com.bestiapop.android.data.preferences.PlaybackModeRestore
 import com.bestiapop.android.data.preferences.PlaybackPreferencesRepository
 import com.bestiapop.android.data.preferences.PlaybackSettings
 import com.bestiapop.android.data.preferences.PlaybackHydration
@@ -191,20 +192,11 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         playbackPreferences.settingsFlow
             .stateIn(viewModelScope, SharingStarted.Eagerly, PlaybackSettings())
 
-    val volumeBoostEnabled: StateFlow<Boolean> =
-        playbackSettings
-            .map { it.volumeBoostEnabled }
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
-
-    val stereoLeftGain: StateFlow<Float> =
-        playbackSettings
-            .map { it.stereoLeftGain }
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 1f)
-
-    val stereoRightGain: StateFlow<Float> =
-        playbackSettings
-            .map { it.stereoRightGain }
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 1f)
+    val volumeBoostEnabled: StateFlow<Boolean> = playbackPref(false) { it.volumeBoostEnabled }
+    val stereoLeftGain: StateFlow<Float> = playbackPref(1f) { it.stereoLeftGain }
+    val stereoRightGain: StateFlow<Float> = playbackPref(1f) { it.stereoRightGain }
+    val rememberShuffleOnLaunch: StateFlow<Boolean> = playbackPref(true) { it.rememberShuffleOnLaunch }
+    val rememberRepeatOnLaunch: StateFlow<Boolean> = playbackPref(true) { it.rememberRepeatOnLaunch }
 
     val pendingListenCount: StateFlow<Int> = pendingListenDao.countFlow()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
@@ -528,9 +520,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         val boostAmount = if (boostEnabled && clamped > 1f) (clamped - 1f).coerceIn(0f, 1f) else 0f
         if (boostEnabled) {
             _volumeLevel.value = clamped
-            viewModelScope.launch {
-                playbackPreferences.setVolumeBoostAmount(boostAmount)
-            }
+            persistPlayback { setVolumeBoostAmount(boostAmount) }
         } else {
             _volumeLevel.value = systemRatio
         }
@@ -556,21 +546,23 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     fun setStereoLeftGain(gain: Float) {
-        viewModelScope.launch {
-            playbackPreferences.setStereoLeftGain(gain)
-        }
+        persistPlayback { setStereoLeftGain(gain) }
     }
 
     fun setStereoRightGain(gain: Float) {
-        viewModelScope.launch {
-            playbackPreferences.setStereoRightGain(gain)
-        }
+        persistPlayback { setStereoRightGain(gain) }
     }
 
     fun resetStereoBalance() {
-        viewModelScope.launch {
-            playbackPreferences.resetStereoBalance()
-        }
+        persistPlayback { resetStereoBalance() }
+    }
+
+    fun setRememberShuffleOnLaunch(enabled: Boolean) {
+        persistPlayback { setRememberShuffleOnLaunch(enabled) }
+    }
+
+    fun setRememberRepeatOnLaunch(enabled: Boolean) {
+        persistPlayback { setRememberRepeatOnLaunch(enabled) }
     }
 
     private fun restoreVolumeBoostIfNeeded() {
@@ -588,6 +580,57 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         } else {
             _volumeLevel.value = getDeviceVolumeRatio().coerceAtMost(1f)
         }
+    }
+
+    private fun restorePlaybackModes() {
+        viewModelScope.launch {
+            val settings = playbackPreferences.settingsFlow.first()
+            val controller = mediaController
+            val hasLiveSession = (controller?.mediaItemCount ?: 0) > 0
+            val liveRepeat = repeatModeFromPlayer(controller?.repeatMode ?: Player.REPEAT_MODE_OFF)
+            val resolved = PlaybackModeRestore.resolve(settings, hasLiveSession, liveRepeat)
+            _isShuffle.value = resolved.shuffle
+            _repeatMode.value = resolved.repeat
+            if (resolved.applyRepeatToPlayer) {
+                applyRepeatModeToController(resolved.repeat)
+            }
+        }
+    }
+
+    private fun setShuffleEnabled(enabled: Boolean) {
+        _isShuffle.value = enabled
+        persistPlayback { setLastShuffleEnabled(enabled) }
+    }
+
+    private fun setRepeatMode(mode: RepeatMode) {
+        _repeatMode.value = mode
+        applyRepeatModeToController(mode)
+        persistPlayback { setLastRepeatMode(mode) }
+    }
+
+    private fun persistPlayback(block: suspend PlaybackPreferencesRepository.() -> Unit) {
+        viewModelScope.launch { playbackPreferences.block() }
+    }
+
+    private fun <T> playbackPref(
+        initial: T,
+        select: (PlaybackSettings) -> T
+    ): StateFlow<T> = playbackSettings
+        .map(select)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), initial)
+
+    private fun applyRepeatModeToController(mode: RepeatMode) {
+        mediaController?.repeatMode = when (mode) {
+            RepeatMode.OFF -> Player.REPEAT_MODE_OFF
+            RepeatMode.ALL -> Player.REPEAT_MODE_ALL
+            RepeatMode.ONE -> Player.REPEAT_MODE_ONE
+        }
+    }
+
+    private fun repeatModeFromPlayer(playerRepeatMode: Int): RepeatMode = when (playerRepeatMode) {
+        Player.REPEAT_MODE_ONE -> RepeatMode.ONE
+        Player.REPEAT_MODE_ALL -> RepeatMode.ALL
+        else -> RepeatMode.OFF
     }
 
     init {
@@ -732,6 +775,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 setupPlayerListener()
                 syncUiFromController()
                 restoreVolumeBoostIfNeeded()
+                restorePlaybackModes()
             } catch (e: Exception) {
                 e.printStackTrace()
             }
@@ -803,12 +847,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         lastMediaItemIndex = index
         _isPlaying.value = controller.isPlaying
         _playbackPositionMs.value = controller.currentPosition.coerceAtLeast(0L)
-        _isShuffle.value = controller.shuffleModeEnabled
-        _repeatMode.value = when (controller.repeatMode) {
-            Player.REPEAT_MODE_ONE -> RepeatMode.ONE
-            Player.REPEAT_MODE_ALL -> RepeatMode.ALL
-            else -> RepeatMode.OFF
-        }
+        _repeatMode.value = repeatModeFromPlayer(controller.repeatMode)
 
         ensureRemoteReadyAt(index)
         prefetchAround(index)
@@ -1168,7 +1207,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         try {
             _queue.value = shuffled
             setCurrentItem(shuffled.first())
-            _isShuffle.value = true
+            setShuffleEnabled(true)
             lastMediaItemIndex = 0
             mediaController?.let { controller ->
                 val resumePosition = if (keepItemFirst != null) {
@@ -1388,7 +1427,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         _queue.value = items
         setCurrentItem(items[index])
         lastMediaItemIndex = index
-        _isShuffle.value = false
+        setShuffleEnabled(false)
         remoteErrorRetryUsed = false
         liveSessionHydrated = true
         idleSeedDone = true
@@ -1626,15 +1665,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             RepeatMode.ALL -> RepeatMode.ONE
             RepeatMode.ONE -> RepeatMode.OFF
         }
-        _repeatMode.value = nextMode
-
-        mediaController?.let { controller ->
-            controller.repeatMode = when (nextMode) {
-                RepeatMode.OFF -> Player.REPEAT_MODE_OFF
-                RepeatMode.ALL -> Player.REPEAT_MODE_ALL
-                RepeatMode.ONE -> Player.REPEAT_MODE_ONE
-            }
-        }
+        setRepeatMode(nextMode)
     }
 
     fun toggleShuffle() {
@@ -1643,14 +1674,14 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             val queue = _queue.value
             val current = _currentItem.value
             if (queue.isEmpty()) {
-                _isShuffle.value = true
+                setShuffleEnabled(true)
                 mediaController?.shuffleModeEnabled = false
                 return
             }
             applyShuffledQueue(queue, keepItemFirst = current)
             bumpQueueFocus()
         } else {
-            _isShuffle.value = false
+            setShuffleEnabled(false)
             mediaController?.shuffleModeEnabled = false
         }
     }

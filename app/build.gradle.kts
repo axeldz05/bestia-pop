@@ -14,6 +14,25 @@ if (keystorePropertiesFile.exists()) {
     keystorePropertiesFile.inputStream().use { keystoreProperties.load(it) }
 }
 
+val versionPropertiesFile = rootProject.file("version.properties")
+val versionProperties = Properties()
+check(versionPropertiesFile.exists()) {
+    "Missing version.properties (VERSION_CODE / VERSION_NAME). Create it or restore from git."
+}
+versionPropertiesFile.inputStream().use { versionProperties.load(it) }
+
+val closedTestingFile = rootProject.file("play/closed-testing.properties")
+val closedTesting = Properties()
+if (closedTestingFile.exists()) {
+    closedTestingFile.inputStream().use { closedTesting.load(it) }
+}
+val closedTestingGroupJoinUrl =
+    closedTesting.getProperty("GROUP_JOIN_URL")?.trim().orEmpty()
+        .ifEmpty { "https://groups.google.com/g/YOUR_GROUP" }
+check(!closedTestingGroupJoinUrl.contains('"') && !closedTestingGroupJoinUrl.contains('\\')) {
+    "GROUP_JOIN_URL in play/closed-testing.properties must not contain quotes or backslashes"
+}
+
 android {
     namespace = "com.bestiapop.android"
     compileSdk = 36
@@ -21,9 +40,15 @@ android {
     defaultConfig {
         applicationId = "com.bestiapop.android"
         minSdk = 26
-        targetSdk = 35
-        versionCode = 2
-        versionName = "1.0-beta.1"
+        // Play: updates must target API 36+ from 2026-08-31.
+        targetSdk = 36
+        versionCode = versionProperties.getProperty("VERSION_CODE").toInt()
+        versionName = versionProperties.getProperty("VERSION_NAME")
+        buildConfigField(
+            "String",
+            "CLOSED_TESTING_GROUP_JOIN_URL",
+            "\"$closedTestingGroupJoinUrl\""
+        )
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -52,9 +77,13 @@ android {
             signingConfig = sharedSigning
         }
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
             isDebuggable = false
             signingConfig = sharedSigning
+            ndk {
+                // Play: native debug symbols inside the AAB (SYMBOL_TABLE = names, not full DWARF).
+                debugSymbolLevel = "SYMBOL_TABLE"
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -70,6 +99,10 @@ android {
         buildConfig = true
     }
     packaging {
+        jniLibs {
+            // Uncompressed + 16 KB-aligned native libs (Play requirement since 2025-11-01).
+            useLegacyPackaging = false
+        }
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
             excludes += "META-INF/INDEX.LIST"

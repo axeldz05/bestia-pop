@@ -17,12 +17,18 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 |---------|---------|
 | Application + Crashlytics init | `BestiaPopApplication.kt` |
 | Crash non-fatals / keys | `data/util/CrashReporter.kt` |
-| Activity | `MainActivity.kt` |
+| Activity | `MainActivity.kt` (`enableEdgeToEdge` — targetSdk 36) |
 | Manifest / permisos / services | `app/src/main/AndroidManifest.xml` |
-| Gradle app | `app/build.gradle.kts` (`signingConfigs.release`, debug+release same cert si hay keystore, `versionCode`/`versionName`) |
-| Deploy script | `install.sh` (`--debug` default, `--release`; `adb install -r -d`, fallback `cmd package uninstall -k`; `appops RUN_ANY_IN_BACKGROUND allow`) |
-| Firebase config template | `app/google-services.json.example` |
+| Gradle app | `app/build.gradle.kts` (`signingConfigs.release`, debug+release same cert si hay keystore, `versionCode`/`versionName` desde `version.properties`, `targetSdk` 36, release R8 + `ndk.debugSymbolLevel`) |
+| R8 keep rules | `app/proguard-rules.pro` (keep `com.bestiapop.android.**`, Ktor/Room; mapping en AAB) |
+| Versión release | `version.properties` (`VERSION_CODE` / `VERSION_NAME`; bump en `deploy-play.sh`) |
+| Deploy dispositivo | `install.sh` (`--debug` default, `--release`; `adb install -r -d`, fallback `cmd package uninstall -k`; `appops RUN_ANY_IN_BACKGROUND allow`) |
+| Deploy Play Console | `deploy-play.sh` (track default `alpha`, bump, ícono `play/icon.png` → mipmap, `bundleRelease`, `dist/*.aab`, `--upload --rollout`) |
+| Ícono launcher / Play hi-res | `play/icon.png` (PNG 512×512; placeholder; `AndroidManifest` `@mipmap/ic_launcher`) |
+| Play feature graphic | `play/feature-graphic.png` (1024×500 RGB, ficha Console; no va en el AAB) |
+| Closed testing group URL | `play/closed-testing.properties` (`GROUP_JOIN_URL` → `BuildConfig.CLOSED_TESTING_GROUP_JOIN_URL`) |
 | Release keystore template | `keystore.properties.example` |
+| Play API service account | `play-service-account.json.example` → JSON descargado de Cloud (IAM → Keys), no de Play Console UI |
 
 ## UI — screens
 
@@ -34,7 +40,7 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 | Identify review | `ui/screens/IdentifyReviewScreen.kt` (`IdentifyCandidateRow`, `IdentifySearchBlock` above candidates; Aplicar automático / Omitir todas; overlay en `MainScreen`) |
 | Lista canciones / álbumes / artistas | `ui/screens/library/LibrarySongList.kt`, `LibrarySongListHost.kt` (`LibrarySongListActions`, `rememberSongActionDialogs` / `SongActionDialogsHost`, `AlbumEditDialogsHost`), `LibraryAlbumGrid.kt` (`AlbumEditCoverMenuItems`), `LibraryArtistList.kt`, `LibraryDialogs.kt` (`EditSongMetadataDialog` Nº de pista, `EditAlbumMetadataDialog`, `ConfirmMergeAlbumsDialog`, `SetAlbumArtworkDialog`), `LibraryProgressBanner.kt` |
 | Playlists | `ui/screens/PlaylistsScreen.kt` (`BackHandler`: CF → LB → local detail; play/shuffle vía `LabeledPlayShuffleButtons` + `playCollection`/`shuffleCollection`; `MatchedTrackLazyColumn`; `matchedStreamCountLabel`; `rememberSongQueueActions`) |
-| Ajustes / ListenBrainz | `ui/screens/SettingsScreen.kt` (`BackHandler` sección), `ListenBrainzSettingsScreen.kt` |
+| Ajustes / ListenBrainz | `ui/screens/SettingsScreen.kt` (`BackHandler` sección; home **Invitar amigos** → Group + Play opt-in), `ListenBrainzSettingsScreen.kt` |
 | Ajustes / Reproducción | `ui/screens/PlaybackSettingsScreen.kt` (`SettingsScreen` sección `Playback`) |
 | Ajustes / Sonido | `ui/screens/VolumeBoostSettingsScreen.kt` (`SettingsScreen` sección `Sound`) |
 | Now playing | `ui/screens/NowPlayingScreen.kt` (`BackHandler` → `onDismiss`; cola `displayQueue` vía `QueueLazyList`; ⋮ `NowPlayingActionsMenu`; remoto `NowPlayingRemoteDownloadAction`; hero `ArtworkHero`) |

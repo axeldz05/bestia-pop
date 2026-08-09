@@ -40,6 +40,7 @@ Si solo hay un bugfix local sin cambio de diseño, no hace falta tocar skills.
 ## Build / deploy
 
 - Compilar/instalar en dispositivo: `./install.sh` (debug, iteración diaria) o `./install.sh --release` (APK firmado beta-like)
+- AAB Google Play (closed/alpha): `./deploy-play.sh --upload --rollout` (`play-service-account.json`; ícono `play/icon.png` 512×512; opt-in `https://play.google.com/apps/testing/com.bestiapop.android`)
 - Firebase: `app/google-services.json` (plantilla `.example`); crashes → Crashlytics en builds release
 - Firma release: `keystore.properties` + `.jks` (plantillas `.example`)
 - Tests unitarios bajo `app/src/test`; instrumentados bajo `app/src/androidTest`

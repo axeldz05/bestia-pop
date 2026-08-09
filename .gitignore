@@ -28,6 +28,10 @@ render.experimental.xml
 *.keystore
 keystore.properties
 
+# Play Console upload
+play-service-account.json
+dist/
+
 # Google Services (e.g. APIs or Firebase)
 google-services.json
 

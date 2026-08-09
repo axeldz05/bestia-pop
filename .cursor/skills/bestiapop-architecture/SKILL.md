@@ -26,7 +26,9 @@ Módulo único Gradle: `:app`. Nombre del proyecto: **BestiaPop**.
 | Imágenes | Coil |
 | Crash reporting | Firebase Crashlytics vía `CrashReporter` (`BestiaPopApplication`) |
 
-minSdk 26 · targetSdk 35 · compileSdk 36 · Java/Kotlin 17 · AGP 9.3 + KSP · Room 2.8.
+minSdk 26 · targetSdk 36 · compileSdk 36 · Java/Kotlin 17 · AGP 9.3 + KSP · Room 2.8.
+Release: R8 minify + `ndk.debugSymbolLevel=SYMBOL_TABLE` (mapping y native symbols en el AAB para Play).
+Versión de release: `version.properties` (`VERSION_CODE` / `VERSION_NAME`). Play Console closed/alpha: `./deploy-play.sh --upload --rollout`.
 
 ## Capas y paquetes
 

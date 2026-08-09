@@ -72,7 +72,7 @@ if [ "$BUILD_TYPE" = "release" ]; then
         echo -e "${YELLOW}Para beta firmada: copiá keystore.properties.example → keystore.properties y generá el .jks.${NC}"
     fi
     echo -e "\n${YELLOW}Compilando APK release con Gradle...${NC}"
-    gradle assembleRelease -x compileReleaseJavaWithJavac
+    gradle assembleRelease
     APK_PATH="app/build/outputs/apk/release/app-release.apk"
 else
     echo -e "\n${YELLOW}Compilando APK debug con Gradle...${NC}"
@@ -134,5 +134,6 @@ adb shell cmd appops write-settings >/dev/null 2>&1 || true
 
 echo -e "\n${GREEN}Instalación y despliegue completados (${BUILD_TYPE}).${NC}"
 if [ "$BUILD_TYPE" = "release" ]; then
-    echo -e "${CYAN}Para amigos: subí este APK (o bundleRelease) a Firebase App Distribution.${NC}"
+    echo -e "${CYAN}Para amigos: subí este APK a Firebase App Distribution.${NC}"
+    echo -e "${CYAN}Para Play Console: ./deploy-play.sh (AAB firmado + bump de versión).${NC}"
 fi

@@ -1,5 +1,6 @@
 package com.bestiapop.android.ui.screens
 
+import android.content.Intent
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -11,19 +12,20 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Headset
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -34,8 +36,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.bestiapop.android.BuildConfig
 import com.bestiapop.android.ui.MusicPlayerViewModel
 import com.bestiapop.android.ui.components.ScreenBackHeader
 
@@ -98,9 +102,25 @@ private fun SettingsHome(
     onOpenPlayback: () -> Unit,
     onOpenSound: () -> Unit
 ) {
+    val context = LocalContext.current
+    val groupJoinUrl = BuildConfig.CLOSED_TESTING_GROUP_JOIN_URL
+    val optInUrl = "https://play.google.com/apps/testing/${BuildConfig.APPLICATION_ID}"
+    // Play no ofrece un URL que una grupo + opt-in; un solo mensaje, dos pasos.
+    val inviteText = """
+        Sumate al testing cerrado de BestiaPop.
+        Usá la misma cuenta de Google en el grupo, en el link de Play y en la Play Store del celular.
+
+        1) Unite al grupo de testers:
+        $groupJoinUrl
+
+        2) Convertite en tester e instalá desde Play:
+        $optInUrl
+    """.trimIndent()
+
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .verticalScroll(rememberScrollState())
             .padding(16.dp)
     ) {
         Row(
@@ -148,7 +168,23 @@ private fun SettingsHome(
                 "Amplificar y balance estéreo",
                 Icons.AutoMirrored.Filled.VolumeUp,
                 onOpenSound
-            )
+            ),
+            SettingsHomeEntry(
+                "Invitar amigos",
+                "Grupo de testers + instalar desde Play",
+                Icons.Default.Share
+            ) {
+                context.startActivity(
+                    Intent.createChooser(
+                        Intent(Intent.ACTION_SEND).apply {
+                            type = "text/plain"
+                            putExtra(Intent.EXTRA_SUBJECT, "BestiaPop — testing cerrado")
+                            putExtra(Intent.EXTRA_TEXT, inviteText)
+                        },
+                        "Invitar amigos"
+                    )
+                )
+            }
         )
         entries.forEachIndexed { index, entry ->
             if (index > 0) Spacer(modifier = Modifier.height(12.dp))

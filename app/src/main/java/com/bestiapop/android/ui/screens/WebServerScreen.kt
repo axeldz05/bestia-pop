@@ -36,6 +36,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -67,6 +68,7 @@ fun WebServerScreen(viewModel: MusicPlayerViewModel) {
     val serverAddress by WebServerService.serverState.collectAsState()
     val transfers by WebServerService.transfers.collectAsState()
     val songs by viewModel.songsState.collectAsState()
+    val identifyReview by viewModel.identifyReview.collectAsState()
     val playlists by viewModel.playlists.collectAsState(initial = emptyList())
     val currentItem by viewModel.currentItem.collectAsState()
     val currentSongId = (currentItem as? PlayableItem.Local)?.song?.id
@@ -280,6 +282,23 @@ fun WebServerScreen(viewModel: MusicPlayerViewModel) {
                 )
             }
         }
+        val pendingConflicts = identifyReview.pendingCount
+        if (pendingConflicts > 0) {
+            TextButton(
+                onClick = { viewModel.showIdentifyReview() },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text = if (pendingConflicts == 1) {
+                        "Revisar conflictos de información (1)"
+                    } else {
+                        "Revisar conflictos de información ($pendingConflicts)"
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    textAlign = TextAlign.Start
+                )
+            }
+        }
 
         Spacer(modifier = Modifier.height(8.dp))
 
@@ -308,6 +327,7 @@ fun WebServerScreen(viewModel: MusicPlayerViewModel) {
                         onStartRadio = { songActions.onStartRadio(doneSong) },
                         onAddToPlaylist = { songForPlaylist = doneSong },
                         onEditMetadata = { editingSong = doneSong },
+                        onIdentify = { viewModel.identifySongForReview(doneSong) },
                         onDelete = { songsForDeletion = listOf(doneSong) }
                     )
                 } else {

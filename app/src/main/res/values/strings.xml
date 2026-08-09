@@ -1,0 +1,3 @@
+<resources>
+    <string name="playback_notification_channel">Now playing</string>
+</resources>

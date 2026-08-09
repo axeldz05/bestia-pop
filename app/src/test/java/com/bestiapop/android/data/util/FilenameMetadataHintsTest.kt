@@ -1,7 +1,9 @@
 package com.bestiapop.android.data.util
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class FilenameMetadataHintsTest {
@@ -25,6 +27,15 @@ class FilenameMetadataHintsTest {
         val hints = parseFilenameMetadataHints("SomeTrack")
         assertNull(hints.artist)
         assertEquals("SomeTrack", hints.title)
+    }
+
+    @Test
+    fun looksLikeStoragePath_detectsSafAndBestiaPop() {
+        assertTrue(looksLikeStoragePath("primary%3AMusic%2FBestiaPop%2FSong"))
+        assertTrue(looksLikeStoragePath("content://com.android.externalstorage.documents/tree/primary%3AMusic"))
+        assertTrue(looksLikeStoragePath("Music/BestiaPop/Daft_Punk_Digital_Love"))
+        assertFalse(looksLikeStoragePath("Digital Love"))
+        assertFalse(looksLikeStoragePath("Radiohead_Creep"))
     }
 
     @Test

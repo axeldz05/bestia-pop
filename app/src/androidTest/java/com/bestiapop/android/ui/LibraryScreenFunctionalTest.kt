@@ -2,6 +2,7 @@ package com.bestiapop.android.ui
 
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -59,8 +60,33 @@ class LibraryScreenFunctionalTest {
             )
         }
 
-        // Verify that the user sees "2 seleccionados" on screen
         composeTestRule.onNodeWithText("2 seleccionados").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Seleccionar todo").assertIsDisplayed()
+        composeTestRule.onNodeWithContentDescription("Reproducir seleccionados").performClick()
+        assert(playClicked)
+    }
+
+    @Test
+    fun multiSelectActionBar_deleteDoesNotTriggerSelectAll() {
+        var deleteClicked = false
+        var selectAllClicked = false
+
+        composeTestRule.setContent {
+            MultiSelectActionBar(
+                selectedCount = 2,
+                onPlaySelected = {},
+                onEnqueueSelected = {},
+                onAddToPlaylist = {},
+                onIdentifySelected = {},
+                onDeleteSelected = { deleteClicked = true },
+                onSelectAll = { selectAllClicked = true },
+                onClearSelection = {}
+            )
+        }
+
+        composeTestRule.onNodeWithContentDescription("Eliminar seleccionados").performClick()
+        assert(deleteClicked)
+        assert(!selectAllClicked)
     }
 
     @Test

@@ -63,6 +63,7 @@ fun LibrarySongList(
     onStartRadio: (Song) -> Unit = {},
     onAddToPlaylist: (Song) -> Unit,
     onEditMetadata: (Song) -> Unit,
+    onIdentify: (Song) -> Unit = {},
     onDeleteSong: (Song) -> Unit,
     onPlayAlbum: (String, List<Song>) -> Unit,
     onShuffleAlbum: (String, List<Song>) -> Unit,
@@ -99,6 +100,7 @@ fun LibrarySongList(
     val onStartRadioState = rememberUpdatedState(onStartRadio)
     val onAddToPlaylistState = rememberUpdatedState(onAddToPlaylist)
     val onEditMetadataState = rememberUpdatedState(onEditMetadata)
+    val onIdentifyState = rememberUpdatedState(onIdentify)
     val onDeleteSongState = rememberUpdatedState(onDeleteSong)
     val onPlayAlbumState = rememberUpdatedState(onPlayAlbum)
     val onShuffleAlbumState = rememberUpdatedState(onShuffleAlbum)
@@ -180,6 +182,7 @@ fun LibrarySongList(
                         onStartRadioState = onStartRadioState,
                         onAddToPlaylistState = onAddToPlaylistState,
                         onEditMetadataState = onEditMetadataState,
+                        onIdentifyState = onIdentifyState,
                         onDeleteSongState = onDeleteSongState
                     )
                 }
@@ -233,6 +236,7 @@ private fun LibrarySongRow(
     onStartRadioState: State<(Song) -> Unit>,
     onAddToPlaylistState: State<(Song) -> Unit>,
     onEditMetadataState: State<(Song) -> Unit>,
+    onIdentifyState: State<(Song) -> Unit>,
     onDeleteSongState: State<(Song) -> Unit>
 ) {
     val songState = rememberUpdatedState(song)
@@ -259,6 +263,9 @@ private fun LibrarySongRow(
     }
     val onEditMetadata = remember(song.id) {
         { onEditMetadataState.value(songState.value) }
+    }
+    val onIdentify = remember(song.id) {
+        { onIdentifyState.value(songState.value) }
     }
     val onDelete = remember(song.id) {
         { onDeleteSongState.value(songState.value) }
@@ -288,6 +295,7 @@ private fun LibrarySongRow(
         onStartRadio = onStartRadio,
         onAddToPlaylist = onAddToPlaylist,
         onEditMetadata = onEditMetadata,
+        onIdentify = onIdentify,
         onDelete = onDelete
     )
 }

@@ -85,9 +85,41 @@ if [ ! -f "$APK_PATH" ]; then
     exit 1
 fi
 
-# Install APK
-echo -e "\n${YELLOW}Instalando APK en el dispositivo...${NC}"
-adb install -r "$APK_PATH"
+# Install APK. Same applicationId for debug/release. With keystore.properties,
+# both variants share the release cert (see app/build.gradle.kts) so -r keeps data.
+# -d allows versionCode downgrade. If signatures still differ, uninstall the APK
+# but keep /data/data (Room, prefs, playlists). Music/BestiaPop survives either way.
+PACKAGE="com.bestiapop.android"
+echo -e "\n${YELLOW}Instalando APK ${BUILD_TYPE} en el dispositivo...${NC}"
+set +e
+INSTALL_OUT=$(adb install -r -d "$APK_PATH" 2>&1)
+INSTALL_RC=$?
+set -e
+echo "$INSTALL_OUT"
+
+if [ "$INSTALL_RC" -ne 0 ]; then
+    if echo "$INSTALL_OUT" | grep -qiE 'UPDATE_INCOMPATIBLE|signatures do not match|VERSION_DOWNGRADE|UID_CHANGED|INSTALL_FAILED'; then
+        echo -e "${YELLOW}Firma o variante distinta (debug↔release). Desinstalando APK y conservando datos de la app (-k)...${NC}"
+        echo -e "${CYAN}Se conservan Room/DataStore/playlists. Music/BestiaPop en almacenamiento público también.${NC}"
+        # Modern Android ignores `adb uninstall -k` unless using cmd package.
+        adb shell cmd package uninstall -k "$PACKAGE" || \
+            adb shell pm uninstall -k "$PACKAGE" || \
+            adb uninstall -k "$PACKAGE" || true
+        set +e
+        INSTALL_OUT=$(adb install "$APK_PATH" 2>&1)
+        INSTALL_RC=$?
+        set -e
+        echo "$INSTALL_OUT"
+        if [ "$INSTALL_RC" -ne 0 ]; then
+            echo -e "${RED}No se pudo instalar sobre datos de otra firma (el dispositivo rechazó -k).${NC}"
+            echo -e "${YELLOW}Uninstall total perdería Room/playlists; los audios en Music/BestiaPop se reindexan al abrir.${NC}"
+            exit "$INSTALL_RC"
+        fi
+        echo -e "${GREEN}APK reinstalado conservando datos de la app.${NC}"
+    else
+        exit "$INSTALL_RC"
+    fi
+fi
 
 echo -e "\n${GREEN}Lanzando la aplicación...${NC}"
 adb shell am start -n com.bestiapop.android/.MainActivity

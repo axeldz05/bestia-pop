@@ -87,27 +87,36 @@ UI: `PlaylistsScreen`.
 **Invariantes:**
 - Unicidad lógica por `matchKey(artist, title)` (además del índice Room `uriString`).
 - `Music/BestiaPop` es app-managed: `scanMediaStore` **no** reinserta esos archivos (evita duplicar `file:`/path vs `content://`). Tras reinstall, `resyncAppManagedMusic()` reindexa esos archivos por path absoluto.
-- URIs de descarga/upload se guardan como **path absoluto**.
+- Import disco (MediaStore + BestiaPop) solo en **primer arranque** / post-uninstall (`LibraryPreferencesRepository.initial_library_scan_completed`); updates no re-escanean (Room migraciones sí).
+- URIs de descarga/upload se guardan como **path absoluto** en la única carpeta `Music/BestiaPop` (`StorageUtils`). Escrita por File si el dir es writable; si no (UID viejo), vía MediaStore al mismo relative path. Debug y release (mismo `applicationId`) usan esa carpeta. WiFi `/existing-files` = union Room basename + archivos en esa carpeta.
 - Playlists/overrides viven en Room (app-private): **no** sobreviven uninstall (solo los archivos de audio en `Music/BestiaPop`).
 - Descarga con conflicto → `DuplicateSongException` / `DownloadConflict` → diálogo Sobrescribir | Crear nueva | Cancelar (`DownloadConflictPolicy`).
 - One-shot migrator histórico: branch `archive/library-dedup-v1-migrator` (no compila en LB).
 - Tags Unknown en reimport: `AudioFileMetadata.applyFilenameHints` / `parseFilenameMetadataHints` recuperan artist/title de `Artist_Title` (sin inventar álbum).
-- Identificar online (manual, multi-select): auto-aplica mejor match Deezer/iTunes; progreso en `libraryJobProgress` + `LibraryProgressBanner`.
+- Identificar online (manual, multi-select, ⋮ o WiFi): Fase 1 lookup + score (`IdentifyRanking`); tags actuales de la canción son **fuente predominante** (`sourceArtist`/`sourceTitle`/`sourceAlbum`); auto-aplica solo **HIGH**; conflicto grave (artista/álbum/título distinto, versión, YouTube) → nunca HIGH. MEDIUM/LOW/NONE van a cola `IdentifyReviewScreen` (Usar / Omitir / Buscar otro / Aplicar automático a restantes / Omitir todas). Cerrar oculta overlay y **conserva** la cola (`pendingCount`). Progreso en `libraryJobProgress` + toast resumen.
+- Álbum genérico (`IdentifyRanking.isGenericAlbum`: `YouTube`, `YouTube Music`, `Unknown Album`, `Single`, `Álbum`/`Album`) **sí** entra a identify; no se omite como ya identificado. Provider YouTube y versiones extra (live / letra / remix / cover…) nunca son HIGH → review. `cleanIdentityTitle` no persiste `+ letra` / `(Original Mix)`.
+- Descarga online: álbum genérico dispara `fetchFullTrackMetadata`; no se guarda `"YouTube"` — fallback `"$artist - Single"`.
 - Import/resync/identify reportan progreso vía `LibraryScanProgress` / `LibraryJobProgress` (banner en biblioteca).
 
 | Acción | API |
 |--------|-----|
 | Scan MediaStore | `scanMediaStore(onProgress?)` (skip BestiaPop + path/matchKey conocidos) |
-| Reindex app music | `resyncAppManagedMusic(onProgress?)` → `Music/BestiaPop` filesystem walk; VM `refreshLibraryFromDisk` (init + post-permiso) |
+| Reindex app music | `resyncAppManagedMusic(onProgress?)` → `Music/BestiaPop` filesystem walk; VM `ensureInitialLibraryImport` (1ª vez) / `refreshLibraryFromDisk` (force) |
 | Scan carpeta SAF | `scanFolderUri(treeUri, onProgress?): Int` (incluye BestiaPop; toast en `importFolder`) |
 | Metadata archivo → Room | `AudioFileMetadata.fromPath` / `toSongEntity` (+ filename hints si Unknown) |
-| Upload WiFi → DB | `saveUploadedSong` (`absolutePath`; merge por matchKey) |
+| Upload WiFi → DB | `saveUploadedSong` (`absolutePath`; merge por matchKey); VM observa `DONE` → `identifySongs(force=true, showReview=false)` |
 | Lookup duplicado | `findSongByArtistTitle` |
 | Descarga + política | `downloadAndSaveOnlineTrack(..., conflictPolicy)` |
 | Conflicto UI | `downloadConflict` / `resolveDownloadConflictOverwrite` / `resolveDownloadConflictSaveAs` / `cancelDownloadConflict` + `DownloadConflictDialog` |
 | Borrar app / dispositivo | `deleteSongsFromApp` / `deleteSongsFromDevice` |
 | Enriquecer meta/letras | `enhanceSongMetadataAndLyrics` (portada/letras/duración; **no** artist/álbum) |
-| Identificar artist/álbum | `identifySongMetadata` → `IdentifyResult`; VM `identifySongs`; UI multi-select `onIdentifySelected` |
+| Proponer identidad | `proposeSongIdentity(song, customQuery?, force?)` → `IdentifyProposal` |
+| Aplicar candidato | `applySongIdentity(songId, candidate)` → `IdentifyResult` |
+| Identificar lote | VM `identifySongs(songs, force, showReview)` → auto HIGH + cola review |
+| Identificar una | VM `identifySongForReview` (menú ⋮, `force=true`); UI `IdentifyReviewScreen` |
+| Review preview | Local `previewIdentifyLocalSong`; candidato stream `previewIdentifyCandidate` → `playOnlineCatalogTrackAsStream` (`PreviewPlayPauseButton`) |
+| Review acciones | `applySelectedIdentifyCandidate` / `skipIdentifyReviewItem` / `searchIdentifyCandidates` / `dismissIdentifyReview` (oculta) / `showIdentifyReview` / `applyRemainingIdentifySuggestions` / `skipAllIdentifyReview`; “Buscar otro” arriba de candidatos, draft = artista+título (no path SAF) |
+| Ranking | `IdentifyRanking.score` / `rank` / `confidence` / `hasSevereConflict` / `isGenericAlbum` / `isPlaceholderArtist` / `cleanIdentityTitle`; `Query.sourceArtist`/`sourceTitle`/`sourceAlbum` |
 | Progreso biblioteca | `libraryJobProgress` (`LibraryJobKind.IMPORT` \| `IDENTIFY`) + `LibraryProgressBanner` |
 
 ## 7. Temas
@@ -140,7 +149,10 @@ State: `currentThemeState`.
 | Capacidad | Entry point |
 |-----------|-------------|
 | Servidor local | `WebServerService` + toggle en `WebServerScreen` |
+| Omitir existentes | `GET /existing-files` = Room basename ∪ `StorageUtils.listAudioFileNames` (`Music/BestiaPop`) |
 | Transferencias en app | `WebServerService.transfers` (`WifiTransferItem` / `WifiTransferState`); lista en `WebServerScreen` (progreso + `SongListItem` al completar) |
+| Identify al importar | Tags embebidos (ID3) → Room → mismo `identifySongs(force=true)`; conflictos en cola compartida |
+| Revisar conflictos | Botón `Revisar conflictos de información (N)` → `showIdentifyReview()`; N = `identifyReview.pendingCount` |
 | Dismiss | `WebServerService.dismissTransfer` |
 
 Centro de descargas online → sección 2 (`DownloadsScreen`, tab Descargas).
@@ -198,6 +210,7 @@ Centro de descargas online → sección 2 (`DownloadsScreen`, tab Descargas).
 | Modelo | `PlayableItem`, `ResolvedStream` en `data/model/PlayableItem.kt` |
 | Resolver | `StreamResolver.resolve` / `prefetch` en `data/stream/StreamResolver.kt` |
 | UA ExoPlayer | `StreamPlaybackTag` + `MusicService` `UserAgentMediaSourceFactory` |
+| FGS background | Canal `playback_channel` + `promotePlaybackForeground`; `playWithForegroundService` (sin diálogo de batería). Si `ActivityManager.isBackgroundRestricted`, Android baja el FGS al salir → banner / Ajustes → ficha de la app → Batería → Sin restricciones |
 | Cola / play | `playPlayableCollection`, `currentItem`, `resolvingRemote` en `MusicPlayerViewModel` |
 | Stream desde catálogo | `playOnlineCatalogTrackAsStream` + preview in-dialog (`CatalogTrackItem` / `CandidateTrackCard` + `CatalogPreviewBar`); `cycleSongCatalogResult` / `cycleTrackCandidate` (“Buscar otro”) |
 | UI player | `BottomPlayerBar` / `NowPlayingScreen` / `QueueScreen` observan `PlayableItem` |
@@ -209,6 +222,7 @@ Centro de descargas online → sección 2 (`DownloadsScreen`, tab Descargas).
 - Sin sesión viva: seed idle con última canción **local** persistida (`PlaybackSessionStore`) o, si no hay historial, una aleatoria de la biblioteca; sin autoplay.
 - Biblioteca vacía y sin sesión → `BottomPlayerBar` oculto (`currentItem == null`).
 - Idle play: si `mediaItemCount == 0` y hay `currentItem`, `togglePlayPause` carga vía `playSong` / `playPlayableCollection` (resume de posición).
+- Con playback activo, `MusicService` permanece FGS `mediaPlayback` (notif Now playing + `setSessionActivity`) aunque la Activity esté en segundo plano; sin FGS el proceso queda cached y LMK lo mata al abrir otras apps.
 - No persistir CDN de `Remote`. Mini bar: Previous + status (`Resolviendo…` / `Armando radio…` / `radioStatusLabel`).
 
 | Capacidad | Entry point |
@@ -249,6 +263,7 @@ Centro de descargas online → sección 2 (`DownloadsScreen`, tab Descargas).
 | Prioridad | Comportamiento | Entry point |
 |-----------|----------------|-------------|
 | Diálogos / menús | Framework `onDismissRequest` | `Dialog` / `AlertDialog` / `DropdownMenu` |
+| Identify review | Oculta overlay, conserva cola (`dismissIdentifyReview`); `skipAllIdentifyReview` vacía | `IdentifyReviewScreen` `BackHandler` |
 | Add Music colección | `clearSelectedCollection` antes de cerrar | `AddMusicDialog` `BackHandler` + `onDismissRequest` |
 | Now Playing | `dismissFullPlayer` | `NowPlayingScreen` `BackHandler` |
 | Library nested | multi-select → cancel addition → album/artist → clear search | `LibraryScreen` `BackHandler` |

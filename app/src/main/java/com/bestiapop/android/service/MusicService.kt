@@ -1,8 +1,16 @@
 package com.bestiapop.android.service
 
+import android.app.PendingIntent
 import android.content.Context
+import android.content.Intent
+import android.content.pm.ServiceInfo
 import android.media.audiofx.LoudnessEnhancer
+import android.os.Build
 import androidx.annotation.OptIn
+import androidx.core.app.NotificationChannelCompat
+import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
+import androidx.core.app.ServiceCompat
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -18,8 +26,12 @@ import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.MediaSource
 import androidx.media3.extractor.DefaultExtractorsFactory
+import androidx.media3.session.DefaultMediaNotificationProvider
 import androidx.media3.session.MediaLibraryService
 import androidx.media3.session.MediaSession
+import androidx.media3.session.MediaStyleNotificationHelper
+import com.bestiapop.android.MainActivity
+import com.bestiapop.android.R
 import com.bestiapop.android.data.preferences.MAX_VOLUME_BOOST_GAIN_MB
 import com.bestiapop.android.data.preferences.PlaybackPreferencesRepository
 import com.bestiapop.android.data.preferences.PlaybackSettings
@@ -45,6 +57,14 @@ class MusicService : MediaLibraryService() {
 
     override fun onCreate() {
         super.onCreate()
+        ensureMediaNotificationChannel()
+        setMediaNotificationProvider(
+            DefaultMediaNotificationProvider.Builder(this)
+                .setChannelId(PLAYBACK_CHANNEL_ID)
+                .setChannelName(R.string.playback_notification_channel)
+                .setNotificationId(PLAYBACK_NOTIFICATION_ID)
+                .build()
+        )
         val audioAttributes = AudioAttributes.Builder()
             .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
             .setUsage(C.USAGE_MEDIA)
@@ -89,8 +109,16 @@ class MusicService : MediaLibraryService() {
                         )
                     )
                 }
+
+                override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+                    if (playWhenReady) {
+                        mediaLibrarySession?.let { promotePlaybackForeground(it) }
+                    }
+                }
+
             })
             mediaLibrarySession = MediaLibrarySession.Builder(this, p, LibraryCallback())
+                .setSessionActivity(mainActivityPendingIntent())
                 .build()
         }
 
@@ -159,6 +187,28 @@ class MusicService : MediaLibraryService() {
         return mediaLibrarySession
     }
 
+    override fun onUpdateNotification(session: MediaSession, startInForegroundRequired: Boolean) {
+        val keepForeground = startInForegroundRequired || isPlaybackEngaged()
+        if (keepForeground) {
+            // Do not call super: Media3 1.5 posts on IMPORTANCE_LOW default_channel_id
+            // (cannot be raised) and startForegroundService(), which Android 15 / Moto
+            // demotes as soon as the Activity pauses.
+            promotePlaybackForeground(session)
+            return
+        }
+        super.onUpdateNotification(session, startInForegroundRequired)
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        val session = mediaLibrarySession
+        if (session != null) {
+            promotePlaybackForeground(session)
+        } else {
+            promotePlaybackForegroundPlaceholder()
+        }
+        return super.onStartCommand(intent, flags, startId)
+    }
+
     override fun onDestroy() {
         serviceScope.cancel()
         releaseLoudnessEnhancer()
@@ -169,6 +219,91 @@ class MusicService : MediaLibraryService() {
         }
         player = null
         super.onDestroy()
+    }
+
+    private fun isPlaybackEngaged(): Boolean {
+        val p = player ?: return false
+        return p.playWhenReady &&
+            (p.playbackState == Player.STATE_READY || p.playbackState == Player.STATE_BUFFERING)
+    }
+
+    private fun mainActivityPendingIntent(): PendingIntent {
+        val intent = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        return PendingIntent.getActivity(
+            this,
+            0,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+    }
+
+    private fun ensureMediaNotificationChannel() {
+        NotificationManagerCompat.from(this).createNotificationChannel(
+            NotificationChannelCompat.Builder(
+                PLAYBACK_CHANNEL_ID,
+                NotificationManagerCompat.IMPORTANCE_DEFAULT
+            )
+                .setName(getString(R.string.playback_notification_channel))
+                .setLightsEnabled(false)
+                .setVibrationEnabled(false)
+                .setSound(null, null)
+                .build()
+        )
+    }
+
+    private fun promotePlaybackForegroundPlaceholder() {
+        startPlaybackForeground(
+            playbackNotificationBuilder("Bestia Pop", "Reproduciendo", mainActivityPendingIntent())
+                .build()
+        )
+    }
+
+    /**
+     * Enter/stay in mediaPlayback FGS via [Service.startForeground] only.
+     * Media3 1.5 also calls [Context.startForegroundService], which Android 12+
+     * rejects once the process is cached (uidState LAST) after FGS was demoted.
+     */
+    private fun promotePlaybackForeground(session: MediaSession) {
+        val meta = player?.currentMediaItem?.mediaMetadata
+        startPlaybackForeground(
+            playbackNotificationBuilder(
+                meta?.title?.takeIf { it.isNotBlank() } ?: "Bestia Pop",
+                meta?.artist?.takeIf { it.isNotBlank() } ?: "",
+                session.sessionActivity ?: mainActivityPendingIntent()
+            )
+                .setStyle(MediaStyleNotificationHelper.MediaStyle(session))
+                .build()
+        )
+    }
+
+    private fun playbackNotificationBuilder(
+        title: CharSequence,
+        text: CharSequence,
+        contentIntent: PendingIntent
+    ) = NotificationCompat.Builder(this, PLAYBACK_CHANNEL_ID)
+        .setSmallIcon(android.R.drawable.ic_media_play)
+        .setContentTitle(title)
+        .setContentText(text)
+        .setContentIntent(contentIntent)
+        .setOngoing(true)
+        .setOnlyAlertOnce(true)
+        .setCategory(NotificationCompat.CATEGORY_TRANSPORT)
+        .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+
+    private fun startPlaybackForeground(notification: android.app.Notification) {
+        val fgsType = if (Build.VERSION.SDK_INT >= 29) {
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+        } else {
+            0
+        }
+        ServiceCompat.startForeground(this, PLAYBACK_NOTIFICATION_ID, notification, fgsType)
+    }
+
+    companion object {
+        const val PLAYBACK_CHANNEL_ID = "playback_channel"
+        const val PLAYBACK_NOTIFICATION_ID = 1001
     }
 
     private inner class LibraryCallback : MediaLibrarySession.Callback {

@@ -39,6 +39,11 @@ object SongPathNormalizer {
         return toAbsolutePath(data)
     }
 
+    fun fileName(uriString: String, folderPath: String = ""): String {
+        val path = resolveFilePath(uriString, folderPath) ?: uriString
+        return path.substringAfterLast('/').substringAfterLast('\\')
+    }
+
     fun isUnderBestiaPop(pathOrUri: String): Boolean {
         val lower = pathOrUri.lowercase().replace('\\', '/')
         return lower.contains("/music/bestiapop") ||

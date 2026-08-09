@@ -8,12 +8,15 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.IBinder
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.bestiapop.android.data.model.WifiTransferItem
 import com.bestiapop.android.data.model.WifiTransferState
 import com.bestiapop.android.data.repository.MusicRepository
 import com.bestiapop.android.data.util.AudioFileMetadata
 import com.bestiapop.android.data.util.CrashReporter
+import com.bestiapop.android.data.util.SongPathNormalizer
+import com.bestiapop.android.data.util.StorageUtils
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.call
@@ -45,6 +48,7 @@ class WebServerService : Service() {
     private var server: EmbeddedServer<*, *>? = null
 
     companion object {
+        private const val TAG = "WebServerService"
         const val PORT = 8080
         private val _serverState = MutableStateFlow<String?>(null)
         val serverState: StateFlow<String?> = _serverState
@@ -124,7 +128,6 @@ class WebServerService : Service() {
         serviceScope.launch {
             try {
                 val repository = MusicRepository(applicationContext)
-                val uploadDir = com.bestiapop.android.data.util.StorageUtils.getPublicMusicDirectory(applicationContext)
 
                 server = embeddedServer(CIO, port = PORT) {
                     routing {
@@ -137,18 +140,13 @@ class WebServerService : Service() {
 
                         get("/existing-files") {
                             call.response.header("Cache-Control", "no-cache, no-store, must-revalidate")
-                            val filesOnDisk = uploadDir.listFiles()?.map { it.name } ?: emptyList()
-                            val activeSongs = repository.getAllSongsSync()
-                            val activeFilenames = activeSongs.map { song ->
-                                val cleanPath = when {
-                                    song.uriString.startsWith("file://") -> song.uriString.removePrefix("file://")
-                                    song.uriString.startsWith("file:") -> song.uriString.removePrefix("file:")
-                                    else -> song.uriString
-                                }
-                                cleanPath.substringAfterLast("/").substringAfterLast("\\").lowercase()
+                            val fromFolder = StorageUtils.listAudioFileNames(applicationContext)
+                            val fromRoom = repository.getAllSongsSync().mapNotNull { song ->
+                                SongPathNormalizer.fileName(song.uriString, song.folderPath)
+                                    .lowercase()
+                                    .takeIf { it.isNotBlank() }
                             }.toSet()
-
-                            val existingList = filesOnDisk.filter { activeFilenames.contains(it.lowercase()) }
+                            val existingList = (fromFolder + fromRoom).distinct()
                             val jsonArray = existingList.joinToString(prefix = "[", postfix = "]") {
                                 "\"${it.replace("\"", "\\\"")}\""
                             }
@@ -162,7 +160,12 @@ class WebServerService : Service() {
 
                             val rawName = call.request.queryParameters["name"] ?: "audio_${System.currentTimeMillis()}.mp3"
                             val safeName = rawName.substringAfterLast("/").substringAfterLast("\\").replace(Regex("[^a-zA-Z0-9._-]"), "_")
-                            val destinationFile = File(uploadDir, safeName)
+                            val pendingWrite = StorageUtils.prepareWrite(
+                                applicationContext,
+                                safeName,
+                                StorageUtils.mimeFromFileName(safeName)
+                            )
+                            val destinationFile = pendingWrite.stagingFile
                             val transferId = UUID.randomUUID().toString()
                             val displayTitle = safeName.substringBeforeLast(".")
                             val contentLength = call.request.headers["Content-Length"]?.toLongOrNull()?.takeIf { it > 0L }
@@ -210,12 +213,12 @@ class WebServerService : Service() {
                                 }
 
                                 try {
-                                    val path = destinationFile.absolutePath
+                                    val path = pendingWrite.publish()
                                     val metadata = AudioFileMetadata.fromPath(
                                         context = applicationContext,
                                         path = path,
                                         fallbackTitle = safeName.substringBeforeLast("."),
-                                        artworkIdentifier = destinationFile.name,
+                                        artworkIdentifier = File(path).name,
                                         extractEmbeddedArtwork = repository::extractAndSaveEmbeddedArtwork
                                     )
                                     val songId = repository.saveUploadedSong(
@@ -236,6 +239,7 @@ class WebServerService : Service() {
                                         )
                                     }
                                 } catch (e: Exception) {
+                                    Log.e(TAG, "save upload failed name=$safeName", e)
                                     e.printStackTrace()
                                     CrashReporter.recordNonFatal(
                                         e,
@@ -254,6 +258,7 @@ class WebServerService : Service() {
 
                                 call.respondText("""{"status":"ok","filename":"$safeName"}""", ContentType.Application.Json)
                             } catch (e: Exception) {
+                                Log.e(TAG, "upload-file failed name=$safeName", e)
                                 CrashReporter.recordNonFatal(
                                     e,
                                     mapOf(

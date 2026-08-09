@@ -1,9 +1,16 @@
 package com.bestiapop.android.ui
 
+import android.Manifest
 import android.app.Application
 import android.content.ComponentName
+import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
+import android.app.ActivityManager
+import android.provider.Settings
 import androidx.annotation.OptIn
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.media3.common.MediaItem
@@ -28,6 +35,7 @@ import com.bestiapop.android.data.network.ListenBrainzClient
 import com.bestiapop.android.data.network.MetadataFetcher
 import com.bestiapop.android.data.network.YouTubeExtractor
 import com.bestiapop.android.data.preferences.ActiveDownloadsStore
+import com.bestiapop.android.data.preferences.LibraryPreferencesRepository
 import com.bestiapop.android.data.preferences.ListenBrainzPreferencesRepository
 import com.bestiapop.android.data.preferences.ListenBrainzSettings
 import com.bestiapop.android.data.preferences.MAX_SAVE_WHILE_LISTENING_PERCENT
@@ -41,6 +49,7 @@ import com.bestiapop.android.data.repository.MusicRepository
 import com.bestiapop.android.data.stream.StreamResolver
 import com.bestiapop.android.data.util.CrashReporter
 import com.bestiapop.android.data.util.SongPathNormalizer
+import com.bestiapop.android.data.util.looksLikeStoragePath
 import com.bestiapop.android.domain.radio.CfRecommendationsRadio
 import com.bestiapop.android.domain.radio.DeezerSimilarRadio
 import com.bestiapop.android.domain.radio.ListenBrainzRadio
@@ -51,12 +60,16 @@ import com.bestiapop.android.domain.radio.RadioSuggestResult
 import com.bestiapop.android.domain.usecase.FetchAndMatchCfRecommendationsUseCase
 import com.bestiapop.android.domain.usecase.ImportListenBrainzPlaylistUseCase
 import com.bestiapop.android.domain.usecase.MatchListenBrainzTracksUseCase
+import com.bestiapop.android.domain.util.IdentifyRanking
 import com.bestiapop.android.domain.util.TrackMatchKeys
 import com.bestiapop.android.domain.util.findAlbumMergeTarget
 import com.bestiapop.android.domain.util.normalizeAlbumName
 import com.bestiapop.android.service.DownloadNotificationHelper
 import com.bestiapop.android.service.MusicService
 import com.bestiapop.android.service.StreamPlaybackTag
+import com.bestiapop.android.service.WebServerService
+import com.bestiapop.android.ui.state.IdentifyReviewItem
+import com.bestiapop.android.ui.state.IdentifyReviewState
 import com.bestiapop.android.ui.state.LibraryListItem
 import com.bestiapop.android.ui.state.LibraryViewMode
 import com.bestiapop.android.ui.theme.ThemePresets
@@ -79,7 +92,9 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -132,6 +147,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private val themeRepository = ThemePreferencesRepository(application)
     private val listenBrainzPreferences = ListenBrainzPreferencesRepository(application)
     private val playbackPreferences = PlaybackPreferencesRepository(application)
+    private val libraryPreferences = LibraryPreferencesRepository(application)
     private val activeDownloadsStore = ActiveDownloadsStore(application)
     private val playbackSessionStore = PlaybackSessionStore(application)
     private val downloadNotificationHelper = DownloadNotificationHelper(application)
@@ -390,6 +406,24 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         _queueFocusEpoch.value = _queueFocusEpoch.value + 1
     }
 
+    private val _backgroundRestricted = MutableStateFlow(false)
+    val backgroundRestricted = _backgroundRestricted.asStateFlow()
+
+    fun refreshBackgroundRestriction() {
+        val am = getApplication<Application>().getSystemService(ActivityManager::class.java)
+        _backgroundRestricted.value = am?.isBackgroundRestricted == true
+    }
+
+    fun openAppDetailsSettings() {
+        val app = getApplication<Application>()
+        app.startActivity(
+            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                data = Uri.fromParts("package", app.packageName, null)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+        )
+    }
+
     private val audioManager = getApplication<Application>().getSystemService(Context.AUDIO_SERVICE) as AudioManager
 
     private val _volumeLevel = MutableStateFlow(getDeviceVolumeRatio())
@@ -446,6 +480,10 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private val _pendingOpenDownloads = MutableStateFlow(false)
     private val _libraryJobProgress = MutableStateFlow<LibraryJobProgress?>(null)
     val libraryJobProgress: StateFlow<LibraryJobProgress?> = _libraryJobProgress.asStateFlow()
+    private val _identifyReview = MutableStateFlow(IdentifyReviewState())
+    val identifyReview: StateFlow<IdentifyReviewState> = _identifyReview.asStateFlow()
+    private val identifyMutex = Mutex()
+    private val identifiedWifiSongIds = mutableSetOf<Long>()
     val pendingOpenDownloads = _pendingOpenDownloads.asStateFlow()
 
     fun requestOpenDownloads() {
@@ -544,10 +582,11 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     init {
+        refreshBackgroundRestriction()
         initMediaController()
         startPositionTracker()
         viewModelScope.launch {
-            refreshLibraryFromDisk(showRecoveryToast = true)
+            ensureInitialLibraryImport(showRecoveryToast = true)
         }
         viewModelScope.launch {
             _catalogSearchResults.value = MetadataFetcher.getFeaturedDemoCatalog()
@@ -557,6 +596,34 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
         viewModelScope.launch(Dispatchers.IO) {
             repository.migrateLegacyYouTubeMusicSongs()
+        }
+
+        viewModelScope.launch {
+            WebServerService.transfers
+                .debounce(400)
+                .collect { list ->
+                    val newIds = list.mapNotNull { transfer ->
+                        val id = transfer.songId
+                        if (transfer.state == WifiTransferState.DONE &&
+                            id != null &&
+                            id !in identifiedWifiSongIds
+                        ) {
+                            id
+                        } else {
+                            null
+                        }
+                    }
+                    if (newIds.isEmpty()) return@collect
+                    val idSet = newIds.toSet()
+                    val songs = withContext(Dispatchers.IO) {
+                        repository.getAllSongsSync().filter { it.id in idSet }
+                    }
+                    if (songs.isEmpty()) return@collect
+                    identifiedWifiSongIds += songs.map { it.id }
+                    identifyMutex.withLock {
+                        runIdentifySongs(songs, force = true, showReview = false)
+                    }
+                }
         }
 
         viewModelScope.launch {
@@ -1092,7 +1159,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 controller.shuffleModeEnabled = false
                 controller.setMediaItems(shuffled.map { playableToMediaItem(it) }, 0, resumePosition)
                 controller.prepare()
-                if (startPlaying) controller.play()
+                if (startPlaying) playWithForegroundService(controller)
             }
             prefetchAround(0)
         } finally {
@@ -1323,7 +1390,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             controller.shuffleModeEnabled = false
             controller.setMediaItems(items.map { playableToMediaItem(it) }, index, startPositionMs)
             controller.prepare()
-            controller.play()
+            playWithForegroundService(controller)
         }
         if (startPositionMs > 0L) {
             _playbackPositionMs.value = startPositionMs
@@ -1352,6 +1419,21 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             youtubeQueryOrId = queryOrId
         )
         playPlayableCollection(listOf(remote), 0)
+    }
+
+    /** Preview local file while reviewing identify candidates (toggle if already current). */
+    fun previewIdentifyLocalSong(song: Song) {
+        val current = _currentItem.value
+        if (current is PlayableItem.Local && current.song.id == song.id) {
+            togglePlayPause()
+            return
+        }
+        playSong(song)
+    }
+
+    /** Stream-preview a ranked identify candidate via YouTube (same path as catalog). */
+    fun previewIdentifyCandidate(candidate: IdentifyCandidate) {
+        playOnlineCatalogTrackAsStream(candidate.toOnlineCatalogTrack())
     }
 
     fun clearCatalogPreview() {
@@ -1483,13 +1565,23 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         addToQueueBatch(songs)
     }
 
+    private fun playWithForegroundService(controller: MediaController) {
+        val app = getApplication<Application>()
+        try {
+            ContextCompat.startForegroundService(app, Intent(app, MusicService::class.java))
+        } catch (_: Exception) {
+            app.startService(Intent(app, MusicService::class.java))
+        }
+        controller.play()
+    }
+
     fun togglePlayPause() {
         val controller = mediaController
         if (controller != null && controller.mediaItemCount > 0) {
             if (controller.isPlaying) {
                 controller.pause()
             } else {
-                controller.play()
+                playWithForegroundService(controller)
             }
             return
         }
@@ -2029,55 +2121,375 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     /**
-     * Reindexes public Music/BestiaPop (survives uninstall) then MediaStore.
-     * Call after storage permission is granted and on cold start.
+     * First-install (or post-uninstall) disk import: BestiaPop folder + MediaStore.
+     * Skipped on later cold starts / updates once [LibraryPreferencesRepository] marks completed.
+     * Room migrations still run independently via [AppDatabase].
      */
-    fun refreshLibraryFromDisk(showRecoveryToast: Boolean = false) {
+    fun ensureInitialLibraryImport(showRecoveryToast: Boolean = false) {
         viewModelScope.launch {
-            val recovered = withContext(Dispatchers.IO) {
-                val n = repository.resyncAppManagedMusic(importScanProgress())
-                repository.scanMediaStore(importScanProgress())
-                n
+            if (libraryPreferences.isInitialScanCompleted()) return@launch
+            if (!hasAudioPermission()) return@launch
+            runLibraryDiskImport(showRecoveryToast = showRecoveryToast)
+            libraryPreferences.setInitialScanCompleted(true)
+        }
+    }
+
+    /**
+     * Force reindex Music/BestiaPop + MediaStore (manual / recovery). Does not change the
+     * initial-scan flag unless [markInitialScanCompleted] is true.
+     */
+    fun refreshLibraryFromDisk(
+        showRecoveryToast: Boolean = false,
+        markInitialScanCompleted: Boolean = false
+    ) {
+        viewModelScope.launch {
+            runLibraryDiskImport(showRecoveryToast = showRecoveryToast)
+            if (markInitialScanCompleted) {
+                libraryPreferences.setInitialScanCompleted(true)
             }
-            clearLibraryProgress()
-            if (showRecoveryToast && recovered > 0) {
+        }
+    }
+
+    private suspend fun runLibraryDiskImport(showRecoveryToast: Boolean) {
+        val recovered = withContext(Dispatchers.IO) {
+            val n = repository.resyncAppManagedMusic(importScanProgress())
+            repository.scanMediaStore(importScanProgress())
+            n
+        }
+        clearLibraryProgress()
+        if (showRecoveryToast && recovered > 0) {
+            toast(
+                if (recovered == 1) "Se recuperó 1 canción de Music/BestiaPop"
+                else "Se recuperaron $recovered canciones de Music/BestiaPop"
+            )
+        }
+    }
+
+    private fun hasAudioPermission(): Boolean {
+        val app = getApplication<Application>()
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            ContextCompat.checkSelfPermission(app, Manifest.permission.READ_MEDIA_AUDIO) ==
+                PackageManager.PERMISSION_GRANTED
+        } else {
+            ContextCompat.checkSelfPermission(app, Manifest.permission.READ_EXTERNAL_STORAGE) ==
+                PackageManager.PERMISSION_GRANTED
+        }
+    }
+
+    /**
+     * Online identify: Phase 1 lookup + score, auto-apply HIGH,
+     * enqueue MEDIUM/LOW/NONE. [force] always looks up (WiFi). [showReview] opens the overlay.
+     */
+    fun identifySongs(
+        songs: List<Song>,
+        force: Boolean = false,
+        showReview: Boolean = true
+    ) {
+        if (songs.isEmpty()) return
+        viewModelScope.launch {
+            identifyMutex.withLock {
+                runIdentifySongs(songs, force, showReview)
+            }
+        }
+    }
+
+    /** Single-song identify from ⋮: force lookup and open review (or auto-apply HIGH). */
+    fun identifySongForReview(song: Song) {
+        identifySongs(listOf(song), force = true, showReview = true)
+    }
+
+    private suspend fun runIdentifySongs(
+        songs: List<Song>,
+        force: Boolean,
+        showReview: Boolean
+    ) {
+        val total = songs.size
+        var updated = 0
+        var skipped = 0
+        val reviewItems = ArrayList<IdentifyReviewItem>()
+        songs.forEachIndexed { index, song ->
+            reportLibraryProgress(LibraryJobKind.IDENTIFY, index, total, song.title)
+            val proposal = withContext(Dispatchers.IO) {
+                repository.proposeSongIdentity(song, force = force)
+            }
+            when {
+                proposal.alreadyIdentified -> skipped++
+                proposal.confidence == IdentifyConfidence.HIGH && proposal.suggested != null -> {
+                    when (
+                        withContext(Dispatchers.IO) {
+                            repository.applySongIdentity(song.id, proposal.suggested)
+                        }
+                    ) {
+                        is IdentifyResult.Updated -> updated++
+                        else -> reviewItems.add(IdentifyReviewItem(song, proposal))
+                    }
+                }
+                else -> reviewItems.add(IdentifyReviewItem(song, proposal))
+            }
+        }
+        clearLibraryProgress()
+        if (reviewItems.isNotEmpty()) {
+            enqueueIdentifyReview(reviewItems, showReview)
+        }
+        toast(
+            buildString {
+                append(if (updated == 1) "1 actualizada" else "$updated actualizadas")
+                if (reviewItems.isNotEmpty()) {
+                    append(
+                        if (reviewItems.size == 1) ", 1 para revisar"
+                        else ", ${reviewItems.size} para revisar"
+                    )
+                }
+                if (skipped == 1) append(", 1 omitida")
+                else if (skipped > 1) append(", $skipped omitidas")
+            }
+        )
+    }
+
+    private fun enqueueIdentifyReview(items: List<IdentifyReviewItem>, showReview: Boolean) {
+        if (items.isEmpty()) return
+        val current = _identifyReview.value
+        val existingIds = current.items.map { it.song.id }.toSet()
+        val incoming = items.filter { it.song.id !in existingIds }
+        if (current.items.isEmpty()) {
+            val first = incoming.firstOrNull() ?: return
+            _identifyReview.value = IdentifyReviewState(
+                items = incoming,
+                currentIndex = 0,
+                selectedCandidateIndex = 0,
+                searchQueryDraft = defaultSearchDraft(first),
+                showSearchField = first.proposal.candidates.isEmpty(),
+                isVisible = showReview
+            )
+            return
+        }
+        if (incoming.isEmpty()) {
+            if (showReview) {
+                _identifyReview.value = current.copy(isVisible = true)
+            }
+            return
+        }
+        val merged = current.items + incoming
+        _identifyReview.value = current.copy(
+            items = merged,
+            isVisible = current.isVisible || showReview
+        )
+    }
+
+    fun showIdentifyReview() {
+        val state = _identifyReview.value
+        if (state.items.isEmpty()) return
+        val current = state.current ?: state.items.first()
+        _identifyReview.value = state.copy(
+            isVisible = true,
+            searchQueryDraft = state.searchQueryDraft.ifBlank { defaultSearchDraft(current) },
+            showSearchField = state.showSearchField || current.proposal.candidates.isEmpty()
+        )
+    }
+
+    private fun defaultSearchDraft(item: IdentifyReviewItem): String {
+        val title = item.song.title.trim().takeUnless { it.isBlank() || looksLikeStoragePath(it) }.orEmpty()
+        val artist = item.song.artist.trim()
+        val artistOk = !IdentifyRanking.isPlaceholderArtist(artist) &&
+            !looksLikeStoragePath(artist)
+        val hints = item.proposal.sourceHints?.replace(" · ", " ")?.trim().orEmpty()
+        return when {
+            artistOk && title.isNotBlank() -> "$artist $title"
+            title.isNotBlank() -> title
+            hints.isNotBlank() && !looksLikeStoragePath(hints) -> hints
+            else -> item.proposal.queryTitle.trim().takeUnless { looksLikeStoragePath(it) }.orEmpty()
+        }
+    }
+
+    fun selectIdentifyCandidate(index: Int) {
+        val state = _identifyReview.value
+        val candidates = state.current?.proposal?.candidates.orEmpty()
+        if (index !in candidates.indices) return
+        _identifyReview.value = state.copy(selectedCandidateIndex = index)
+    }
+
+    fun setIdentifySearchDraft(query: String) {
+        _identifyReview.value = _identifyReview.value.copy(searchQueryDraft = query)
+    }
+
+    fun toggleIdentifySearchField(show: Boolean? = null) {
+        val state = _identifyReview.value
+        val next = show ?: !state.showSearchField
+        val draft = state.searchQueryDraft
+        val shouldSeed = next && (draft.isBlank() || looksLikeStoragePath(draft))
+        _identifyReview.value = state.copy(
+            showSearchField = next,
+            searchQueryDraft = if (shouldSeed) {
+                state.current?.let { defaultSearchDraft(it) }.orEmpty()
+            } else {
+                draft
+            }
+        )
+    }
+
+    fun searchIdentifyCandidates() {
+        val state = _identifyReview.value
+        val item = state.current ?: return
+        val query = state.searchQueryDraft.trim()
+        if (query.isEmpty()) {
+            toast("Escribí una búsqueda")
+            return
+        }
+        viewModelScope.launch {
+            _identifyReview.value = _identifyReview.value.copy(isSearching = true)
+            val proposal = withContext(Dispatchers.IO) {
+                repository.proposeSongIdentity(item.song, customQuery = query, force = true)
+            }
+            val latest = _identifyReview.value
+            if (latest.current?.song?.id != item.song.id) {
+                _identifyReview.value = latest.copy(isSearching = false)
+                return@launch
+            }
+            val items = latest.items.toMutableList()
+            items[latest.currentIndex] = item.copy(proposal = proposal)
+            _identifyReview.value = latest.copy(
+                items = items,
+                selectedCandidateIndex = 0,
+                isSearching = false,
+                showSearchField = latest.showSearchField || proposal.candidates.isEmpty()
+            )
+            if (proposal.candidates.isEmpty()) {
+                toast("Sin resultados para \"$query\"")
+            }
+        }
+    }
+
+    fun applySelectedIdentifyCandidate() {
+        val state = _identifyReview.value
+        val item = state.current ?: return
+        val candidate = item.proposal.candidates.getOrNull(state.selectedCandidateIndex)
+            ?: item.proposal.suggested
+        if (candidate == null) {
+            toast("Elegí un candidato o buscá otro")
+            return
+        }
+        viewModelScope.launch {
+            when (
+                withContext(Dispatchers.IO) {
+                    repository.applySongIdentity(item.song.id, candidate)
+                }
+            ) {
+                is IdentifyResult.Updated -> advanceIdentifyReview(applied = true)
+                else -> toast("No se pudo aplicar la identidad")
+            }
+        }
+    }
+
+    fun skipIdentifyReviewItem() {
+        advanceIdentifyReview(applied = false)
+    }
+
+    fun dismissIdentifyReview() {
+        val state = _identifyReview.value
+        if (!state.isOpen) return
+        _identifyReview.value = state.copy(isVisible = false)
+        clearCatalogPreview()
+    }
+
+    fun skipAllIdentifyReview() {
+        val pending = _identifyReview.value.pendingCount
+        _identifyReview.value = IdentifyReviewState()
+        clearCatalogPreview()
+        if (pending > 0) {
+            toast(if (pending == 1) "1 omitida" else "$pending omitidas")
+        }
+    }
+
+    fun applyRemainingIdentifySuggestions() {
+        viewModelScope.launch {
+            identifyMutex.withLock {
+                val state = _identifyReview.value
+                val remaining = state.items.drop(state.currentIndex)
+                if (remaining.isEmpty()) return@withLock
+                var applied = state.sessionApplied
+                val leftover = ArrayList<IdentifyReviewItem>()
+                remaining.forEachIndexed { index, item ->
+                    val candidate = item.proposal.suggested
+                        ?: item.proposal.candidates.firstOrNull()
+                    if (candidate == null) {
+                        leftover += item
+                        return@forEachIndexed
+                    }
+                    reportLibraryProgress(
+                        LibraryJobKind.IDENTIFY,
+                        index,
+                        remaining.size,
+                        item.song.title
+                    )
+                    when (
+                        withContext(Dispatchers.IO) {
+                            repository.applySongIdentity(item.song.id, candidate)
+                        }
+                    ) {
+                        is IdentifyResult.Updated -> applied++
+                        else -> leftover += item
+                    }
+                }
+                clearLibraryProgress()
+                if (leftover.isEmpty()) {
+                    _identifyReview.value = IdentifyReviewState()
+                    clearCatalogPreview()
+                    toast(
+                        if (applied == 1) "1 aplicada en revisión"
+                        else "$applied aplicadas en revisión"
+                    )
+                    return@withLock
+                }
+                val first = leftover.first()
+                _identifyReview.value = IdentifyReviewState(
+                    items = leftover,
+                    currentIndex = 0,
+                    selectedCandidateIndex = 0,
+                    sessionApplied = applied,
+                    searchQueryDraft = defaultSearchDraft(first),
+                    showSearchField = first.proposal.candidates.isEmpty(),
+                    isVisible = true
+                )
                 toast(
-                    if (recovered == 1) "Se recuperó 1 canción de Music/BestiaPop"
-                    else "Se recuperaron $recovered canciones de Music/BestiaPop"
+                    buildString {
+                        append(if (applied == 1) "1 aplicada" else "$applied aplicadas")
+                        append(
+                            if (leftover.size == 1) ", 1 sin sugerencia"
+                            else ", ${leftover.size} sin sugerencia"
+                        )
+                    }
                 )
             }
         }
     }
 
-    /**
-     * Online identify for selected songs: auto-applies best Deezer/iTunes match.
-     * Shows [libraryJobProgress] while running; toast summary when done.
-     */
-    fun identifySongs(songs: List<Song>) {
-        if (songs.isEmpty()) return
-        viewModelScope.launch {
-            val total = songs.size
-            var updated = 0
-            var noMatch = 0
-            var skipped = 0
-            songs.forEachIndexed { index, song ->
-                reportLibraryProgress(LibraryJobKind.IDENTIFY, index, total, song.title)
-                when (withContext(Dispatchers.IO) { repository.identifySongMetadata(song) }) {
-                    is IdentifyResult.Updated -> updated++
-                    IdentifyResult.NoMatch -> noMatch++
-                    IdentifyResult.Skipped -> skipped++
-                }
-            }
-            clearLibraryProgress()
+    private fun advanceIdentifyReview(applied: Boolean) {
+        val state = _identifyReview.value
+        val nextApplied = state.sessionApplied + if (applied) 1 else 0
+        val nextSkipped = state.sessionSkipped + if (applied) 0 else 1
+        val nextIndex = state.currentIndex + 1
+        if (nextIndex >= state.items.size) {
+            _identifyReview.value = IdentifyReviewState()
             toast(
                 buildString {
-                    append(if (updated == 1) "1 actualizada" else "$updated actualizadas")
-                    if (noMatch > 0) append(", $noMatch sin match")
-                    if (skipped == 1) append(", 1 omitida")
-                    else if (skipped > 1) append(", $skipped omitidas")
+                    append(if (nextApplied == 1) "1 aplicada en revisión" else "$nextApplied aplicadas en revisión")
+                    if (nextSkipped > 0) {
+                        append(if (nextSkipped == 1) ", 1 omitida" else ", $nextSkipped omitidas")
+                    }
                 }
             )
+            return
         }
+        val nextItem = state.items[nextIndex]
+        _identifyReview.value = state.copy(
+            currentIndex = nextIndex,
+            selectedCandidateIndex = 0,
+            sessionApplied = nextApplied,
+            sessionSkipped = nextSkipped,
+            searchQueryDraft = defaultSearchDraft(nextItem),
+            showSearchField = nextItem.proposal.candidates.isEmpty(),
+            isSearching = false
+        )
     }
 
     // Playlists
@@ -2698,7 +3110,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             val next = searchResults[(currentIdx + 1).coerceAtLeast(0) % searchResults.size]
             // Keep catalog album metadata when YouTube only says "YouTube"
             list[index] = next.copy(
-                album = current.album.takeIf { it.isNotBlank() && !it.equals("YouTube", ignoreCase = true) }
+                album = current.album.takeIf { !IdentifyRanking.isGenericAlbum(it) }
                     ?: next.album,
                 artworkUrl = next.artworkUrl ?: current.artworkUrl
             )

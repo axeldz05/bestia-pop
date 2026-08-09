@@ -154,6 +154,21 @@ class ImportListenBrainzPlaylistUseCaseTest {
         override suspend fun deleteSongsFromApp(songs: List<Song>) = Unit
         override suspend fun deleteSongsFromDevice(songs: List<Song>) = Unit
         override suspend fun enhanceSongMetadataAndLyrics(song: Song) = Unit
+        override suspend fun proposeSongIdentity(
+            song: Song,
+            customQuery: String?,
+            force: Boolean
+        ) =
+            com.bestiapop.android.data.model.IdentifyProposal(
+                songId = song.id,
+                queryArtist = song.artist,
+                queryTitle = song.title,
+                alreadyIdentified = true
+            )
+        override suspend fun applySongIdentity(
+            songId: Long,
+            candidate: com.bestiapop.android.data.model.IdentifyCandidate
+        ) = com.bestiapop.android.data.model.IdentifyResult.Skipped
         override suspend fun identifySongMetadata(song: Song) =
             com.bestiapop.android.data.model.IdentifyResult.Skipped
         override suspend fun updateSongDuration(songId: Long, durationMs: Long) = Unit

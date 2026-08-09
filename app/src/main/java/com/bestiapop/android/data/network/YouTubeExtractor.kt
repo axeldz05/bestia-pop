@@ -11,6 +11,7 @@ import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 import java.util.regex.Pattern
 import com.bestiapop.android.data.model.OnlineCatalogTrack
+import com.bestiapop.android.domain.util.IdentifyRanking
 import com.bestiapop.android.data.util.CrashReporter
 
 data class YouTubeStreamResult(
@@ -140,6 +141,7 @@ object YouTubeExtractor {
                 cleanTitle = parts[1].trim()
             }
         }
+        cleanTitle = IdentifyRanking.cleanIdentityTitle(cleanTitle).ifBlank { cleanTitle }
         return Pair(cleanTitle, artist.ifEmpty { "YouTube Artist" })
     }
 

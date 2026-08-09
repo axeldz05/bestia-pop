@@ -3,6 +3,8 @@ package com.bestiapop.android.domain.repository
 import android.net.Uri
 import com.bestiapop.android.data.db.SongEntity
 import com.bestiapop.android.data.model.AlbumOverride
+import com.bestiapop.android.data.model.IdentifyCandidate
+import com.bestiapop.android.data.model.IdentifyProposal
 import com.bestiapop.android.data.model.IdentifyResult
 import com.bestiapop.android.data.model.OnlineCatalogTrack
 import com.bestiapop.android.data.model.Playlist
@@ -33,8 +35,24 @@ interface IMusicRepository {
     suspend fun deleteSongsFromDevice(songs: List<Song>)
     suspend fun enhanceSongMetadataAndLyrics(song: Song)
     /**
+     * Ranked online candidates for a library song (no Room write).
+     * Songs that already have usable artist+album return [IdentifyProposal.alreadyIdentified]
+     * unless [force] is true (WiFi import always forces to detect catalog conflicts).
+     * Song tags are predominant ranking source; [customQuery] replaces the default search.
+     */
+    suspend fun proposeSongIdentity(
+        song: Song,
+        customQuery: String? = null,
+        force: Boolean = false
+    ): IdentifyProposal
+
+    /** Persist one identify candidate onto [songId]. */
+    suspend fun applySongIdentity(songId: Long, candidate: IdentifyCandidate): IdentifyResult
+
+    /**
      * Look up artist/album online for a library song with missing/placeholder metadata.
-     * Auto-applies the best Deezer/iTunes match when found.
+     * Auto-applies only [com.bestiapop.android.data.model.IdentifyConfidence.HIGH] matches
+     * (propose + apply). Medium/low are left unchanged ([IdentifyResult.NoMatch]).
      */
     suspend fun identifySongMetadata(song: Song): IdentifyResult
     suspend fun updateSongDuration(songId: Long, durationMs: Long)

@@ -47,9 +47,9 @@ class MainActivity : ComponentActivity() {
                     permission == Manifest.permission.READ_EXTERNAL_STORAGE
                 )
         }
-        // Reindex after grant (startup scan may have run before permission).
+        // First-install import only (updates skip; Room migrations handle schema).
         if (audioGranted || hasAudioPermission()) {
-            viewModel.refreshLibraryFromDisk(showRecoveryToast = true)
+            viewModel.ensureInitialLibraryImport(showRecoveryToast = true)
         }
     }
 
@@ -70,6 +70,11 @@ class MainActivity : ComponentActivity() {
                 )
             }
         }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        viewModel.refreshBackgroundRestriction()
     }
 
     override fun onNewIntent(intent: Intent) {

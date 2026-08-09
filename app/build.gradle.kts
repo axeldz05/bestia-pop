@@ -39,15 +39,22 @@ android {
         }
     }
 
+    val sharedSigning = if (keystorePropertiesFile.exists()) {
+        signingConfigs.getByName("release")
+    } else {
+        signingConfigs.getByName("debug")
+    }
+
     buildTypes {
+        // Same cert as release when keystore.properties exists so debug↔release
+        // install -r keeps Room/DataStore (Android rejects a different signature over -k data).
+        debug {
+            signingConfig = sharedSigning
+        }
         release {
             isMinifyEnabled = false
             isDebuggable = false
-            signingConfig = if (keystorePropertiesFile.exists()) {
-                signingConfigs.getByName("release")
-            } else {
-                signingConfigs.getByName("debug")
-            }
+            signingConfig = sharedSigning
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

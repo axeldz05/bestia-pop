@@ -1,7 +1,8 @@
 package com.bestiapop.android.ui.components
 
-import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -9,22 +10,29 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.AutoFixHigh
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
-import androidx.compose.material.icons.automirrored.filled.QueueMusic
-import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 
 @Composable
@@ -47,69 +55,112 @@ fun MultiSelectActionBar(
         color = MaterialTheme.colorScheme.surfaceVariant,
         tonalElevation = 6.dp
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
+                .padding(horizontal = 8.dp, vertical = 4.dp)
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onClearSelection) {
-                    Icon(
-                        imageVector = Icons.Default.Close,
-                        contentDescription = "Cancelar selección"
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    IconButton(onClick = onClearSelection) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Cancelar selección"
+                        )
+                    }
+                    Text(
+                        text = "$selectedCount seleccionados",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
-                Text(
-                    text = "$selectedCount seleccionados",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                TextButton(onClick = onSelectAll) {
+                    Text("Seleccionar todo")
+                }
             }
 
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onPlaySelected) {
-                    Icon(
-                        imageVector = Icons.Default.PlayArrow,
-                        contentDescription = "Reproducir seleccionados",
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                }
-                IconButton(onClick = onEnqueueSelected) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.QueueMusic,
-                        contentDescription = "Agregar a la cola"
-                    )
-                }
-                IconButton(onClick = onAddToPlaylist) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.PlaylistAdd,
-                        contentDescription = "Agregar a playlist"
-                    )
-                }
-                IconButton(onClick = onIdentifySelected) {
-                    Icon(
-                        imageVector = Icons.Default.AutoFixHigh,
-                        contentDescription = "Identificar metadata"
-                    )
-                }
-                IconButton(onClick = onDeleteSelected) {
-                    Icon(
-                        imageVector = Icons.Default.Delete,
-                        contentDescription = "Eliminar seleccionados",
-                        tint = MaterialTheme.colorScheme.error
-                    )
-                }
-                IconButton(onClick = onSelectAll) {
-                    Icon(
-                        imageVector = Icons.Default.SelectAll,
-                        contentDescription = "Seleccionar todo"
-                    )
-                }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 4.dp),
+                verticalAlignment = Alignment.Top
+            ) {
+                MultiSelectAction(
+                    icon = Icons.Default.PlayArrow,
+                    label = "Play",
+                    description = "Reproducir seleccionados",
+                    onClick = onPlaySelected,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.weight(1f)
+                )
+                MultiSelectAction(
+                    icon = Icons.AutoMirrored.Filled.QueueMusic,
+                    label = "Cola",
+                    description = "Agregar a la cola",
+                    onClick = onEnqueueSelected,
+                    modifier = Modifier.weight(1f)
+                )
+                MultiSelectAction(
+                    icon = Icons.AutoMirrored.Filled.PlaylistAdd,
+                    label = "Lista",
+                    description = "Agregar a playlist",
+                    onClick = onAddToPlaylist,
+                    modifier = Modifier.weight(1f)
+                )
+                MultiSelectAction(
+                    icon = Icons.Default.AutoFixHigh,
+                    label = "ID",
+                    description = "Identificar metadata",
+                    onClick = onIdentifySelected,
+                    modifier = Modifier.weight(1f)
+                )
+                MultiSelectAction(
+                    icon = Icons.Default.Delete,
+                    label = "Borrar",
+                    description = "Eliminar seleccionados",
+                    onClick = onDeleteSelected,
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.weight(1f)
+                )
             }
         }
+    }
+}
+
+@Composable
+private fun MultiSelectAction(
+    icon: ImageVector,
+    label: String,
+    description: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    tint: Color = LocalContentColor.current
+) {
+    Column(
+        modifier = modifier
+            .clickable(onClick = onClick, role = Role.Button)
+            .padding(vertical = 8.dp, horizontal = 4.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Icon(imageVector = icon, contentDescription = description, tint = tint)
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.clearAndSetSemantics { }
+        )
     }
 }
 
@@ -153,7 +204,7 @@ fun PlaylistAdditionActionBar(
                     style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
                     color = MaterialTheme.colorScheme.onPrimaryContainer,
                     maxLines = 1,
-                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                    overflow = TextOverflow.Ellipsis
                 )
             }
 
@@ -172,7 +223,7 @@ fun PlaylistAdditionActionBar(
                         text = "Añadir a $playlistName",
                         fontWeight = FontWeight.Bold,
                         maxLines = 1,
-                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
             }

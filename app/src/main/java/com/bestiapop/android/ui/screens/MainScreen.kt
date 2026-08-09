@@ -25,6 +25,8 @@ import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.foundation.clickable
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -73,6 +75,8 @@ fun MainScreen(
     val activeDownloads by viewModel.activeDownloads.collectAsState()
     val pendingOpenDownloads by viewModel.pendingOpenDownloads.collectAsState()
     val downloadConflict by viewModel.downloadConflict.collectAsState()
+    val identifyReview by viewModel.identifyReview.collectAsState()
+    val backgroundRestricted by viewModel.backgroundRestricted.collectAsState()
     val downloadBadgeCount = activeDownloadBadgeCount(activeDownloads)
 
     val miniPlayerStatusLabel = when {
@@ -202,6 +206,21 @@ fun MainScreen(
                 .fillMaxWidth()
                 .onGloballyPositioned { bottomChromeHeightPx = it.size.height }
         ) {
+            if (backgroundRestricted) {
+                Surface(
+                    color = MaterialTheme.colorScheme.errorContainer,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { viewModel.openAppDetailsSettings() }
+                ) {
+                    Text(
+                        text = "Android está limitando la app. Tocá → Batería → Sin restricciones para seguir escuchando con otras apps.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                    )
+                }
+            }
             BottomPlayerBar(
                 currentItem = currentItem,
                 isPlaying = isPlaying,
@@ -265,6 +284,10 @@ fun MainScreen(
                 viewModel = viewModel,
                 onDismiss = { dismissFullPlayer() }
             )
+        }
+
+        if (identifyReview.isOpen) {
+            IdentifyReviewScreen(viewModel = viewModel)
         }
 
         downloadConflict?.let { conflict ->

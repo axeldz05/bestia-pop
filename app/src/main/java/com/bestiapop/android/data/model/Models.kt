@@ -50,6 +50,52 @@ sealed class IdentifyResult {
     data object Skipped : IdentifyResult()
 }
 
+/** Ranked catalog hit for identify (top-N after multi-signal scoring). */
+data class IdentifyCandidate(
+    val title: String,
+    val artist: String,
+    val album: String,
+    val artworkUrl: String?,
+    val durationMs: Long,
+    val provider: String,
+    val score: Float,
+    val reasons: List<String> = emptyList()
+) {
+    /** Ephemeral catalog track for stream preview (no CDN URL persisted). */
+    fun toOnlineCatalogTrack(): OnlineCatalogTrack = OnlineCatalogTrack(
+        id = "idcand:$provider:$artist|$title|$album",
+        title = title,
+        artist = artist,
+        album = album,
+        artworkUrl = artworkUrl,
+        durationMs = durationMs,
+        audioUrl = "",
+        provider = provider
+    )
+}
+
+enum class IdentifyConfidence {
+    HIGH,
+    MEDIUM,
+    LOW,
+    NONE
+}
+
+/**
+ * Lookup result for one library song before apply / review.
+ * [alreadyIdentified] = song did not need identify (artist+album usable).
+ */
+data class IdentifyProposal(
+    val songId: Long,
+    val queryArtist: String,
+    val queryTitle: String,
+    val sourceHints: String? = null,
+    val candidates: List<IdentifyCandidate> = emptyList(),
+    val confidence: IdentifyConfidence = IdentifyConfidence.NONE,
+    val suggested: IdentifyCandidate? = null,
+    val alreadyIdentified: Boolean = false
+)
+
 data class Album(
     /** Storage key matching [Song.album] for filtering/grouping. */
     val name: String,

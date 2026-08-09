@@ -193,8 +193,8 @@ fun LibraryScreen(
         collapsedAlbumNames = if (allAlbumsCollapsed) emptySet() else libraryAlbumNames
     }
 
-    val selectAllSongs = remember {
-        { selectedSongIds = songs.map { it.id }.toSet() }
+    val selectAllSongs = {
+        selectedSongIds = songs.map { it.id }.toSet()
     }
 
     val clearSelection = remember {
@@ -225,6 +225,7 @@ fun LibraryScreen(
     val onStartRadio = songActions.onStartRadio
     val onAddToPlaylist = remember<(Song) -> Unit> { { songForPlaylistAddition = it } }
     val onEditMetadata = remember<(Song) -> Unit> { { editingSong = it } }
+    val onIdentify = remember<(Song) -> Unit> { { viewModel.identifySongForReview(it) } }
     val onDeleteSong = remember<(Song) -> Unit> { { songsForDeletion = listOf(it) } }
     val onPlayAlbum = remember<(String, List<Song>) -> Unit> {
         { _, albumSongs -> viewModel.playCollection(albumSongs) }
@@ -233,7 +234,7 @@ fun LibraryScreen(
         { _, albumSongs -> viewModel.shuffleCollection(albumSongs) }
     }
     val songListActions = remember(
-        onPlayNext, onAddToQueue, onStartRadio, onAddToPlaylist, onEditMetadata, onDeleteSong,
+        onPlayNext, onAddToQueue, onStartRadio, onAddToPlaylist, onEditMetadata, onIdentify, onDeleteSong,
         onPlayAlbum, onShuffleAlbum, toggleSelectSong, toggleSelectAlbum, onAlbumLongClick,
         toggleCollapseAlbum, onEditAlbumByKey, onChangeAlbumCoverByKey
     ) {
@@ -243,6 +244,7 @@ fun LibraryScreen(
             onStartRadio = onStartRadio,
             onAddToPlaylist = onAddToPlaylist,
             onEditMetadata = onEditMetadata,
+            onIdentify = onIdentify,
             onDeleteSong = onDeleteSong,
             onPlayAlbum = onPlayAlbum,
             onShuffleAlbum = onShuffleAlbum,

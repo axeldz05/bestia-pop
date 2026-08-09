@@ -10,6 +10,20 @@ data class FilenameMetadataHints(
     val title: String?
 )
 
+/** True for SAF/document URIs or Music/BestiaPop paths mistaken for a track name. */
+fun looksLikeStoragePath(value: String): Boolean {
+    val v = value.trim()
+    if (v.isEmpty()) return false
+    val lower = v.lowercase()
+    return v.contains('/') ||
+        v.contains('\\') ||
+        v.contains('%') ||
+        lower.startsWith("content:") ||
+        lower.startsWith("file:") ||
+        lower.contains("primary:") ||
+        lower.contains("music/bestiapop")
+}
+
 /** Parse BestiaPop-style `Artist_Title` filenames (underscores → spaces). */
 fun parseFilenameMetadataHints(nameWithoutExtension: String): FilenameMetadataHints {
     val cleaned = nameWithoutExtension.trim()

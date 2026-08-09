@@ -26,9 +26,22 @@ class SongPathNormalizerTest {
     }
 
     @Test
+    fun fileName_usesBasename() {
+        assertEquals(
+            "a.mp3",
+            SongPathNormalizer.fileName("/storage/emulated/0/Music/BestiaPop/a.mp3")
+        )
+    }
+
+    @Test
     fun isUnderBestiaPop_detectsAppFolder() {
         assertTrue(SongPathNormalizer.isUnderBestiaPop("/storage/emulated/0/Music/BestiaPop/x.mp3"))
         assertTrue(SongPathNormalizer.isUnderBestiaPop("Music/BestiaPop"))
+        assertTrue(
+            SongPathNormalizer.isUnderBestiaPop(
+                "/storage/emulated/0/Android/data/com.bestiapop.android/files/Music/BestiaPop/x.mp3"
+            )
+        )
         assertFalse(SongPathNormalizer.isUnderBestiaPop("/storage/emulated/0/Download/x.mp3"))
     }
 

@@ -52,6 +52,7 @@ fun SongListItem(
     onStartRadio: (() -> Unit)? = null,
     onAddToPlaylist: () -> Unit = {},
     onEditMetadata: (() -> Unit)? = null,
+    onIdentify: (() -> Unit)? = null,
     onDelete: (() -> Unit)? = null
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
@@ -153,6 +154,7 @@ fun SongListItem(
                         onStartRadio = onStartRadio,
                         onAddToPlaylist = onAddToPlaylist,
                         onEditMetadata = onEditMetadata,
+                        onIdentify = onIdentify,
                         onDelete = onDelete
                     )
                 }
@@ -169,6 +171,7 @@ private fun SongOptionsMenu(
     onStartRadio: (() -> Unit)?,
     onAddToPlaylist: () -> Unit,
     onEditMetadata: (() -> Unit)?,
+    onIdentify: (() -> Unit)?,
     onDelete: (() -> Unit)?
 ) {
     DropdownMenu(
@@ -205,6 +208,15 @@ private fun SongOptionsMenu(
                 onAddToPlaylist()
             }
         )
+        if (onIdentify != null) {
+            DropdownMenuItem(
+                text = { Text("Identificar…") },
+                onClick = {
+                    onDismiss()
+                    onIdentify()
+                }
+            )
+        }
         if (onEditMetadata != null) {
             DropdownMenuItem(
                 text = { Text("Editar información") },

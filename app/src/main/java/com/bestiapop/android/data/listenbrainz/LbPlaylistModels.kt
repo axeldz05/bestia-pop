@@ -2,6 +2,8 @@ package com.bestiapop.android.data.listenbrainz
 
 import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.data.model.Song
+import com.bestiapop.android.data.model.TrackIdentity
+import com.bestiapop.android.data.model.TrackMeta
 
 data class LbPlaylistSummary(
     val mbid: String,
@@ -11,11 +13,22 @@ data class LbPlaylistSummary(
 )
 
 data class LbPlaylistTrack(
-    val title: String,
-    val artist: String,
-    val recordingMbid: String? = null,
-    val releaseName: String? = null
-)
+    val identity: TrackIdentity,
+    val recordingMbid: String? = null
+) : TrackMeta by identity {
+    companion object {
+        /** L2: flat LB playlist construction (identity is Level 1). */
+        operator fun invoke(
+            title: String,
+            artist: String,
+            album: String = "",
+            recordingMbid: String? = null
+        ) = LbPlaylistTrack(
+            identity = TrackIdentity(title = title, artist = artist, album = album),
+            recordingMbid = recordingMbid
+        )
+    }
+}
 
 data class LbPlaylistDetail(
     val summary: LbPlaylistSummary,
@@ -28,9 +41,7 @@ data class MatchedLbTrack(
 ) {
     fun toPlayableItem(): PlayableItem = PlayableItem.fromLibraryOrRemote(
         local = localSong,
-        artist = track.artist,
-        title = track.title,
-        album = track.releaseName,
+        identity = track.identity,
         recordingMbid = track.recordingMbid
     )
 }

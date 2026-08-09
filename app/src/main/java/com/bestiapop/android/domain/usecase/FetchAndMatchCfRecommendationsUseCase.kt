@@ -72,10 +72,8 @@ class FetchAndMatchCfRecommendationsUseCase(
             val key = MatchListenBrainzTracksUseCase.matchKey(artist, title)
             matches.add(
                 MatchedCfTrack(
+                    identity = meta.identity,
                     recordingMbid = rec.recordingMbid,
-                    title = title,
-                    artist = artist,
-                    album = meta.releaseName,
                     score = rec.score,
                     localSong = if (key.isNotEmpty()) libraryIndex[key] else null
                 )

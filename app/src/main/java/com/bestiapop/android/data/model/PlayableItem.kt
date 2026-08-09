@@ -81,6 +81,17 @@ sealed class PlayableItem : TrackMeta {
             resolved = resolved
         )
 
+        /** L2: library hit → Local; else ephemeral Remote from identity. */
+        fun fromLibraryOrRemote(
+            local: Song?,
+            identity: TrackIdentity,
+            recordingMbid: String? = null
+        ): PlayableItem = if (local != null) {
+            local.toPlayable()
+        } else {
+            remoteFrom(identity = identity, recordingMbid = recordingMbid)
+        }
+
         /** L2: library hit → Local; else ephemeral Remote (default YT query). */
         fun fromLibraryOrRemote(
             local: Song?,
@@ -89,20 +100,16 @@ sealed class PlayableItem : TrackMeta {
             album: String? = null,
             artworkUri: String? = null,
             recordingMbid: String? = null
-        ): PlayableItem {
-            val song = local
-            return if (song != null) {
-                song.toPlayable()
-            } else {
-                remoteFrom(
-                    artist = artist,
-                    title = title,
-                    album = album,
-                    artworkUri = artworkUri,
-                    recordingMbid = recordingMbid
-                )
-            }
-        }
+        ): PlayableItem = fromLibraryOrRemote(
+            local = local,
+            identity = TrackIdentity(
+                title = title,
+                artist = artist,
+                album = album.orEmpty(),
+                artworkUri = artworkUri
+            ),
+            recordingMbid = recordingMbid
+        )
     }
 }
 

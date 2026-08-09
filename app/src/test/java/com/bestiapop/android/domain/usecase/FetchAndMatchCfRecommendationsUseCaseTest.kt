@@ -49,7 +49,7 @@ class FetchAndMatchCfRecommendationsUseCaseTest {
                             recordingMbid = "mbid-remote",
                             title = "Remote Hit",
                             artist = "Artist B",
-                            releaseName = "EP"
+                            album = "EP"
                         )
                     )
                 )

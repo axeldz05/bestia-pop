@@ -70,9 +70,9 @@ class ListenBrainzRadio(
 
         for (rec in recordings) {
             if (results.size >= limit) break
-            val meta = metaByMbid[rec.recordingMbid]
-            val title = meta?.title?.takeIf { it.isNotBlank() } ?: continue
-            val artist = meta?.artist?.takeIf { it.isNotBlank() }
+            val meta = metaByMbid[rec.recordingMbid] ?: continue
+            val title = meta.title.takeIf { it.isNotBlank() } ?: continue
+            val artist = meta.artist.takeIf { it.isNotBlank() }
                 ?: artistFallback[rec.recordingMbid]
                 ?: continue
 
@@ -80,13 +80,12 @@ class ListenBrainzRadio(
             if (key.isEmpty() || key in localSeen) continue
             localSeen.add(key)
 
-            val local = libraryIndex[key]
+            val identity = if (artist == meta.artist) meta.identity
+            else meta.identity.copy(artist = artist)
             results.add(
                 PlayableItem.fromLibraryOrRemote(
-                    local = local,
-                    artist = artist,
-                    title = title,
-                    album = meta?.releaseName,
+                    local = libraryIndex[key],
+                    identity = identity,
                     recordingMbid = rec.recordingMbid
                 )
             )

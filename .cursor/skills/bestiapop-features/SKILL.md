@@ -79,7 +79,7 @@ Herencia visual en lista: `GetLibrarySongsUseCase.execute` unifica artwork falta
 
 CRUD + membresía vía `IMusicRepository`:
 `createPlaylist`, `updatePlaylist`, `deletePlaylist`, `addSongToPlaylist`, `removeSongFromPlaylist`.
-Import LB: matched + `PlaylistPendingTrack` (`getPlaylistPendingTracksFlow` / `downloadPlaylistPendingTracks`).
+Import LB: matched + `PlaylistPendingTrack` (`identity` + mbid/playlist extras; `getPlaylistPendingTracksFlow` / `downloadPlaylistPendingTracks`). Entity Room plana: columna `releaseName` ↔ `identity.album`.
 Flows: `playlistsFlow`, `getPlaylistSongsFlow`, `getPlaylistDetailsFlow`.
 UI: `PlaylistsScreen`. Detalle abierto = `PlaylistDetailNav` persistido (`openLocalPlaylist` / `closePlaylistDetail`); id inválido al restore → lista general.
 
@@ -211,7 +211,7 @@ Centro de descargas online → sección 2 (`DownloadsScreen`, tab Descargas).
 | Abrir playlist | `openListenBrainzPlaylist` + `MatchListenBrainzTracksUseCase` |
 | Map a cola | `MatchedLbPlaylist.toPlayableItems` / `MatchedLbTrack.toPlayableItem` |
 | Play / shuffle / índice | `playListenBrainzPlaylist` / `shuffleListenBrainzPlaylist` / `playListenBrainzPlaylistAt` |
-| Import locales + pendientes | `saveListenBrainzPlaylistAsLocal` → `ImportListenBrainzPlaylistUseCase.createLocalFromMatched` (+ `PlaylistPendingTrack`) |
+| Import locales + pendientes | `saveListenBrainzPlaylistAsLocal` → `ImportListenBrainzPlaylistUseCase.createLocalFromMatched` (`PlaylistPendingTrack(identity = track.identity)`; unmatched → `remoteFrom(identity).toOnlineCatalogTrack`) |
 | Import + descarga ya | `importListenBrainzPlaylistWithDownloads` / `downloadPlaylistPendingTracks` → `runTrackedDownload` (`LB_IMPORT`) |
 | Descarga manual Remote | `downloadRemoteItem` → `runTrackedDownload` (`DISCOVER`); UI `RemoteTrackPlaceholderRow.onDownload` en detalle LB/CF |
 | CF Recomendados | `ListenBrainzClient.fetchCfRecordingRecommendations` → `FetchAndMatchCfRecommendationsUseCase` → `refreshCfRecommendations` / `openCfRecommendations` / `playCfRecommendations` / `shuffleCfRecommendations` / `playCfAt` |

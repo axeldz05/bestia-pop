@@ -58,22 +58,24 @@ private class ScanProgressTicker(
     }
 }
 
-private fun PlaylistPendingTrackEntity.toPendingTrack() = PlaylistPendingTrack(
+internal fun PlaylistPendingTrackEntity.toPendingTrack() = PlaylistPendingTrack(
+    identity = TrackIdentity(
+        title = title,
+        artist = artist,
+        album = releaseName.orEmpty()
+    ),
     id = id,
     playlistId = playlistId,
-    title = title,
-    artist = artist,
-    releaseName = releaseName,
     recordingMbid = recordingMbid,
     position = position
 )
 
-private fun PlaylistPendingTrack.toEntity() = PlaylistPendingTrackEntity(
+internal fun PlaylistPendingTrack.toEntity() = PlaylistPendingTrackEntity(
     id = id,
     playlistId = playlistId,
     title = title,
     artist = artist,
-    releaseName = releaseName,
+    releaseName = album.takeIf { it.isNotBlank() },
     recordingMbid = recordingMbid,
     position = position
 )

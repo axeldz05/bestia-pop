@@ -34,7 +34,7 @@ Si solo hay un bugfix local sin cambio de diseño, no hace falta tocar skills.
 - Portada de **álbum** propaga a canciones; portada de **playlist** no
 - Imágenes elegidas por el usuario → copiar a `context.filesDir`
 - Preferir patrones y nombres ya usados en `MusicPlayerViewModel`, `MusicRepository`, use cases existentes
-- Metadatos de canción compartidos → `TrackIdentity` / `TrackMeta` (`data/model/TrackIdentity.kt`). No clonar DTO satélite (title/artist/álbum/art/duration/trackNumber) por sistema. Wrappers solo para extras: score (`IdentifyCandidate`), mbid/stream (`PlayableItem.Remote`), genre de archivo (`AudioFileMetadata`), columnas Room (`Song`/`SongEntity` planos). Si un campo nuevo habría que pegarlo en >2 data classes de track, el modelo está mal.
+- Metadatos de canción compartidos → `TrackIdentity` / `TrackMeta` (`data/model/TrackIdentity.kt`). No clonar DTO satélite (title/artist/álbum/art/duration/trackNumber) por sistema. Wrappers solo para extras: score (`IdentifyCandidate` / `MatchedCfTrack`), mbid/stream (`PlayableItem.Remote`, `LbPlaylistTrack` / `LbRecordingMetadata`), genre de archivo (`AudioFileMetadata`), pending (`PlaylistPendingTrack`), columnas Room (`Song`/`SongEntity` planos; `PlaylistPendingTrackEntity.releaseName` ↔ `identity.album`). Si un campo nuevo habría que pegarlo en >2 data classes de track, el modelo está mal.
 - No crear markdown de docs extras salvo que el usuario lo pida; los skills anteriores son el lugar para documentar arquitectura/features
 
 ## Build / deploy

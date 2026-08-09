@@ -45,13 +45,13 @@ class ImportListenBrainzPlaylistUseCaseTest {
     ): MatchedLbPlaylist {
         val matchRows = matched.map {
             MatchedLbTrack(
-                track = LbPlaylistTrack(title = it.title, artist = it.artist, releaseName = it.album),
+                track = LbPlaylistTrack(title = it.title, artist = it.artist, album = it.album),
                 localSong = it
             )
         }
         val remoteRows = unmatched.map { (artist, title) ->
             MatchedLbTrack(
-                track = LbPlaylistTrack(title = title, artist = artist, releaseName = "Rel"),
+                track = LbPlaylistTrack(title = title, artist = artist, album = "Rel"),
                 localSong = null
             )
         }

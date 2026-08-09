@@ -45,4 +45,4 @@ Always maintain access to three distinct levels of API granularity:
 * Step 4: Verify that a developer can still weave raw primitive calls between your new compressed helpers.
 
 ### Track identity (BestiaPop)
-High-level wrappers (`OnlineCatalogTrack.withIdentity`, `PlayableItem.remoteFrom(artist, title, …)`, `OnlineCatalogTrack(id, title, artist, …)` invoke) must not delete Level 1: `identity.copy`, `remoteFrom(identity)`, and the primary `OnlineCatalogTrack(identity, id, …)` constructor stay public. Step down when a call site needs a one-off field tweak.
+High-level wrappers (`OnlineCatalogTrack.withIdentity`, `PlayableItem.remoteFrom(artist, title, …)`, `fromLibraryOrRemote(artist, title, …)`, `OnlineCatalogTrack` / `LbPlaylistTrack` / `LbRecordingMetadata` invoke) must not delete Level 1: `identity.copy`, `remoteFrom(identity)`, `fromLibraryOrRemote(identity)`, and primary constructors that take `TrackIdentity` stay public. Step down when a call site needs a one-off field tweak.

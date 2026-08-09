@@ -72,7 +72,7 @@ class ListenBrainzRadioParseTest {
         val meta = map.getValue("e97f805a-ab48-4c52-855e-07049142113d")
         assertEquals("Glory Box", meta.title)
         assertEquals("Portishead", meta.artist)
-        assertEquals("Dummy", meta.releaseName)
+        assertEquals("Dummy", meta.album)
     }
 
     @Test

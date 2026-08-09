@@ -35,7 +35,7 @@ class MatchedLbPlaylistPlayableTest {
                         title = "Remote Jam",
                         artist = "Artist B",
                         recordingMbid = "r2",
-                        releaseName = "EP"
+                        album = "EP"
                     ),
                     localSong = null
                 ),

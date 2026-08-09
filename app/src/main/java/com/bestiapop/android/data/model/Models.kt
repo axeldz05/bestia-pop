@@ -147,19 +147,15 @@ data class Playlist(
 
 /** Metadata-only playlist member awaiting download (no audio file / no CDN URL). */
 data class PlaylistPendingTrack(
+    val identity: TrackIdentity,
     val id: Long = 0,
     val playlistId: Long,
-    val title: String,
-    val artist: String,
-    val releaseName: String? = null,
     val recordingMbid: String? = null,
     val position: Int = 0
-) {
+) : TrackMeta by identity {
     fun toOnlineCatalogTrack(): OnlineCatalogTrack =
         PlayableItem.remoteFrom(
-            artist = artist,
-            title = title,
-            album = releaseName,
+            identity = identity,
             recordingMbid = recordingMbid
         ).toOnlineCatalogTrack(provider = "ListenBrainz")
 }

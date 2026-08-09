@@ -46,10 +46,8 @@ class ImportListenBrainzPlaylistUseCase(
             if (row.localSong != null) return@mapIndexedNotNull null
             val track = row.track
             PlaylistPendingTrack(
+                identity = track.identity,
                 playlistId = playlistId,
-                title = track.title,
-                artist = track.artist,
-                releaseName = track.releaseName,
                 recordingMbid = track.recordingMbid,
                 position = index
             )
@@ -61,13 +59,10 @@ class ImportListenBrainzPlaylistUseCase(
     fun unmatchedCatalogTracks(matched: MatchedLbPlaylist): List<OnlineCatalogTrack> =
         matched.matches
             .filter { it.localSong == null }
-            .map { it.track }
-            .map { track ->
+            .map { row ->
                 PlayableItem.remoteFrom(
-                    artist = track.artist,
-                    title = track.title,
-                    album = track.releaseName,
-                    recordingMbid = track.recordingMbid
+                    identity = row.track.identity,
+                    recordingMbid = row.track.recordingMbid
                 ).toOnlineCatalogTrack(provider = "ListenBrainz")
             }
 

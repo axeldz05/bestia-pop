@@ -9,6 +9,7 @@ import com.bestiapop.android.data.listenbrainz.LbPlaylistSummary
 import com.bestiapop.android.data.listenbrainz.LbPlaylistTrack
 import com.bestiapop.android.data.listenbrainz.LbRadioRecording
 import com.bestiapop.android.data.listenbrainz.LbRecordingMetadata
+import com.bestiapop.android.data.model.TrackIdentity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -385,10 +386,12 @@ object ListenBrainzClient {
             val releaseName = trackObj.optString("album").takeIf { it.isNotBlank() }
             tracks.add(
                 LbPlaylistTrack(
-                    title = title.ifBlank { "Unknown Title" },
-                    artist = artist.ifBlank { "Unknown Artist" },
-                    recordingMbid = recordingMbid,
-                    releaseName = releaseName
+                    identity = TrackIdentity(
+                        title = title.ifBlank { "Unknown Title" },
+                        artist = artist.ifBlank { "Unknown Artist" },
+                        album = releaseName.orEmpty()
+                    ),
+                    recordingMbid = recordingMbid
                 )
             )
         }
@@ -556,10 +559,12 @@ object ListenBrainzClient {
             val releaseObj = entry.optJSONObject("release")
             val releaseName = releaseObj?.optString("name")?.takeIf { it.isNotBlank() }
             result[mbid] = LbRecordingMetadata(
-                recordingMbid = mbid,
-                title = title,
-                artist = artist,
-                releaseName = releaseName
+                identity = TrackIdentity(
+                    title = title,
+                    artist = artist,
+                    album = releaseName.orEmpty()
+                ),
+                recordingMbid = mbid
             )
         }
         return result

@@ -18,8 +18,8 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 | Application + Crashlytics init | `BestiaPopApplication.kt` |
 | Crash non-fatals / keys | `data/util/CrashReporter.kt` |
 | Activity | `MainActivity.kt` (`enableEdgeToEdge` — targetSdk 36) |
-| Manifest / permisos / services | `app/src/main/AndroidManifest.xml` |
-| Gradle app | `app/build.gradle.kts` (`signingConfigs.release`, debug+release same cert si hay keystore, `versionCode`/`versionName` desde `version.properties`, `targetSdk` 36, release R8 + `ndk.debugSymbolLevel`) |
+| Manifest / permisos / services | `app/src/main/AndroidManifest.xml` (`AD_ID` + `ACCESS_ADSERVICES_*` `tools:node="remove"`; meta `google_analytics_adid_collection_enabled` / `firebase_analytics_collection_deactivated`) |
+| Gradle app | `app/build.gradle.kts` (`signingConfigs.release`, debug+release same cert si hay keystore, `versionCode`/`versionName` desde `version.properties`, `targetSdk` 36, release R8 + `ndk.debugSymbolLevel`, Firebase Crashlytics sin Analytics) |
 | R8 keep rules | `app/proguard-rules.pro` (keep `com.bestiapop.android.**`, Ktor/Room; mapping en AAB) |
 | Versión release | `version.properties` (`VERSION_CODE` / `VERSION_NAME`; bump en `deploy-play.sh`) |
 | Deploy dispositivo | `install.sh` (`--debug` default, `--release`; `adb install -r -d`, fallback `cmd package uninstall -k`; `appops RUN_ANY_IN_BACKGROUND allow`) |
@@ -37,8 +37,8 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 | Shell + bottom nav | `ui/screens/MainScreen.kt` (`ConfirmMergeAlbumsDialog` vía `pendingAlbumMerge`) |
 | System back (exit doble + orquestación) | `MainScreen` `BackHandler` + `SnackbarHost`; nested en screens abajo; identify review overlay |
 | Biblioteca | `ui/screens/LibraryScreen.kt` (`BackHandler`: multi-select / addition / album-artist / search; `LibrarySongListHost` + `rememberSongActionDialogs`) |
-| Identify review | `ui/screens/IdentifyReviewScreen.kt` (`IdentifyCandidateRow`, `IdentifySearchBlock` above candidates; Aplicar automático / Omitir todas; overlay en `MainScreen`) |
-| Lista canciones / álbumes / artistas | `ui/screens/library/LibrarySongList.kt`, `LibrarySongListHost.kt` (`LibrarySongListActions`, `rememberSongActionDialogs` / `SongActionDialogsHost`, `AlbumEditDialogsHost`), `LibraryAlbumGrid.kt` (`AlbumEditCoverMenuItems`), `LibraryArtistList.kt`, `LibraryDialogs.kt` (`EditSongMetadataDialog` Nº de pista, `EditAlbumMetadataDialog`, `ConfirmMergeAlbumsDialog`, `SetAlbumArtworkDialog`), `LibraryProgressBanner.kt` |
+| Identify review | `ui/screens/IdentifyReviewScreen.kt` (`IdentifyReviewOverview`, `IdentifyAlbumGroupCard`, `IdentifyCandidateRow`, `IdentifySearchBlock`; Aplicar automático / Omitir todas / Aplicar grupo; overlay en `MainScreen`) |
+| Lista canciones / álbumes / artistas | `ui/screens/library/LibrarySongList.kt`, `LibrarySongListHost.kt` (`LibrarySongListActions`, `rememberSongActionDialogs` / `SongActionDialogsHost`, `AlbumEditDialogsHost`), `LibraryAlbumGrid.kt` (`AlbumEditCoverMenuItems`), `LibraryArtistList.kt`, `LibraryDialogs.kt` (`EditSongMetadataDialog` Nº de pista, `EditAlbumMetadataDialog`, `ConfirmMergeAlbumsDialog`, `SetAlbumArtworkDialog`), `LibraryProgressBanner.kt` + `IdentifyPendingBanner` |
 | Playlists | `ui/screens/PlaylistsScreen.kt` (`BackHandler`: CF → LB → local detail; play/shuffle vía `LabeledPlayShuffleButtons` + `playCollection`/`shuffleCollection`; `MatchedTrackLazyColumn`; `matchedStreamCountLabel`; `rememberSongQueueActions`) |
 | Ajustes / ListenBrainz | `ui/screens/SettingsScreen.kt` (`BackHandler` sección; home **Invitar amigos** → Group + Play opt-in), `ListenBrainzSettingsScreen.kt` |
 | Ajustes / Reproducción | `ui/screens/PlaybackSettingsScreen.kt` (`SettingsScreen` sección `Playback`) |
@@ -77,7 +77,7 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 | Playlist / nav detail | `ui/state/PlaylistDetailNav.kt` (`None` / `Local` / `ListenBrainz` / `CfRecommendations`) |
 | Discover playback origin | `ui/state/DiscoverPlaybackOrigin.kt` (`None` / `ListenBrainz` / `CfRecommendations`); VM `discoverPlaybackOrigin` |
 | NP song/album actions | `ui/screens/NowPlayingActions.kt` (`NowPlayingActionsMenu`) |
-| Identify review state | `ui/state/IdentifyReviewState.kt` (`IdentifyReviewItem`, `IdentifyReviewState` `isVisible` / `pendingCount` / `canApplyRemaining`) |
+| Identify review state | `ui/state/IdentifyReviewState.kt` (`IdentifyReviewItem`, `IdentifyReviewPhase`, `IdentifyReviewState` `isVisible` / `pendingCount` / `albumGroups` / `canApplyRemaining` / `identifyReviewFromPersisted`) |
 | Theme Compose | `ui/theme/Theme.kt`, `ThemePresets.kt` |
 
 ## Domain
@@ -91,6 +91,7 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 | Album name normalize | `domain/util/AlbumNames.kt` | `normalizeAlbumName` / `albumNamesMatch` (merge conflict + saves) |
 | Album track encode | `data/util/AlbumTrackNumbers.kt` | `encodeAlbumTrack` / `albumTrackDisplayNumber` / `albumDiscNumber` / `albumTrackSortKey` / `parseCdTrackNumber` |
 | Identify ranking | `domain/util/IdentifyRanking.kt` | `score` / `rank` / `confidence` / `hasSevereConflict` / `stripTitleNoise` / `isGenericAlbum` / `isPlaceholderArtist` / `cleanIdentityTitle` / `strongVersionMarkers`; `Query.sourceArtist`/`sourceTitle`/`sourceAlbum` |
+| Identify album groups | `domain/util/IdentifyAlbumGroups.kt` | `IdentifyAlbumGroup` / `clusterIdentifyAlbumGroups` / `albumGroupKey` |
 | `ImportListenBrainzPlaylistUseCase` | `domain/usecase/ImportListenBrainzPlaylistUseCase.kt` | create Room playlist: matched + `PlaylistPendingTrack` metadata |
 | `FetchAndMatchCfRecommendationsUseCase` | `domain/usecase/FetchAndMatchCfRecommendationsUseCase.kt` | CF mbids → metadata → Local/Remote |
 | `RadioEngine` | `domain/radio/RadioEngine.kt` | orquesta KNOWN / NEW / BOTH; fill LB→CF→`SimilarTracksProvider`; `interleaveEquitable`; `RadioSuggestResult` |
@@ -123,7 +124,8 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 | Theme DataStore | `data/preferences/ThemePreferencesRepository.kt` |
 | Library initial scan + UI prefs | `data/preferences/LibraryPreferencesRepository.kt` (`isInitialScanCompleted`, `displaySettingsFlow`, `navSnapshotFlow`, `setSortOptionName` / `setViewModeName` / `setNavSnapshot`); codec `LibraryUiPreferences.kt` (`LibraryUiPreferencesCodec`, `UiNavSnapshot`, `LibraryDisplaySettings`) |
 | Playback / sonido + modos | `data/preferences/PlaybackPreferencesRepository.kt` (`PlaybackSettings`, `PlaybackModeRestore`, `PlaybackModeClear.afterManualPlay` / `afterSkip`, `parseRepeatModeName`, `MAX_VOLUME_BOOST_GAIN_MB`, `stereoLeftGain` / `stereoRightGain`, `rememberShuffleOnLaunch` / `rememberRepeatOnLaunch` / `autoplayOnLaunch`, `lastShuffleEnabled` / `lastRepeatMode`, `clearShuffleOnManualPlay` / `clearRepeatAllOnManualPlay` / `clearRepeatOneOnManualPlay`, `clearShuffleOnSkip` / `clearRepeatOneOnSkip`); writes 1-key vía `DataStorePrefs.kt` `put` |
-| Active downloads persist | `data/preferences/ActiveDownloadsStore.kt` (`ActiveDownloadCodec` encode/decode `trackNumber` en OCT, `activeDownloadBadgeCount`) |
+| Active downloads persist | `data/preferences/ActiveDownloadsStore.kt` (`ActiveDownloadCodec` encode/decode `trackNumber` en OCT, `activeDownloadBadgeCount`); track JSON `data/util/CatalogTrackJson.kt` |
+| Identify review persist | `data/preferences/IdentifyReviewStore.kt` (`IdentifyReviewCodec`, `PersistedIdentifyReviewQueue`; sin `audioUrl` CDN) |
 | Last-played + cola persistida | `data/preferences/PlaybackSessionStore.kt` (`LastPlayedCodec`, `QueueSnapshotCodec`, `PlaybackHydration.hydrateQueue`, `saveSession`, `LastPlayedSnapshot(identity)`, `QueueSnapshot` + `shufflePlayOrder`, `PersistedQueueItem.Local(songId, uri, identity)`, `HydratedQueue`) |
 | Wrap / trim / shuffle índices | `data/playback/PlaybackQueueOrder.kt` (`rotateToStart`, `trimHistory`, `shufflePlayOrder`, `reshufflePlayOrder`, `insertAfterCurrent`, `appendToPlayOrder`, `removeFromPlayOrder`, `moveInPlayOrder`, `remapPlayOrder`, `MAX_QUEUE_HISTORY`) |
 | ListenBrainz prefs | `data/preferences/ListenBrainzPreferencesRepository.kt` |
@@ -171,6 +173,8 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 | Path normalize | `app/src/test/.../SongPathNormalizerTest.kt` |
 | Filename metadata hints | `app/src/test/.../FilenameMetadataHintsTest.kt` (`looksLikeStoragePath`) |
 | Identify ranking | `app/src/test/.../IdentifyRankingTest.kt` |
+| Identify album groups | `app/src/test/.../IdentifyAlbumGroupsTest.kt` |
+| Identify review codec / hydrate | `app/src/test/.../IdentifyReviewCodecTest.kt` |
 | TrackIdentity merge / toIdentity | `app/src/test/.../TrackIdentityTest.kt` |
 | Pending mapper album↔releaseName | `app/src/test/.../PlaylistPendingTrackMapperTest.kt` |
 | UI functional library | `app/src/androidTest/.../LibraryScreenFunctionalTest.kt` |
@@ -179,7 +183,7 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 
 Mantener esta lista alineada con `MusicPlayerViewModel.kt`:
 
-- Biblioteca: `songsState`, `albumsState`, `artistsState`, `searchQuery`, `sortOption`, `setSortOption`, `libraryViewMode`, `setLibraryViewMode`, `toggleLibraryViewMode`, `libraryTab`, `setLibraryTab`, `libraryArtistName`, `libraryAlbumName`, `openLibraryAlbum`, `openLibraryArtist`, `popLibraryNested`, `selectedNavIndex`, `setSelectedNavIndex`, `openDownloadsTabTransient`, `playlistDetail`, `openLocalPlaylist`, `openListenBrainzPlaylistDetail`, `openCfRecommendationsDetail`, `closePlaylistDetail`, `dismissDiscoverDetails`, `buildLibraryListItems`, `sortSongsWithinAlbum`, `songsForAlbum`, `songsFromLibraryListItems`, `libraryJobProgress`, `importFolder`, `ensureInitialLibraryImport`, `refreshLibraryFromDisk`, `identifySongs`, `identifySongForReview`, `identifyReview`, `previewIdentifyLocalSong`, `previewIdentifyCandidate`, `applySelectedIdentifyCandidate`, `skipIdentifyReviewItem`, `searchIdentifyCandidates`, `dismissIdentifyReview`, `showIdentifyReview`, `applyRemainingIdentifySuggestions`, `skipAllIdentifyReview`
+- Biblioteca: `songsState`, `albumsState`, `artistsState`, `searchQuery`, `sortOption`, `setSortOption`, `libraryViewMode`, `setLibraryViewMode`, `toggleLibraryViewMode`, `libraryTab`, `setLibraryTab`, `libraryArtistName`, `libraryAlbumName`, `openLibraryAlbum`, `openLibraryArtist`, `popLibraryNested`, `selectedNavIndex`, `setSelectedNavIndex`, `openDownloadsTabTransient`, `playlistDetail`, `openLocalPlaylist`, `openListenBrainzPlaylistDetail`, `openCfRecommendationsDetail`, `closePlaylistDetail`, `dismissDiscoverDetails`, `buildLibraryListItems`, `sortSongsWithinAlbum`, `songsForAlbum`, `songsFromLibraryListItems`, `libraryJobProgress`, `importFolder`, `ensureInitialLibraryImport`, `refreshLibraryFromDisk`, `identifySongs`, `identifySongForReview`, `identifyReview`, `previewIdentifyLocalSong`, `previewIdentifyCandidate`, `applySelectedIdentifyCandidate`, `skipIdentifyReviewItem`, `searchIdentifyCandidates`, `dismissIdentifyReview`, `showIdentifyReview`, `applyRemainingIdentifySuggestions`, `skipAllIdentifyReview`, `applyIdentifyAlbumGroup`, `startIdentifyItemReview`, `returnIdentifyReviewOverview`
 - Playback: `playSong`, `playCollection`, `playPlayableCollection` (`rotate`, `applyManualModes`, `startShuffled`), `playMatchedCollection`, `shufflePlayableCollection`, `shuffleMatchedCollection`, `shuffleCollection`, `enqueueCollection`, `enqueueRemoteDownload`, `playNextInQueue`, `playNextBatch`, `skipToQueueIndex`, `moveDisplayQueueItem`, `currentItem`, `currentSong`, `queue`, `displayQueue`, `resolvingRemote`, `repeatMode`, `isShuffle`, `syncUiFromController`, `maybeSeedIdlePlayer`, `applyHydratedQueue`, `maybeAutoplayAfterIdleSeed`, `togglePlayPause`, `toggleShuffle`, `toggleRepeatMode`, `restorePlaybackModes`, `applyManualPlayModes`, `applySkipModes`, `volumeLevel`, `volumeBoostEnabled`, `setVolume`, `setVolumeBoostEnabled`, `stereoLeftGain`, `stereoRightGain`, `setStereoLeftGain`, `setStereoRightGain`, `resetStereoBalance`, `rememberShuffleOnLaunch`, `rememberRepeatOnLaunch`, `autoplayOnLaunch`, `setRememberShuffleOnLaunch`, `setRememberRepeatOnLaunch`, `setAutoplayOnLaunch`, `clearShuffleOnManualPlay`, `clearRepeatAllOnManualPlay`, `clearRepeatOneOnManualPlay`, `clearShuffleOnSkip`, `clearRepeatOneOnSkip`, `setClearShuffleOnManualPlay`, `setClearRepeatAllOnManualPlay`, `setClearRepeatOneOnManualPlay`, `setClearShuffleOnSkip`, `setClearRepeatOneOnSkip`, `discoverPlaybackOrigin`, `playlistsContainingSong`
 - Radio: `startRadio` / `stopRadio` / `setRadioPreferredMode`, `suggestRadioWithRetry`, `radioMode`, `radioStatusLabel`, `RADIO_LOADING_LABEL`, `radioModeLabel`, `replaceUpcomingWithRadio`, `maybeAutoStartRadioOnQueueEnd`
 - Artwork: `setAlbumArtwork`, `saveAlbumMetadata`, `requestSaveAlbumMetadata`, `confirmPendingAlbumMerge`, `dismissPendingAlbumMerge`, `mergeAlbumInto`

@@ -65,6 +65,7 @@ import com.bestiapop.android.ui.components.rememberSongQueueActions
 import com.bestiapop.android.ui.screens.library.AlbumEditDialogsHost
 import com.bestiapop.android.ui.screens.library.LibraryAlbumGrid
 import com.bestiapop.android.ui.screens.library.LibraryArtistList
+import com.bestiapop.android.ui.screens.library.IdentifyPendingBanner
 import com.bestiapop.android.ui.screens.library.LibraryProgressBanner
 import com.bestiapop.android.ui.screens.library.LibrarySongListActions
 import com.bestiapop.android.ui.screens.library.LibrarySongListHost
@@ -94,6 +95,7 @@ fun LibraryScreen(
     val selectedAlbumName by viewModel.libraryAlbumName.collectAsState()
     val selectedArtistName by viewModel.libraryArtistName.collectAsState()
     val libraryJobProgress by viewModel.libraryJobProgress.collectAsState()
+    val identifyReview by viewModel.identifyReview.collectAsState()
 
     var sortMenuExpanded by remember { mutableStateOf(false) }
 
@@ -388,6 +390,12 @@ fun LibraryScreen(
 
         libraryJobProgress?.let { job ->
             LibraryProgressBanner(progress = job)
+        }
+        if (identifyReview.pendingCount > 0 && !identifyReview.isVisible) {
+            IdentifyPendingBanner(
+                pendingCount = identifyReview.pendingCount,
+                onReview = { viewModel.showIdentifyReview() }
+            )
         }
 
         // Main Quick Play/Shuffle Action Header

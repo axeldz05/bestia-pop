@@ -20,11 +20,11 @@ Módulo único Gradle: `:app`. Nombre del proyecto: **BestiaPop**.
 | Estado UI | `MusicPlayerViewModel` (AndroidViewModel) + StateFlow |
 | Reproducción | Media3 ExoPlayer + `MediaLibraryService` (`MusicService`) |
 | Persistencia | Room (`bestiapop_music_db`, v3) |
-| Preferencias | DataStore (`ThemePreferencesRepository`, `ListenBrainzPreferencesRepository`, `PlaybackPreferencesRepository`, `LibraryPreferencesRepository` display+nav, `ActiveDownloadsStore`, `PlaybackSessionStore` last-played + cola) |
+| Preferencias | DataStore (`ThemePreferencesRepository`, `ListenBrainzPreferencesRepository`, `PlaybackPreferencesRepository`, `LibraryPreferencesRepository` display+nav, `ActiveDownloadsStore`, `IdentifyReviewStore` cola identify, `PlaybackSessionStore` last-played + cola) |
 | Red / catálogo | OkHttp + `MetadataFetcher` (iTunes/Deezer) + `YouTubeExtractor` + `ListenBrainzClient` |
 | Sync WiFi | Ktor CIO embebido (`WebServerService`) |
 | Imágenes | Coil |
-| Crash reporting | Firebase Crashlytics vía `CrashReporter` (`BestiaPopApplication`) |
+| Crash reporting | Firebase Crashlytics vía `CrashReporter` (`BestiaPopApplication`); sin Analytics / sin `AD_ID` |
 
 minSdk 26 · targetSdk 36 · compileSdk 36 · Java/Kotlin 17 · AGP 9.3 + KSP · Room 2.8.
 Release: R8 minify + `ndk.debugSymbolLevel=SYMBOL_TABLE` (mapping y native symbols en el AAB para Play).

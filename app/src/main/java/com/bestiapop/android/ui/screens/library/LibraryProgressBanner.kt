@@ -1,5 +1,6 @@
 package com.bestiapop.android.ui.screens.library
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -66,6 +67,40 @@ fun LibraryProgressBanner(
             } else {
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
             }
+        }
+    }
+}
+
+@Composable
+fun IdentifyPendingBanner(
+    pendingCount: Int,
+    onReview: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    if (pendingCount <= 0) return
+    val label = if (pendingCount == 1) "1 por revisar" else "$pendingCount por revisar"
+    Surface(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp, vertical = 4.dp)
+            .clickable(onClick = onReview),
+        shape = RoundedCornerShape(10.dp),
+        color = MaterialTheme.colorScheme.tertiaryContainer,
+        tonalElevation = 2.dp
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onTertiaryContainer
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = "Tocá para retomar la revisión de identidad",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.85f)
+            )
         }
     }
 }

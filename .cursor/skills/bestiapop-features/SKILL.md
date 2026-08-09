@@ -97,7 +97,7 @@ UI: `PlaylistsScreen`. Detalle abierto = `PlaylistDetailNav` persistido (`openLo
 - Descarga con conflicto → `DuplicateSongException` / `DownloadConflict` → diálogo Sobrescribir | Crear nueva | Cancelar (`DownloadConflictPolicy`).
 - One-shot migrator histórico: branch `archive/library-dedup-v1-migrator` (no compila en LB).
 - Tags Unknown en reimport: `AudioFileMetadata.applyFilenameHints` / `parseFilenameMetadataHints` recuperan artist/title de `Artist_Title` (sin inventar álbum).
-- Identificar online (manual, multi-select, ⋮ o WiFi): Fase 1 lookup + score (`IdentifyRanking`); tags actuales de la canción son **fuente predominante** (`sourceArtist`/`sourceTitle`/`sourceAlbum`); auto-aplica solo **HIGH**; conflicto grave (artista/álbum/título distinto, versión, YouTube) → nunca HIGH. MEDIUM/LOW/NONE van a cola `IdentifyReviewScreen` (Usar / Omitir / Buscar otro / Aplicar automático a restantes / Omitir todas). Cerrar oculta overlay y **conserva** la cola (`pendingCount`). Progreso en `libraryJobProgress` + toast resumen.
+- Identificar online (manual, multi-select, ⋮ o WiFi): Fase 1 lookup + score (`IdentifyRanking`); tags actuales de la canción son **fuente predominante** (`sourceArtist`/`sourceTitle`/`sourceAlbum`); auto-aplica solo **HIGH**; conflicto grave (artista/álbum/título distinto, versión, YouTube) → nunca HIGH. MEDIUM/LOW/NONE van a cola persistida `IdentifyReviewStore` (DataStore; cold start hidrata, **no** abre overlay). UI `IdentifyReviewScreen`: overview por álbum sugerido (`clusterIdentifyAlbumGroups`, solo MEDIUM + álbum no genérico, size ≥ 2) o cola canción a canción (Usar / Omitir / Buscar otro / Aplicar automático a restantes = solo MEDIUM con suggested / Omitir todas / Aplicar grupo). Cerrar oculta overlay y **conserva** la cola (`pendingCount`); banner biblioteca + botón WiFi retoman. Re-identificar lote/WiFi **omite** songIds ya pendientes (cero red); ⋮ sobre pending abre ese ítem. Progreso en `libraryJobProgress` + toast resumen.
 - Álbum genérico (`IdentifyRanking.isGenericAlbum`: `YouTube`, `YouTube Music`, `Unknown Album`, `Single`, `Álbum`/`Album`) **sí** entra a identify; no se omite como ya identificado. Provider YouTube y versiones extra (live / letra / remix / cover…) nunca son HIGH → review. `cleanIdentityTitle` no persiste `+ letra` / `(Original Mix)`.
 - Descarga online: álbum genérico dispara `fetchFullTrackMetadata` → `TrackIdentity?`; no se guarda `"YouTube"` — fallback `"$artist - Single"`.
 - Import/resync/identify reportan progreso vía `LibraryScanProgress` / `LibraryJobProgress` (banner en biblioteca).
@@ -117,12 +117,13 @@ UI: `PlaylistsScreen`. Detalle abierto = `PlaylistDetailNav` persistido (`openLo
 | Enriquecer meta/letras | `enhanceSongMetadataAndLyrics` (portada/letras/duración; **no** artist/álbum) |
 | Proponer identidad | `proposeSongIdentity(song, customQuery?, force?)` → `IdentifyProposal` |
 | Aplicar candidato | `applySongIdentity(songId, candidate)` → `IdentifyResult` (`IdentifyCandidate` envuelve `OnlineCatalogTrack`; persiste `trackNumber` si `> 0`; si no conserva Room) |
-| Identificar lote | VM `identifySongs(songs, force, showReview)` → auto HIGH + cola review |
-| Identificar una | VM `identifySongForReview` (menú ⋮, `force=true`); UI `IdentifyReviewScreen` |
+| Identificar lote | VM `identifySongs(songs, force, showReview)` → auto HIGH + cola review; skip `pendingSongIds` |
+| Identificar una | VM `identifySongForReview` (menú ⋮; si pending → abre ítem, si no `force=true`); UI `IdentifyReviewScreen` |
 | Review preview | Local `previewIdentifyLocalSong`; candidato stream `previewIdentifyCandidate` → `candidate.track` → `playOnlineCatalogTrackAsStream` (`PreviewPlayPauseButton`) |
-| Review acciones | `applySelectedIdentifyCandidate` / `skipIdentifyReviewItem` / `searchIdentifyCandidates` / `dismissIdentifyReview` (oculta) / `showIdentifyReview` / `applyRemainingIdentifySuggestions` / `skipAllIdentifyReview`; “Buscar otro” arriba de candidatos, draft = artista+título (no path SAF) |
-| Ranking | `IdentifyRanking.score` / `rank` / `confidence` / `hasSevereConflict` / `isGenericAlbum` / `isPlaceholderArtist` / `cleanIdentityTitle`; `Query.sourceArtist`/`sourceTitle`/`sourceAlbum` |
-| Progreso biblioteca | `libraryJobProgress` (`LibraryJobKind.IMPORT` \| `IDENTIFY`) + `LibraryProgressBanner` |
+| Review acciones | `applySelectedIdentifyCandidate` / `skipIdentifyReviewItem` / `searchIdentifyCandidates` / `dismissIdentifyReview` (oculta) / `showIdentifyReview` / `applyRemainingIdentifySuggestions` (MEDIUM) / `skipAllIdentifyReview` / `applyIdentifyAlbumGroup` / `startIdentifyItemReview` / `returnIdentifyReviewOverview`; “Buscar otro” arriba de candidatos, draft = artista+título (no path SAF) |
+| Review persist | `IdentifyReviewStore` + `IdentifyReviewCodec` (sin `audioUrl` CDN); hydrate `identifyReviewFromPersisted` (huérfanos fuera); prune al borrar canciones |
+| Ranking | `IdentifyRanking.score` / `rank` / `confidence` / `hasSevereConflict` / `isGenericAlbum` / `isPlaceholderArtist` / `cleanIdentityTitle`; `Query.sourceArtist`/`sourceTitle`/`sourceAlbum`; grupos `clusterIdentifyAlbumGroups` |
+| Progreso biblioteca | `libraryJobProgress` (`LibraryJobKind.IMPORT` \| `IDENTIFY`) + `LibraryProgressBanner`; pending `IdentifyPendingBanner` |
 
 ## 7. Temas
 
@@ -176,8 +177,8 @@ State: `currentThemeState`.
 | Servidor local | `WebServerService` + toggle en `WebServerScreen` |
 | Omitir existentes | `GET /existing-files` = Room basename ∪ `MusicFileStore.listManagedNames` (`Music/BestiaPop`) |
 | Transferencias en app | `WebServerService.transfers` (`WifiTransferItem` / `WifiTransferState`); lista en `WebServerScreen` (progreso + `SongListItem` al completar) |
-| Identify al importar | Tags embebidos (ID3) → Room → mismo `identifySongs(force=true)`; conflictos en cola compartida |
-| Revisar conflictos | Botón `Revisar conflictos de información (N)` → `showIdentifyReview()`; N = `identifyReview.pendingCount` |
+| Identify al importar | Tags embebidos (ID3) → Room → mismo `identifySongs(force=true, showReview=false)`; conflictos en cola persistida compartida (omite ya pending) |
+| Revisar conflictos | Botón `Revisar conflictos de información (N)` → `showIdentifyReview()`; N = `identifyReview.pendingCount` (sobrevive process death) |
 | Dismiss | `WebServerService.dismissTransfer` |
 
 Centro de descargas online → sección 2 (`DownloadsScreen`, tab Descargas).
@@ -306,7 +307,7 @@ Origen Discover: set en `playListenBrainzPlaylist*` / `playCf*`; clear en `playP
 | Prioridad | Comportamiento | Entry point |
 |-----------|----------------|-------------|
 | Diálogos / menús | Framework `onDismissRequest` | `Dialog` / `AlertDialog` / `DropdownMenu` (NP ⋮ + merge álbum en `MainScreen`) |
-| Identify review | Oculta overlay, conserva cola (`dismissIdentifyReview`); `skipAllIdentifyReview` vacía | `IdentifyReviewScreen` `BackHandler` |
+| Identify review | ITEM+overview → vuelve overview (`returnIdentifyReviewOverview`); si no, oculta overlay y conserva cola (`dismissIdentifyReview`); `skipAllIdentifyReview` vacía | `IdentifyReviewScreen` `BackHandler` |
 | Add Music colección | `clearSelectedCollection` antes de cerrar | `AddMusicDialog` `BackHandler` + `onDismissRequest` |
 | Now Playing | `dismissFullPlayer` | `NowPlayingScreen` `BackHandler` |
 | Library nested | multi-select → cancel addition → álbum (`closeLibraryAlbum`, conserva artista) → artista → clear search | `LibraryScreen` `BackHandler` / `popLibraryNested` |
@@ -318,7 +319,7 @@ Manifest: `android:enableOnBackInvokedCallback="true"` en `MainActivity`.
 
 ## 13. Beta / Crashlytics
 
-**Invariante:** builds para testers = `release` firmado (`./install.sh --release`), no debug. Crashes/non-fatals → Firebase Crashlytics (colección deshabilitada en `BuildConfig.DEBUG`).
+**Invariante:** builds para testers = `release` firmado (`./install.sh --release`), no debug. Crashes/non-fatals → Firebase Crashlytics (colección deshabilitada en `BuildConfig.DEBUG`). Sin Firebase Analytics ni advertising ID (`AD_ID` se quita del manifest mergeado).
 
 | Acción | Entry point |
 |--------|-------------|

@@ -34,6 +34,8 @@ import com.bestiapop.android.data.network.ListenBrainzClient
 import com.bestiapop.android.data.network.MetadataFetcher
 import com.bestiapop.android.data.network.YouTubeExtractor
 import com.bestiapop.android.data.preferences.ActiveDownloadsStore
+import com.bestiapop.android.data.preferences.IdentifyReviewStore
+import com.bestiapop.android.data.preferences.PersistedIdentifyReviewQueue
 import com.bestiapop.android.data.preferences.LibraryPreferencesRepository
 import com.bestiapop.android.data.preferences.LibraryUiPreferencesCodec
 import com.bestiapop.android.data.preferences.NAV_DOWNLOADS
@@ -68,8 +70,10 @@ import com.bestiapop.android.domain.radio.RadioSuggestResult
 import com.bestiapop.android.domain.usecase.FetchAndMatchCfRecommendationsUseCase
 import com.bestiapop.android.domain.usecase.ImportListenBrainzPlaylistUseCase
 import com.bestiapop.android.domain.usecase.MatchListenBrainzTracksUseCase
+import com.bestiapop.android.domain.util.IdentifyAlbumGroup
 import com.bestiapop.android.domain.util.IdentifyRanking
 import com.bestiapop.android.domain.util.TrackMatchKeys
+import com.bestiapop.android.domain.util.clusterIdentifyAlbumGroups
 import com.bestiapop.android.domain.util.findAlbumMergeTarget
 import com.bestiapop.android.domain.util.normalizeAlbumName
 import com.bestiapop.android.service.DownloadNotificationHelper
@@ -78,7 +82,10 @@ import com.bestiapop.android.service.StreamPlaybackTag
 import com.bestiapop.android.service.WebServerService
 import com.bestiapop.android.ui.state.DiscoverPlaybackOrigin
 import com.bestiapop.android.ui.state.IdentifyReviewItem
+import com.bestiapop.android.ui.state.IdentifyReviewPhase
 import com.bestiapop.android.ui.state.IdentifyReviewState
+import com.bestiapop.android.ui.state.hasMediumSuggestion
+import com.bestiapop.android.ui.state.identifyReviewFromPersisted
 import com.bestiapop.android.ui.state.LibraryListItem
 import com.bestiapop.android.ui.state.LibraryViewMode
 import com.bestiapop.android.ui.state.PlaylistDetailNav
@@ -97,6 +104,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -164,6 +172,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private val playbackPreferences = PlaybackPreferencesRepository(application)
     private val libraryPreferences = LibraryPreferencesRepository(application)
     private val activeDownloadsStore = ActiveDownloadsStore(application)
+    private val identifyReviewStore = IdentifyReviewStore(application)
     private val playbackSessionStore = PlaybackSessionStore(application)
     private val downloadNotificationHelper = DownloadNotificationHelper(application)
     private val pendingListenDao = AppDatabase.getDatabase(application).pendingListenDao()
@@ -780,6 +789,34 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         viewModelScope.launch(Dispatchers.IO) {
             repository.migrateCanonicalAudioUris()
             repository.migrateLegacyYouTubeMusicSongs()
+        }
+
+        viewModelScope.launch {
+            identifyMutex.withLock {
+                val snap = withContext(Dispatchers.IO) { identifyReviewStore.load() }
+                if (snap.proposals.isNotEmpty()) {
+                    val songs = withContext(Dispatchers.IO) { repository.getAllSongsSync() }
+                    _identifyReview.value = identifyReviewFromPersisted(
+                        snap.proposals,
+                        snap.phase,
+                        songs
+                    )
+                }
+            }
+            identifyReview
+                .map { state ->
+                    PersistedIdentifyReviewQueue(
+                        proposals = state.items.drop(state.currentIndex).map { it.proposal },
+                        phase = state.phase.name
+                    )
+                }
+                .distinctUntilChanged()
+                .debounce(300)
+                .collect { snap ->
+                    withContext(Dispatchers.IO) {
+                        identifyReviewStore.save(snap)
+                    }
+                }
         }
 
         viewModelScope.launch {
@@ -2290,6 +2327,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     fun deleteSongsFromApp(songs: List<Song>) {
         viewModelScope.launch {
             repository.deleteSongsFromApp(songs)
+            pruneIdentifyReview(songs.map { it.id }.toSet())
         }
     }
 
@@ -2310,6 +2348,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     fun deleteSongsFromDevice(songs: List<Song>) {
         viewModelScope.launch {
             repository.deleteSongsFromDevice(songs)
+            pruneIdentifyReview(songs.map { it.id }.toSet())
         }
     }
 
@@ -2717,6 +2756,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     /**
      * Online identify: Phase 1 lookup + score, auto-apply HIGH,
      * enqueue MEDIUM/LOW/NONE. [force] always looks up (WiFi). [showReview] opens the overlay.
+     * Songs already pending review are skipped (no network).
      */
     fun identifySongs(
         songs: List<Song>,
@@ -2731,8 +2771,26 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
-    /** Single-song identify from ⋮: force lookup and open review (or auto-apply HIGH). */
+    /** Single-song identify from ⋮: open existing pending item, or force lookup. */
     fun identifySongForReview(song: Song) {
+        val state = _identifyReview.value
+        val pendingIndex = state.remaining.indexOfFirst { it.song.id == song.id }
+        if (pendingIndex >= 0) {
+            val absIndex = state.currentIndex + pendingIndex
+            val item = state.items[absIndex]
+            _identifyReview.value = state.copy(
+                currentIndex = absIndex,
+                phase = IdentifyReviewPhase.Item,
+                openedFromOverview = state.phase == IdentifyReviewPhase.Overview ||
+                    state.openedFromOverview,
+                isVisible = true,
+                selectedCandidateIndex = 0,
+                searchQueryDraft = defaultSearchDraft(item),
+                showSearchField = item.proposal.candidates.isEmpty(),
+                isSearching = false
+            )
+            return
+        }
         identifySongs(listOf(song), force = true, showReview = true)
     }
 
@@ -2741,11 +2799,24 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         force: Boolean,
         showReview: Boolean
     ) {
-        val total = songs.size
+        val pendingIds = _identifyReview.value.pendingSongIds
+        val alreadyQueued = songs.count { it.id in pendingIds }
+        val toProcess = songs.filter { it.id !in pendingIds }
+        if (toProcess.isEmpty()) {
+            if (alreadyQueued > 0) {
+                toast(
+                    if (alreadyQueued == 1) "1 ya está en revisión"
+                    else "$alreadyQueued ya están en revisión"
+                )
+                if (showReview) showIdentifyReview()
+            }
+            return
+        }
+        val total = toProcess.size
         var updated = 0
         var skipped = 0
         val reviewItems = ArrayList<IdentifyReviewItem>()
-        songs.forEachIndexed { index, song ->
+        toProcess.forEachIndexed { index, song ->
             reportLibraryProgress(LibraryJobKind.IDENTIFY, index, total, song.title)
             val proposal = withContext(Dispatchers.IO) {
                 repository.proposeSongIdentity(song, force = force)
@@ -2768,6 +2839,8 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         clearLibraryProgress()
         if (reviewItems.isNotEmpty()) {
             enqueueIdentifyReview(reviewItems, showReview)
+        } else if (alreadyQueued > 0 && showReview) {
+            showIdentifyReview()
         }
         toast(
             buildString {
@@ -2776,6 +2849,12 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                     append(
                         if (reviewItems.size == 1) ", 1 para revisar"
                         else ", ${reviewItems.size} para revisar"
+                    )
+                }
+                if (alreadyQueued > 0) {
+                    append(
+                        if (alreadyQueued == 1) ", 1 ya en revisión"
+                        else ", $alreadyQueued ya en revisión"
                     )
                 }
                 if (skipped == 1) append(", 1 omitida")
@@ -2787,30 +2866,67 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private fun enqueueIdentifyReview(items: List<IdentifyReviewItem>, showReview: Boolean) {
         if (items.isEmpty()) return
         val current = _identifyReview.value
-        val existingIds = current.items.map { it.song.id }.toSet()
+        val existingIds = current.pendingSongIds
         val incoming = items.filter { it.song.id !in existingIds }
         if (current.items.isEmpty()) {
-            val first = incoming.firstOrNull() ?: return
-            _identifyReview.value = IdentifyReviewState(
-                items = incoming,
-                currentIndex = 0,
-                selectedCandidateIndex = 0,
-                searchQueryDraft = defaultSearchDraft(first),
-                showSearchField = first.proposal.candidates.isEmpty(),
-                isVisible = showReview
-            )
+            presentIdentifyQueue(incoming, showReview = showReview)
             return
         }
         if (incoming.isEmpty()) {
-            if (showReview) {
-                _identifyReview.value = current.copy(isVisible = true)
-            }
+            if (showReview) showIdentifyReview()
             return
         }
         val merged = current.items + incoming
+        val visible = current.isVisible || showReview
+        val phase = if (current.isVisible) {
+            current.phase
+        } else {
+            reviewPhaseFor(merged.drop(current.currentIndex))
+        }
         _identifyReview.value = current.copy(
             items = merged,
-            isVisible = current.isVisible || showReview
+            isVisible = visible,
+            phase = phase
+        )
+    }
+
+    private fun reviewPhaseFor(items: List<IdentifyReviewItem>): IdentifyReviewPhase =
+        if (clusterIdentifyAlbumGroups(items.map { it.proposal }).isNotEmpty()) {
+            IdentifyReviewPhase.Overview
+        } else {
+            IdentifyReviewPhase.Item
+        }
+
+    private fun presentIdentifyQueue(
+        items: List<IdentifyReviewItem>,
+        showReview: Boolean,
+        sessionApplied: Int = 0,
+        sessionSkipped: Int = 0,
+        openedFromOverview: Boolean = false
+    ) {
+        if (items.isEmpty()) {
+            _identifyReview.value = IdentifyReviewState()
+            clearCatalogPreview()
+            return
+        }
+        val phase = reviewPhaseFor(items)
+        val first = items.first()
+        _identifyReview.value = IdentifyReviewState(
+            items = items,
+            currentIndex = 0,
+            selectedCandidateIndex = 0,
+            sessionApplied = sessionApplied,
+            sessionSkipped = sessionSkipped,
+            isVisible = showReview,
+            phase = phase,
+            openedFromOverview = openedFromOverview && phase == IdentifyReviewPhase.Item,
+            searchQueryDraft = if (phase == IdentifyReviewPhase.Item) {
+                defaultSearchDraft(first)
+            } else {
+                ""
+            },
+            showSearchField = phase == IdentifyReviewPhase.Item &&
+                first.proposal.candidates.isEmpty()
         )
     }
 
@@ -2818,11 +2934,176 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         val state = _identifyReview.value
         if (state.items.isEmpty()) return
         val current = state.current ?: state.items.first()
+        val itemPhase = state.phase == IdentifyReviewPhase.Item
         _identifyReview.value = state.copy(
             isVisible = true,
-            searchQueryDraft = state.searchQueryDraft.ifBlank { defaultSearchDraft(current) },
-            showSearchField = state.showSearchField || current.proposal.candidates.isEmpty()
+            searchQueryDraft = if (itemPhase && state.searchQueryDraft.isBlank()) {
+                defaultSearchDraft(current)
+            } else {
+                state.searchQueryDraft
+            },
+            showSearchField = itemPhase &&
+                (state.showSearchField || current.proposal.candidates.isEmpty())
         )
+    }
+
+    fun startIdentifyItemReview(groupKey: String? = null) {
+        val state = _identifyReview.value
+        val remaining = state.remaining
+        if (remaining.isEmpty()) return
+        val reordered = if (groupKey != null) {
+            val groupIds = state.albumGroups.find { it.key == groupKey }?.songIds?.toSet()
+                ?: return
+            remaining.filter { it.song.id in groupIds } +
+                remaining.filter { it.song.id !in groupIds }
+        } else {
+            remainingGroupedFirst(remaining, state.albumGroups)
+        }
+        val first = reordered.first()
+        _identifyReview.value = state.copy(
+            items = reordered,
+            currentIndex = 0,
+            phase = IdentifyReviewPhase.Item,
+            openedFromOverview = true,
+            isVisible = true,
+            selectedCandidateIndex = 0,
+            searchQueryDraft = defaultSearchDraft(first),
+            showSearchField = first.proposal.candidates.isEmpty(),
+            isSearching = false
+        )
+    }
+
+    fun returnIdentifyReviewOverview() {
+        val state = _identifyReview.value
+        val remaining = state.remaining
+        if (remaining.isEmpty()) {
+            _identifyReview.value = IdentifyReviewState()
+            clearCatalogPreview()
+            return
+        }
+        val phase = reviewPhaseFor(remaining)
+        val first = remaining.first()
+        _identifyReview.value = state.copy(
+            items = remaining,
+            currentIndex = 0,
+            phase = phase,
+            openedFromOverview = false,
+            selectedCandidateIndex = 0,
+            isSearching = false,
+            searchQueryDraft = if (phase == IdentifyReviewPhase.Item) {
+                defaultSearchDraft(first)
+            } else {
+                ""
+            },
+            showSearchField = phase == IdentifyReviewPhase.Item &&
+                first.proposal.candidates.isEmpty()
+        )
+    }
+
+    fun applyIdentifyAlbumGroup(key: String) {
+        viewModelScope.launch {
+            identifyMutex.withLock {
+                val state = _identifyReview.value
+                val groupIds = state.albumGroups.find { it.key == key }?.songIds?.toSet()
+                    ?: return@withLock
+                val remaining = state.remaining
+                val targets = remaining.filter { it.song.id in groupIds }
+                if (targets.isEmpty()) return@withLock
+                val appliedIds = applyIdentifyCandidates(targets) { it.proposal.suggested }
+                val leftover = remaining.filter { it.song.id !in appliedIds }
+                val applied = state.sessionApplied + appliedIds.size
+                if (leftover.isEmpty()) {
+                    presentIdentifyQueue(emptyList(), showReview = false)
+                    toast(
+                        if (appliedIds.size == 1) "1 aplicada en revisión"
+                        else "${appliedIds.size} aplicadas en revisión"
+                    )
+                    return@withLock
+                }
+                presentIdentifyQueue(
+                    leftover,
+                    showReview = true,
+                    sessionApplied = applied,
+                    sessionSkipped = state.sessionSkipped
+                )
+                toast(
+                    if (appliedIds.size == 1) "1 aplicada al álbum"
+                    else "${appliedIds.size} aplicadas al álbum"
+                )
+            }
+        }
+    }
+
+    private fun remainingGroupedFirst(
+        remaining: List<IdentifyReviewItem>,
+        groups: List<IdentifyAlbumGroup>
+    ): List<IdentifyReviewItem> {
+        if (groups.isEmpty()) return remaining
+        val groupedIds = groups.flatMap { it.songIds }.toSet()
+        val grouped = groups.flatMap { group ->
+            val ids = group.songIds.toSet()
+            remaining.filter { it.song.id in ids }
+        }
+        val ungrouped = remaining.filter { it.song.id !in groupedIds }
+        return grouped + ungrouped
+    }
+
+    private fun pruneIdentifyReview(ids: Set<Long>) {
+        if (ids.isEmpty()) return
+        val state = _identifyReview.value
+        if (state.items.none { it.song.id in ids }) return
+        val before = state.items.take(state.currentIndex).filter { it.song.id !in ids }
+        val after = state.items.drop(state.currentIndex).filter { it.song.id !in ids }
+        if (after.isEmpty()) {
+            _identifyReview.value = IdentifyReviewState()
+            clearCatalogPreview()
+            return
+        }
+        val next = after.first()
+        val phase = if (state.phase == IdentifyReviewPhase.Overview) {
+            reviewPhaseFor(after)
+        } else {
+            state.phase
+        }
+        _identifyReview.value = state.copy(
+            items = before + after,
+            currentIndex = before.size,
+            phase = phase,
+            selectedCandidateIndex = 0,
+            searchQueryDraft = if (phase == IdentifyReviewPhase.Item) {
+                defaultSearchDraft(next)
+            } else {
+                state.searchQueryDraft
+            },
+            showSearchField = phase == IdentifyReviewPhase.Item &&
+                next.proposal.candidates.isEmpty()
+        )
+    }
+
+    private suspend fun applyIdentifyCandidates(
+        targets: List<IdentifyReviewItem>,
+        pick: (IdentifyReviewItem) -> IdentifyCandidate?
+    ): Set<Long> {
+        val appliedIds = LinkedHashSet<Long>()
+        targets.forEachIndexed { index, item ->
+            val candidate = pick(item) ?: return@forEachIndexed
+            reportLibraryProgress(
+                LibraryJobKind.IDENTIFY,
+                index,
+                targets.size,
+                item.song.title
+            )
+            when (
+                withContext(Dispatchers.IO) {
+                    repository.applySongIdentity(item.song.id, candidate)
+                }
+            ) {
+                is IdentifyResult.Updated -> appliedIds += item.song.id
+                else -> Unit
+            }
+        }
+        clearLibraryProgress()
+        return appliedIds
     }
 
     private fun defaultSearchDraft(item: IdentifyReviewItem): String {
@@ -2942,55 +3223,33 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         viewModelScope.launch {
             identifyMutex.withLock {
                 val state = _identifyReview.value
-                val remaining = state.items.drop(state.currentIndex)
+                val remaining = state.remaining
                 if (remaining.isEmpty()) return@withLock
-                var applied = state.sessionApplied
-                val leftover = ArrayList<IdentifyReviewItem>()
-                remaining.forEachIndexed { index, item ->
-                    val candidate = item.proposal.suggested
-                        ?: item.proposal.candidates.firstOrNull()
-                    if (candidate == null) {
-                        leftover += item
-                        return@forEachIndexed
-                    }
-                    reportLibraryProgress(
-                        LibraryJobKind.IDENTIFY,
-                        index,
-                        remaining.size,
-                        item.song.title
-                    )
-                    when (
-                        withContext(Dispatchers.IO) {
-                            repository.applySongIdentity(item.song.id, candidate)
-                        }
-                    ) {
-                        is IdentifyResult.Updated -> applied++
-                        else -> leftover += item
-                    }
+                val applyable = remaining.filter { it.proposal.hasMediumSuggestion }
+                if (applyable.isEmpty()) {
+                    toast("No hay sugerencias automáticas")
+                    return@withLock
                 }
-                clearLibraryProgress()
+                val appliedIds = applyIdentifyCandidates(applyable) { it.proposal.suggested }
+                val leftover = remaining.filter { it.song.id !in appliedIds }
+                val applied = state.sessionApplied + appliedIds.size
                 if (leftover.isEmpty()) {
-                    _identifyReview.value = IdentifyReviewState()
-                    clearCatalogPreview()
+                    presentIdentifyQueue(emptyList(), showReview = false)
                     toast(
-                        if (applied == 1) "1 aplicada en revisión"
-                        else "$applied aplicadas en revisión"
+                        if (appliedIds.size == 1) "1 aplicada en revisión"
+                        else "${appliedIds.size} aplicadas en revisión"
                     )
                     return@withLock
                 }
-                val first = leftover.first()
-                _identifyReview.value = IdentifyReviewState(
-                    items = leftover,
-                    currentIndex = 0,
-                    selectedCandidateIndex = 0,
+                presentIdentifyQueue(
+                    leftover,
+                    showReview = true,
                     sessionApplied = applied,
-                    searchQueryDraft = defaultSearchDraft(first),
-                    showSearchField = first.proposal.candidates.isEmpty(),
-                    isVisible = true
+                    sessionSkipped = state.sessionSkipped
                 )
                 toast(
                     buildString {
-                        append(if (applied == 1) "1 aplicada" else "$applied aplicadas")
+                        append(if (appliedIds.size == 1) "1 aplicada" else "${appliedIds.size} aplicadas")
                         append(
                             if (leftover.size == 1) ", 1 sin sugerencia"
                             else ", ${leftover.size} sin sugerencia"

@@ -9,8 +9,8 @@ import androidx.datastore.preferences.preferencesDataStore
 import com.bestiapop.android.data.model.ActiveDownload
 import com.bestiapop.android.data.model.ActiveDownloadSource
 import com.bestiapop.android.data.model.CandidateDownloadState
-import com.bestiapop.android.data.model.OnlineCatalogTrack
 import com.bestiapop.android.data.model.withIdentity
+import com.bestiapop.android.data.util.CatalogTrackJson
 import com.bestiapop.android.data.util.optNullableString
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -100,22 +100,9 @@ object ActiveDownloadCodec {
             }
             val candidates = JSONArray()
             for (track in download.candidates) {
-                candidates.put(encodeTrack(track))
+                candidates.put(CatalogTrackJson.encode(track))
             }
             put("candidates", candidates)
-        }
-
-    private fun encodeTrack(track: OnlineCatalogTrack): JSONObject =
-        JSONObject().apply {
-            put("id", track.id)
-            put("title", track.title)
-            put("artist", track.artist)
-            put("album", track.album)
-            put("artworkUrl", track.artworkUri ?: JSONObject.NULL)
-            put("durationMs", track.durationMs)
-            put("audioUrl", track.audioUrl)
-            put("provider", track.provider)
-            put("trackNumber", track.trackNumber)
         }
 
     private fun decodeOne(obj: JSONObject): ActiveDownload? {
@@ -123,7 +110,7 @@ object ActiveDownloadCodec {
             val candidatesArr = obj.getJSONArray("candidates")
             val candidates = buildList {
                 for (i in 0 until candidatesArr.length()) {
-                    add(decodeTrack(candidatesArr.getJSONObject(i)))
+                    add(CatalogTrackJson.decode(candidatesArr.getJSONObject(i)))
                 }
             }
             if (candidates.isEmpty()) return null
@@ -177,19 +164,6 @@ object ActiveDownloadCodec {
             null
         }
     }
-
-    private fun decodeTrack(obj: JSONObject): OnlineCatalogTrack =
-        OnlineCatalogTrack(
-            id = obj.optString("id", ""),
-            title = obj.optString("title", ""),
-            artist = obj.optString("artist", ""),
-            album = obj.optString("album", ""),
-            artworkUri = obj.optNullableString("artworkUrl"),
-            durationMs = obj.optLong("durationMs", 0L),
-            audioUrl = obj.optString("audioUrl", ""),
-            provider = obj.optString("provider", "YouTube"),
-            trackNumber = obj.optInt("trackNumber", 0)
-        )
 }
 
 

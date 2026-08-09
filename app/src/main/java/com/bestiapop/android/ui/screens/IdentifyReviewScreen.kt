@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -40,6 +41,9 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -52,6 +56,7 @@ import com.bestiapop.android.data.model.IdentifyConfidence
 import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.data.util.looksLikeStoragePath
+import com.bestiapop.android.domain.util.IdentifyAlbumGroup
 import com.bestiapop.android.domain.util.IdentifyRanking
 import com.bestiapop.android.ui.MusicPlayerViewModel
 import com.bestiapop.android.ui.components.ArtworkThumbnail
@@ -61,6 +66,7 @@ import com.bestiapop.android.ui.components.TrackTextColumn
 import com.bestiapop.android.ui.components.formatDuration
 import com.bestiapop.android.ui.components.joinMeta
 import com.bestiapop.android.ui.components.previewFlags
+import com.bestiapop.android.ui.state.IdentifyReviewPhase
 import com.bestiapop.android.ui.state.IdentifyReviewState
 
 @Composable
@@ -75,7 +81,13 @@ fun IdentifyReviewScreen(
     val catalogPreviewKey by viewModel.catalogPreviewKey.collectAsState()
     val currentItem by viewModel.currentItem.collectAsState()
 
-    BackHandler { viewModel.dismissIdentifyReview() }
+    BackHandler {
+        if (state.phase == IdentifyReviewPhase.Item && state.openedFromOverview) {
+            viewModel.returnIdentifyReviewOverview()
+        } else {
+            viewModel.dismissIdentifyReview()
+        }
+    }
 
     Surface(
         modifier = Modifier.fillMaxSize(),
@@ -89,11 +101,29 @@ fun IdentifyReviewScreen(
         ) {
             IdentifyReviewHeader(
                 state = state,
+                onBack = {
+                    if (state.phase == IdentifyReviewPhase.Item && state.openedFromOverview) {
+                        viewModel.returnIdentifyReviewOverview()
+                    } else {
+                        viewModel.dismissIdentifyReview()
+                    }
+                },
                 onClose = { viewModel.dismissIdentifyReview() },
                 onApplyRemaining = { viewModel.applyRemainingIdentifySuggestions() },
                 onSkipAll = { viewModel.skipAllIdentifyReview() }
             )
             HorizontalDivider()
+
+            if (state.phase == IdentifyReviewPhase.Overview) {
+                IdentifyReviewOverview(
+                    state = state,
+                    onApplyGroup = viewModel::applyIdentifyAlbumGroup,
+                    onReviewGroup = { viewModel.startIdentifyItemReview(it) },
+                    onReviewAll = { viewModel.startIdentifyItemReview(null) },
+                    modifier = Modifier.weight(1f)
+                )
+                return@Column
+            }
 
             val item = state.current
             if (item == null) {
@@ -197,8 +227,141 @@ fun IdentifyReviewScreen(
 }
 
 @Composable
+private fun IdentifyReviewOverview(
+    state: IdentifyReviewState,
+    onApplyGroup: (String) -> Unit,
+    onReviewGroup: (String) -> Unit,
+    onReviewAll: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val remainingById = remember(state.remaining) {
+        state.remaining.associateBy { it.song.id }
+    }
+    LazyColumn(
+        modifier = modifier.fillMaxWidth(),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        if (state.albumGroups.isNotEmpty()) {
+            item {
+                Text(
+                    text = "Álbumes sugeridos",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+            items(state.albumGroups, key = { it.key }) { group ->
+                val titles = group.songIds.mapNotNull { remainingById[it]?.song?.title }
+                IdentifyAlbumGroupCard(
+                    group = group,
+                    titles = titles,
+                    onApplyAll = { onApplyGroup(group.key) },
+                    onReviewOneByOne = { onReviewGroup(group.key) }
+                )
+            }
+        }
+        if (state.ungroupedCount > 0) {
+            item {
+                IdentifyUngroupedBlock(
+                    count = state.ungroupedCount,
+                    onReview = onReviewAll
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun IdentifyAlbumGroupCard(
+    group: IdentifyAlbumGroup,
+    titles: List<String>,
+    onApplyAll: () -> Unit,
+    onReviewOneByOne: () -> Unit
+) {
+    var expanded by remember(group.key) { mutableStateOf(false) }
+    val shape = RoundedCornerShape(12.dp)
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.25f), shape)
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            ArtworkThumbnail(
+                artworkUri = group.artworkUri,
+                size = 52.dp,
+                contentDescription = group.album
+            )
+            Spacer(Modifier.width(12.dp))
+            TrackTextColumn(
+                title = "${group.songIds.size} canciones → ${group.album}",
+                subtitle = group.artist,
+                titleStyle = MaterialTheme.typography.titleSmall,
+                titleWeight = FontWeight.SemiBold,
+                maxTitleLines = 2,
+                modifier = Modifier.weight(1f)
+            )
+        }
+        TextButton(onClick = { expanded = !expanded }, contentPadding = PaddingValues(0.dp)) {
+            Text(if (expanded) "Ocultar lista" else "Ver lista")
+        }
+        if (expanded && titles.isNotEmpty()) {
+            titles.forEach { title ->
+                Text(
+                    text = "· $title",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Button(onClick = onApplyAll, modifier = Modifier.weight(1f)) {
+                Text("Aplicar a todas", maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            OutlinedButton(onClick = onReviewOneByOne, modifier = Modifier.weight(1f)) {
+                Text("Revisar una a una", maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+    }
+}
+
+@Composable
+private fun IdentifyUngroupedBlock(
+    count: Int,
+    onReview: () -> Unit
+) {
+    val shape = RoundedCornerShape(12.dp)
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.25f), shape)
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Text(
+            text = if (count == 1) "1 sin álbum claro" else "$count sin álbum claro",
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold
+        )
+        TextButton(onClick = onReview, contentPadding = PaddingValues(0.dp)) {
+            Text("Revisar una a una")
+        }
+    }
+}
+
+@Composable
 private fun IdentifyReviewHeader(
     state: IdentifyReviewState,
+    onBack: () -> Unit,
     onClose: () -> Unit,
     onApplyRemaining: () -> Unit,
     onSkipAll: () -> Unit
@@ -206,9 +369,13 @@ private fun IdentifyReviewHeader(
     Column(modifier = Modifier.fillMaxWidth()) {
         ScreenBackHeader(
             title = "Revisar identidad",
-            subtitle = "Revisar ${state.reviewOrdinal} de ${state.reviewTotal}",
-            onBack = onClose,
-            backContentDescription = "Cerrar",
+            subtitle = state.headerSubtitle,
+            onBack = onBack,
+            backContentDescription = if (state.phase == IdentifyReviewPhase.Item && state.openedFromOverview) {
+                "Volver"
+            } else {
+                "Cerrar"
+            },
             modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp)
         ) {
             IconButton(onClick = onClose) {

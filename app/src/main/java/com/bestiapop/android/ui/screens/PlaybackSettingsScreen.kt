@@ -2,10 +2,13 @@ package com.bestiapop.android.ui.screens
 
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.bestiapop.android.ui.MusicPlayerViewModel
 import com.bestiapop.android.ui.components.SettingsScrollColumn
@@ -16,9 +19,14 @@ fun PlaybackSettingsScreen(viewModel: MusicPlayerViewModel) {
     val rememberShuffle by viewModel.rememberShuffleOnLaunch.collectAsState()
     val rememberRepeat by viewModel.rememberRepeatOnLaunch.collectAsState()
     val autoplayOnLaunch by viewModel.autoplayOnLaunch.collectAsState()
+    val clearShuffleOnManualPlay by viewModel.clearShuffleOnManualPlay.collectAsState()
+    val clearRepeatAllOnManualPlay by viewModel.clearRepeatAllOnManualPlay.collectAsState()
+    val clearRepeatOneOnManualPlay by viewModel.clearRepeatOneOnManualPlay.collectAsState()
+    val clearShuffleOnSkip by viewModel.clearShuffleOnSkip.collectAsState()
+    val clearRepeatOneOnSkip by viewModel.clearRepeatOneOnSkip.collectAsState()
 
     SettingsScrollColumn(
-        intro = "Elegí qué se restaura al abrir la app. Si un switch está apagado, ese modo arranca desactivado. No cambia la sesión actual (si la música sigue sonando en segundo plano)."
+        intro = "Elegí qué se restaura al abrir la app y si al reproducir o saltar se sale del aleatorio y la repetición. Los switches de recordar no cambian la sesión actual."
     ) {
         SettingsSwitchRow(
             title = "Reproducir al abrir",
@@ -56,5 +64,90 @@ fun PlaybackSettingsScreen(viewModel: MusicPlayerViewModel) {
             checked = rememberRepeat,
             onCheckedChange = { viewModel.setRememberRepeatOnLaunch(it) }
         )
+
+        Spacer(modifier = Modifier.height(28.dp))
+        PlaybackSettingsSectionTitle("Al elegir qué reproducir")
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = "Canción, álbum, playlist o un ítem de la cola.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(modifier = Modifier.height(12.dp))
+
+        ClearModeSwitchRow(
+            title = "Salir del aleatorio",
+            checked = clearShuffleOnManualPlay,
+            onCheckedChange = { viewModel.setClearShuffleOnManualPlay(it) },
+            onSubtitle = "Al elegir qué reproducir, se apaga el aleatorio",
+            offSubtitle = "El aleatorio se mantiene si ya estaba activo"
+        )
+
+        Spacer(modifier = Modifier.height(20.dp))
+
+        ClearModeSwitchRow(
+            title = "Salir de repetir todo",
+            checked = clearRepeatAllOnManualPlay,
+            onCheckedChange = { viewModel.setClearRepeatAllOnManualPlay(it) },
+            onSubtitle = "Al elegir qué reproducir, se apaga repetir todo",
+            offSubtitle = "Repetir todo se mantiene si ya estaba activo"
+        )
+
+        Spacer(modifier = Modifier.height(20.dp))
+
+        ClearModeSwitchRow(
+            title = "Salir de repetir una",
+            checked = clearRepeatOneOnManualPlay,
+            onCheckedChange = { viewModel.setClearRepeatOneOnManualPlay(it) },
+            onSubtitle = "Al elegir qué reproducir, se apaga repetir una",
+            offSubtitle = "Repetir una se mantiene si ya estaba activo"
+        )
+
+        Spacer(modifier = Modifier.height(28.dp))
+        PlaybackSettingsSectionTitle("Al usar siguiente o anterior")
+        Spacer(modifier = Modifier.height(12.dp))
+
+        ClearModeSwitchRow(
+            title = "Salir del aleatorio",
+            checked = clearShuffleOnSkip,
+            onCheckedChange = { viewModel.setClearShuffleOnSkip(it) },
+            onSubtitle = "Siguiente o anterior apaga el aleatorio (la cola no se reordena)",
+            offSubtitle = "Siguiente o anterior no cambia el aleatorio"
+        )
+
+        Spacer(modifier = Modifier.height(20.dp))
+
+        ClearModeSwitchRow(
+            title = "Salir de repetir una",
+            checked = clearRepeatOneOnSkip,
+            onCheckedChange = { viewModel.setClearRepeatOneOnSkip(it) },
+            onSubtitle = "Siguiente o anterior sale de repetir una y pasa de tema",
+            offSubtitle = "Se mantiene repetir una"
+        )
     }
+}
+
+@Composable
+private fun PlaybackSettingsSectionTitle(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+        color = MaterialTheme.colorScheme.onBackground
+    )
+}
+
+@Composable
+private fun ClearModeSwitchRow(
+    title: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    onSubtitle: String,
+    offSubtitle: String
+) {
+    SettingsSwitchRow(
+        title = title,
+        subtitle = if (checked) onSubtitle else offSubtitle,
+        checked = checked,
+        onCheckedChange = onCheckedChange
+    )
 }

@@ -41,6 +41,7 @@ import com.bestiapop.android.data.preferences.ListenBrainzPreferencesRepository
 import com.bestiapop.android.data.preferences.ListenBrainzSettings
 import com.bestiapop.android.data.preferences.MAX_SAVE_WHILE_LISTENING_PERCENT
 import com.bestiapop.android.data.preferences.MIN_SAVE_WHILE_LISTENING_PERCENT
+import com.bestiapop.android.data.preferences.PlaybackModeClear
 import com.bestiapop.android.data.preferences.PlaybackModeRestore
 import com.bestiapop.android.data.preferences.PlaybackPreferencesRepository
 import com.bestiapop.android.data.preferences.PlaybackSettings
@@ -201,6 +202,14 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     val rememberShuffleOnLaunch: StateFlow<Boolean> = playbackPref(true) { it.rememberShuffleOnLaunch }
     val rememberRepeatOnLaunch: StateFlow<Boolean> = playbackPref(true) { it.rememberRepeatOnLaunch }
     val autoplayOnLaunch: StateFlow<Boolean> = playbackPref(false) { it.autoplayOnLaunch }
+    val clearShuffleOnManualPlay: StateFlow<Boolean> =
+        playbackPref(true) { it.clearShuffleOnManualPlay }
+    val clearRepeatAllOnManualPlay: StateFlow<Boolean> =
+        playbackPref(false) { it.clearRepeatAllOnManualPlay }
+    val clearRepeatOneOnManualPlay: StateFlow<Boolean> =
+        playbackPref(true) { it.clearRepeatOneOnManualPlay }
+    val clearShuffleOnSkip: StateFlow<Boolean> = playbackPref(false) { it.clearShuffleOnSkip }
+    val clearRepeatOneOnSkip: StateFlow<Boolean> = playbackPref(true) { it.clearRepeatOneOnSkip }
 
     val pendingListenCount: StateFlow<Int> = pendingListenDao.countFlow()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
@@ -582,6 +591,26 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         persistPlayback { setAutoplayOnLaunch(enabled) }
     }
 
+    fun setClearShuffleOnManualPlay(enabled: Boolean) {
+        persistPlayback { setClearShuffleOnManualPlay(enabled) }
+    }
+
+    fun setClearRepeatAllOnManualPlay(enabled: Boolean) {
+        persistPlayback { setClearRepeatAllOnManualPlay(enabled) }
+    }
+
+    fun setClearRepeatOneOnManualPlay(enabled: Boolean) {
+        persistPlayback { setClearRepeatOneOnManualPlay(enabled) }
+    }
+
+    fun setClearShuffleOnSkip(enabled: Boolean) {
+        persistPlayback { setClearShuffleOnSkip(enabled) }
+    }
+
+    fun setClearRepeatOneOnSkip(enabled: Boolean) {
+        persistPlayback { setClearRepeatOneOnSkip(enabled) }
+    }
+
     private fun restoreVolumeBoostIfNeeded() {
         val settings = playbackSettings.value
         if (!settings.volumeBoostEnabled) {
@@ -623,6 +652,29 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         _repeatMode.value = mode
         applyRepeatModeToController(mode)
         persistPlayback { setLastRepeatMode(mode) }
+    }
+
+    private fun applyResolvedModes(shuffle: Boolean, repeat: RepeatMode) {
+        if (shuffle != _isShuffle.value) setShuffleEnabled(shuffle)
+        if (repeat != _repeatMode.value) setRepeatMode(repeat)
+    }
+
+    private fun applyManualPlayModes() {
+        val (shuffle, repeat) = PlaybackModeClear.afterManualPlay(
+            shuffle = _isShuffle.value,
+            repeat = _repeatMode.value,
+            settings = playbackSettings.value
+        )
+        applyResolvedModes(shuffle, repeat)
+    }
+
+    private fun applySkipModes() {
+        val (shuffle, repeat) = PlaybackModeClear.afterSkip(
+            shuffle = _isShuffle.value,
+            repeat = _repeatMode.value,
+            settings = playbackSettings.value
+        )
+        applyResolvedModes(shuffle, repeat)
     }
 
     private fun persistPlayback(block: suspend PlaybackPreferencesRepository.() -> Unit) {
@@ -1297,6 +1349,12 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             lastMediaItemIndex = 0
             setCurrentItem(shuffled.first())
             setShuffleEnabled(true)
+            val (_, nextRepeat) = PlaybackModeClear.afterManualPlay(
+                shuffle = true,
+                repeat = _repeatMode.value,
+                settings = playbackSettings.value
+            )
+            if (nextRepeat != _repeatMode.value) setRepeatMode(nextRepeat)
             mediaController?.let { controller ->
                 val resumePosition = if (keepItemFirst != null) {
                     controller.currentPosition.coerceAtLeast(0L)
@@ -1458,21 +1516,26 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
 
 
-    fun playSong(song: Song, playlistOrQueue: List<Song> = emptyList()) {
+    fun playSong(
+        song: Song,
+        playlistOrQueue: List<Song> = emptyList(),
+        applyManualModes: Boolean = true
+    ) {
         _catalogPreviewKey.value = null
         val baseList = if (playlistOrQueue.isNotEmpty()) playlistOrQueue else songsState.value
         val indexInBase = baseList.indexOfFirst { it.id == song.id || it.uriString == song.uriString }
 
         val targetQueue = if (indexInBase != -1) baseList else listOf(song)
         val index = if (indexInBase != -1) indexInBase else 0
-        playPlayableCollection(targetQueue.toPlayableItems(), index)
+        playPlayableCollection(targetQueue.toPlayableItems(), index, applyManualModes = applyManualModes)
     }
 
     fun playPlayableCollection(
         items: List<PlayableItem>,
         startIndex: Int = 0,
         fromRadio: Boolean = false,
-        rotate: Boolean = true
+        rotate: Boolean = true,
+        applyManualModes: Boolean = true
     ) {
         if (items.isEmpty()) return
         if (!fromRadio) clearRadioSession()
@@ -1484,6 +1547,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             items
         }
         val startAt = if (shouldRotate) 0 else validIndex
+        val shouldApplyManualModes = applyManualModes && !fromRadio
         viewModelScope.launch {
             var working = ordered.toMutableList()
             val startItem = working[startAt]
@@ -1499,7 +1563,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                         for ((idx, remote) in nextRemote) {
                             val r = resolveRemote(remote as PlayableItem.Remote) ?: continue
                             working[idx] = r
-                            finishPlayPlayableCollection(working, idx)
+                            finishPlayPlayableCollection(working, idx, shouldApplyManualModes, fromRadio)
                             played = true
                             break
                         }
@@ -1511,7 +1575,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                     _resolvingRemote.value = false
                 }
             }
-            finishPlayPlayableCollection(working, startAt)
+            finishPlayPlayableCollection(working, startAt, shouldApplyManualModes, fromRadio)
             prefetchAround(startAt)
             if (fromRadio && _radioActive.value) {
                 maybeRefillRadio(startAt)
@@ -1519,11 +1583,19 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
-    private fun finishPlayPlayableCollection(items: List<PlayableItem>, index: Int) {
+    private fun finishPlayPlayableCollection(
+        items: List<PlayableItem>,
+        index: Int,
+        applyManualModes: Boolean,
+        fromRadio: Boolean
+    ) {
         _queue.value = items
         lastMediaItemIndex = index
         setCurrentItem(items[index])
-        setShuffleEnabled(false)
+        when {
+            applyManualModes -> applyManualPlayModes()
+            fromRadio -> setShuffleEnabled(false)
+        }
         remoteErrorRetryUsed = false
         liveSessionHydrated = true
         idleSeedDone = true
@@ -1736,22 +1808,28 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             val index = queue.indexOfFirst { it.mediaId == current.mediaId }
                 .takeIf { it >= 0 }
                 ?: lastMediaItemIndex.coerceIn(0, queue.lastIndex)
-            playPlayableCollection(queue, index, rotate = false)
+            playPlayableCollection(queue, index, rotate = false, applyManualModes = false)
             return
         }
         when (current) {
-            is PlayableItem.Local -> playSong(current.song)
-            is PlayableItem.Remote -> playPlayableCollection(listOf(current), 0)
+            is PlayableItem.Local -> playSong(current.song, applyManualModes = false)
+            is PlayableItem.Remote -> playPlayableCollection(
+                listOf(current),
+                0,
+                applyManualModes = false
+            )
         }
     }
 
     fun skipToNext() {
         bumpQueueFocus()
+        applySkipModes()
         mediaController?.seekToNextMediaItem()
     }
 
     fun skipToPrevious() {
         bumpQueueFocus()
+        applySkipModes()
         mediaController?.seekToPreviousMediaItem()
     }
 
@@ -2196,6 +2274,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     fun skipToQueueIndex(index: Int) {
         if (index in 0 until _queue.value.size) {
             bumpQueueFocus()
+            applyManualPlayModes()
             lastMediaItemIndex = index
             val item = _queue.value[index]
             if (item is PlayableItem.Remote && remoteNeedsResolve(item)) {

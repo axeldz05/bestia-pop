@@ -32,7 +32,12 @@ data class PlaybackSettings(
     /** Cold start: resume last queue/track. Local and remote use the same flag. Default off. */
     val autoplayOnLaunch: Boolean = false,
     val lastShuffleEnabled: Boolean = false,
-    val lastRepeatMode: RepeatMode = RepeatMode.OFF
+    val lastRepeatMode: RepeatMode = RepeatMode.OFF,
+    val clearShuffleOnManualPlay: Boolean = true,
+    val clearRepeatAllOnManualPlay: Boolean = false,
+    val clearRepeatOneOnManualPlay: Boolean = true,
+    val clearShuffleOnSkip: Boolean = false,
+    val clearRepeatOneOnSkip: Boolean = true
 )
 
 data class PlaybackModesSnapshot(
@@ -79,6 +84,34 @@ object PlaybackModeRestore {
     }
 }
 
+/** Pure shuffle/repeat clears after a manual play or in-app skip. */
+object PlaybackModeClear {
+    fun afterManualPlay(
+        shuffle: Boolean,
+        repeat: RepeatMode,
+        settings: PlaybackSettings
+    ): Pair<Boolean, RepeatMode> {
+        val nextShuffle = if (settings.clearShuffleOnManualPlay) false else shuffle
+        val nextRepeat = when (repeat) {
+            RepeatMode.ALL -> if (settings.clearRepeatAllOnManualPlay) RepeatMode.OFF else repeat
+            RepeatMode.ONE -> if (settings.clearRepeatOneOnManualPlay) RepeatMode.OFF else repeat
+            RepeatMode.OFF -> RepeatMode.OFF
+        }
+        return nextShuffle to nextRepeat
+    }
+
+    fun afterSkip(
+        shuffle: Boolean,
+        repeat: RepeatMode,
+        settings: PlaybackSettings
+    ): Pair<Boolean, RepeatMode> {
+        val nextShuffle = if (settings.clearShuffleOnSkip) false else shuffle
+        val nextRepeat =
+            if (settings.clearRepeatOneOnSkip && repeat == RepeatMode.ONE) RepeatMode.OFF else repeat
+        return nextShuffle to nextRepeat
+    }
+}
+
 fun parseRepeatModeName(name: String?): RepeatMode =
     name?.let { runCatching { RepeatMode.valueOf(it) }.getOrNull() } ?: RepeatMode.OFF
 
@@ -98,6 +131,11 @@ class PlaybackPreferencesRepository(private val context: Context) {
         val AUTOPLAY_ON_LAUNCH = booleanPreferencesKey("autoplay_on_launch")
         val LAST_SHUFFLE_ENABLED = booleanPreferencesKey("last_shuffle_enabled")
         val LAST_REPEAT_MODE = stringPreferencesKey("last_repeat_mode")
+        val CLEAR_SHUFFLE_ON_MANUAL_PLAY = booleanPreferencesKey("clear_shuffle_on_manual_play")
+        val CLEAR_REPEAT_ALL_ON_MANUAL_PLAY = booleanPreferencesKey("clear_repeat_all_on_manual_play")
+        val CLEAR_REPEAT_ONE_ON_MANUAL_PLAY = booleanPreferencesKey("clear_repeat_one_on_manual_play")
+        val CLEAR_SHUFFLE_ON_SKIP = booleanPreferencesKey("clear_shuffle_on_skip")
+        val CLEAR_REPEAT_ONE_ON_SKIP = booleanPreferencesKey("clear_repeat_one_on_skip")
     }
 
     val settingsFlow: Flow<PlaybackSettings> = context.playbackDataStore.data.map { prefs ->
@@ -110,7 +148,12 @@ class PlaybackPreferencesRepository(private val context: Context) {
             rememberRepeatOnLaunch = prefs[Keys.REMEMBER_REPEAT_ON_LAUNCH] ?: true,
             autoplayOnLaunch = prefs[Keys.AUTOPLAY_ON_LAUNCH] ?: false,
             lastShuffleEnabled = prefs[Keys.LAST_SHUFFLE_ENABLED] ?: false,
-            lastRepeatMode = parseRepeatModeName(prefs[Keys.LAST_REPEAT_MODE])
+            lastRepeatMode = parseRepeatModeName(prefs[Keys.LAST_REPEAT_MODE]),
+            clearShuffleOnManualPlay = prefs[Keys.CLEAR_SHUFFLE_ON_MANUAL_PLAY] ?: true,
+            clearRepeatAllOnManualPlay = prefs[Keys.CLEAR_REPEAT_ALL_ON_MANUAL_PLAY] ?: false,
+            clearRepeatOneOnManualPlay = prefs[Keys.CLEAR_REPEAT_ONE_ON_MANUAL_PLAY] ?: true,
+            clearShuffleOnSkip = prefs[Keys.CLEAR_SHUFFLE_ON_SKIP] ?: false,
+            clearRepeatOneOnSkip = prefs[Keys.CLEAR_REPEAT_ONE_ON_SKIP] ?: true
         )
     }
 
@@ -155,5 +198,25 @@ class PlaybackPreferencesRepository(private val context: Context) {
 
     suspend fun setLastRepeatMode(mode: RepeatMode) {
         context.playbackDataStore.put(Keys.LAST_REPEAT_MODE, mode.name)
+    }
+
+    suspend fun setClearShuffleOnManualPlay(enabled: Boolean) {
+        context.playbackDataStore.put(Keys.CLEAR_SHUFFLE_ON_MANUAL_PLAY, enabled)
+    }
+
+    suspend fun setClearRepeatAllOnManualPlay(enabled: Boolean) {
+        context.playbackDataStore.put(Keys.CLEAR_REPEAT_ALL_ON_MANUAL_PLAY, enabled)
+    }
+
+    suspend fun setClearRepeatOneOnManualPlay(enabled: Boolean) {
+        context.playbackDataStore.put(Keys.CLEAR_REPEAT_ONE_ON_MANUAL_PLAY, enabled)
+    }
+
+    suspend fun setClearShuffleOnSkip(enabled: Boolean) {
+        context.playbackDataStore.put(Keys.CLEAR_SHUFFLE_ON_SKIP, enabled)
+    }
+
+    suspend fun setClearRepeatOneOnSkip(enabled: Boolean) {
+        context.playbackDataStore.put(Keys.CLEAR_REPEAT_ONE_ON_SKIP, enabled)
     }
 }

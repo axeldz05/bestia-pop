@@ -155,15 +155,17 @@ State: `currentThemeState`.
 - Arranque en frío (sin timeline): restaurar según `rememberShuffleOnLaunch` / `rememberRepeatOnLaunch` (on por defecto). Off → ese modo arranca apagado.
 - **Autoplay al abrir** (`autoplayOnLaunch`, off por defecto): mismo flag para Local y Remote. Off → mini player / cola hidratada sin `play()`. On → `maybeAutoplayAfterIdleSeed` → `togglePlayPause`. Sesión FGS viva que ya suena no se toca.
 - Sesión viva: repeat del `MediaController`; shuffle desde prefs (única fuente). Switches de Ajustes no cambian la sesión actual.
-- `playCollection` sigue apagando shuffle; `shuffleCollection` lo enciende.
+- Play/tap manual (`playCollection` / `playSong` / `skipToQueueIndex`) aplica `PlaybackModeClear.afterManualPlay`. Default: apaga shuffle + Repeat One; Repeat All se mantiene. Next/prev in-app: `afterSkip` (default: solo Repeat One; shuffle intacto). Resume / radio no aplican; radio apaga shuffle al armar cola. `shuffleCollection` enciende shuffle y aplica clears de repeat de manual play.
 
 | Capacidad | Entry point |
 |-----------|-------------|
-| Prefs | `PlaybackSettings` + `PlaybackModeRestore.resolve` (settings o campos) / `parseRepeatModeName`; writes 1-key `DataStore.put` |
+| Prefs | `PlaybackSettings` + `PlaybackModeRestore.resolve` / `PlaybackModeClear.afterManualPlay` / `afterSkip` / `parseRepeatModeName`; writes 1-key `DataStore.put` |
 | Settings UI | `PlaybackSettingsScreen` vía `SettingsScreen` sección Reproducción |
 | Restore | `MusicPlayerViewModel.restorePlaybackModes` tras `syncUiFromController` |
 | Persist | `setShuffleEnabled` / `setRepeatMode` / `toggleShuffle` / `toggleRepeatMode` / `applyShuffledQueue` / `finishPlayPlayableCollection` |
 | Remember flags | `setRememberShuffleOnLaunch` / `setRememberRepeatOnLaunch` / `setAutoplayOnLaunch` |
+| Clear-on-play | `setClearShuffleOnManualPlay` / `setClearRepeatAllOnManualPlay` / `setClearRepeatOneOnManualPlay` / `applyManualPlayModes` |
+| Clear-on-skip | `setClearShuffleOnSkip` / `setClearRepeatOneOnSkip` / `applySkipModes` / `skipToNext` / `skipToPrevious` |
 
 ## 8. WiFi Sync
 

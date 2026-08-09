@@ -3,9 +3,9 @@ package com.bestiapop.android.domain.radio
 import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.data.model.TrackIdentity
-import com.bestiapop.android.domain.usecase.MatchListenBrainzTracksUseCase
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import com.bestiapop.android.domain.util.TrackMatchKeys
 
 /**
  * Deezer artist radio + related tops as Radio NEW/BOTH fill (no token).
@@ -43,12 +43,12 @@ class DeezerSimilarRadio(
         val pool = resolvePool(seed.artist)
         if (pool.isEmpty()) return emptyList()
 
-        val libraryIndex = MatchListenBrainzTracksUseCase.buildLibraryIndex(library)
+        val libraryIndex = TrackMatchKeys.buildLibraryIndex(library)
         val remotes = ArrayList<PlayableItem.Remote>(limit)
         val localSeen = HashSet<String>()
         fun tryAdd(hint: TrackIdentity) {
             if (remotes.size >= limit) return
-            val key = MatchListenBrainzTracksUseCase.matchKey(hint.artist, hint.title)
+            val key = TrackMatchKeys.matchKey(hint.artist, hint.title)
             if (key.isEmpty() || key in localSeen) return
             // NEW/BOTH remote pool: skip tracks already in the library
             if (libraryIndex.containsKey(key)) return
@@ -65,10 +65,10 @@ class DeezerSimilarRadio(
             val itunes = runCatching {
                 fetchItunesArtistSongs(seed.artist, itunesFillLimit)
             }.getOrDefault(emptyList())
-            val seedTitleNorm = MatchListenBrainzTracksUseCase.normalize(seed.title)
+            val seedTitleNorm = TrackMatchKeys.normalize(seed.title)
             for (hint in itunes) {
                 if (remotes.size >= limit) break
-                val titleNorm = MatchListenBrainzTracksUseCase.normalize(hint.title)
+                val titleNorm = TrackMatchKeys.normalize(hint.title)
                 if (titleNorm.isNotEmpty() && titleNorm == seedTitleNorm) continue
                 tryAdd(hint)
             }
@@ -78,7 +78,7 @@ class DeezerSimilarRadio(
     }
 
     private suspend fun resolvePool(artist: String): List<TrackIdentity> {
-        val artistKey = MatchListenBrainzTracksUseCase.normalize(artist)
+        val artistKey = TrackMatchKeys.normalize(artist)
         if (artistKey.isEmpty()) return emptyList()
 
         mutex.withLock {
@@ -94,7 +94,7 @@ class DeezerSimilarRadio(
 
         fun append(list: List<TrackIdentity>) {
             for (hint in list) {
-                val key = MatchListenBrainzTracksUseCase.matchKey(hint.artist, hint.title)
+                val key = TrackMatchKeys.matchKey(hint.artist, hint.title)
                 if (key.isEmpty() || key in seenKeys) continue
                 seenKeys.add(key)
                 hints.add(hint)

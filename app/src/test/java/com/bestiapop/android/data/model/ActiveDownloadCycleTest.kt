@@ -28,9 +28,6 @@ class ActiveDownloadCycleTest {
     ) = ActiveDownload(
         id = "job-1",
         source = ActiveDownloadSource.CATALOG,
-        displayTitle = "Song",
-        displayArtist = "Artist",
-        artworkUrl = null,
         candidates = candidates,
         currentCandidateIndex = index,
         state = state,

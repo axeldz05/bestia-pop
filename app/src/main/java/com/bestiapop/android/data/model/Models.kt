@@ -23,12 +23,7 @@ data class LibraryJobProgress(
 }
 
 sealed class IdentifyResult {
-    data class Updated(
-        val songId: Long,
-        val title: String,
-        val artist: String,
-        val album: String
-    ) : IdentifyResult()
+    data class Updated(val songId: Long) : IdentifyResult()
 
     data object NoMatch : IdentifyResult()
     data object Skipped : IdentifyResult()
@@ -128,10 +123,11 @@ data class PlaylistPendingTrack(
     val position: Int = 0
 ) : TrackMeta by identity {
     fun toOnlineCatalogTrack(): OnlineCatalogTrack =
-        PlayableItem.remoteFrom(
+        OnlineCatalogTrack(
             identity = identity,
-            recordingMbid = recordingMbid
-        ).toOnlineCatalogTrack(provider = "ListenBrainz")
+            id = recordingMbid?.takeIf { it.isNotBlank() } ?: "$artist $title".trim(),
+            provider = "ListenBrainz"
+        )
 }
 
 data class ColorSchemeData(
@@ -221,17 +217,14 @@ enum class CandidateDownloadState {
 }
 
 data class CatalogTrackCandidate(
-    val trackTitle: String,
-    val artist: String,
-    val albumName: String,
-    val coverUrl: String?,
+    val identity: TrackIdentity,
     val candidates: List<OnlineCatalogTrack>,
     val currentCandidateIndex: Int = 0,
     val isSelected: Boolean = true,
     val downloadState: CandidateDownloadState = CandidateDownloadState.IDLE,
     val downloadProgressPercent: Int = 0,
     val errorMessage: String? = null
-) {
+) : TrackMeta by identity {
     val currentTrack: OnlineCatalogTrack?
         get() = candidates.getOrNull(currentCandidateIndex)
 }
@@ -272,28 +265,24 @@ data class DownloadConflict(
     val source: ActiveDownloadSource,
     val track: OnlineCatalogTrack,
     val existing: Song,
-    val displayTitle: String,
-    val displayArtist: String,
-    val artworkUrl: String?,
     val candidates: List<OnlineCatalogTrack>,
     val currentCandidateIndex: Int,
     val mirrorCandidateTitle: String? = null,
     val targetPlaylistId: Long? = null,
-    val applyToRemainingBatch: Boolean = false
+    val applyToRemainingBatch: Boolean = false,
+    val lookupIdentity: TrackIdentity? = null
 )
 
 /**
  * Unified in-memory download job for the Descargas center.
  * Shows QUEUED / DOWNLOADING / ERROR / IDLE (conflict) / SUCCESS (kept until dismissed).
+ * Display metadata is [currentTrack] ([TrackMeta]); do not clone title/artist/art beside it.
  * [targetPlaylistId] — when set (e.g. LB_IMPORT / catalog playlist), success adds the song to that playlist.
  * [resultSongId] — set on SUCCESS so the UI can play the local song.
  */
 data class ActiveDownload(
     val id: String,
     val source: ActiveDownloadSource,
-    val displayTitle: String,
-    val displayArtist: String,
-    val artworkUrl: String?,
     val candidates: List<OnlineCatalogTrack>,
     val currentCandidateIndex: Int = 0,
     val state: CandidateDownloadState = CandidateDownloadState.DOWNLOADING,
@@ -301,28 +290,49 @@ data class ActiveDownload(
     val progressPercent: Int = 0,
     val errorMessage: String? = null,
     val targetPlaylistId: Long? = null,
-    val resultSongId: Long? = null
-) {
+    val resultSongId: Long? = null,
+    /** Save As (or legacy displayTitle); never written into Room song identity. */
+    val titleOverride: String? = null
+) : TrackMeta {
     val currentTrack: OnlineCatalogTrack?
         get() = candidates.getOrNull(currentCandidateIndex)
+
+    override val title: String get() = currentTrack?.title.orEmpty()
+    override val artist: String get() = currentTrack?.artist.orEmpty()
+    override val album: String get() = currentTrack?.album.orEmpty()
+    override val artworkUri: String? get() = currentTrack?.artworkUri
+    override val durationMs: Long get() = currentTrack?.durationMs ?: 0L
+    override val trackNumber: Int get() = currentTrack?.trackNumber ?: 0
+
+    /** UI/notif label; never persist this into [TrackIdentity] that goes to Room. */
+    val displayLabel: String
+        get() = titleOverride?.takeIf { it.isNotBlank() }
+            ?: title.ifBlank {
+                if (source == ActiveDownloadSource.LINK) "Enlace YouTube" else "Descarga"
+            }
+
+    fun withCurrentIdentity(transform: TrackIdentity.() -> TrackIdentity): ActiveDownload {
+        val idx = currentCandidateIndex
+        val track = currentTrack ?: return this
+        return copy(
+            candidates = candidates.mapIndexed { i, t ->
+                if (i == idx) track.withIdentity(transform) else t
+            }
+        )
+    }
 
     companion object {
         fun queued(
             id: String,
             source: ActiveDownloadSource,
-            displayTitle: String,
-            displayArtist: String,
-            artworkUrl: String?,
             candidates: List<OnlineCatalogTrack>,
             currentCandidateIndex: Int = 0,
             targetPlaylistId: Long? = null,
-            resultSongId: Long? = null
+            resultSongId: Long? = null,
+            titleOverride: String? = null
         ): ActiveDownload = ActiveDownload(
             id = id,
             source = source,
-            displayTitle = displayTitle,
-            displayArtist = displayArtist,
-            artworkUrl = artworkUrl,
             candidates = candidates,
             currentCandidateIndex = currentCandidateIndex,
             state = CandidateDownloadState.QUEUED,
@@ -330,108 +340,107 @@ data class ActiveDownload(
             progressPercent = 0,
             errorMessage = null,
             targetPlaylistId = targetPlaylistId,
-            resultSongId = resultSongId
+            resultSongId = resultSongId,
+            titleOverride = titleOverride
         )
 
         fun downloading(
             id: String,
             source: ActiveDownloadSource,
-            displayTitle: String,
-            displayArtist: String,
-            artworkUrl: String?,
             candidates: List<OnlineCatalogTrack>,
             currentCandidateIndex: Int = 0,
             targetPlaylistId: Long? = null,
             progressMessage: String = "Iniciando descarga...",
-            progressPercent: Int = 20
+            progressPercent: Int = 20,
+            titleOverride: String? = null
         ): ActiveDownload = ActiveDownload(
             id = id,
             source = source,
-            displayTitle = displayTitle,
-            displayArtist = displayArtist,
-            artworkUrl = artworkUrl,
             candidates = candidates,
             currentCandidateIndex = currentCandidateIndex,
             state = CandidateDownloadState.DOWNLOADING,
             progressMessage = progressMessage,
             progressPercent = progressPercent,
             errorMessage = null,
-            targetPlaylistId = targetPlaylistId
+            targetPlaylistId = targetPlaylistId,
+            titleOverride = titleOverride
         )
 
         fun conflict(
             id: String,
             source: ActiveDownloadSource,
-            displayTitle: String,
-            displayArtist: String,
-            artworkUrl: String?,
             candidates: List<OnlineCatalogTrack>,
             currentCandidateIndex: Int = 0,
-            targetPlaylistId: Long? = null
+            targetPlaylistId: Long? = null,
+            titleOverride: String? = null
         ): ActiveDownload = ActiveDownload(
             id = id,
             source = source,
-            displayTitle = displayTitle,
-            displayArtist = displayArtist,
-            artworkUrl = artworkUrl,
             candidates = candidates,
             currentCandidateIndex = currentCandidateIndex,
             state = CandidateDownloadState.IDLE,
             progressMessage = "Conflicto: ya está en la biblioteca",
             progressPercent = 0,
             errorMessage = null,
-            targetPlaylistId = targetPlaylistId
+            targetPlaylistId = targetPlaylistId,
+            titleOverride = titleOverride
         )
 
         fun success(
             id: String,
             source: ActiveDownloadSource,
             song: Song,
-            displayTitle: String,
-            displayArtist: String,
-            artworkUrl: String?,
             candidates: List<OnlineCatalogTrack>,
             currentCandidateIndex: Int = 0,
             targetPlaylistId: Long? = null
-        ): ActiveDownload = ActiveDownload(
-            id = id,
-            source = source,
-            displayTitle = song.title.ifBlank { displayTitle }.ifBlank { "Descarga" },
-            displayArtist = song.artist.ifBlank { displayArtist },
-            artworkUrl = song.artworkUri ?: artworkUrl,
-            candidates = candidates,
-            currentCandidateIndex = currentCandidateIndex,
-            state = CandidateDownloadState.SUCCESS,
-            progressMessage = "Descargada",
-            progressPercent = 100,
-            errorMessage = null,
-            targetPlaylistId = targetPlaylistId,
-            resultSongId = song.id
-        )
+        ): ActiveDownload {
+            val idx = currentCandidateIndex.coerceIn(0, (candidates.size - 1).coerceAtLeast(0))
+            val merged = candidates.mapIndexed { i, t ->
+                if (i != idx) t
+                else t.withIdentity {
+                    copy(
+                        title = song.title.ifBlank { title },
+                        artist = song.artist.ifBlank { artist },
+                        artworkUri = song.artworkUri ?: artworkUri,
+                        album = song.album.ifBlank { album },
+                        durationMs = if (song.durationMs > 0) song.durationMs else durationMs,
+                        trackNumber = if (song.trackNumber > 0) song.trackNumber else trackNumber
+                    )
+                }
+            }
+            return ActiveDownload(
+                id = id,
+                source = source,
+                candidates = merged,
+                currentCandidateIndex = idx,
+                state = CandidateDownloadState.SUCCESS,
+                progressMessage = "Descargada",
+                progressPercent = 100,
+                errorMessage = null,
+                targetPlaylistId = targetPlaylistId,
+                resultSongId = song.id
+            )
+        }
 
         fun error(
             id: String,
             source: ActiveDownloadSource,
-            displayTitle: String,
-            displayArtist: String,
-            artworkUrl: String?,
             candidates: List<OnlineCatalogTrack>,
             errorMessage: String,
             currentCandidateIndex: Int = 0,
-            targetPlaylistId: Long? = null
+            targetPlaylistId: Long? = null,
+            titleOverride: String? = null
         ): ActiveDownload = ActiveDownload(
             id = id,
             source = source,
-            displayTitle = displayTitle,
-            displayArtist = displayArtist,
-            artworkUrl = artworkUrl,
             candidates = candidates,
             currentCandidateIndex = currentCandidateIndex,
             state = CandidateDownloadState.ERROR,
             progressMessage = null,
             progressPercent = 0,
             errorMessage = errorMessage,
-            targetPlaylistId = targetPlaylistId
+            targetPlaylistId = targetPlaylistId,
+            titleOverride = titleOverride
         )
 
         /** Advance to the next YouTube match; expands via [newCandidates] when the list was a single placeholder. */
@@ -441,14 +450,12 @@ data class ActiveDownload(
         ): ActiveDownload {
             if (newCandidates.isEmpty()) return download
             val nextIndex = if (download.candidates.size <= 1 && newCandidates.size > 1) {
-                // Just expanded from search — pick first result that differs from current id if possible
                 val currentId = download.currentTrack?.id
                 val alt = newCandidates.indexOfFirst { it.id != currentId }.takeIf { it >= 0 } ?: 0
                 alt
             } else {
                 (download.currentCandidateIndex + 1) % newCandidates.size
             }
-            val next = newCandidates[nextIndex]
             val preservedAlbum = download.currentTrack?.album
                 ?.takeIf { it.isNotBlank() && !it.equals("YouTube", ignoreCase = true) }
             val stillFailed = download.state == CandidateDownloadState.ERROR
@@ -458,21 +465,19 @@ data class ActiveDownload(
                         t.withIdentity {
                             copy(
                                 album = preservedAlbum ?: album,
-                                artworkUri = artworkUri ?: download.artworkUrl,
-                                title = title.ifBlank { download.displayTitle },
-                                artist = artist.ifBlank { download.displayArtist }
+                                artworkUri = artworkUri ?: download.artworkUri,
+                                title = title.ifBlank { download.title },
+                                artist = artist.ifBlank { download.artist }
                             )
                         }
                     } else t
                 },
                 currentCandidateIndex = nextIndex,
-                displayTitle = next.title.ifBlank { download.displayTitle },
-                displayArtist = next.artist.ifBlank { download.displayArtist },
-                artworkUrl = next.artworkUri ?: download.artworkUrl,
                 state = if (stillFailed) CandidateDownloadState.ERROR else CandidateDownloadState.IDLE,
                 progressMessage = null,
                 progressPercent = 0,
-                errorMessage = if (stillFailed) "Match actualizado — tocá Reintentar" else null
+                errorMessage = if (stillFailed) "Match actualizado — tocá Reintentar" else null,
+                titleOverride = null
             )
         }
     }

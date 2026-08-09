@@ -122,14 +122,6 @@ class ImportListenBrainzPlaylistUseCaseTest {
         assertNull(useCase.createLocalFromMatched(matched, allowEmpty = false))
     }
 
-    @Test
-    fun downloadIdFor_usesMatchKey() {
-        assertEquals(
-            MatchListenBrainzTracksUseCase.matchKey("Artist", "Title"),
-            ImportListenBrainzPlaylistUseCase.downloadIdFor("Artist", "Title")
-        )
-    }
-
     private class FakeRepo : IMusicRepository {
         var createdName: String? = null
         var createdDescription: String? = null

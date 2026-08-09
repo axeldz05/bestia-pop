@@ -21,7 +21,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.bestiapop.android.data.model.ActiveDownload
 import com.bestiapop.android.data.model.ActiveDownloadSource
@@ -55,33 +54,26 @@ fun ActiveDownloadRow(
             verticalAlignment = Alignment.CenterVertically
         ) {
             ArtworkThumbnail(
-                artworkUri = download.artworkUrl,
+                artworkUri = download.artworkUri,
                 size = 48.dp,
                 cornerRadius = 8.dp
             )
 
             Spacer(modifier = Modifier.width(10.dp))
 
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = download.displayTitle.ifBlank { "Descarga" },
-                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Text(
-                    text = buildSubtitle(download),
-                    style = MaterialTheme.typography.labelSmall,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    color = if (download.state == CandidateDownloadState.ERROR) {
-                        MaterialTheme.colorScheme.error
-                    } else {
-                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f)
-                    }
-                )
-            }
+            TrackTextColumn(
+                title = download.displayLabel,
+                subtitle = buildSubtitle(download),
+                modifier = Modifier.weight(1f),
+                titleStyle = MaterialTheme.typography.bodyMedium,
+                titleWeight = FontWeight.SemiBold,
+                subtitleColor = if (download.state == CandidateDownloadState.ERROR) {
+                    MaterialTheme.colorScheme.error
+                } else {
+                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f)
+                },
+                maxSubtitleLines = 2
+            )
 
             Spacer(modifier = Modifier.width(4.dp))
 
@@ -137,7 +129,7 @@ fun ActiveDownloadRow(
 }
 
 private fun buildSubtitle(download: ActiveDownload): String {
-    val artist = download.displayArtist.trim()
+    val artist = download.artist.trim().takeIf { it.isNotBlank() }
     val sourceLabel = when (download.source) {
         ActiveDownloadSource.CATALOG -> "Catálogo"
         ActiveDownloadSource.LINK -> "Enlace"
@@ -147,20 +139,16 @@ private fun buildSubtitle(download: ActiveDownload): String {
         ActiveDownloadSource.DISCOVER -> "Para Ti"
     }
     return when (download.state) {
-        CandidateDownloadState.QUEUED -> {
-            listOfNotNull(artist.takeIf { it.isNotBlank() }, sourceLabel, "En cola").joinToString(" · ")
-        }
+        CandidateDownloadState.QUEUED -> joinMeta(artist, sourceLabel, "En cola", sep = " · ")
         CandidateDownloadState.DOWNLOADING -> {
             val msg = download.progressMessage?.takeIf { it.isNotBlank() } ?: "Descargando…"
-            listOfNotNull(artist.takeIf { it.isNotBlank() }, sourceLabel, msg).joinToString(" · ")
+            joinMeta(artist, sourceLabel, msg, sep = " · ")
         }
-        CandidateDownloadState.SUCCESS -> {
-            listOfNotNull(artist.takeIf { it.isNotBlank() }, sourceLabel, "Descargada").joinToString(" · ")
-        }
+        CandidateDownloadState.SUCCESS -> joinMeta(artist, sourceLabel, "Descargada", sep = " · ")
         CandidateDownloadState.ERROR -> {
             download.errorMessage?.takeIf { it.isNotBlank() }
-                ?: listOfNotNull(artist.takeIf { it.isNotBlank() }, sourceLabel, "Error").joinToString(" · ")
+                ?: joinMeta(artist, sourceLabel, "Error", sep = " · ")
         }
-        CandidateDownloadState.IDLE -> listOfNotNull(artist.takeIf { it.isNotBlank() }, sourceLabel).joinToString(" · ")
+        CandidateDownloadState.IDLE -> joinMeta(artist, sourceLabel, sep = " · ")
     }
 }

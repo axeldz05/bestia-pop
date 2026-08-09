@@ -54,7 +54,6 @@ import com.bestiapop.android.data.preferences.PlaybackSessionStore
 import com.bestiapop.android.data.preferences.QueueSnapshotCodec
 import com.bestiapop.android.data.preferences.ThemePreferencesRepository
 import com.bestiapop.android.data.repository.MusicRepository
-import com.bestiapop.android.data.stream.StreamResolver
 import com.bestiapop.android.data.util.CrashReporter
 import com.bestiapop.android.data.util.MusicFileStore
 import com.bestiapop.android.data.util.SongPathNormalizer
@@ -158,6 +157,7 @@ sealed class CfRecommendationsUiState {
 class MusicPlayerViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository = MusicRepository(application)
+    private val streamResolver = repository.streamResolver
     private val audioStore = MusicFileStore(application)
     private val themeRepository = ThemePreferencesRepository(application)
     private val listenBrainzPreferences = ListenBrainzPreferencesRepository(application)
@@ -344,7 +344,6 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     // Player State
-    private val streamResolver = StreamResolver()
 
     private val _currentItem = MutableStateFlow<PlayableItem?>(null)
     val currentItem = _currentItem.asStateFlow()
@@ -1033,9 +1032,8 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
         if (id.startsWith("remote:")) {
             val remoteKey = id.removePrefix("remote:")
-            val looksLikeVideoId = remoteKey.length == 11 &&
-                remoteKey.all { it.isLetterOrDigit() || it == '_' || it == '-' }
-            return if (looksLikeVideoId) {
+            val videoId = YouTubeExtractor.extractYouTubeId(remoteKey)
+            return if (videoId != null && videoId == remoteKey) {
                 // Preserve mediaId via resolved.videoId; stale timestamp forces re-resolve.
                 PlayableItem.remoteFrom(
                     artist = artist,
@@ -1478,17 +1476,8 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         if (existing != null && existing.state == CandidateDownloadState.DOWNLOADING) return
         saveWhileListeningAttempted.add(key)
 
-        val track = remote.toOnlineCatalogTrack(provider = "YouTube")
-
         viewModelScope.launch {
-            val result = runTrackedDownload(
-                downloadId = key,
-                source = ActiveDownloadSource.SAVE_WHILE_LISTENING,
-                track = track,
-                displayTitle = remote.title,
-                displayArtist = remote.artist,
-                artworkUrl = remote.artworkUri
-            )
+            val result = enqueueRemoteDownload(remote, ActiveDownloadSource.SAVE_WHILE_LISTENING)
             result.fold(
                 onSuccess = { song ->
                     toastSongInLibrary(song.title, LibraryToastKind.SAVED)
@@ -1826,14 +1815,19 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     fun shuffleCollection(songs: List<Song>) {
-        if (songs.isEmpty()) return
+        shufflePlayableCollection(songs.toPlayableItems())
+    }
+
+    private fun shufflePlayableCollection(items: List<PlayableItem>): Boolean {
+        if (items.isEmpty()) return false
         playPlayableCollection(
-            songs.toPlayableItems(),
-            startIndex = songs.indices.random(),
+            items,
+            startIndex = items.indices.random(),
             rotate = false,
             applyManualModes = false,
             startShuffled = true
         )
+        return true
     }
 
     fun enqueueCollection(songs: List<Song>) {
@@ -2006,22 +2000,11 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             _radioLoading.value = true
             try {
                 val library = rawSongs.first()
-                val exclude = playedInRadioSession.toMutableSet()
-                val seedKey = MatchListenBrainzTracksUseCase.matchKey(seed.artist, seed.title)
-                if (seedKey.isNotEmpty()) exclude.add(seedKey)
-                exclude.add(seed.mediaId)
-                _currentItem.value?.let { current ->
-                    val currentKey = MatchListenBrainzTracksUseCase.matchKey(current.artist, current.title)
-                    if (currentKey.isNotEmpty()) exclude.add(currentKey)
-                    exclude.add(current.mediaId)
-                }
-                if (!keepCurrentPlaying) {
-                    for (item in _queue.value) {
-                        val key = MatchListenBrainzTracksUseCase.matchKey(item.artist, item.title)
-                        if (key.isNotEmpty()) exclude.add(key)
-                        exclude.add(item.mediaId)
-                    }
-                }
+                val exclude = buildRadioExcludeKeys(
+                    seed = seed,
+                    includeQueue = !keepCurrentPlaying,
+                    extra = _currentItem.value
+                )
 
                 val effectiveMode = resolvedMode
                 val coPlaylistIds = resolveCoPlaylistSongIds(seed)
@@ -2206,20 +2189,26 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     private fun rememberRadioPlayed(item: PlayableItem) {
-        val key = MatchListenBrainzTracksUseCase.matchKey(item.artist, item.title)
+        val key = TrackMatchKeys.matchKey(item.artist, item.title)
         if (key.isNotEmpty()) playedInRadioSession.add(key)
         playedInRadioSession.add(item.mediaId)
     }
 
-    private fun buildRadioExcludeKeys(seed: PlayableItem): MutableSet<String> {
+    private fun buildRadioExcludeKeys(
+        seed: PlayableItem,
+        includeQueue: Boolean = true,
+        extra: PlayableItem? = null
+    ): MutableSet<String> {
         val exclude = playedInRadioSession.toMutableSet()
-        val seedKey = MatchListenBrainzTracksUseCase.matchKey(seed.artist, seed.title)
-        if (seedKey.isNotEmpty()) exclude.add(seedKey)
-        exclude.add(seed.mediaId)
-        for (item in _queue.value) {
-            val key = MatchListenBrainzTracksUseCase.matchKey(item.artist, item.title)
+        fun remember(item: PlayableItem) {
+            val key = TrackMatchKeys.matchKey(item.artist, item.title)
             if (key.isNotEmpty()) exclude.add(key)
             exclude.add(item.mediaId)
+        }
+        remember(seed)
+        extra?.let { remember(it) }
+        if (includeQueue) {
+            for (item in _queue.value) remember(item)
         }
         return exclude
     }
@@ -3301,17 +3290,8 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         return true
     }
 
-    private fun shuffleMatchedCollection(items: List<PlayableItem>): Boolean {
-        if (items.isEmpty()) return false
-        playPlayableCollection(
-            items,
-            startIndex = items.indices.random(),
-            rotate = false,
-            applyManualModes = false,
-            startShuffled = true
-        )
-        return true
-    }
+    private fun shuffleMatchedCollection(items: List<PlayableItem>): Boolean =
+        shufflePlayableCollection(items)
 
     fun playCfRecommendations() {
         val items = _cfRecommendations.value?.toPlayableItems().orEmpty()
@@ -3508,13 +3488,11 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     private data class TrackedBatchItem(
         val track: OnlineCatalogTrack,
-        val displayTitle: String = track.title,
-        val displayArtist: String = track.artist,
-        val artworkUrl: String? = track.artworkUri,
         val candidates: List<OnlineCatalogTrack> = listOf(track),
         val currentCandidateIndex: Int = 0,
         val mirrorCandidateTitle: String? = null,
-        val idHint: String? = null
+        val idHint: String? = null,
+        val lookupIdentity: TrackIdentity? = null
     )
 
     private suspend fun enqueueTrackedBatch(
@@ -3545,9 +3523,6 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 ActiveDownload.queued(
                     id = downloadId,
                     source = source,
-                    displayTitle = item.displayTitle,
-                    displayArtist = item.displayArtist,
-                    artworkUrl = item.artworkUrl,
                     candidates = candidates,
                     currentCandidateIndex = safeIndex,
                     targetPlaylistId = playlistId
@@ -3569,15 +3544,13 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                         downloadId = downloadId,
                         source = source,
                         track = item.track,
-                        displayTitle = item.displayTitle,
-                        displayArtist = item.displayArtist,
-                        artworkUrl = item.artworkUrl,
                         existingCandidates = item.candidates,
                         currentCandidateIndex = safeIndex,
                         mirrorCandidateTitle = item.mirrorCandidateTitle.takeIf {
                             mirrorCandidateState
                         },
-                        targetPlaylistId = playlistId
+                        targetPlaylistId = playlistId,
+                        lookupIdentity = item.lookupIdentity
                     )
                     if (result.isSuccess) successCount.incrementAndGet()
                 }
@@ -3595,7 +3568,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         items = tracks.map { TrackedBatchItem(track = it) },
         source = ActiveDownloadSource.LB_IMPORT,
         idStrategy = {
-            ImportListenBrainzPlaylistUseCase.downloadIdFor(it.track.artist, it.track.title)
+            TrackMatchKeys.downloadIdFor(it.track.artist, it.track.title)
         },
         playlistId = playlistId,
         mirrorCandidateState = false,
@@ -3710,12 +3683,23 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         if (index !in list.indices) return
         val item = list[index]
         launchCycleYouTubeMatch(
-            query = "${item.artist} ${item.trackTitle}".trim(),
+            query = "${item.artist} ${item.title}".trim(),
             current = item.candidates,
             wasPreviewing = isPreviewingCandidate(item)
         ) { candidatesList ->
             val nextIndex = (item.currentCandidateIndex + 1) % candidatesList.size
-            val updated = item.copy(candidates = candidatesList, currentCandidateIndex = nextIndex)
+            val merged = candidatesList.mapIndexed { i, t ->
+                if (i != nextIndex) t
+                else t.withIdentity {
+                    copy(
+                        album = item.album.takeIf { !IdentifyRanking.isGenericAlbum(it) } ?: album,
+                        artworkUri = artworkUri ?: item.artworkUri,
+                        title = title.ifBlank { item.title },
+                        artist = artist.ifBlank { item.artist }
+                    )
+                }
+            }
+            val updated = item.copy(candidates = merged, currentCandidateIndex = nextIndex)
             list[index] = updated
             _activeTrackCandidates.value = list
             updated.currentTrack
@@ -3782,7 +3766,9 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         error: String? = null
     ) {
         val list = _activeTrackCandidates.value.toMutableList()
-        val index = list.indexOfFirst { it.trackTitle == trackTitle }
+        val index = list.indexOfFirst { c ->
+            c.title == trackTitle || c.candidates.any { it.title == trackTitle }
+        }
         if (index != -1) {
             list[index] = list[index].copy(
                 downloadState = state,
@@ -3823,14 +3809,12 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 downloadId = conflict.downloadId,
                 source = conflict.source,
                 track = conflict.track,
-                displayTitle = conflict.displayTitle,
-                displayArtist = conflict.displayArtist,
-                artworkUrl = conflict.artworkUrl,
                 existingCandidates = conflict.candidates,
                 currentCandidateIndex = conflict.currentCandidateIndex,
                 mirrorCandidateTitle = conflict.mirrorCandidateTitle,
                 targetPlaylistId = conflict.targetPlaylistId,
-                conflictPolicy = policy
+                conflictPolicy = policy,
+                lookupIdentity = conflict.lookupIdentity
             )
         }
     }
@@ -3849,15 +3833,14 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             runTrackedDownload(
                 downloadId = conflict.downloadId,
                 source = conflict.source,
-                track = conflict.track.withIdentity { copy(title = title) },
-                displayTitle = title,
-                displayArtist = conflict.displayArtist,
-                artworkUrl = conflict.artworkUrl,
+                track = conflict.track,
                 existingCandidates = conflict.candidates,
                 currentCandidateIndex = conflict.currentCandidateIndex,
                 mirrorCandidateTitle = conflict.mirrorCandidateTitle,
                 targetPlaylistId = conflict.targetPlaylistId,
-                conflictPolicy = policy
+                conflictPolicy = policy,
+                lookupIdentity = conflict.lookupIdentity,
+                titleOverride = title
             )
         }
     }
@@ -3888,28 +3871,26 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     private suspend fun resolveExistingSong(
-        displayArtist: String,
-        displayTitle: String,
-        activeTrack: OnlineCatalogTrack
-    ): Song? = repository.findSongByArtistTitle(
-        displayArtist.ifBlank { activeTrack.artist },
-        displayTitle.ifBlank { activeTrack.title }
-    ) ?: repository.findSongByArtistTitle(activeTrack.artist, activeTrack.title)
+        activeTrack: OnlineCatalogTrack,
+        lookup: TrackIdentity?
+    ): Song? {
+        val artist = lookup?.artist?.ifBlank { null } ?: activeTrack.artist
+        val title = lookup?.title?.ifBlank { null } ?: activeTrack.title
+        return repository.findSongByArtistTitle(artist, title)
+    }
 
     private suspend fun applyBatchPolicy(
-        displayArtist: String,
-        displayTitle: String,
-        activeTrack: OnlineCatalogTrack
+        activeTrack: OnlineCatalogTrack,
+        lookup: TrackIdentity?
     ): DownloadConflictPolicy? {
         val cached = batchConflictPolicy ?: return null
         return when (cached) {
             is DownloadConflictPolicy.Overwrite -> {
-                resolveExistingSong(displayArtist, displayTitle, activeTrack)
-                    ?.let { DownloadConflictPolicy.Overwrite(it.id) }
+                resolveExistingSong(activeTrack, lookup)?.let { DownloadConflictPolicy.Overwrite(it.id) }
             }
             is DownloadConflictPolicy.SaveAs -> {
                 batchSaveAsCounter++
-                val base = displayTitle.ifBlank { activeTrack.title }.ifBlank { "Track" }
+                val base = lookup?.title?.ifBlank { null } ?: activeTrack.title.ifBlank { "Track" }
                 DownloadConflictPolicy.SaveAs("$base ($batchSaveAsCounter)")
             }
         }
@@ -3920,13 +3901,11 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         source: ActiveDownloadSource,
         activeTrack: OnlineCatalogTrack,
         existing: Song,
-        displayTitle: String,
-        displayArtist: String,
-        artworkUrl: String?,
         candidates: List<OnlineCatalogTrack>,
         safeIndex: Int,
         mirrorCandidateTitle: String?,
-        targetPlaylistId: Long?
+        targetPlaylistId: Long?,
+        lookupIdentity: TrackIdentity?
     ) {
         val isBatch = source == ActiveDownloadSource.BATCH || source == ActiveDownloadSource.LB_IMPORT
         _downloadConflict.value = DownloadConflict(
@@ -3934,14 +3913,12 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             source = source,
             track = activeTrack,
             existing = existing,
-            displayTitle = displayTitle.ifBlank { activeTrack.title }.ifBlank { existing.title },
-            displayArtist = displayArtist.ifBlank { activeTrack.artist }.ifBlank { existing.artist },
-            artworkUrl = artworkUrl,
             candidates = candidates,
             currentCandidateIndex = safeIndex,
             mirrorCandidateTitle = mirrorCandidateTitle,
             targetPlaylistId = targetPlaylistId,
-            applyToRemainingBatch = isBatch
+            applyToRemainingBatch = isBatch,
+            lookupIdentity = lookupIdentity
         )
     }
 
@@ -3977,20 +3954,22 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         downloadId: String,
         source: ActiveDownloadSource,
         track: OnlineCatalogTrack,
-        displayTitle: String = track.title.ifBlank { "Descarga" },
-        displayArtist: String = track.artist,
-        artworkUrl: String? = track.artworkUri,
         existingCandidates: List<OnlineCatalogTrack>? = null,
         currentCandidateIndex: Int = 0,
         mirrorCandidateTitle: String? = null,
         targetPlaylistId: Long? = null,
-        conflictPolicy: DownloadConflictPolicy? = null
+        conflictPolicy: DownloadConflictPolicy? = null,
+        lookupIdentity: TrackIdentity? = null,
+        titleOverride: String? = null
     ): Result<Song> {
         val candidates = existingCandidates?.takeIf { it.isNotEmpty() } ?: listOf(track)
         val safeIndex = currentCandidateIndex.coerceIn(0, (candidates.size - 1).coerceAtLeast(0))
-        val resolvedTitle = displayTitle.ifBlank { track.title }.ifBlank { "Descarga" }
+        val lookup = lookupIdentity ?: track.identity
 
         val existing = _activeDownloads.value.find { it.id == downloadId }
+        val override = titleOverride
+            ?: (conflictPolicy as? DownloadConflictPolicy.SaveAs)?.newTitle
+            ?: existing?.titleOverride
         if (existing == null ||
             existing.state != CandidateDownloadState.DOWNLOADING
         ) {
@@ -3998,13 +3977,11 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 ActiveDownload.queued(
                     id = downloadId,
                     source = source,
-                    displayTitle = resolvedTitle,
-                    displayArtist = displayArtist,
-                    artworkUrl = artworkUrl,
                     candidates = candidates,
                     currentCandidateIndex = safeIndex,
                     targetPlaylistId = targetPlaylistId,
-                    resultSongId = existing?.resultSongId
+                    resultSongId = existing?.resultSongId,
+                    titleOverride = override
                 )
             )
             if (mirrorCandidateTitle != null) {
@@ -4017,14 +3994,13 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 downloadId = downloadId,
                 source = source,
                 track = track,
-                displayTitle = resolvedTitle,
-                displayArtist = displayArtist,
-                artworkUrl = artworkUrl,
                 candidates = candidates,
                 safeIndex = safeIndex,
                 mirrorCandidateTitle = mirrorCandidateTitle,
                 targetPlaylistId = targetPlaylistId,
-                conflictPolicy = conflictPolicy
+                conflictPolicy = conflictPolicy,
+                lookupIdentity = lookup,
+                titleOverride = override
             )
         }
     }
@@ -4033,18 +4009,17 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         downloadId: String,
         source: ActiveDownloadSource,
         track: OnlineCatalogTrack,
-        displayTitle: String,
-        displayArtist: String,
-        artworkUrl: String?,
         candidates: List<OnlineCatalogTrack>,
         safeIndex: Int,
         mirrorCandidateTitle: String?,
         targetPlaylistId: Long?,
-        conflictPolicy: DownloadConflictPolicy?
+        conflictPolicy: DownloadConflictPolicy?,
+        lookupIdentity: TrackIdentity?,
+        titleOverride: String?
     ): Result<Song> {
         val activeTrack = candidates.getOrNull(safeIndex) ?: track
 
-        var resolvedPolicy = conflictPolicy ?: applyBatchPolicy(displayArtist, displayTitle, activeTrack)
+        var resolvedPolicy = conflictPolicy ?: applyBatchPolicy(activeTrack, lookupIdentity)
 
         // Wait if another download is already showing the conflict dialog (batch).
         if (resolvedPolicy == null) {
@@ -4053,37 +4028,36 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 delay(250)
                 waited++
                 if (batchConflictPolicy != null) {
-                    resolvedPolicy = applyBatchPolicy(displayArtist, displayTitle, activeTrack)
+                    resolvedPolicy = applyBatchPolicy(activeTrack, lookupIdentity)
                 }
             }
         }
 
+        val displayOverride = titleOverride
+            ?: (resolvedPolicy as? DownloadConflictPolicy.SaveAs)?.newTitle
+
         if (resolvedPolicy == null) {
-            val existing = resolveExistingSong(displayArtist, displayTitle, activeTrack)
+            val existing = resolveExistingSong(activeTrack, lookupIdentity)
             if (existing != null) {
                 emitDownloadConflict(
                     downloadId = downloadId,
                     source = source,
                     activeTrack = activeTrack,
                     existing = existing,
-                    displayTitle = displayTitle,
-                    displayArtist = displayArtist,
-                    artworkUrl = artworkUrl,
                     candidates = candidates,
                     safeIndex = safeIndex,
                     mirrorCandidateTitle = mirrorCandidateTitle,
-                    targetPlaylistId = targetPlaylistId
+                    targetPlaylistId = targetPlaylistId,
+                    lookupIdentity = lookupIdentity
                 )
                 upsertActiveDownload(
                     ActiveDownload.conflict(
                         id = downloadId,
                         source = source,
-                        displayTitle = displayTitle,
-                        displayArtist = displayArtist,
-                        artworkUrl = artworkUrl,
                         candidates = candidates,
                         currentCandidateIndex = safeIndex,
-                        targetPlaylistId = targetPlaylistId
+                        targetPlaylistId = targetPlaylistId,
+                        titleOverride = displayOverride
                     )
                 )
                 return Result.failure(
@@ -4096,12 +4070,10 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             ActiveDownload.downloading(
                 id = downloadId,
                 source = source,
-                displayTitle = displayTitle,
-                displayArtist = displayArtist,
-                artworkUrl = artworkUrl,
                 candidates = candidates,
                 currentCandidateIndex = safeIndex,
-                targetPlaylistId = targetPlaylistId
+                targetPlaylistId = targetPlaylistId,
+                titleOverride = displayOverride
             )
         )
         if (mirrorCandidateTitle != null) {
@@ -4145,24 +4117,20 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 source = source,
                 activeTrack = duplicate.track,
                 existing = duplicate.existing,
-                displayTitle = displayTitle,
-                displayArtist = displayArtist,
-                artworkUrl = artworkUrl,
                 candidates = candidates,
                 safeIndex = safeIndex,
                 mirrorCandidateTitle = mirrorCandidateTitle,
-                targetPlaylistId = targetPlaylistId
+                targetPlaylistId = targetPlaylistId,
+                lookupIdentity = lookupIdentity
             )
             upsertActiveDownload(
                 ActiveDownload.conflict(
                     id = downloadId,
                     source = source,
-                    displayTitle = displayTitle,
-                    displayArtist = displayArtist,
-                    artworkUrl = artworkUrl,
                     candidates = candidates,
                     currentCandidateIndex = safeIndex,
-                    targetPlaylistId = targetPlaylistId
+                    targetPlaylistId = targetPlaylistId,
+                    titleOverride = displayOverride
                 )
             )
             return result
@@ -4175,9 +4143,6 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                         id = downloadId,
                         source = source,
                         song = song,
-                        displayTitle = displayTitle,
-                        displayArtist = displayArtist,
-                        artworkUrl = artworkUrl,
                         candidates = candidates,
                         currentCandidateIndex = safeIndex,
                         targetPlaylistId = targetPlaylistId
@@ -4212,8 +4177,8 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                         "download_phase" to "tracked_download",
                         "download_source" to source.name,
                         "download_id" to downloadId,
-                        "track_title" to displayTitle,
-                        "track_artist" to displayArtist
+                        "track_title" to activeTrack.title,
+                        "track_artist" to activeTrack.artist
                     )
                 )
                 val error = mapDownloadError(e)
@@ -4246,12 +4211,12 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     private suspend fun rematchCfRecommendations(extraSong: Song? = null) {
         val current = _cfRecommendations.value ?: return
-        val index = MatchListenBrainzTracksUseCase.buildLibraryIndex(libraryWithExtra(extraSong))
+        val index = TrackMatchKeys.buildLibraryIndex(libraryWithExtra(extraSong))
         _cfRecommendations.value = current.copy(
             matches = current.matches.map { match ->
                 if (match.localSong != null) match
                 else {
-                    val key = MatchListenBrainzTracksUseCase.matchKey(match.artist, match.title)
+                    val key = TrackMatchKeys.matchKey(match.artist, match.title)
                     match.copy(localSong = if (key.isNotEmpty()) index[key] else null)
                 }
             }
@@ -4292,19 +4257,19 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             else -> Unit
         }
 
-        val track = remote.toOnlineCatalogTrack(provider = "YouTube")
-
         viewModelScope.launch {
             toastDownloadsQueued()
-            runTrackedDownload(
-                downloadId = key,
-                source = ActiveDownloadSource.DISCOVER,
-                track = track,
-                displayTitle = remote.title,
-                displayArtist = remote.artist,
-                artworkUrl = remote.artworkUri
-            )
+            enqueueRemoteDownload(remote, ActiveDownloadSource.DISCOVER)
         }
+    }
+
+    private suspend fun enqueueRemoteDownload(
+        remote: PlayableItem.Remote,
+        source: ActiveDownloadSource
+    ): Result<Song> {
+        val key = TrackMatchKeys.downloadIdFor(remote.artist, remote.title)
+        val track = remote.toOnlineCatalogTrack(provider = "YouTube")
+        return runTrackedDownload(downloadId = key, source = source, track = track)
     }
 
     fun retryActiveDownload(id: String) {
@@ -4318,9 +4283,6 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 downloadId = download.id,
                 source = download.source,
                 track = track,
-                displayTitle = download.displayTitle,
-                displayArtist = download.displayArtist,
-                artworkUrl = download.artworkUrl,
                 existingCandidates = download.candidates,
                 currentCandidateIndex = download.currentCandidateIndex,
                 targetPlaylistId = download.targetPlaylistId
@@ -4336,7 +4298,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         val current = download.currentTrack ?: return
         val wasPreviewing = _catalogPreviewKey.value == catalogPreviewKeyFor(current) ||
             download.candidates.any { catalogPreviewKeyFor(it) == _catalogPreviewKey.value }
-        val query = "${download.displayArtist} ${download.displayTitle}".trim()
+        val query = "${download.artist} ${download.title}".trim()
             .ifBlank { current.title.trim() }
             .ifBlank { current.id.ifBlank { current.audioUrl } }
         if (query.isBlank()) return
@@ -4385,7 +4347,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         val downloadId = activeDownloadIdFor(
             track,
             ActiveDownloadSource.BATCH,
-            explicitId = "batch:${candidate.artist}|${candidate.trackTitle}"
+            explicitId = "batch:${candidate.artist}|${candidate.title}"
         )
 
         viewModelScope.launch {
@@ -4394,13 +4356,11 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 downloadId = downloadId,
                 source = ActiveDownloadSource.BATCH,
                 track = track,
-                displayTitle = candidate.trackTitle.ifBlank { track.title },
-                displayArtist = candidate.artist.ifBlank { track.artist },
-                artworkUrl = candidate.coverUrl ?: track.artworkUri,
                 existingCandidates = candidate.candidates,
                 currentCandidateIndex = candidate.currentCandidateIndex,
-                mirrorCandidateTitle = candidate.trackTitle,
-                targetPlaylistId = targetPlaylistId
+                mirrorCandidateTitle = candidate.title,
+                targetPlaylistId = targetPlaylistId,
+                lookupIdentity = candidate.identity
             )
         }
     }
@@ -4416,13 +4376,11 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 val track = candidate.currentTrack ?: return@mapNotNull null
                 TrackedBatchItem(
                     track = track,
-                    displayTitle = candidate.trackTitle.ifBlank { track.title },
-                    displayArtist = candidate.artist.ifBlank { track.artist },
-                    artworkUrl = candidate.coverUrl ?: track.artworkUri,
                     candidates = candidate.candidates,
                     currentCandidateIndex = candidate.currentCandidateIndex,
-                    mirrorCandidateTitle = candidate.trackTitle,
-                    idHint = "batch:${candidate.artist}|${candidate.trackTitle}"
+                    mirrorCandidateTitle = candidate.title,
+                    idHint = "batch:${candidate.artist}|${candidate.title}",
+                    lookupIdentity = candidate.identity
                 )
             }
             try {
@@ -4486,12 +4444,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             runTrackedDownload(
                 downloadId = downloadId,
                 source = source,
-                track = track,
-                displayTitle = track.title.ifBlank {
-                    if (source == ActiveDownloadSource.LINK) "Enlace YouTube" else "Descarga"
-                },
-                displayArtist = track.artist,
-                artworkUrl = track.artworkUri
+                track = track
             )
         }
     }

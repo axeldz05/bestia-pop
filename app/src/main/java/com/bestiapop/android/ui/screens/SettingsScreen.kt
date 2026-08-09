@@ -37,6 +37,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.bestiapop.android.ui.MusicPlayerViewModel
+import com.bestiapop.android.ui.components.ScreenBackHeader
 
 private enum class SettingsSection {
     Themes,
@@ -81,7 +82,11 @@ private fun SettingsSectionPage(
     content: @Composable () -> Unit
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
-        SettingsSubHeader(title = title, onBack = onBack)
+        ScreenBackHeader(
+            title = title,
+            onBack = onBack,
+            modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp)
+        )
         content()
     }
 }
@@ -163,29 +168,6 @@ private data class SettingsHomeEntry(
     val icon: ImageVector,
     val onClick: () -> Unit
 )
-
-@Composable
-private fun SettingsSubHeader(title: String, onBack: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 4.dp, vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        IconButton(onClick = onBack) {
-            Icon(
-                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                contentDescription = "Volver",
-                tint = MaterialTheme.colorScheme.onBackground
-            )
-        }
-        Text(
-            text = title,
-            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
-            color = MaterialTheme.colorScheme.onBackground
-        )
-    }
-}
 
 @Composable
 private fun SettingsEntryCard(

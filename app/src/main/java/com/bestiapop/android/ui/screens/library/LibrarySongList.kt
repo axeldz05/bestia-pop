@@ -42,6 +42,7 @@ import androidx.compose.ui.unit.dp
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.ui.SortOption
 import com.bestiapop.android.ui.components.ArtworkThumbnail
+import com.bestiapop.android.ui.components.EmptyListHint
 import com.bestiapop.android.ui.components.PlayShuffleIconPair
 import com.bestiapop.android.ui.components.SongListItem
 import com.bestiapop.android.ui.components.formatSortRelevantInfo
@@ -76,16 +77,10 @@ fun LibrarySongList(
     modifier: Modifier = Modifier
 ) {
     if (items.isEmpty()) {
-        Box(
-            modifier = modifier.fillMaxSize(),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                text = "No se encontraron canciones",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-            )
-        }
+        EmptyListHint(
+            text = "No se encontraron canciones",
+            modifier = modifier.fillMaxSize()
+        )
         return
     }
 

@@ -10,6 +10,7 @@ import com.bestiapop.android.data.model.ActiveDownload
 import com.bestiapop.android.data.model.ActiveDownloadSource
 import com.bestiapop.android.data.model.CandidateDownloadState
 import com.bestiapop.android.data.model.OnlineCatalogTrack
+import com.bestiapop.android.data.model.withIdentity
 import com.bestiapop.android.data.util.optNullableString
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -80,9 +81,6 @@ object ActiveDownloadCodec {
         JSONObject().apply {
             put("id", download.id)
             put("source", download.source.name)
-            put("displayTitle", download.displayTitle)
-            put("displayArtist", download.displayArtist)
-            put("artworkUrl", download.artworkUrl ?: JSONObject.NULL)
             put("currentCandidateIndex", download.currentCandidateIndex)
             put("state", download.state.name)
             put("errorMessage", download.errorMessage ?: JSONObject.NULL)
@@ -95,6 +93,10 @@ object ActiveDownloadCodec {
                 put("resultSongId", download.resultSongId)
             } else {
                 put("resultSongId", JSONObject.NULL)
+            }
+            val override = download.titleOverride?.takeIf { it.isNotBlank() }
+            if (override != null) {
+                put("displayTitle", override)
             }
             val candidates = JSONArray()
             for (track in download.candidates) {
@@ -141,21 +143,35 @@ object ActiveDownloadCodec {
             } else {
                 null
             }
+            val index = obj.optInt("currentCandidateIndex", 0)
+                .coerceIn(0, (candidates.size - 1).coerceAtLeast(0))
+            val fallbackTitle = obj.optString("displayTitle", "")
+            val fallbackArtist = obj.optString("displayArtist", "")
+            val fallbackArt = obj.optNullableString("artworkUrl")
+            val patched = candidates.mapIndexed { i, track ->
+                if (i != index) track
+                else track.withIdentity {
+                    copy(
+                        title = title.ifBlank { fallbackTitle },
+                        artist = artist.ifBlank { fallbackArtist },
+                        artworkUri = artworkUri?.takeIf { it.isNotBlank() } ?: fallbackArt
+                    )
+                }
+            }
+            val currentTitle = patched.getOrNull(index)?.title.orEmpty()
+            val titleOverride = fallbackTitle.takeIf { it.isNotBlank() && it != currentTitle }
             ActiveDownload(
                 id = obj.getString("id"),
                 source = source,
-                displayTitle = obj.optString("displayTitle", ""),
-                displayArtist = obj.optString("displayArtist", ""),
-                artworkUrl = obj.optNullableString("artworkUrl"),
-                candidates = candidates,
-                currentCandidateIndex = obj.optInt("currentCandidateIndex", 0)
-                    .coerceIn(0, (candidates.size - 1).coerceAtLeast(0)),
+                candidates = patched,
+                currentCandidateIndex = index,
                 state = state,
                 progressMessage = null,
                 progressPercent = if (state == CandidateDownloadState.SUCCESS) 100 else 0,
                 errorMessage = obj.optNullableString("errorMessage"),
                 targetPlaylistId = targetPlaylistId,
-                resultSongId = resultSongId
+                resultSongId = resultSongId,
+                titleOverride = titleOverride
             )
         } catch (_: Exception) {
             null

@@ -49,9 +49,7 @@ fun BottomPlayerBar(
 ) {
     if (currentItem == null) return
 
-    val progressFraction = if (currentItem.durationMs > 0) {
-        (progressMs.toFloat() / currentItem.durationMs.toFloat()).coerceIn(0f, 1f)
-    } else 0f
+    val progressFraction = playbackProgressFraction(progressMs, currentItem.durationMs)
 
     val subtitle = if (!statusLabel.isNullOrBlank()) {
         statusLabel
@@ -100,26 +98,17 @@ fun BottomPlayerBar(
 
                     Spacer(modifier = Modifier.width(12.dp))
 
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = currentItem.title,
-                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-                            color = MaterialTheme.colorScheme.onSurface,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Text(
-                            text = subtitle,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = if (highlightStatus) {
-                                MaterialTheme.colorScheme.primary
-                            } else {
-                                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                            },
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
+                    TrackTextColumn(
+                        title = currentItem.title,
+                        subtitle = subtitle,
+                        modifier = Modifier.weight(1f),
+                        titleWeight = FontWeight.SemiBold,
+                        subtitleColor = if (highlightStatus) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                        }
+                    )
                 }
             }
 
@@ -133,7 +122,7 @@ fun BottomPlayerBar(
 
             IconButton(onClick = onPlayPauseClick) {
                 Icon(
-                    imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                    imageVector = playPauseVector(isPlaying),
                     contentDescription = "Play/Pause",
                     tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(32.dp)

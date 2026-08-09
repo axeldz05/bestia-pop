@@ -12,11 +12,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Download
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import com.bestiapop.android.data.model.ActiveDownload
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -38,7 +36,8 @@ fun RemoteTrackPlaceholderRow(
     highlighted: Boolean,
     onClick: (() -> Unit)? = null,
     onDownload: (() -> Unit)? = null,
-    downloadBusy: Boolean = false
+    download: ActiveDownload? = null,
+    onRetry: (() -> Unit)? = null
 ) {
     Row(
         modifier = Modifier
@@ -79,19 +78,11 @@ fun RemoteTrackPlaceholderRow(
             }
             Spacer(modifier = Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = artist,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                TrackTextColumn(
+                    title = title,
+                    subtitle = artist,
+                    titleStyle = MaterialTheme.typography.titleSmall,
+                    titleWeight = FontWeight.SemiBold
                 )
                 Text(
                     text = badge,
@@ -104,23 +95,13 @@ fun RemoteTrackPlaceholderRow(
                 )
             }
         }
-        if (onDownload != null) {
-            if (downloadBusy) {
-                CircularProgressIndicator(
-                    modifier = Modifier
-                        .padding(12.dp)
-                        .size(22.dp),
-                    strokeWidth = 2.dp
-                )
-            } else {
-                IconButton(onClick = onDownload) {
-                    Icon(
-                        imageVector = Icons.Default.Download,
-                        contentDescription = "Descargar",
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                }
-            }
+        if (onDownload != null || download != null) {
+            DownloadStateTrailing(
+                state = download?.state,
+                percent = download?.progressPercent ?: 0,
+                onRetry = onRetry,
+                onDownload = onDownload
+            )
         }
     }
 }

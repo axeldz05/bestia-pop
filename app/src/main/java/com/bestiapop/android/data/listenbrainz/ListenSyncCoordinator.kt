@@ -1,9 +1,8 @@
 package com.bestiapop.android.data.listenbrainz
 
 import com.bestiapop.android.data.db.PendingListenDao
-import com.bestiapop.android.data.db.PendingListenEntity
+import com.bestiapop.android.data.db.toPayload
 import com.bestiapop.android.data.network.ListenBrainzClient
-import com.bestiapop.android.data.network.ListenPayload
 import com.bestiapop.android.data.network.SubmitListensResult
 import com.bestiapop.android.data.preferences.ListenBrainzPreferencesRepository
 import kotlinx.coroutines.CoroutineScope
@@ -79,14 +78,6 @@ class ListenSyncCoordinator(
             }
         }
     }
-
-    private fun PendingListenEntity.toPayload() = ListenPayload(
-        listenedAt = listenedAt,
-        trackName = trackName,
-        artistName = artistName,
-        releaseName = releaseName,
-        durationMs = durationMs
-    )
 
     companion object {
         private const val BATCH_SIZE = 5

@@ -26,6 +26,8 @@ import androidx.compose.ui.unit.dp
 import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.ui.MusicPlayerViewModel
 import com.bestiapop.android.ui.components.ActiveDownloadRow
+import com.bestiapop.android.ui.components.EmptyListHint
+import com.bestiapop.android.ui.components.previewFlags
 
 @Composable
 fun DownloadsScreen(viewModel: MusicPlayerViewModel) {
@@ -68,24 +70,25 @@ fun DownloadsScreen(viewModel: MusicPlayerViewModel) {
         Spacer(modifier = Modifier.height(24.dp))
 
         if (activeDownloads.isEmpty()) {
-            Text(
+            EmptyListHint(
                 text = "No hay descargas",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 8.dp),
-                textAlign = TextAlign.Center
+                    .padding(vertical = 8.dp)
             )
         } else {
             activeDownloads.forEach { download ->
                 val track = download.currentTrack
-                val previewKey = track?.let { viewModel.catalogPreviewKeyFor(it) }
-                val isThisPreview = previewKey != null && catalogPreviewKey == previewKey
+                val flags = previewFlags(
+                    catalogPreviewKey,
+                    track?.let { viewModel.catalogPreviewKeyFor(it) },
+                    isPlaying && currentItem is PlayableItem.Remote,
+                    resolvingRemote
+                )
                 ActiveDownloadRow(
                     download = download,
-                    isPreviewPlaying = isThisPreview && isPlaying && currentItem is PlayableItem.Remote,
-                    isPreviewResolving = isThisPreview && resolvingRemote,
+                    isPreviewPlaying = flags.isPlaying,
+                    isPreviewResolving = flags.isResolving,
                     onPreview = { viewModel.previewActiveDownload(download.id) },
                     onPlay = { viewModel.playActiveDownload(download.id) },
                     onRetry = { viewModel.retryActiveDownload(download.id) },

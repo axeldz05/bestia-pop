@@ -41,7 +41,7 @@ class DownloadNotificationHelper(private val context: Context) {
         val latest = downloading.first()
         val count = downloading.size
         val title = if (count == 1) {
-            "Descargando «${latest.displayTitle.ifBlank { "canción" }}»"
+            "Descargando «${latest.displayLabel}»"
         } else {
             "Descargando $count canciones"
         }

@@ -5,6 +5,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import com.bestiapop.android.data.model.Playlist
+import com.bestiapop.android.ui.components.SongOverflowMenuItems
 import com.bestiapop.android.ui.state.DiscoverPlaybackOrigin
 
 @Composable
@@ -82,26 +83,11 @@ fun NowPlayingActionsMenu(
             DiscoverPlaybackOrigin.None -> Unit
         }
         if (isLocal) {
-            DropdownMenuItem(
-                text = { Text("Añadir a playlist") },
-                onClick = {
-                    onDismiss()
-                    onAddToPlaylist()
-                }
-            )
-            DropdownMenuItem(
-                text = { Text("Identificar…") },
-                onClick = {
-                    onDismiss()
-                    onIdentify()
-                }
-            )
-            DropdownMenuItem(
-                text = { Text("Editar información") },
-                onClick = {
-                    onDismiss()
-                    onEditSong()
-                }
+            SongOverflowMenuItems(
+                onDismiss = onDismiss,
+                onAddToPlaylist = onAddToPlaylist,
+                onIdentify = onIdentify,
+                onEditMetadata = onEditSong
             )
             if (canEditAlbum) {
                 DropdownMenuItem(

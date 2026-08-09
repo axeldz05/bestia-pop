@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.dp
 import com.bestiapop.android.data.model.Artist
 import com.bestiapop.android.ui.SortOption
 import com.bestiapop.android.ui.components.ArtworkThumbnail
+import com.bestiapop.android.ui.components.EmptyListHint
 import com.bestiapop.android.ui.components.PlayShuffleIconPair
 import com.bestiapop.android.ui.components.formatSortRelevantInfo
 
@@ -41,16 +42,10 @@ fun LibraryArtistList(
     modifier: Modifier = Modifier
 ) {
     if (artists.isEmpty()) {
-        Box(
-            modifier = modifier.fillMaxSize(),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                text = "No se encontraron artistas",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-            )
-        }
+        EmptyListHint(
+            text = "No se encontraron artistas",
+            modifier = modifier.fillMaxSize()
+        )
         return
     }
 

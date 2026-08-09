@@ -75,6 +75,13 @@ object IdentifyRanking {
         return j.coerceIn(0f, 1f)
     }
 
+    /** Generic/blank album → `"$artist - Single"`; otherwise keep [current]. */
+    fun fallbackAlbum(artist: String, current: String = ""): String {
+        val trimmed = current.trim()
+        if (trimmed.isNotEmpty() && !isGenericAlbum(trimmed)) return trimmed
+        return "${artist.ifBlank { "Unknown" }} - Single"
+    }
+
     fun isGenericAlbum(album: String): Boolean {
         val a = album.trim()
         if (a.isEmpty()) return true

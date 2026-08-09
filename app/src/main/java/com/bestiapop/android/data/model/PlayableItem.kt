@@ -123,3 +123,19 @@ data class ResolvedStream(
 fun Song.toPlayable(): PlayableItem.Local = PlayableItem.Local(this)
 
 fun List<Song>.toPlayableItems(): List<PlayableItem> = map { it.toPlayable() }
+
+fun PlayableItem.matchesSong(song: Song): Boolean {
+    if (this is PlayableItem.Local) {
+        if (song.id > 0L && this.song.id == song.id) return true
+        if (this.song.uriString == song.uriString || mediaId == song.uriString) return true
+    }
+    return mediaId == song.uriString
+}
+
+fun PlayableItem.matchesItem(other: PlayableItem): Boolean {
+    if (mediaId == other.mediaId) return true
+    val local = this as? PlayableItem.Local ?: return false
+    val otherLocal = other as? PlayableItem.Local ?: return false
+    if (local.song.id > 0L && local.song.id == otherLocal.song.id) return true
+    return local.song.uriString == otherLocal.song.uriString
+}

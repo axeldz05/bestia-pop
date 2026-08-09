@@ -110,15 +110,15 @@ import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.data.preferences.NAV_LIBRARY
 import com.bestiapop.android.data.preferences.NAV_PLAYLISTS
 import com.bestiapop.android.domain.radio.RadioMode
-import com.bestiapop.android.domain.util.TrackMatchKeys
 import com.bestiapop.android.ui.MusicPlayerViewModel
-import com.bestiapop.android.ui.components.DownloadOutlinedActionButton
-import com.bestiapop.android.ui.components.DownloadProgressPercent
-import com.bestiapop.android.ui.components.DownloadQueuedLabel
-import com.bestiapop.android.ui.components.QueueItemRow
+import com.bestiapop.android.ui.components.ArtworkHero
+import com.bestiapop.android.ui.components.DownloadStateTrailing
+import com.bestiapop.android.ui.components.QueueLazyList
+import com.bestiapop.android.ui.components.findByTrack
+import com.bestiapop.android.ui.components.playPauseVector
 import com.bestiapop.android.ui.components.formatDuration
 import com.bestiapop.android.ui.screens.library.AlbumEditDialogsHost
-import com.bestiapop.android.ui.screens.library.SongActionDialogsHost
+import com.bestiapop.android.ui.screens.library.rememberSongActionDialogs
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
@@ -181,8 +181,7 @@ fun NowPlayingScreen(
     val activeDownloads by viewModel.activeDownloads.collectAsState()
     var radioMenuExpanded by remember { mutableStateOf(false) }
     var actionsMenuExpanded by remember { mutableStateOf(false) }
-    var editingSong by remember { mutableStateOf<Song?>(null) }
-    var songForPlaylistAddition by remember { mutableStateOf<Song?>(null) }
+    val songDialogs = rememberSongActionDialogs(viewModel = viewModel, playlists = playlists)
     var albumForEdit by remember { mutableStateOf<Album?>(null) }
     var containingPlaylists by remember { mutableStateOf<List<Playlist>>(emptyList()) }
 
@@ -517,30 +516,15 @@ fun NowPlayingScreen(
             // Central View Container (Artwork, Lyrics, or Queue)
             when (selectedTab) {
                 0 -> {
-                    Box(
+                    ArtworkHero(
+                        uri = item.artworkUri,
+                        contentDescription = item.title,
+                        fallback = Icons.Default.MusicNote,
+                        fallbackTint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier
                             .fillMaxWidth(0.82f)
                             .aspectRatio(1f)
-                            .clip(RoundedCornerShape(24.dp))
-                            .background(MaterialTheme.colorScheme.surfaceVariant),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        if (!item.artworkUri.isNullOrEmpty()) {
-                            AsyncImage(
-                                model = item.artworkUri,
-                                contentDescription = item.title,
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize()
-                            )
-                        } else {
-                            Icon(
-                                imageVector = Icons.Default.MusicNote,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(88.dp)
-                            )
-                        }
-                    }
+                    )
                 }
                 1 -> {
                     NowPlayingLyricsPanel(
@@ -651,9 +635,9 @@ fun NowPlayingScreen(
                         onGoToCfRecommendations = {
                             goToPlaylists { viewModel.openCfRecommendationsDetail() }
                         },
-                        onAddToPlaylist = { localSong?.let { songForPlaylistAddition = it } },
+                        onAddToPlaylist = { localSong?.let(songDialogs.onAddToPlaylist) },
                         onIdentify = { localSong?.let { viewModel.identifySongForReview(it) } },
-                        onEditSong = { localSong?.let { editingSong = it } },
+                        onEditSong = { localSong?.let(songDialogs.onEdit) },
                         onEditAlbum = { albumForEdit = matchedAlbum },
                         onStartRadio = { viewModel.startRadio() }
                     )
@@ -662,14 +646,8 @@ fun NowPlayingScreen(
 
             val remoteItem = item as? PlayableItem.Remote
             if (remoteItem != null) {
-                val downloadKey = TrackMatchKeys.downloadIdFor(remoteItem.artist, remoteItem.title)
-                val remoteDownload = if (downloadKey.isEmpty()) {
-                    null
-                } else {
-                    activeDownloads.find { it.id == downloadKey }
-                }
                 NowPlayingRemoteDownloadAction(
-                    download = remoteDownload,
+                    download = activeDownloads.findByTrack(remoteItem.artist, remoteItem.title),
                     onDownload = { viewModel.downloadRemoteItem(remoteItem) },
                     onRetry = viewModel::retryActiveDownload
                 )
@@ -724,7 +702,7 @@ fun NowPlayingScreen(
                 ) {
                     IconButton(onClick = { viewModel.togglePlayPause() }) {
                         Icon(
-                            imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                            imageVector = playPauseVector(isPlaying),
                             contentDescription = "Play/Pause",
                             tint = MaterialTheme.colorScheme.onPrimary,
                             modifier = Modifier.size(36.dp)
@@ -819,16 +797,6 @@ fun NowPlayingScreen(
         }
     }
 
-    SongActionDialogsHost(
-        editingSong = editingSong,
-        songForPlaylistAddition = songForPlaylistAddition,
-        songsForDeletion = null,
-        playlists = playlists,
-        viewModel = viewModel,
-        onDismissEdit = { editingSong = null },
-        onDismissPlaylist = { songForPlaylistAddition = null },
-        onDismissDelete = {}
-    )
     AlbumEditDialogsHost(
         albumForEdit = albumForEdit,
         viewModel = viewModel,
@@ -844,31 +812,26 @@ private fun NowPlayingRemoteDownloadAction(
 ) {
     Spacer(modifier = Modifier.height(8.dp))
     when (download?.state) {
-        CandidateDownloadState.QUEUED -> DownloadQueuedLabel()
-        CandidateDownloadState.DOWNLOADING -> DownloadProgressPercent(download.progressPercent)
         CandidateDownloadState.SUCCESS -> Text(
             text = "En biblioteca",
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.primary
         )
-        CandidateDownloadState.ERROR -> DownloadOutlinedActionButton(
-            label = "Reintentar",
-            onClick = { onRetry(download.id) }
+        CandidateDownloadState.QUEUED,
+        CandidateDownloadState.DOWNLOADING,
+        CandidateDownloadState.ERROR -> DownloadStateTrailing(
+            state = download.state,
+            percent = download.progressPercent,
+            onRetry = { onRetry(download.id) }
         )
-        CandidateDownloadState.IDLE, null -> Button(
-            onClick = onDownload,
-            colors = ButtonDefaults.buttonColors(
-                containerColor = MaterialTheme.colorScheme.primaryContainer
-            ),
-            shape = RoundedCornerShape(12.dp)
-        ) {
+        CandidateDownloadState.IDLE, null -> Button(onClick = onDownload) {
             Icon(
                 imageVector = Icons.Default.Download,
                 contentDescription = null,
-                modifier = Modifier.size(16.dp)
+                modifier = Modifier.size(18.dp)
             )
-            Spacer(modifier = Modifier.width(6.dp))
-            Text("Descargar ahora", color = MaterialTheme.colorScheme.onPrimaryContainer)
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Descargar ahora")
         }
     }
 }
@@ -1051,51 +1014,18 @@ private fun NowPlayingQueuePanel(
             .clip(RoundedCornerShape(24.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
     ) {
-        if (queueItems.isEmpty()) {
-            Column(
-                modifier = Modifier.fillMaxSize(),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
-            ) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.QueueMusic,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
-                    modifier = Modifier.size(48.dp)
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "La cola está vacía",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                )
-            }
-        } else {
-            LazyColumn(
-                state = listState,
-                modifier = Modifier.fillMaxSize()
-            ) {
-                itemsIndexed(
-                    items = queueItems,
-                    key = { idx, s -> "${s.mediaId}_$idx" },
-                    contentType = { _, _ -> "queue_row" }
-                ) { index, queueSong ->
-                    QueueItemRow(
-                        item = queueSong,
-                        isCurrentPlaying = index == currentIndex,
-                        onClick = { onSkipTo(index) },
-                        onRemove = { onRemove(index) },
-                        showIndex = true,
-                        index = index,
-                        removeIcon = Icons.Default.Close,
-                        removeContentDescription = "Quitar de la cola",
-                        trailingDuration = formatDuration(queueSong.durationMs),
-                        compact = true,
-                        reorderCount = queueItems.size,
-                        onReorder = onReorder
-                    )
-                }
-            }
-        }
+        QueueLazyList(
+            items = queueItems,
+            isCurrentPlaying = { index, _ -> index == currentIndex },
+            onSkipTo = onSkipTo,
+            onRemove = onRemove,
+            listState = listState,
+            compact = true,
+            showIndex = true,
+            removeIcon = Icons.Default.Close,
+            removeContentDescription = "Quitar de la cola",
+            trailingDuration = { formatDuration(it.durationMs) },
+            onReorder = onReorder
+        )
     }
 }

@@ -59,8 +59,9 @@ import com.bestiapop.android.service.WebServerService
 import com.bestiapop.android.ui.MusicPlayerViewModel
 import com.bestiapop.android.ui.components.ArtworkThumbnail
 import com.bestiapop.android.ui.components.SongListItem
+import com.bestiapop.android.ui.components.TrackTextColumn
 import com.bestiapop.android.ui.components.rememberSongQueueActions
-import com.bestiapop.android.ui.screens.library.SongActionDialogsHost
+import com.bestiapop.android.ui.screens.library.rememberSongActionDialogs
 
 @Composable
 fun WebServerScreen(viewModel: MusicPlayerViewModel) {
@@ -73,9 +74,20 @@ fun WebServerScreen(viewModel: MusicPlayerViewModel) {
     val currentItem by viewModel.currentItem.collectAsState()
     val currentSongId = (currentItem as? PlayableItem.Local)?.song?.id
 
-    var editingSong by remember { mutableStateOf<Song?>(null) }
-    var songForPlaylist by remember { mutableStateOf<Song?>(null) }
-    var songsForDeletion by remember { mutableStateOf<List<Song>?>(null) }
+    val songDialogs = rememberSongActionDialogs(
+        viewModel = viewModel,
+        playlists = playlists,
+        onSelectPlaylist = { playlist, song ->
+            viewModel.addSongToPlaylist(playlist.id, song)
+        },
+        onAfterDelete = { targetSongs ->
+            targetSongs.forEach { song ->
+                transfers.find { it.songId == song.id }?.let {
+                    WebServerService.dismissTransfer(it.id)
+                }
+            }
+        }
+    )
 
     val songActions = rememberSongQueueActions(viewModel)
     val songsById = remember(songs) { songs.associateBy { it.id } }
@@ -325,10 +337,10 @@ fun WebServerScreen(viewModel: MusicPlayerViewModel) {
                         onPlayNext = { songActions.onPlayNext(doneSong) },
                         onAddToQueue = { songActions.onAddToQueue(doneSong) },
                         onStartRadio = { songActions.onStartRadio(doneSong) },
-                        onAddToPlaylist = { songForPlaylist = doneSong },
-                        onEditMetadata = { editingSong = doneSong },
+                        onAddToPlaylist = { songDialogs.onAddToPlaylist(doneSong) },
+                        onEditMetadata = { songDialogs.onEdit(doneSong) },
                         onIdentify = { viewModel.identifySongForReview(doneSong) },
-                        onDelete = { songsForDeletion = listOf(doneSong) }
+                        onDelete = { songDialogs.onDelete(doneSong) }
                     )
                 } else {
                     WifiTransferProgressRow(
@@ -365,26 +377,6 @@ fun WebServerScreen(viewModel: MusicPlayerViewModel) {
         Spacer(modifier = Modifier.height(16.dp))
     }
 
-    SongActionDialogsHost(
-        editingSong = editingSong,
-        songForPlaylistAddition = songForPlaylist,
-        songsForDeletion = songsForDeletion,
-        playlists = playlists,
-        viewModel = viewModel,
-        onDismissEdit = { editingSong = null },
-        onDismissPlaylist = { songForPlaylist = null },
-        onDismissDelete = { songsForDeletion = null },
-        onSelectPlaylist = { playlist, song ->
-            viewModel.addSongToPlaylist(playlist.id, song)
-        },
-        onAfterDelete = { targetSongs ->
-            targetSongs.forEach { song ->
-                transfers.find { it.songId == song.id }?.let {
-                    WebServerService.dismissTransfer(it.id)
-                }
-            }
-        }
-    )
 }
 
 @Composable
@@ -414,28 +406,22 @@ private fun WifiTransferProgressRow(
             )
             Spacer(modifier = Modifier.width(10.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = transfer.title.ifBlank { transfer.fileName },
-                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = when (transfer.state) {
+                TrackTextColumn(
+                    title = transfer.title.ifBlank { transfer.fileName },
+                    subtitle = when (transfer.state) {
                         WifiTransferState.PENDING -> "Pendiente"
                         WifiTransferState.UPLOADING -> "Recibiendo… ${transfer.progressPercent}%"
                         WifiTransferState.PROCESSING -> "Procesando…"
                         WifiTransferState.DONE -> transfer.artist
                         WifiTransferState.ERROR -> transfer.errorMessage ?: "Error"
                     },
-                    style = MaterialTheme.typography.labelSmall,
-                    color = if (transfer.state == WifiTransferState.ERROR) {
+                    titleStyle = MaterialTheme.typography.bodyMedium,
+                    titleWeight = FontWeight.SemiBold,
+                    subtitleColor = if (transfer.state == WifiTransferState.ERROR) {
                         MaterialTheme.colorScheme.error
                     } else {
                         MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f)
-                    },
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    }
                 )
                 if (transfer.state == WifiTransferState.UPLOADING ||
                     transfer.state == WifiTransferState.PROCESSING

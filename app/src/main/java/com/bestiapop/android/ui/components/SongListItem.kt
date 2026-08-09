@@ -4,7 +4,6 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -29,9 +28,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.bestiapop.android.data.model.Song
 import java.util.Locale
@@ -50,27 +46,15 @@ fun SongListItem(
     onPlayNext: () -> Unit,
     onAddToQueue: () -> Unit,
     onStartRadio: (() -> Unit)? = null,
-    onAddToPlaylist: () -> Unit = {},
+    onAddToPlaylist: (() -> Unit)? = null,
     onEditMetadata: (() -> Unit)? = null,
     onIdentify: (() -> Unit)? = null,
     onDelete: (() -> Unit)? = null
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
-
-    val backgroundColor = when {
-        isSelected -> MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
-        isCurrentPlaying -> MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
-        else -> Color.Transparent
-    }
-    val titleColor = if (isCurrentPlaying || isSelected) {
-        MaterialTheme.colorScheme.primary
-    } else {
-        MaterialTheme.colorScheme.onSurface
-    }
-    val titleWeight = if (isCurrentPlaying || isSelected) FontWeight.Bold else FontWeight.Medium
+    val colors = playingRowColors(highlighted = isCurrentPlaying, selected = isSelected)
     val subtitle = remember(song.artist, song.album, secondaryInfo) {
-        val base = "${song.artist} • ${song.album}"
-        if (secondaryInfo.isNullOrBlank()) base else "$base • $secondaryInfo"
+        joinMeta(song.artist, song.album, secondaryInfo)
     }
     val durationText = remember(song.durationMs) { formatDuration(song.durationMs) }
 
@@ -79,7 +63,7 @@ fun SongListItem(
             .fillMaxWidth()
             .padding(horizontal = 8.dp, vertical = 4.dp)
             .clip(RoundedCornerShape(12.dp))
-            .background(backgroundColor)
+            .background(colors.background)
             .combinedClickable(
                 onClick = {
                     if (isSelectionMode) {
@@ -112,23 +96,13 @@ fun SongListItem(
 
         Spacer(modifier = Modifier.width(12.dp))
 
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = song.title,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = titleWeight,
-                color = titleColor,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Text(
-                text = subtitle,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
+        TrackTextColumn(
+            title = song.title,
+            subtitle = subtitle,
+            modifier = Modifier.weight(1f),
+            titleColor = colors.title,
+            titleWeight = colors.titleWeight
+        )
 
         Text(
             text = durationText,
@@ -164,12 +138,58 @@ fun SongListItem(
 }
 
 @Composable
+fun SongOverflowMenuItems(
+    onDismiss: () -> Unit,
+    onAddToPlaylist: (() -> Unit)? = null,
+    onIdentify: (() -> Unit)? = null,
+    onEditMetadata: (() -> Unit)? = null,
+    onDelete: (() -> Unit)? = null
+) {
+    if (onAddToPlaylist != null) {
+        DropdownMenuItem(
+            text = { Text("Añadir a playlist") },
+            onClick = {
+                onDismiss()
+                onAddToPlaylist()
+            }
+        )
+    }
+    if (onIdentify != null) {
+        DropdownMenuItem(
+            text = { Text("Identificar…") },
+            onClick = {
+                onDismiss()
+                onIdentify()
+            }
+        )
+    }
+    if (onEditMetadata != null) {
+        DropdownMenuItem(
+            text = { Text("Editar información") },
+            onClick = {
+                onDismiss()
+                onEditMetadata()
+            }
+        )
+    }
+    if (onDelete != null) {
+        DropdownMenuItem(
+            text = { Text("Eliminar", color = MaterialTheme.colorScheme.error) },
+            onClick = {
+                onDismiss()
+                onDelete()
+            }
+        )
+    }
+}
+
+@Composable
 private fun SongOptionsMenu(
     onDismiss: () -> Unit,
     onPlayNext: () -> Unit,
     onAddToQueue: () -> Unit,
     onStartRadio: (() -> Unit)?,
-    onAddToPlaylist: () -> Unit,
+    onAddToPlaylist: (() -> Unit)?,
     onEditMetadata: (() -> Unit)?,
     onIdentify: (() -> Unit)?,
     onDelete: (() -> Unit)?
@@ -201,40 +221,13 @@ private fun SongOptionsMenu(
                 }
             )
         }
-        DropdownMenuItem(
-            text = { Text("Añadir a playlist") },
-            onClick = {
-                onDismiss()
-                onAddToPlaylist()
-            }
+        SongOverflowMenuItems(
+            onDismiss = onDismiss,
+            onAddToPlaylist = onAddToPlaylist,
+            onIdentify = onIdentify,
+            onEditMetadata = onEditMetadata,
+            onDelete = onDelete
         )
-        if (onIdentify != null) {
-            DropdownMenuItem(
-                text = { Text("Identificar…") },
-                onClick = {
-                    onDismiss()
-                    onIdentify()
-                }
-            )
-        }
-        if (onEditMetadata != null) {
-            DropdownMenuItem(
-                text = { Text("Editar información") },
-                onClick = {
-                    onDismiss()
-                    onEditMetadata()
-                }
-            )
-        }
-        if (onDelete != null) {
-            DropdownMenuItem(
-                text = { Text("Eliminar", color = MaterialTheme.colorScheme.error) },
-                onClick = {
-                    onDismiss()
-                    onDelete()
-                }
-            )
-        }
     }
 }
 

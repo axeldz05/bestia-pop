@@ -4,7 +4,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -33,7 +32,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -51,6 +49,20 @@ fun PlayableItemRowContent(
     boldWhenCurrent: Boolean = false,
     modifier: Modifier = Modifier
 ) {
+    val titleColor = when {
+        boldWhenCurrent && isCurrentPlaying -> MaterialTheme.colorScheme.primary
+        else -> MaterialTheme.colorScheme.onSurface
+    }
+    val titleWeight = when {
+        boldWhenCurrent && isCurrentPlaying -> FontWeight.Bold
+        boldWhenCurrent -> FontWeight.Normal
+        else -> FontWeight.SemiBold
+    }
+    val subtitle = joinMeta(
+        item.artist,
+        if (appendRemoteSuffix && item is PlayableItem.Remote) "stream" else null,
+        sep = " · "
+    )
     Row(
         modifier = modifier,
         verticalAlignment = Alignment.CenterVertically
@@ -62,40 +74,21 @@ fun PlayableItemRowContent(
             contentDescription = item.title
         )
         Spacer(modifier = Modifier.width(if (artworkSize <= 40.dp) 10.dp else 12.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = item.title,
-                style = if (boldWhenCurrent) {
-                    MaterialTheme.typography.bodyMedium.copy(
-                        fontWeight = if (isCurrentPlaying) FontWeight.Bold else FontWeight.Normal
-                    )
-                } else {
-                    MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)
-                },
-                color = when {
-                    boldWhenCurrent && isCurrentPlaying -> MaterialTheme.colorScheme.primary
-                    else -> MaterialTheme.colorScheme.onSurface
-                },
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+        TrackTextColumn(
+            title = item.title,
+            subtitle = subtitle,
+            modifier = Modifier.weight(1f),
+            titleColor = titleColor,
+            titleWeight = titleWeight,
+            titleStyle = if (boldWhenCurrent) {
+                MaterialTheme.typography.bodyMedium
+            } else {
+                MaterialTheme.typography.titleMedium
+            },
+            subtitleColor = MaterialTheme.colorScheme.onSurface.copy(
+                alpha = if (boldWhenCurrent) 0.55f else 0.7f
             )
-            Text(
-                text = buildString {
-                    append(item.artist)
-                    if (appendRemoteSuffix && item is PlayableItem.Remote) append(" · stream")
-                },
-                style = if (boldWhenCurrent) {
-                    MaterialTheme.typography.labelSmall
-                } else {
-                    MaterialTheme.typography.bodySmall
-                },
-                color = MaterialTheme.colorScheme.onSurface.copy(
-                    alpha = if (boldWhenCurrent) 0.55f else 0.7f
-                ),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
+        )
     }
 }
 

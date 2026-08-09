@@ -10,6 +10,8 @@ import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.data.model.ResolvedStream
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.data.model.TrackIdentity
+import com.bestiapop.android.data.model.TrackMeta
+import com.bestiapop.android.data.model.toIdentity
 import com.bestiapop.android.data.model.toPlayable
 import com.bestiapop.android.data.playback.PlaybackQueueOrder
 import com.bestiapop.android.data.util.AudioPersistRef
@@ -33,24 +35,15 @@ data class LastPlayedSnapshot(
     val songId: Long,
     val uriString: String,
     val positionMs: Long = 0L,
-    val title: String = "",
-    val artist: String = "",
-    val album: String = "",
-    val artworkUri: String? = null,
-    val durationMs: Long = 0L
-)
+    val identity: TrackIdentity = TrackIdentity(title = "")
+) : TrackMeta by identity
 
 sealed class PersistedQueueItem {
     data class Local(
         val songId: Long,
         val uriString: String,
-        val title: String = "",
-        val artist: String = "",
-        val album: String = "",
-        val artworkUri: String? = null,
-        val durationMs: Long = 0L,
-        val trackNumber: Int = 0
-    ) : PersistedQueueItem()
+        val identity: TrackIdentity = TrackIdentity(title = "")
+    ) : PersistedQueueItem(), TrackMeta by identity
 
     data class Remote(
         val identity: TrackIdentity,
@@ -97,11 +90,13 @@ object LastPlayedCodec {
                 songId = obj.optLong("songId", 0L),
                 uriString = uri,
                 positionMs = obj.optLong("positionMs", 0L).coerceAtLeast(0L),
-                title = obj.optString("title", ""),
-                artist = obj.optString("artist", ""),
-                album = obj.optString("album", ""),
-                artworkUri = obj.optNullableString("artworkUri"),
-                durationMs = obj.optLong("durationMs", 0L).coerceAtLeast(0L)
+                identity = TrackIdentity(
+                    title = obj.optString("title", ""),
+                    artist = obj.optString("artist", ""),
+                    album = obj.optString("album", ""),
+                    artworkUri = obj.optNullableString("artworkUri"),
+                    durationMs = obj.optLong("durationMs", 0L).coerceAtLeast(0L)
+                )
             )
         } catch (_: Exception) {
             null
@@ -177,12 +172,7 @@ object QueueSnapshotCodec {
         is PlayableItem.Local -> PersistedQueueItem.Local(
             songId = item.song.id,
             uriString = item.song.uriString,
-            title = item.song.title,
-            artist = item.song.artist,
-            album = item.song.album,
-            artworkUri = item.song.artworkUri,
-            durationMs = item.song.durationMs,
-            trackNumber = item.song.trackNumber
+            identity = item.song.toIdentity()
         )
         is PlayableItem.Remote -> PersistedQueueItem.Remote(
             identity = item.identity,
@@ -227,12 +217,14 @@ object QueueSnapshotCodec {
                     PersistedQueueItem.Local(
                         songId = obj.optLong("songId", 0L),
                         uriString = uri,
-                        title = obj.optString("title", ""),
-                        artist = obj.optString("artist", ""),
-                        album = obj.optString("album", ""),
-                        artworkUri = obj.optNullableString("artworkUri"),
-                        durationMs = obj.optLong("durationMs", 0L).coerceAtLeast(0L),
-                        trackNumber = obj.optInt("trackNumber", 0).coerceAtLeast(0)
+                        identity = TrackIdentity(
+                            title = obj.optString("title", ""),
+                            artist = obj.optString("artist", ""),
+                            album = obj.optString("album", ""),
+                            artworkUri = obj.optNullableString("artworkUri"),
+                            durationMs = obj.optLong("durationMs", 0L).coerceAtLeast(0L),
+                            trackNumber = obj.optInt("trackNumber", 0).coerceAtLeast(0)
+                        )
                     )
                 }
                 "remote" -> {
@@ -309,11 +301,7 @@ object PlaybackHydration {
             songId = song.id,
             uriString = song.uriString,
             positionMs = positionMs.coerceAtLeast(0L),
-            title = song.title,
-            artist = song.artist,
-            album = song.album,
-            artworkUri = song.artworkUri,
-            durationMs = song.durationMs
+            identity = song.toIdentity()
         )
 
     fun matchPersistedLocal(item: PersistedQueueItem.Local, library: List<Song>): Song? {
@@ -321,11 +309,7 @@ object PlaybackHydration {
         val snap = LastPlayedSnapshot(
             songId = item.songId,
             uriString = item.uriString,
-            title = item.title,
-            artist = item.artist,
-            album = item.album,
-            artworkUri = item.artworkUri,
-            durationMs = item.durationMs
+            identity = item.identity
         )
         return library.find { item.songId > 0L && it.id == item.songId }
             ?: library.find { matchesLastPlayed(it, snap) }

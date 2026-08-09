@@ -18,14 +18,4 @@ class MatchListenBrainzTracksUseCase {
         }
         return MatchedLbPlaylist(detail = detail, matches = matches)
     }
-
-    companion object {
-        fun normalize(value: String): String = TrackMatchKeys.normalize(value)
-
-        fun matchKey(artist: String, title: String): String =
-            TrackMatchKeys.matchKey(artist, title)
-
-        fun buildLibraryIndex(library: List<Song>): Map<String, Song> =
-            TrackMatchKeys.buildLibraryIndex(library)
-    }
 }

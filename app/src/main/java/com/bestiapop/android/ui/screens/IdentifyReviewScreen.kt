@@ -56,7 +56,11 @@ import com.bestiapop.android.domain.util.IdentifyRanking
 import com.bestiapop.android.ui.MusicPlayerViewModel
 import com.bestiapop.android.ui.components.ArtworkThumbnail
 import com.bestiapop.android.ui.components.PreviewPlayPauseButton
+import com.bestiapop.android.ui.components.ScreenBackHeader
+import com.bestiapop.android.ui.components.TrackTextColumn
 import com.bestiapop.android.ui.components.formatDuration
+import com.bestiapop.android.ui.components.joinMeta
+import com.bestiapop.android.ui.components.previewFlags
 import com.bestiapop.android.ui.state.IdentifyReviewState
 
 @Composable
@@ -161,14 +165,18 @@ fun IdentifyReviewScreen(
                         key = { index, c -> "${c.provider}|${c.artist}|${c.title}|${c.album}|$index" }
                     ) { index, candidate ->
                         val track = candidate.track
-                        val previewKey = viewModel.catalogPreviewKeyFor(track)
-                        val isThisPreview = catalogPreviewKey == previewKey
+                        val flags = previewFlags(
+                            catalogPreviewKey,
+                            viewModel.catalogPreviewKeyFor(track),
+                            isPlaying,
+                            resolvingRemote
+                        )
                         IdentifyCandidateRow(
                             candidate = candidate,
                             fileDurationMs = item.song.durationMs,
                             selected = index == state.selectedCandidateIndex,
-                            isPlaying = isThisPreview && isPlaying,
-                            isResolving = isThisPreview && resolvingRemote,
+                            isPlaying = flags.isPlaying,
+                            isResolving = flags.isResolving,
                             onClick = { viewModel.selectIdentifyCandidate(index) },
                             onPreview = { viewModel.previewIdentifyCandidate(candidate) }
                         )
@@ -196,27 +204,13 @@ private fun IdentifyReviewHeader(
     onSkipAll: () -> Unit
 ) {
     Column(modifier = Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 4.dp, vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically
+        ScreenBackHeader(
+            title = "Revisar identidad",
+            subtitle = "Revisar ${state.reviewOrdinal} de ${state.reviewTotal}",
+            onBack = onClose,
+            backContentDescription = "Cerrar",
+            modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp)
         ) {
-            IconButton(onClick = onClose) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Cerrar")
-            }
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = "Revisar identidad",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    text = "Revisar ${state.reviewOrdinal} de ${state.reviewTotal}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                )
-            }
             IconButton(onClick = onClose) {
                 Icon(Icons.Default.Close, contentDescription = "Cerrar")
             }
@@ -266,19 +260,11 @@ private fun IdentifySourceBlock(
         )
         Spacer(Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = song.title,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
-            Text(
-                text = "${song.artist} · ${song.album}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+            TrackTextColumn(
+                title = song.title,
+                subtitle = joinMeta(song.artist, song.album, sep = " · "),
+                titleWeight = FontWeight.SemiBold,
+                maxTitleLines = 2
             )
             val meta = buildList {
                 if (song.durationMs > 0) add(formatDuration(song.durationMs))
@@ -337,18 +323,11 @@ fun IdentifyCandidateRow(
         )
         Spacer(Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = candidate.title,
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Text(
-                text = candidate.artist,
-                style = MaterialTheme.typography.bodySmall,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+            TrackTextColumn(
+                title = candidate.title,
+                subtitle = candidate.artist,
+                titleStyle = MaterialTheme.typography.titleSmall,
+                titleWeight = FontWeight.SemiBold
             )
             val albumLabel = when {
                 candidate.album.isBlank() || IdentifyRanking.isGenericAlbum(candidate.album) ->
@@ -362,7 +341,7 @@ fun IdentifyCandidateRow(
                 else -> null
             }
             Text(
-                text = listOfNotNull(albumLabel, durationPart).joinToString(" · "),
+                text = joinMeta(albumLabel, durationPart, sep = " · "),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
                 maxLines = 1,

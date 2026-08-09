@@ -84,4 +84,36 @@ class StreamResolverTest {
         assertTrue(result.isFailure)
         assertEquals("boom", result.exceptionOrNull()?.message)
     }
+
+    @Test
+    fun resolveQuery_forceRefresh_bypassesPlaybackCache() = runBlocking {
+        var extractCalls = 0
+        val resolver = StreamResolver(
+            extract = {
+                extractCalls++
+                YouTubeExtractResult.Success(
+                    YouTubeStreamResult(
+                        videoId = "vid12345678",
+                        title = "Song",
+                        artist = "Artist",
+                        artworkUrl = null,
+                        durationMs = 180_000L,
+                        audioUrl = "https://googlevideo.example/audio-$extractCalls",
+                        userAgent = "TestUA"
+                    )
+                )
+            },
+            clockMs = { 1_000L },
+            ttlMs = 4 * 60 * 1000L
+        )
+
+        val item = PlayableItem.remoteFrom(title = "Song", artist = "Artist")
+        resolver.resolve(item).getOrThrow()
+        assertEquals(1, extractCalls)
+
+        val refreshed = resolver.resolveQuery("Artist Song", forceRefresh = true).getOrThrow()
+        assertEquals(2, extractCalls)
+        assertTrue(refreshed.audioUrl.endsWith("-2"))
+        assertEquals("Song", refreshed.title)
+    }
 }

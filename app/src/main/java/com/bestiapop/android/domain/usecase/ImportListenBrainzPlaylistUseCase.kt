@@ -2,10 +2,8 @@ package com.bestiapop.android.domain.usecase
 
 import com.bestiapop.android.data.listenbrainz.MatchedLbPlaylist
 import com.bestiapop.android.data.model.OnlineCatalogTrack
-import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.data.model.PlaylistPendingTrack
 import com.bestiapop.android.domain.repository.IMusicRepository
-import com.bestiapop.android.domain.util.TrackMatchKeys
 
 /**
  * Creates a local Room playlist from an LB Discover playlist:
@@ -60,14 +58,12 @@ class ImportListenBrainzPlaylistUseCase(
         matched.matches
             .filter { it.localSong == null }
             .map { row ->
-                PlayableItem.remoteFrom(
-                    identity = row.track.identity,
-                    recordingMbid = row.track.recordingMbid
-                ).toOnlineCatalogTrack(provider = "ListenBrainz")
+                val track = row.track
+                OnlineCatalogTrack(
+                    identity = track.identity,
+                    id = track.recordingMbid?.takeIf { it.isNotBlank() }
+                        ?: "${track.artist} ${track.title}".trim(),
+                    provider = "ListenBrainz"
+                )
             }
-
-    companion object {
-        fun downloadIdFor(artist: String, title: String): String =
-            TrackMatchKeys.downloadIdFor(artist, title)
-    }
 }

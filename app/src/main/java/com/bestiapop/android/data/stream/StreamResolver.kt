@@ -2,6 +2,7 @@ package com.bestiapop.android.data.stream
 
 import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.data.model.ResolvedStream
+import com.bestiapop.android.data.model.TrackIdentity
 import com.bestiapop.android.data.network.YouTubeExtractResult
 import com.bestiapop.android.data.network.YouTubeExtractor
 import com.bestiapop.android.data.network.YouTubeStreamResult
@@ -23,18 +24,21 @@ class StreamResolver(
     /**
      * L2: resolve by query or video id. Updates the same TTL cache used by [resolve].
      * On a fresh cache hit, metadata fields may be empty (URL + UA + videoId are filled).
+     * [forceRefresh] skips cache reads (download must re-extract; CDN URLs expire).
      */
-    suspend fun resolveQuery(queryOrId: String): Result<YouTubeStreamResult> {
+    suspend fun resolveQuery(queryOrId: String, forceRefresh: Boolean = false): Result<YouTubeStreamResult> {
         val query = queryOrId.trim()
         if (query.isBlank()) {
             return Result.failure(IllegalArgumentException("Missing YouTube query"))
         }
 
         val qKey = queryCacheKey(query)
-        mutex.withLock {
-            freshCached(qKey)?.let { return Result.success(it.toStreamResultStub()) }
-            if (looksLikeVideoId(query)) {
-                freshCached("id:$query")?.let { return Result.success(it.toStreamResultStub()) }
+        if (!forceRefresh) {
+            mutex.withLock {
+                freshCached(qKey)?.let { return Result.success(it.toStreamResultStub()) }
+                if (looksLikeVideoId(query)) {
+                    freshCached("id:$query")?.let { return Result.success(it.toStreamResultStub()) }
+                }
             }
         }
 
@@ -119,15 +123,14 @@ class StreamResolver(
 
     private fun queryCacheKey(query: String): String = "q:${query.lowercase().trim()}"
 
-    private fun looksLikeVideoId(value: String): Boolean =
-        value.length == 11 && value.all { it.isLetterOrDigit() || it == '_' || it == '-' }
+    private fun looksLikeVideoId(value: String): Boolean {
+        val trimmed = value.trim()
+        return YouTubeExtractor.extractYouTubeId(trimmed) == trimmed
+    }
 
     private fun ResolvedStream.toStreamResultStub() = YouTubeStreamResult(
+        identity = TrackIdentity(title = ""),
         videoId = videoId,
-        title = "",
-        artist = "",
-        artworkUrl = null,
-        durationMs = 0L,
         audioUrl = audioUrl,
         userAgent = userAgent
     )

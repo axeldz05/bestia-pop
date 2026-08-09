@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -457,7 +458,7 @@ private fun ActiveDownloadsSummaryBanner(
                         Spacer(modifier = Modifier.width(10.dp))
                         Text(
                             text = if (downloading.size == 1) {
-                                latest.progressMessage ?: "Descargando «${latest.displayTitle}»…"
+                                latest.progressMessage ?: "Descargando «${latest.displayLabel}»…"
                             } else {
                                 "Descargando ${downloading.size} canciones…"
                             },
@@ -477,7 +478,7 @@ private fun ActiveDownloadsSummaryBanner(
                         Text(
                             text = if (failed.size == 1) {
                                 failed.first().errorMessage
-                                    ?: "Falló «${failed.first().displayTitle}»"
+                                    ?: "Falló «${failed.first().displayLabel}»"
                             } else {
                                 "${failed.size} descargas fallaron"
                             },
@@ -661,14 +662,18 @@ private fun OnlineCatalogTab(
                                     items = songResults,
                                     key = { index, track -> "${track.provider}:${track.id}:$index" }
                                 ) { index, track ->
-                                    val trackKey = previewKeyFor(track)
-                                    val isThisPreview = catalogPreviewKey == trackKey
+                                    val flags = previewFlags(
+                                        catalogPreviewKey,
+                                        previewKeyFor(track),
+                                        isPreviewPlaying,
+                                        isPreviewResolving
+                                    )
                                     CatalogTrackItem(
                                         track = track,
-                                        isPreviewing = isThisPreview,
-                                        isPlaying = isThisPreview && isPreviewPlaying,
-                                        isResolving = isThisPreview && isPreviewResolving,
-                                        progressMs = if (isThisPreview) previewPositionMs else 0L,
+                                        isPreviewing = flags.isThisPreview,
+                                        isPlaying = flags.isPlaying,
+                                        isResolving = flags.isResolving,
+                                        progressMs = if (flags.isThisPreview) previewPositionMs else 0L,
                                         onStreamClick = { onStreamTrack(track) },
                                         onCycleClick = { onCycleSong(index) },
                                         onAddClick = { onAddTrack(track) }
@@ -826,16 +831,21 @@ private fun CollectionTrackInspectionView(
             ) {
                 itemsIndexed(
                     candidates,
-                    key = { index, item -> "${item.trackTitle}:${item.artist}:$index" }
+                    key = { index, item -> "${item.title}:${item.artist}:$index" }
                 ) { index, item ->
                     val currentYt = item.currentTrack
-                    val isThisPreview = currentYt != null && catalogPreviewKey == previewKeyFor(currentYt)
+                    val flags = previewFlags(
+                        catalogPreviewKey,
+                        currentYt?.let(previewKeyFor),
+                        isPreviewPlaying,
+                        isPreviewResolving
+                    )
                     CandidateTrackCard(
                         item = item,
-                        isPreviewing = isThisPreview,
-                        isPlaying = isThisPreview && isPreviewPlaying,
-                        isResolving = isThisPreview && isPreviewResolving,
-                        progressMs = if (isThisPreview) previewPositionMs else 0L,
+                        isPreviewing = flags.isThisPreview,
+                        isPlaying = flags.isPlaying,
+                        isResolving = flags.isResolving,
+                        progressMs = if (flags.isThisPreview) previewPositionMs else 0L,
                         onToggleSelect = { onToggleSelection(index) },
                         onCycleCandidate = { onCycleCandidate(index) },
                         onStreamClick = { onStreamCandidate(item) },
@@ -869,11 +879,10 @@ private fun CollectionTrackInspectionView(
             }
             AnimatedVisibility(visible = catalogPreviewKey != null) {
                 CatalogPreviewBar(
-                    title = previewItem?.title ?: previewCandidate?.trackTitle ?: "Preview",
+                    title = previewItem?.title ?: previewCandidate?.title ?: "Preview",
                     artist = previewItem?.artist ?: previewCandidate?.artist ?: "",
                     artworkUri = previewItem?.artworkUri
-                        ?: previewCandidate?.currentTrack?.artworkUri
-                        ?: previewCandidate?.coverUrl,
+                        ?: previewCandidate?.artworkUri,
                     durationMs = previewItem?.durationMs?.takeIf { it > 0 }
                         ?: previewCandidate?.currentTrack?.durationMs
                         ?: 0L,
@@ -883,6 +892,76 @@ private fun CollectionTrackInspectionView(
                     onPlayPause = onTogglePreviewPlayPause,
                     onStop = onStopPreview
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun CatalogPreviewableRow(
+    title: String,
+    subtitle: String,
+    artworkUri: String?,
+    isPreviewing: Boolean,
+    progressFraction: Float,
+    isResolving: Boolean,
+    modifier: Modifier = Modifier,
+    selected: Boolean = false,
+    subtitleColor: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+    leading: @Composable (RowScope.() -> Unit)? = null,
+    extraBelowTitle: @Composable (() -> Unit)? = null,
+    trailing: @Composable RowScope.() -> Unit
+) {
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = when {
+                isPreviewing -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f)
+                selected -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f)
+                else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+            }
+        ),
+        shape = RoundedCornerShape(14.dp),
+        modifier = modifier.fillMaxWidth()
+    ) {
+        Column {
+            if (isPreviewing) {
+                LinearProgressIndicator(
+                    progress = { if (isResolving) 0f else progressFraction },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(3.dp),
+                    color = MaterialTheme.colorScheme.primary,
+                    trackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+                )
+            }
+            Row(
+                modifier = Modifier.padding(10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                leading?.invoke(this)
+                ArtworkThumbnail(
+                    artworkUri = artworkUri,
+                    size = 50.dp,
+                    cornerRadius = 10.dp,
+                    contentDescription = title
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    TrackTextColumn(
+                        title = title,
+                        subtitle = subtitle,
+                        titleWeight = FontWeight.Bold,
+                        titleColor = if (isPreviewing) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurface
+                        },
+                        subtitleColor = subtitleColor
+                    )
+                    extraBelowTitle?.invoke()
+                }
+                Spacer(modifier = Modifier.width(4.dp))
+                trailing()
             }
         }
     }
@@ -902,157 +981,101 @@ private fun CandidateTrackCard(
 ) {
     val currentYt = item.currentTrack
     val durationMs = currentYt?.durationMs ?: 0L
-    val progressFraction = if (durationMs > 0) {
-        (progressMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f)
-    } else if (isPreviewing && progressMs > 0) {
-        0.05f
-    } else {
-        0f
+    val progressFraction = previewProgressFraction(progressMs, durationMs)
+    val statusSubtext = when {
+        isResolving -> "${item.artist} • Resolviendo stream…"
+        isPreviewing && isPlaying -> "${item.artist} • Reproduciendo preview"
+        isPreviewing -> "${item.artist} • Preview en pausa"
+        item.downloadState == com.bestiapop.android.data.model.CandidateDownloadState.IDLE ->
+            "${item.artist} • YouTube: ${currentYt?.title ?: "No encontrado"}"
+        item.downloadState == com.bestiapop.android.data.model.CandidateDownloadState.QUEUED ->
+            "${item.artist} • En cola…"
+        item.downloadState == com.bestiapop.android.data.model.CandidateDownloadState.DOWNLOADING ->
+            "${item.artist} • Descargando audio..."
+        item.downloadState == com.bestiapop.android.data.model.CandidateDownloadState.SUCCESS ->
+            "${item.artist} • ¡Guardado en biblioteca!"
+        else -> "${item.artist} • Error"
     }
 
-    Card(
-        colors = CardDefaults.cardColors(
-            containerColor = when {
-                isPreviewing -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f)
-                item.isSelected -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f)
-                else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
-            }
-        ),
-        shape = RoundedCornerShape(14.dp),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column {
-            if (isPreviewing) {
-                LinearProgressIndicator(
-                    progress = { if (isResolving) 0f else progressFraction },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(3.dp),
-                    color = MaterialTheme.colorScheme.primary,
-                    trackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
-                )
-            }
-
-            Row(
-                modifier = Modifier.padding(10.dp),
-                verticalAlignment = Alignment.CenterVertically
+    CatalogPreviewableRow(
+        title = item.title,
+        subtitle = statusSubtext,
+        artworkUri = currentYt?.artworkUri ?: item.artworkUri,
+        isPreviewing = isPreviewing,
+        selected = item.isSelected,
+        progressFraction = progressFraction,
+        isResolving = isResolving,
+        subtitleColor = if (item.downloadState == com.bestiapop.android.data.model.CandidateDownloadState.ERROR) {
+            MaterialTheme.colorScheme.error
+        } else {
+            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+        },
+        leading = {
+            Checkbox(
+                checked = item.isSelected,
+                onCheckedChange = { onToggleSelect() }
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+        },
+        extraBelowTitle = {
+            if (item.downloadState == com.bestiapop.android.data.model.CandidateDownloadState.ERROR &&
+                !item.errorMessage.isNullOrEmpty()
             ) {
-                Checkbox(
-                    checked = item.isSelected,
-                    onCheckedChange = { onToggleSelect() }
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = item.errorMessage,
+                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                    color = MaterialTheme.colorScheme.error,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
                 )
-
-                Spacer(modifier = Modifier.width(6.dp))
-
-                ArtworkThumbnail(
-                    artworkUri = currentYt?.artworkUri ?: item.coverUrl,
-                    size = 50.dp,
-                    cornerRadius = 10.dp,
-                    contentDescription = item.trackTitle
+            }
+        }
+    ) {
+        if (item.downloadState == com.bestiapop.android.data.model.CandidateDownloadState.IDLE ||
+            item.downloadState == com.bestiapop.android.data.model.CandidateDownloadState.ERROR
+        ) {
+            PreviewPlayPauseButton(
+                isResolving = isResolving,
+                isPlaying = isPlaying,
+                onClick = onStreamClick,
+                enabled = currentYt != null
+            )
+        }
+        when (item.downloadState) {
+            com.bestiapop.android.data.model.CandidateDownloadState.IDLE -> {
+                DownloadOutlinedActionButton(
+                    label = "Buscar otro",
+                    onClick = onCycleCandidate,
+                    contentDescription = "Buscar otro",
+                    horizontalPadding = 10
                 )
-
-                Spacer(modifier = Modifier.width(10.dp))
-
-                Column(modifier = Modifier.weight(1f)) {
+            }
+            com.bestiapop.android.data.model.CandidateDownloadState.QUEUED -> DownloadQueuedLabel()
+            com.bestiapop.android.data.model.CandidateDownloadState.DOWNLOADING -> {
+                DownloadProgressPercent(item.downloadProgressPercent)
+            }
+            com.bestiapop.android.data.model.CandidateDownloadState.SUCCESS -> {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.CheckCircle,
+                        contentDescription = "Descargado",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(22.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
                     Text(
-                        text = item.trackTitle,
-                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                        color = if (isPreviewing) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.onSurface
-                        },
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    val statusSubtext = when {
-                        isResolving -> "${item.artist} • Resolviendo stream…"
-                        isPreviewing && isPlaying -> "${item.artist} • Reproduciendo preview"
-                        isPreviewing -> "${item.artist} • Preview en pausa"
-                        item.downloadState == com.bestiapop.android.data.model.CandidateDownloadState.IDLE ->
-                            "${item.artist} • YouTube: ${currentYt?.title ?: "No encontrado"}"
-                        item.downloadState == com.bestiapop.android.data.model.CandidateDownloadState.QUEUED ->
-                            "${item.artist} • En cola…"
-                        item.downloadState == com.bestiapop.android.data.model.CandidateDownloadState.DOWNLOADING ->
-                            "${item.artist} • Descargando audio..."
-                        item.downloadState == com.bestiapop.android.data.model.CandidateDownloadState.SUCCESS ->
-                            "${item.artist} • ¡Guardado en biblioteca!"
-                        else -> "${item.artist} • Error"
-                    }
-                    Text(
-                        text = statusSubtext,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = if (item.downloadState == com.bestiapop.android.data.model.CandidateDownloadState.ERROR) {
-                            MaterialTheme.colorScheme.error
-                        } else {
-                            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                        },
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    if (item.downloadState == com.bestiapop.android.data.model.CandidateDownloadState.ERROR &&
-                        !item.errorMessage.isNullOrEmpty()
-                    ) {
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = item.errorMessage,
-                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
-                            color = MaterialTheme.colorScheme.error,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.width(4.dp))
-
-                if (item.downloadState == com.bestiapop.android.data.model.CandidateDownloadState.IDLE ||
-                    item.downloadState == com.bestiapop.android.data.model.CandidateDownloadState.ERROR
-                ) {
-                    PreviewPlayPauseButton(
-                        isResolving = isResolving,
-                        isPlaying = isPlaying,
-                        onClick = onStreamClick,
-                        enabled = currentYt != null
+                        text = "Listo",
+                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                        color = MaterialTheme.colorScheme.primary
                     )
                 }
-
-                when (item.downloadState) {
-                    com.bestiapop.android.data.model.CandidateDownloadState.IDLE -> {
-                        DownloadOutlinedActionButton(
-                            label = "Buscar otro",
-                            onClick = onCycleCandidate,
-                            contentDescription = "Buscar otro",
-                            horizontalPadding = 10
-                        )
-                    }
-                    com.bestiapop.android.data.model.CandidateDownloadState.QUEUED -> DownloadQueuedLabel()
-                    com.bestiapop.android.data.model.CandidateDownloadState.DOWNLOADING -> {
-                        DownloadProgressPercent(item.downloadProgressPercent)
-                    }
-                    com.bestiapop.android.data.model.CandidateDownloadState.SUCCESS -> {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Default.CheckCircle,
-                                contentDescription = "Descargado",
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(22.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = "Listo",
-                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                    }
-                    com.bestiapop.android.data.model.CandidateDownloadState.ERROR -> {
-                        RetryCycleDismissActions(
-                            onRetry = onRetryDownload,
-                            onCycle = onCycleCandidate
-                        )
-                    }
-                }
+            }
+            com.bestiapop.android.data.model.CandidateDownloadState.ERROR -> {
+                RetryCycleDismissActions(
+                    onRetry = onRetryDownload,
+                    onCycle = onCycleCandidate
+                )
             }
         }
     }
@@ -1088,22 +1111,12 @@ private fun CatalogCollectionRow(
 
             Spacer(modifier = Modifier.width(12.dp))
 
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
+            TrackTextColumn(
+                title = title,
+                subtitle = subtitle,
+                modifier = Modifier.weight(1f),
+                titleWeight = FontWeight.Bold
+            )
 
             Spacer(modifier = Modifier.width(8.dp))
 
@@ -1156,120 +1169,53 @@ private fun CatalogTrackItem(
     onCycleClick: () -> Unit,
     onAddClick: () -> Unit
 ) {
-    val progressFraction = if (track.durationMs > 0) {
-        (progressMs.toFloat() / track.durationMs.toFloat()).coerceIn(0f, 1f)
-    } else if (isPreviewing && progressMs > 0) {
-        0.05f
-    } else {
-        0f
+    val progressFraction = previewProgressFraction(progressMs, track.durationMs)
+    val subtitle = when {
+        isResolving -> "Resolviendo stream…"
+        isPreviewing && isPlaying -> "Reproduciendo preview"
+        isPreviewing -> "Preview en pausa"
+        else -> joinMeta(track.artist, track.album)
     }
-
-    Card(
-        colors = CardDefaults.cardColors(
-            containerColor = if (isPreviewing) {
-                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f)
-            } else {
-                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
-            }
-        ),
-        shape = RoundedCornerShape(14.dp),
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp)
+    CatalogPreviewableRow(
+        title = track.title,
+        subtitle = subtitle,
+        artworkUri = track.artworkUri,
+        isPreviewing = isPreviewing,
+        progressFraction = progressFraction,
+        isResolving = isResolving,
+        modifier = Modifier.padding(vertical = 4.dp)
     ) {
-        Column {
-            if (isPreviewing) {
-                LinearProgressIndicator(
-                    progress = {
-                        when {
-                            isResolving -> 0f
-                            else -> progressFraction
-                        }
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(3.dp),
-                    color = MaterialTheme.colorScheme.primary,
-                    trackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
-                )
-            }
-
-            Row(
-                modifier = Modifier.padding(10.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                ArtworkThumbnail(
-                    artworkUri = track.artworkUri,
-                    size = 50.dp,
-                    cornerRadius = 10.dp,
-                    contentDescription = track.title
-                )
-
-                Spacer(modifier = Modifier.width(12.dp))
-
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = track.title,
-                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                        color = if (isPreviewing) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.onSurface
-                        },
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Text(
-                        text = when {
-                            isResolving -> "Resolviendo stream…"
-                            isPreviewing && isPlaying -> "Reproduciendo preview"
-                            isPreviewing -> "Preview en pausa"
-                            else -> "${track.artist} • ${track.album}"
-                        },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-
-                Spacer(modifier = Modifier.width(2.dp))
-
-                PreviewPlayPauseButton(
-                    isResolving = isResolving,
-                    isPlaying = isPlaying,
-                    onClick = onStreamClick
-                )
-
-                IconButton(onClick = onCycleClick) {
-                    Icon(
-                        imageVector = Icons.Default.Refresh,
-                        contentDescription = "Buscar otro",
-                        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f)
-                    )
-                }
-
-                Button(
-                    onClick = onAddClick,
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer,
-                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer
-                    ),
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                        horizontal = 10.dp,
-                        vertical = 6.dp
-                    )
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Add,
-                        contentDescription = "Agregar",
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Agregar", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium)
-                }
-            }
+        PreviewPlayPauseButton(
+            isResolving = isResolving,
+            isPlaying = isPlaying,
+            onClick = onStreamClick
+        )
+        IconButton(onClick = onCycleClick) {
+            Icon(
+                imageVector = Icons.Default.Refresh,
+                contentDescription = "Buscar otro",
+                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f)
+            )
+        }
+        Button(
+            onClick = onAddClick,
+            shape = RoundedCornerShape(12.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+            ),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                horizontal = 10.dp,
+                vertical = 6.dp
+            )
+        ) {
+            Icon(
+                imageVector = Icons.Default.Add,
+                contentDescription = "Agregar",
+                modifier = Modifier.size(16.dp)
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            Text("Agregar", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium)
         }
     }
 }
@@ -1286,9 +1232,7 @@ private fun CatalogPreviewBar(
     onPlayPause: () -> Unit,
     onStop: () -> Unit
 ) {
-    val progressFraction = if (durationMs > 0) {
-        (positionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f)
-    } else 0f
+    val progressFraction = previewProgressFraction(positionMs, durationMs)
 
     Surface(
         color = MaterialTheme.colorScheme.surfaceVariant,
@@ -1321,51 +1265,29 @@ private fun CatalogPreviewBar(
 
                 Spacer(modifier = Modifier.width(10.dp))
 
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = if (isResolving) "Resolviendo…" else title,
-                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Text(
-                        text = buildString {
-                            append(artist)
-                            append(" · ")
-                            if (isResolving) {
-                                append("stream")
-                            } else {
-                                append(formatDuration(positionMs))
-                                if (durationMs > 0) {
-                                    append(" / ")
-                                    append(formatDuration(durationMs))
-                                }
+                TrackTextColumn(
+                    title = if (isResolving) "Resolviendo…" else title,
+                    subtitle = joinMeta(
+                        artist,
+                        if (isResolving) "stream" else buildString {
+                            append(formatDuration(positionMs))
+                            if (durationMs > 0) {
+                                append(" / ")
+                                append(formatDuration(durationMs))
                             }
                         },
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
+                        sep = " · "
+                    ),
+                    modifier = Modifier.weight(1f),
+                    titleStyle = MaterialTheme.typography.titleSmall,
+                    titleWeight = FontWeight.Bold
+                )
 
-                if (isResolving) {
-                    CircularProgressIndicator(
-                        modifier = Modifier
-                            .padding(end = 4.dp)
-                            .size(22.dp),
-                        strokeWidth = 2.dp
-                    )
-                } else {
-                    IconButton(onClick = onPlayPause) {
-                        Icon(
-                            imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                            contentDescription = if (isPlaying) "Pausar" else "Reproducir",
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                }
+                PreviewPlayPauseButton(
+                    isResolving = isResolving,
+                    isPlaying = isPlaying,
+                    onClick = onPlayPause
+                )
 
                 IconButton(onClick = onStop) {
                     Icon(

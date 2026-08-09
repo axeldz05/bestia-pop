@@ -4,10 +4,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.vector.ImageVector
+import com.bestiapop.android.data.model.ActiveDownload
 import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.data.model.Song
-import com.bestiapop.android.domain.usecase.MatchListenBrainzTracksUseCase
-import com.bestiapop.android.ui.components.RemoteTrackPlaceholderRow
+import com.bestiapop.android.data.model.matchesItem
+import com.bestiapop.android.data.model.matchesSong
+import com.bestiapop.android.domain.util.TrackMatchKeys
 
 /** L2: whether a matched (local or remote) track is the current playable. */
 fun isMatchedTrackPlaying(
@@ -21,9 +23,33 @@ fun isMatchedTrackPlaying(
         return currentItem.song.uriString == localSong.uriString ||
             currentItem.mediaId == localSong.uriString
     }
-    val currentKey = MatchListenBrainzTracksUseCase.matchKey(currentItem.artist, currentItem.title)
-    val matchKey = MatchListenBrainzTracksUseCase.matchKey(artist, title)
+    val currentKey = TrackMatchKeys.matchKey(currentItem.artist, currentItem.title)
+    val matchKey = TrackMatchKeys.matchKey(artist, title)
     return currentKey.isNotEmpty() && currentKey == matchKey
+}
+
+fun isCurrentPlaying(current: PlayableItem?, song: Song): Boolean =
+    current?.matchesSong(song) == true
+
+fun isCurrentPlaying(current: PlayableItem?, item: PlayableItem): Boolean {
+    if (current == null) return false
+    if (current.matchesItem(item)) return true
+    return isMatchedTrackPlaying(
+        localSong = (item as? PlayableItem.Local)?.song,
+        artist = item.artist,
+        title = item.title,
+        currentItem = current
+    )
+}
+
+fun isCurrentPlaying(
+    current: PlayableItem?,
+    localSong: Song?,
+    artist: String,
+    title: String
+): Boolean {
+    if (localSong != null && current?.matchesSong(localSong) == true) return true
+    return isMatchedTrackPlaying(localSong, artist, title, current)
 }
 
 /**
@@ -38,11 +64,16 @@ fun MatchedTrackRow(
     remoteBadge: String,
     isCurrentPlaying: Boolean,
     remote: PlayableItem.Remote?,
-    downloadBusy: Boolean,
+    download: ActiveDownload? = null,
     onPlayAt: () -> Unit,
     onDownloadRemote: (PlayableItem.Remote) -> Unit,
+    onRetryDownload: ((String) -> Unit)? = null,
     queueActions: SongQueueActions,
-    leadingIcon: ImageVector = Icons.Default.PlayArrow
+    leadingIcon: ImageVector = Icons.Default.PlayArrow,
+    onAddToPlaylist: ((Song) -> Unit)? = null,
+    onEditMetadata: ((Song) -> Unit)? = null,
+    onIdentify: ((Song) -> Unit)? = null,
+    onDelete: ((Song) -> Unit)? = null
 ) {
     val local = localSong
     if (local != null) {
@@ -52,7 +83,11 @@ fun MatchedTrackRow(
             onClick = onPlayAt,
             onPlayNext = { queueActions.onPlayNext(local) },
             onAddToQueue = { queueActions.onAddToQueue(local) },
-            onStartRadio = { queueActions.onStartRadio(local) }
+            onStartRadio = { queueActions.onStartRadio(local) },
+            onAddToPlaylist = onAddToPlaylist?.let { cb -> { cb(local) } },
+            onEditMetadata = onEditMetadata?.let { cb -> { cb(local) } },
+            onIdentify = onIdentify?.let { cb -> { cb(local) } },
+            onDelete = onDelete?.let { cb -> { cb(local) } }
         )
     } else if (remote != null) {
         RemoteTrackPlaceholderRow(
@@ -63,7 +98,8 @@ fun MatchedTrackRow(
             highlighted = isCurrentPlaying,
             onClick = onPlayAt,
             onDownload = { onDownloadRemote(remote) },
-            downloadBusy = downloadBusy
+            download = download,
+            onRetry = download?.id?.let { id -> onRetryDownload?.let { retry -> { retry(id) } } }
         )
     }
 }

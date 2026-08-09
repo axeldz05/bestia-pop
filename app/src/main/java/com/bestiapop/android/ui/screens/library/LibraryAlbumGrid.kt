@@ -43,6 +43,7 @@ import androidx.compose.ui.unit.dp
 import com.bestiapop.android.data.model.Album
 import com.bestiapop.android.ui.SortOption
 import com.bestiapop.android.ui.components.ArtworkThumbnail
+import com.bestiapop.android.ui.components.EmptyListHint
 import com.bestiapop.android.ui.components.formatSortRelevantInfo
 
 @Composable
@@ -57,16 +58,10 @@ fun LibraryAlbumGrid(
     modifier: Modifier = Modifier
 ) {
     if (albums.isEmpty()) {
-        Box(
-            modifier = modifier.fillMaxSize(),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                text = "No se encontraron álbumes",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-            )
-        }
+        EmptyListHint(
+            text = "No se encontraron álbumes",
+            modifier = modifier.fillMaxSize()
+        )
         return
     }
 

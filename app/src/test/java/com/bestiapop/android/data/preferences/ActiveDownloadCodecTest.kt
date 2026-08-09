@@ -27,9 +27,6 @@ class ActiveDownloadCodecTest {
     ) = ActiveDownload(
         id = id,
         source = ActiveDownloadSource.CATALOG,
-        displayTitle = "Song",
-        displayArtist = "Artist",
-        artworkUrl = "https://example.com/a.jpg",
         candidates = listOf(track()),
         currentCandidateIndex = 0,
         state = state,
@@ -138,6 +135,50 @@ class ActiveDownloadCodecTest {
         assertEquals(1, restored.size)
         assertEquals(CandidateDownloadState.SUCCESS, restored[0].state)
         assertEquals(55L, restored[0].resultSongId)
+    }
+
+    @Test
+    fun decode_legacyDisplayTitleOverridesDifferentCandidateTitle() {
+        val json = """
+            [{"id":"job-saveas","source":"LB_IMPORT","displayTitle":"Song (2)","displayArtist":"Artist",
+              "artworkUrl":null,"currentCandidateIndex":0,"state":"ERROR",
+              "errorMessage":"boom","targetPlaylistId":3,"candidates":[{"id":"vid1","title":"Song","artist":"Artist","album":"",
+              "artworkUrl":null,"durationMs":0,"audioUrl":"vid1","provider":"YouTube","trackNumber":0}]}]
+        """.trimIndent()
+        val restored = ActiveDownloadCodec.decode(json)
+        assertEquals(1, restored.size)
+        assertEquals("Song", restored[0].title)
+        assertEquals("Song (2)", restored[0].displayLabel)
+        assertEquals("Artist", restored[0].artist)
+        assertEquals(ActiveDownloadSource.LB_IMPORT, restored[0].source)
+        assertEquals(3L, restored[0].targetPlaylistId)
+    }
+
+    @Test
+    fun decode_legacyDisplayFieldsFillBlankCandidateIdentity() {
+        val json = """
+            [{"id":"job-legacy","source":"CATALOG","displayTitle":"Old Title","displayArtist":"Old Artist",
+              "artworkUrl":"https://example.com/old.jpg","currentCandidateIndex":0,"state":"ERROR",
+              "errorMessage":"boom","candidates":[{"id":"vid1","title":"","artist":"","album":"",
+              "artworkUrl":null,"durationMs":0,"audioUrl":"vid1","provider":"YouTube","trackNumber":0}]}]
+        """.trimIndent()
+        val restored = ActiveDownloadCodec.decode(json)
+        assertEquals(1, restored.size)
+        assertEquals("Old Title", restored[0].title)
+        assertEquals("Old Artist", restored[0].artist)
+        assertEquals("https://example.com/old.jpg", restored[0].artworkUri)
+        assertEquals(null, restored[0].titleOverride)
+        assertEquals("Old Title", restored[0].displayLabel)
+    }
+
+    @Test
+    fun roundTrip_preservesTitleOverrideWithoutMutatingCandidate() {
+        val original = listOf(
+            download(CandidateDownloadState.ERROR).copy(titleOverride = "Song (2)")
+        )
+        val restored = ActiveDownloadCodec.decode(ActiveDownloadCodec.encode(original))
+        assertEquals("Song", restored[0].title)
+        assertEquals("Song (2)", restored[0].displayLabel)
     }
 
     @Test

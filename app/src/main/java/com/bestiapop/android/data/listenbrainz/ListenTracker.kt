@@ -1,8 +1,10 @@
 package com.bestiapop.android.data.listenbrainz
 
 import com.bestiapop.android.data.db.PendingListenDao
-import com.bestiapop.android.data.db.PendingListenEntity
+import com.bestiapop.android.data.db.toEntity
 import com.bestiapop.android.data.model.Song
+import com.bestiapop.android.data.model.toIdentity
+import com.bestiapop.android.data.network.ListenPayload
 import com.bestiapop.android.data.preferences.ListenBrainzPreferencesRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.first
@@ -81,15 +83,7 @@ class ListenTracker(
         if (playedMs < thresholdMs(song)) return
         alreadySubmitted = true
 
-        val entity = PendingListenEntity(
-            listenedAt = listenedAtSec,
-            trackName = song.title,
-            artistName = song.artist,
-            releaseName = song.album.takeIf {
-                it.isNotBlank() && !it.equals("Unknown Album", ignoreCase = true)
-            },
-            durationMs = song.durationMs.takeIf { it > 0 }
-        )
+        val entity = ListenPayload.fromIdentity(song.toIdentity(), listenedAtSec).toEntity()
 
         scope.launch {
             val settings = preferences.settingsFlow.first()

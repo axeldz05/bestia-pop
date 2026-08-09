@@ -2,7 +2,7 @@ package com.bestiapop.android.domain.radio
 
 import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.data.model.Song
-import com.bestiapop.android.domain.usecase.MatchListenBrainzTracksUseCase
+import com.bestiapop.android.domain.util.TrackMatchKeys
 
 data class RadioSuggestResult(
     val items: List<PlayableItem>,
@@ -47,7 +47,7 @@ class RadioEngine(
             )
         }
 
-        val seedKey = MatchListenBrainzTracksUseCase.matchKey(seed.artist, seed.title)
+        val seedKey = TrackMatchKeys.matchKey(seed.artist, seed.title)
         val baseSeen = excludeKeys.toMutableSet()
         if (seedKey.isNotEmpty()) baseSeen.add(seedKey)
 
@@ -280,7 +280,7 @@ class RadioEngine(
     ): Boolean {
         if (remotes.size >= limit) return false
         if (item !is PlayableItem.Remote) return false
-        val key = MatchListenBrainzTracksUseCase.matchKey(item.artist, item.title)
+        val key = TrackMatchKeys.matchKey(item.artist, item.title)
         val idKey = item.mediaId
         if (key.isNotEmpty() && key in seen) return false
         if (idKey in seen) return false

@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
@@ -23,6 +24,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.bestiapop.android.data.model.ActiveDownload
+import com.bestiapop.android.data.model.CandidateDownloadState
+import com.bestiapop.android.domain.util.TrackMatchKeys
 
 /** L1: circular progress + percent label. */
 @Composable
@@ -137,6 +141,52 @@ fun PreviewPlayPauseButton(
                 contentDescription = "Preview",
                 tint = playTint
             )
+        }
+    }
+}
+
+/** L1: lookup a tracked download by artist+title match key. */
+fun List<ActiveDownload>.findByTrack(artist: String, title: String): ActiveDownload? {
+    val key = TrackMatchKeys.downloadIdFor(artist, title)
+    if (key.isEmpty()) return null
+    return find { it.id == key }
+}
+
+/** L2: trailing chrome for queued / progress / retry / download. NP omits cycle; catalog omits dismiss. */
+@Composable
+fun DownloadStateTrailing(
+    state: CandidateDownloadState?,
+    percent: Int = 0,
+    onRetry: (() -> Unit)? = null,
+    onCycle: (() -> Unit)? = null,
+    onDismiss: (() -> Unit)? = null,
+    onDownload: (() -> Unit)? = null
+) {
+    when (state) {
+        CandidateDownloadState.QUEUED -> DownloadQueuedLabel()
+        CandidateDownloadState.DOWNLOADING -> DownloadProgressPercent(percent)
+        CandidateDownloadState.ERROR -> when {
+            onRetry != null && onCycle != null -> RetryCycleDismissActions(
+                onRetry = onRetry,
+                onCycle = onCycle,
+                onDismiss = onDismiss
+            )
+            onRetry != null -> DownloadOutlinedActionButton(
+                label = "Reintentar",
+                onClick = onRetry
+            )
+        }
+        CandidateDownloadState.SUCCESS,
+        CandidateDownloadState.IDLE, null -> {
+            if (onDownload != null) {
+                IconButton(onClick = onDownload) {
+                    Icon(
+                        imageVector = Icons.Default.Download,
+                        contentDescription = "Descargar",
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
         }
     }
 }

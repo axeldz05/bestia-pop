@@ -41,7 +41,7 @@ Archivos: `ui/MusicPlayerViewModel.kt` (`playPlayableCollection` / `toggleShuffl
 | Centro de descargas | `DownloadsScreen` + `ActiveDownloadRow`; persistencia `ActiveDownloadsStore` / `ActiveDownloadCodec`; notif `DownloadNotificationHelper`; badge `activeDownloadBadgeCount` en tab Descargas (`MainScreen`) |
 | Orquestación VM | `enqueueTrackedBatch` → `runTrackedDownload` ← `downloadSingleCandidate`, `downloadSelectedCandidatesBatch`, `downloadFromUrl`, `downloadOnlineTrack`, `downloadRemoteItem`, `maybeEnqueueSaveWhileListening`; candidatos vía `expandCandidates`; acciones `retryActiveDownload` / `cycleActiveDownload` / `previewActiveDownload` / `playActiveDownload` / `dismissActiveDownload` / `dismissAllActiveDownloads`; deep-link `requestOpenDownloads` / `pendingOpenDownloads` |
 
-Modelo clave: `TrackIdentity` / `TrackMeta`, `OnlineCatalogTrack` (`identity` + id/provider/audioUrl), `CatalogTrackCandidate`, `DownloadStatus` (legacy Idle), `ActiveDownload` / `ActiveDownloadSource` (`CATALOG`, `LINK`, `SAVE_WHILE_LISTENING`, `BATCH`, `LB_IMPORT`, `DISCOVER`), cola `activeDownloads` (+ `targetPlaylistId` opcional, `resultSongId` en SUCCESS).
+Modelo clave: `TrackIdentity` / `TrackMeta`, `OnlineCatalogTrack` (`identity` + id/provider/audioUrl), `CatalogTrackCandidate` (`TrackMeta` vía `identity` estable de catálogo; YT en `candidates`/`currentTrack`), `DownloadStatus` (legacy Idle), `ActiveDownload` (`TrackMeta` vía `currentTrack`; `displayLabel` / `titleOverride` solo UI; Save As vía `DownloadConflictPolicy` sin mutar candidatos), conflicto/batch lookup = `lookupIdentity` (catálogo) no el hit YT, `ActiveDownloadSource` (`CATALOG`, `LINK`, `SAVE_WHILE_LISTENING`, `BATCH`, `LB_IMPORT`, `DISCOVER`), cola `activeDownloads` (+ `targetPlaylistId` opcional, `resultSongId` en SUCCESS). JSON viejo: `displayTitle` blank-fill identity; si difiere → `titleOverride`.
 
 **Invariante cola:** todas las descargas online se registran en `activeDownloads` (estado `QUEUED` → `DOWNLOADING` → `SUCCESS`/`ERROR`); éxito **se mantiene** con play/limpiar hasta `dismissActiveDownload`. Fallo deja `ERROR`. Concurrencia global `Semaphore(3)` en `runTrackedDownload`. Tras kill: `ActiveDownloadCodec.forPersistence` restaura SUCCESS; DOWNLOADING/QUEUED → ERROR “Interrumpida”. Badge = DOWNLOADING + ERROR. Add Music banners leen `activeDownloads`. `LB_IMPORT` y batch de **playlist del catálogo** añaden a playlist al éxito vía `targetPlaylistId` (`ensureCatalogPlaylistForBatch`).
 
@@ -215,7 +215,7 @@ Centro de descargas online → sección 2 (`DownloadsScreen`, tab Descargas).
 | Abrir playlist | `openListenBrainzPlaylist` + `MatchListenBrainzTracksUseCase` |
 | Map a cola | `MatchedLbPlaylist.toPlayableItems` / `MatchedLbTrack.toPlayableItem` |
 | Play / shuffle / índice | `playListenBrainzPlaylist` / `shuffleListenBrainzPlaylist` / `playListenBrainzPlaylistAt` |
-| Import locales + pendientes | `saveListenBrainzPlaylistAsLocal` → `ImportListenBrainzPlaylistUseCase.createLocalFromMatched` (`PlaylistPendingTrack(identity = track.identity)`; unmatched → `remoteFrom(identity).toOnlineCatalogTrack`) |
+| Import locales + pendientes | `saveListenBrainzPlaylistAsLocal` → `ImportListenBrainzPlaylistUseCase.createLocalFromMatched` (`PlaylistPendingTrack(identity = track.identity)`; unmatched → `OnlineCatalogTrack(identity, provider = ListenBrainz)`) |
 | Import + descarga ya | `importListenBrainzPlaylistWithDownloads` / `downloadPlaylistPendingTracks` → `runTrackedDownload` (`LB_IMPORT`) |
 | Descarga manual Remote | `downloadRemoteItem` → `runTrackedDownload` (`DISCOVER`); UI `RemoteTrackPlaceholderRow.onDownload` en detalle LB/CF; NP `NowPlayingRemoteDownloadAction` |
 | CF Recomendados | `ListenBrainzClient.fetchCfRecordingRecommendations` → `FetchAndMatchCfRecommendationsUseCase` → `refreshCfRecommendations` / `openCfRecommendations` / `playCfRecommendations` / `shuffleCfRecommendations` / `playCfAt` |
@@ -226,7 +226,7 @@ Centro de descargas online → sección 2 (`DownloadsScreen`, tab Descargas).
 
 **Invariantes:**
 - Cola unificada `List<PlayableItem>` (`Local` | `Remote`); APIs `Song` se adaptan con `Song.toPlayable()`.
-- Re-extraer stream YouTube just-in-time (`StreamResolver` → `YouTubeExtractor`); cache memoria TTL ~4 min; **no** guardar `audioUrl` CDN en Room.
+- Re-extraer stream YouTube just-in-time (`MusicRepository.streamResolver` → `YouTubeExtractor`); cache memoria TTL ~4 min para **playback**; download llama `resolveQuery(forceRefresh = true)` (no reusa CDN cacheado); **no** guardar `audioUrl` CDN en Room.
 - ExoPlayer usa UA del extract vía `StreamPlaybackTag` en `MusicService`.
 - Prefetch índices N+1 / N+2; un reintento en 403/IO luego `seekToNext`.
 - Descarga explícita (“Agregar”) sigue download-then-play; stream no la reemplaza.
@@ -234,7 +234,7 @@ Centro de descargas online → sección 2 (`DownloadsScreen`, tab Descargas).
 | Capacidad | Entry point |
 |-----------|-------------|
 | Modelo | `PlayableItem` (`TrackMeta`; `Remote` guarda `identity` + mbid/stream), `ResolvedStream` en `data/model/PlayableItem.kt` |
-| Resolver | `StreamResolver.resolve` / `prefetch` en `data/stream/StreamResolver.kt` |
+| Resolver | `MusicRepository.streamResolver` (`StreamResolver.resolve` / `prefetch` en `data/stream/StreamResolver.kt`) |
 | UA ExoPlayer | `StreamPlaybackTag` + `MusicService` `UserAgentMediaSourceFactory` |
 | FGS background | Canal `playback_channel` + `promotePlaybackForeground` (`Service.startForeground` tipo `mediaPlayback`) al dar play con la Activity visible. VM solo `controller.play()`. Play Store: `mediaPlayback` FGS basta (sin pedir batería). Sideload OEM (Moto): `install.sh` alinea `adaptive_bucket` + `RUN_ANY_IN_BACKGROUND allow` vía adb — no viaja en el APK |
 | Cola / play | `playPlayableCollection`, `currentItem`, `resolvingRemote` en `MusicPlayerViewModel` |

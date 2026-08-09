@@ -11,18 +11,40 @@ import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 import java.util.regex.Pattern
 import com.bestiapop.android.data.model.OnlineCatalogTrack
+import com.bestiapop.android.data.model.TrackIdentity
+import com.bestiapop.android.data.model.TrackMeta
 import com.bestiapop.android.domain.util.IdentifyRanking
 import com.bestiapop.android.data.util.CrashReporter
 
 data class YouTubeStreamResult(
+    val identity: TrackIdentity,
     val videoId: String,
-    val title: String,
-    val artist: String,
-    val artworkUrl: String?,
-    val durationMs: Long,
     val audioUrl: String,
     val userAgent: String
-)
+) : TrackMeta by identity {
+    companion object {
+        /** L2: flat stream construction (identity is Level 1). */
+        operator fun invoke(
+            videoId: String,
+            title: String,
+            artist: String = "",
+            artworkUrl: String? = null,
+            durationMs: Long = 0L,
+            audioUrl: String,
+            userAgent: String
+        ): YouTubeStreamResult = YouTubeStreamResult(
+            identity = TrackIdentity(
+                title = title,
+                artist = artist,
+                artworkUri = artworkUrl,
+                durationMs = durationMs
+            ),
+            videoId = videoId,
+            audioUrl = audioUrl,
+            userAgent = userAgent
+        )
+    }
+}
 
 sealed class YouTubeExtractResult {
     data class Success(val result: YouTubeStreamResult) : YouTubeExtractResult()

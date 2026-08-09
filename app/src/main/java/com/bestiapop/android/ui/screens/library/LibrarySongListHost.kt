@@ -1,6 +1,10 @@
 package com.bestiapop.android.ui.screens.library
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import com.bestiapop.android.data.model.Album
 import com.bestiapop.android.data.model.Playlist
@@ -73,6 +77,54 @@ fun LibrarySongListHost(
         onOpenAlbum = actions.onOpenAlbum,
         modifier = modifier
     )
+}
+
+class SongActionDialogsController(
+    val onEdit: (Song) -> Unit,
+    val onAddToPlaylist: (Song) -> Unit,
+    val onDelete: (Song) -> Unit,
+    val onDeleteMany: (List<Song>) -> Unit
+)
+
+/**
+ * L2: owns edit / playlist / delete dialog state and hosts [SongActionDialogsHost].
+ */
+@Composable
+fun rememberSongActionDialogs(
+    viewModel: MusicPlayerViewModel,
+    playlists: List<Playlist>,
+    onAfterPlaylistAdd: () -> Unit = {},
+    onAfterDelete: (List<Song>) -> Unit = {},
+    playlistSongIds: (Song) -> List<Long> = { listOf(it.id) },
+    onSelectPlaylist: ((Playlist, Song) -> Unit)? = null
+): SongActionDialogsController {
+    var editingSong by remember { mutableStateOf<Song?>(null) }
+    var songForPlaylistAddition by remember { mutableStateOf<Song?>(null) }
+    var songsForDeletion by remember { mutableStateOf<List<Song>?>(null) }
+
+    SongActionDialogsHost(
+        editingSong = editingSong,
+        songForPlaylistAddition = songForPlaylistAddition,
+        songsForDeletion = songsForDeletion,
+        playlists = playlists,
+        viewModel = viewModel,
+        onDismissEdit = { editingSong = null },
+        onDismissPlaylist = { songForPlaylistAddition = null },
+        onDismissDelete = { songsForDeletion = null },
+        onAfterPlaylistAdd = onAfterPlaylistAdd,
+        onAfterDelete = onAfterDelete,
+        playlistSongIds = playlistSongIds,
+        onSelectPlaylist = onSelectPlaylist
+    )
+
+    return remember {
+        SongActionDialogsController(
+            onEdit = { editingSong = it },
+            onAddToPlaylist = { songForPlaylistAddition = it },
+            onDelete = { songsForDeletion = listOf(it) },
+            onDeleteMany = { songsForDeletion = it }
+        )
+    }
 }
 
 /**

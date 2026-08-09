@@ -6,9 +6,9 @@ import com.bestiapop.android.data.listenbrainz.LbRadioRecording
 import com.bestiapop.android.data.listenbrainz.LbRecordingMetadata
 import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.data.model.Song
-import com.bestiapop.android.domain.usecase.MatchListenBrainzTracksUseCase
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import com.bestiapop.android.domain.util.TrackMatchKeys
 
 /**
  * Fetches ListenBrainz lb-radio suggestions and maps them to Local or Remote playables.
@@ -58,7 +58,7 @@ class ListenBrainzRadio(
         val mbids = recordings.map { it.recordingMbid }.distinct()
         val metaByMbid = resolveRecordingMetadata(mbids, token)
 
-        val libraryIndex = MatchListenBrainzTracksUseCase.buildLibraryIndex(library)
+        val libraryIndex = TrackMatchKeys.buildLibraryIndex(library)
         val artistFallback = HashMap<String, String>()
         for (rec in recordings) {
             val name = rec.similarArtistName?.takeIf { it.isNotBlank() } ?: continue
@@ -76,7 +76,7 @@ class ListenBrainzRadio(
                 ?: artistFallback[rec.recordingMbid]
                 ?: continue
 
-            val key = MatchListenBrainzTracksUseCase.matchKey(artist, title)
+            val key = TrackMatchKeys.matchKey(artist, title)
             if (key.isEmpty() || key in localSeen) continue
             localSeen.add(key)
 
@@ -98,7 +98,7 @@ class ListenBrainzRadio(
         title: String,
         token: String
     ): String? {
-        val cacheKey = MatchListenBrainzTracksUseCase.normalize(artist)
+        val cacheKey = TrackMatchKeys.normalize(artist)
         if (cacheKey.isEmpty()) return null
 
         mutex.withLock {

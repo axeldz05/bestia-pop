@@ -27,7 +27,19 @@ data class ListenPayload(
     val artistName: String,
     val releaseName: String? = null,
     val durationMs: Long? = null
-)
+) {
+    companion object {
+        fun fromIdentity(identity: TrackIdentity, listenedAt: Long): ListenPayload = ListenPayload(
+            listenedAt = listenedAt,
+            trackName = identity.title,
+            artistName = identity.artist,
+            releaseName = identity.album.takeIf {
+                it.isNotBlank() && !it.equals("Unknown Album", ignoreCase = true)
+            },
+            durationMs = identity.durationMs.takeIf { it > 0 }
+        )
+    }
+}
 
 data class TokenValidationResult(
     val valid: Boolean,

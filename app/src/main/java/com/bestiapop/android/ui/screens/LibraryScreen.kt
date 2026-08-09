@@ -69,7 +69,7 @@ import com.bestiapop.android.ui.screens.library.LibraryProgressBanner
 import com.bestiapop.android.ui.screens.library.LibrarySongListActions
 import com.bestiapop.android.ui.screens.library.LibrarySongListHost
 import com.bestiapop.android.ui.screens.library.SetAlbumArtworkDialog
-import com.bestiapop.android.ui.screens.library.SongActionDialogsHost
+import com.bestiapop.android.ui.screens.library.rememberSongActionDialogs
 import com.bestiapop.android.ui.state.LibraryViewMode
 
 @Composable
@@ -122,11 +122,17 @@ fun LibraryScreen(
     var showAddMusicDialog by remember { mutableStateOf(false) }
 
     // Active Dialogs state
-    var editingSong by remember { mutableStateOf<Song?>(null) }
     var albumForCoverChange by remember { mutableStateOf<Album?>(null) }
     var albumForEdit by remember { mutableStateOf<Album?>(null) }
-    var songForPlaylistAddition by remember { mutableStateOf<Song?>(null) }
-    var songsForDeletion by remember { mutableStateOf<List<Song>?>(null) }
+    val songDialogs = rememberSongActionDialogs(
+        viewModel = viewModel,
+        playlists = playlists,
+        onAfterPlaylistAdd = { selectedSongIds = emptySet() },
+        onAfterDelete = { selectedSongIds = emptySet() },
+        playlistSongIds = { song ->
+            if (selectedSongIds.isNotEmpty()) selectedSongIds.toList() else listOf(song.id)
+        }
+    )
 
     val resolveAlbumByKey = remember(albums) {
         { albumKey: String ->
@@ -219,14 +225,22 @@ fun LibraryScreen(
         }
     }
 
+    val playOrShuffleAlbum: (Album, Boolean) -> Unit = remember(songs) {
+        { album, shuffle ->
+            val albumSongs = viewModel.songsForAlbum(songs, album.name)
+            if (shuffle) viewModel.shuffleCollection(albumSongs)
+            else viewModel.playCollection(albumSongs)
+        }
+    }
+
     val songActions = rememberSongQueueActions(viewModel)
     val onPlayNext = songActions.onPlayNext
     val onAddToQueue = songActions.onAddToQueue
     val onStartRadio = songActions.onStartRadio
-    val onAddToPlaylist = remember<(Song) -> Unit> { { songForPlaylistAddition = it } }
-    val onEditMetadata = remember<(Song) -> Unit> { { editingSong = it } }
+    val onAddToPlaylist = songDialogs.onAddToPlaylist
+    val onEditMetadata = songDialogs.onEdit
     val onIdentify = remember<(Song) -> Unit> { { viewModel.identifySongForReview(it) } }
-    val onDeleteSong = remember<(Song) -> Unit> { { songsForDeletion = listOf(it) } }
+    val onDeleteSong = songDialogs.onDelete
     val onPlayAlbum = remember<(String, List<Song>) -> Unit> {
         { _, albumSongs -> viewModel.playCollection(albumSongs) }
     }
@@ -436,14 +450,14 @@ fun LibraryScreen(
                     clearSelection()
                 },
                 onAddToPlaylist = {
-                    songForPlaylistAddition = selectedSongs.firstOrNull()
+                    selectedSongs.firstOrNull()?.let(songDialogs.onAddToPlaylist)
                 },
                 onIdentifySelected = {
                     viewModel.identifySongs(selectedSongs)
                     clearSelection()
                 },
                 onDeleteSelected = {
-                    songsForDeletion = selectedSongs
+                    songDialogs.onDeleteMany(selectedSongs)
                 },
                 onSelectAll = selectAllSongs,
                 onClearSelection = clearSelection
@@ -544,10 +558,10 @@ fun LibraryScreen(
                         sortOption = sortOption,
                         onAlbumClick = { viewModel.openLibraryAlbum(it.name, fromArtist = false) },
                         onPlayAlbum = { album ->
-                            viewModel.playCollection(viewModel.songsForAlbum(songs, album.name))
+                            playOrShuffleAlbum(album, false)
                         },
                         onShuffleAlbum = { album ->
-                            viewModel.shuffleCollection(viewModel.songsForAlbum(songs, album.name))
+                            playOrShuffleAlbum(album, true)
                         },
                         onChangeAlbumCover = { albumForCoverChange = it },
                         onEditAlbum = { albumForEdit = it }
@@ -592,23 +606,6 @@ fun LibraryScreen(
             }
         }
     }
-
-    // Modal Dialog Invocations
-    SongActionDialogsHost(
-        editingSong = editingSong,
-        songForPlaylistAddition = songForPlaylistAddition,
-        songsForDeletion = songsForDeletion,
-        playlists = playlists,
-        viewModel = viewModel,
-        onDismissEdit = { editingSong = null },
-        onDismissPlaylist = { songForPlaylistAddition = null },
-        onDismissDelete = { songsForDeletion = null },
-        onAfterPlaylistAdd = { clearSelection() },
-        onAfterDelete = { clearSelection() },
-        playlistSongIds = { song ->
-            if (isMultiSelectMode) selectedSongIds.toList() else listOf(song.id)
-        }
-    )
 
     AlbumEditDialogsHost(
         albumForEdit = albumForEdit,

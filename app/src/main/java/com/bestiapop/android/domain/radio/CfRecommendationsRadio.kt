@@ -6,7 +6,6 @@ import com.bestiapop.android.data.listenbrainz.LbRecordingMetadata
 import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.domain.usecase.FetchAndMatchCfRecommendationsUseCase
-import com.bestiapop.android.domain.usecase.MatchListenBrainzTracksUseCase
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 

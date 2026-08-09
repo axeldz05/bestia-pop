@@ -6,6 +6,7 @@ import com.bestiapop.android.data.listenbrainz.LbRecordingMetadata
 import com.bestiapop.android.data.listenbrainz.MatchedCfRecommendations
 import com.bestiapop.android.data.listenbrainz.MatchedCfTrack
 import com.bestiapop.android.data.model.Song
+import com.bestiapop.android.domain.util.TrackMatchKeys
 
 /**
  * Fetches CF recording recommendations, resolves metadata, and matches against the local library.
@@ -63,13 +64,13 @@ class FetchAndMatchCfRecommendationsUseCase(
         metaByMbid: Map<String, LbRecordingMetadata>,
         library: List<Song>
     ): MatchedCfRecommendations {
-        val libraryIndex = MatchListenBrainzTracksUseCase.buildLibraryIndex(library)
+        val libraryIndex = TrackMatchKeys.buildLibraryIndex(library)
         val matches = ArrayList<MatchedCfTrack>(payload.recordings.size)
         for (rec in payload.recordings) {
             val meta = metaByMbid[rec.recordingMbid] ?: continue
             val title = meta.title.takeIf { it.isNotBlank() } ?: continue
             val artist = meta.artist.takeIf { it.isNotBlank() } ?: continue
-            val key = MatchListenBrainzTracksUseCase.matchKey(artist, title)
+            val key = TrackMatchKeys.matchKey(artist, title)
             matches.add(
                 MatchedCfTrack(
                     identity = meta.identity,

@@ -3,9 +3,9 @@ package com.bestiapop.android.domain.radio
 import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.data.model.toPlayable
-import com.bestiapop.android.domain.usecase.MatchListenBrainzTracksUseCase
 import kotlin.math.abs
 import kotlin.random.Random
+import com.bestiapop.android.domain.util.TrackMatchKeys
 
 /**
  * Suggests similar library tracks from metadata (artist / genre / year / album / co-playlist).
@@ -24,23 +24,23 @@ class LocalMetadataRadio(
     ): List<PlayableItem.Local> {
         if (limit <= 0 || library.isEmpty()) return emptyList()
 
-        val seedArtist = MatchListenBrainzTracksUseCase.normalize(seed.artist)
-        val seedKey = MatchListenBrainzTracksUseCase.matchKey(seed.artist, seed.title)
+        val seedArtist = TrackMatchKeys.normalize(seed.artist)
+        val seedKey = TrackMatchKeys.matchKey(seed.artist, seed.title)
         val seedGenre = meaningfulGenre(seedLocalGenre(seed))
         val seedYear = seedLocalYear(seed)
-        val seedAlbum = MatchListenBrainzTracksUseCase.normalize(seedLocalAlbum(seed))
+        val seedAlbum = TrackMatchKeys.normalize(seedLocalAlbum(seed))
 
         val scored = ArrayList<ScoredSong>(library.size)
         for (song in library) {
-            val key = MatchListenBrainzTracksUseCase.matchKey(song.artist, song.title)
+            val key = TrackMatchKeys.matchKey(song.artist, song.title)
             if (key.isEmpty()) continue
             if (key == seedKey) continue
             if (key in excludeKeys) continue
-            if (MatchListenBrainzTracksUseCase.normalize(song.uriString) in excludeKeys) continue
+            if (TrackMatchKeys.normalize(song.uriString) in excludeKeys) continue
             if (song.uriString in excludeKeys) continue
 
             var score = 0
-            val artistNorm = MatchListenBrainzTracksUseCase.normalize(song.artist)
+            val artistNorm = TrackMatchKeys.normalize(song.artist)
             if (seedArtist.isNotEmpty() && artistNorm == seedArtist) {
                 score += SCORE_SAME_ARTIST
             }
@@ -51,7 +51,7 @@ class LocalMetadataRadio(
             if (seedYear > 0 && song.year > 0 && abs(song.year - seedYear) <= YEAR_WINDOW) {
                 score += SCORE_YEAR_NEAR
             }
-            val albumNorm = MatchListenBrainzTracksUseCase.normalize(song.album)
+            val albumNorm = TrackMatchKeys.normalize(song.album)
             if (seedAlbum.isNotEmpty() && albumNorm == seedAlbum) {
                 score += SCORE_SAME_ALBUM
             }
@@ -69,7 +69,7 @@ class LocalMetadataRadio(
             return library
                 .asSequence()
                 .filter {
-                    val key = MatchListenBrainzTracksUseCase.matchKey(it.artist, it.title)
+                    val key = TrackMatchKeys.matchKey(it.artist, it.title)
                     key.isNotEmpty() &&
                         key != seedKey &&
                         key !in excludeKeys &&
@@ -90,7 +90,7 @@ class LocalMetadataRadio(
             val shuffled = bucket.shuffled(random)
             for (entry in shuffled) {
                 if (picked.size >= limit) break
-                val albumKey = MatchListenBrainzTracksUseCase.normalize(entry.song.album)
+                val albumKey = TrackMatchKeys.normalize(entry.song.album)
                     .ifEmpty { entry.song.uriString }
                 val count = albumCounts[albumKey] ?: 0
                 if (count >= maxPerAlbum) continue
@@ -116,7 +116,7 @@ class LocalMetadataRadio(
         }
 
     private fun meaningfulGenre(genre: String?): String? {
-        val norm = MatchListenBrainzTracksUseCase.normalize(genre.orEmpty())
+        val norm = TrackMatchKeys.normalize(genre.orEmpty())
         if (norm.isEmpty()) return null
         if (norm in GENERIC_GENRES) return null
         return norm

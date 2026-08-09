@@ -30,11 +30,13 @@ class PlaybackSessionStoreTest {
             songId = 42L,
             uriString = "content://music/42",
             positionMs = 12_345L,
-            title = "Hello",
-            artist = "World",
-            album = "LP",
-            artworkUri = "file:///cover.jpg",
-            durationMs = 200_000L
+            identity = TrackIdentity(
+                title = "Hello",
+                artist = "World",
+                album = "LP",
+                artworkUri = "file:///cover.jpg",
+                durationMs = 200_000L
+            )
         )
         val restored = LastPlayedCodec.decode(LastPlayedCodec.encode(original))
         assertEquals(original, restored)
@@ -98,7 +100,7 @@ class PlaybackSessionStoreTest {
             songId = 5L,
             uriString = s.uriString,
             positionMs = 50_000L,
-            durationMs = 10_000L
+            identity = TrackIdentity(title = "", durationMs = 10_000L)
         )
         assertEquals(10_000L, PlaybackHydration.resumePositionMs(s, last))
         assertEquals(0L, PlaybackHydration.resumePositionMs(song(9), last))
@@ -184,7 +186,7 @@ class PlaybackSessionStoreTest {
                 PersistedQueueItem.Local(
                     songId = 1L,
                     uriString = "content://song/1",
-                    durationMs = 10_000L
+                    identity = TrackIdentity(title = "", durationMs = 10_000L)
                 ),
                 PersistedQueueItem.Remote(
                     identity = TrackIdentity(title = "R", artist = "A"),

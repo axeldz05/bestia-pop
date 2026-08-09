@@ -70,25 +70,28 @@ import com.bestiapop.android.data.listenbrainz.LbPlaylistSummary
 import com.bestiapop.android.data.listenbrainz.MatchedCfRecommendations
 import com.bestiapop.android.data.listenbrainz.MatchedLbPlaylist
 import com.bestiapop.android.data.model.ActiveDownload
-import com.bestiapop.android.data.model.CandidateDownloadState
 import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.data.model.Playlist
 import com.bestiapop.android.data.model.PlaylistPendingTrack
 import com.bestiapop.android.data.model.Song
-import com.bestiapop.android.domain.usecase.ImportListenBrainzPlaylistUseCase
+import com.bestiapop.android.data.model.toPlayable
 import com.bestiapop.android.ui.CfRecommendationsUiState
 import com.bestiapop.android.ui.LbDiscoverListUiState
 import com.bestiapop.android.ui.LbPlaylistDetailUiState
 import com.bestiapop.android.ui.MusicPlayerViewModel
 import com.bestiapop.android.ui.state.PlaylistDetailNav
+import com.bestiapop.android.ui.components.ArtworkHero
 import com.bestiapop.android.ui.components.ArtworkPickerBlock
 import com.bestiapop.android.ui.components.ArtworkThumbnail
 import com.bestiapop.android.ui.components.LabeledPlayShuffleButtons
-import com.bestiapop.android.ui.components.MatchedTrackRow
+import com.bestiapop.android.ui.components.MatchedTrackLazyColumn
+import com.bestiapop.android.ui.components.MatchedTrackListItem
 import com.bestiapop.android.ui.components.RemoteTrackPlaceholderRow
+import com.bestiapop.android.ui.components.ScreenBackHeader
 import com.bestiapop.android.ui.components.SongListItem
 import com.bestiapop.android.ui.components.SongQueueActions
-import com.bestiapop.android.ui.components.isMatchedTrackPlaying
+import com.bestiapop.android.ui.components.findByTrack
+import com.bestiapop.android.ui.components.isCurrentPlaying
 import com.bestiapop.android.ui.components.rememberImagePicker
 import com.bestiapop.android.ui.components.rememberSongQueueActions
 
@@ -427,6 +430,7 @@ fun PlaylistsScreen(
                 currentItem = currentItem,
                 activeDownloads = activeDownloads,
                 onDownloadRemote = { viewModel.downloadRemoteItem(it) },
+                onRetryDownload = viewModel::retryActiveDownload,
                 queueActions = songActions
             )
         }
@@ -445,6 +449,7 @@ fun PlaylistsScreen(
                 currentItem = currentItem,
                 activeDownloads = activeDownloads,
                 onDownloadRemote = { viewModel.downloadRemoteItem(it) },
+                onRetryDownload = viewModel::retryActiveDownload,
                 queueActions = songActions
             )
         }
@@ -496,36 +501,6 @@ fun PlaylistsScreen(
 }
 
 @Composable
-fun ScreenBackHeader(
-    title: String,
-    onBack: () -> Unit,
-    trailing: @Composable RowScope.() -> Unit = {}
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        IconButton(onClick = onBack) {
-            Icon(
-                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                contentDescription = "Volver",
-                tint = MaterialTheme.colorScheme.onBackground
-            )
-        }
-        Spacer(modifier = Modifier.width(8.dp))
-        Text(
-            text = title,
-            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-            color = MaterialTheme.colorScheme.onBackground,
-            modifier = Modifier.weight(1f),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
-        trailing()
-    }
-}
-
-@Composable
 fun PlaylistSurfaceCard(
     title: String,
     onClick: () -> Unit,
@@ -563,20 +538,6 @@ fun PlaylistSurfaceCard(
 
 private fun unmatchedRemote(localSong: Song?, playable: PlayableItem): PlayableItem.Remote? =
     if (localSong == null) playable as PlayableItem.Remote else null
-
-private fun isRemoteDownloadBusy(
-    artist: String,
-    title: String,
-    activeDownloads: List<ActiveDownload>
-): Boolean {
-    val key = ImportListenBrainzPlaylistUseCase.downloadIdFor(artist, title)
-    if (key.isEmpty()) return false
-    return activeDownloads.any { download ->
-        download.id == key &&
-            (download.state == CandidateDownloadState.QUEUED ||
-                download.state == CandidateDownloadState.DOWNLOADING)
-    }
-}
 
 @Composable
 private fun MatchedPlaylistDetailScaffold(
@@ -679,6 +640,7 @@ private fun CfRecommendationsDetailScreen(
     currentItem: PlayableItem?,
     activeDownloads: List<ActiveDownload>,
     onDownloadRemote: (PlayableItem.Remote) -> Unit,
+    onRetryDownload: (String) -> Unit,
     queueActions: SongQueueActions
 ) {
     MatchedPlaylistDetailScaffold(
@@ -712,36 +674,24 @@ private fun CfRecommendationsDetailScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            LazyColumn(modifier = Modifier.fillMaxSize()) {
-                items(
-                    items = matched.matches.withIndex().toList(),
-                    key = { (index, match) ->
-                        "${index}|${match.recordingMbid}|${match.title}|${match.artist}|${match.localSong?.id}"
-                    }
-                ) { (index, match) ->
-                    MatchedTrackRow(
+            MatchedTrackLazyColumn(
+                matches = matched.matches.mapIndexed { index, match ->
+                    MatchedTrackListItem(
                         localSong = match.localSong,
                         title = match.title,
                         artist = match.artist,
-                        remoteBadge = "Stream",
-                        isCurrentPlaying = isMatchedTrackPlaying(
-                            match.localSong,
-                            match.artist,
-                            match.title,
-                            currentItem
-                        ),
                         remote = unmatchedRemote(match.localSong, match.toPlayableItem()),
-                        downloadBusy = isRemoteDownloadBusy(
-                            match.artist,
-                            match.title,
-                            activeDownloads
-                        ),
-                        onPlayAt = { onPlayAt(index) },
-                        onDownloadRemote = onDownloadRemote,
-                        queueActions = queueActions
+                        key = "${index}|${match.recordingMbid}|${match.title}|${match.artist}|${match.localSong?.id}"
                     )
-                }
-            }
+                },
+                remoteBadge = "Stream",
+                currentItem = currentItem,
+                activeDownloads = activeDownloads,
+                onPlayAt = onPlayAt,
+                onDownloadRemote = onDownloadRemote,
+                onRetryDownload = onRetryDownload,
+                queueActions = queueActions
+            )
         }
     }
 }
@@ -806,6 +756,7 @@ private fun LbPlaylistDetailScreen(
     currentItem: PlayableItem?,
     activeDownloads: List<ActiveDownload>,
     onDownloadRemote: (PlayableItem.Remote) -> Unit,
+    onRetryDownload: (String) -> Unit,
     queueActions: SongQueueActions
 ) {
     MatchedPlaylistDetailScaffold(
@@ -905,36 +856,24 @@ private fun LbPlaylistDetailScreen(
                 )
             }
         } else {
-            LazyColumn(modifier = Modifier.fillMaxSize()) {
-                items(
-                    items = matched.matches.withIndex().toList(),
-                    key = { (index, match) ->
-                        "${index}|${match.track.recordingMbid ?: match.track.title}|${match.track.artist}|${match.localSong?.id}"
-                    }
-                ) { (index, match) ->
-                    MatchedTrackRow(
+            MatchedTrackLazyColumn(
+                matches = matched.matches.mapIndexed { index, match ->
+                    MatchedTrackListItem(
                         localSong = match.localSong,
                         title = match.track.title,
                         artist = match.track.artist,
-                        remoteBadge = "No en biblioteca · stream",
-                        isCurrentPlaying = isMatchedTrackPlaying(
-                            match.localSong,
-                            match.track.artist,
-                            match.track.title,
-                            currentItem
-                        ),
                         remote = unmatchedRemote(match.localSong, match.toPlayableItem()),
-                        downloadBusy = isRemoteDownloadBusy(
-                            match.track.artist,
-                            match.track.title,
-                            activeDownloads
-                        ),
-                        onPlayAt = { onPlayAt(index) },
-                        onDownloadRemote = onDownloadRemote,
-                        queueActions = queueActions
+                        key = "${index}|${match.track.recordingMbid ?: match.track.title}|${match.track.artist}|${match.localSong?.id}"
                     )
-                }
-            }
+                },
+                remoteBadge = "No en biblioteca · stream",
+                currentItem = currentItem,
+                activeDownloads = activeDownloads,
+                onPlayAt = onPlayAt,
+                onDownloadRemote = onDownloadRemote,
+                onRetryDownload = onRetryDownload,
+                queueActions = queueActions
+            )
         }
     }
 }
@@ -1000,6 +939,8 @@ private fun PlaylistDetailScreen(
     var showEditDialog by remember { mutableStateOf(false) }
     val totalCount = songs.size + pendingTracks.size
     val songActions = rememberSongQueueActions(viewModel)
+    val currentSong by viewModel.currentSong.collectAsState()
+    val currentItem by viewModel.currentItem.collectAsState()
 
     Surface(
         modifier = Modifier.fillMaxSize(),
@@ -1034,29 +975,15 @@ private fun PlaylistDetailScreen(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Box(
-                    modifier = Modifier
-                        .size(100.dp)
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(MaterialTheme.colorScheme.primaryContainer),
-                    contentAlignment = Alignment.Center
-                ) {
-                    if (!playlist.coverUri.isNullOrEmpty()) {
-                        AsyncImage(
-                            model = playlist.coverUri,
-                            contentDescription = playlist.name,
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    } else {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.QueueMusic,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                            modifier = Modifier.size(48.dp)
-                        )
-                    }
-                }
+                ArtworkHero(
+                    uri = playlist.coverUri,
+                    contentDescription = playlist.name,
+                    fallback = Icons.AutoMirrored.Filled.QueueMusic,
+                    fallbackTint = MaterialTheme.colorScheme.onPrimaryContainer,
+                    cornerRadius = 14.dp,
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    modifier = Modifier.size(100.dp)
+                )
 
                 Spacer(modifier = Modifier.width(16.dp))
 
@@ -1156,7 +1083,7 @@ private fun PlaylistDetailScreen(
                     ) { song ->
                         SongListItem(
                             song = song,
-                            isCurrentPlaying = viewModel.currentSong.collectAsState().value?.uriString == song.uriString,
+                            isCurrentPlaying = isCurrentPlaying(currentItem ?: currentSong?.toPlayable(), song),
                             onClick = { viewModel.playSong(song, songs) },
                             onPlayNext = { songActions.onPlayNext(song) },
                             onAddToQueue = { songActions.onAddToQueue(song) },

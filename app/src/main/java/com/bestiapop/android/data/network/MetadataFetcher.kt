@@ -185,15 +185,7 @@ object MetadataFetcher {
     }
 
     fun toCatalogCandidate(track: OnlineCatalogTrack): CatalogTrackCandidate =
-        CatalogTrackCandidate(
-            trackTitle = track.title,
-            artist = track.artist,
-            albumName = track.album,
-            coverUrl = track.artworkUri,
-            candidates = listOf(track),
-            currentCandidateIndex = 0,
-            isSelected = true
-        )
+        CatalogTrackCandidate(identity = track.identity, candidates = listOf(track))
 
     /** Deezer artist search hit (id + picture). Shared by photo URL and artist-id resolve. */
     fun searchDeezerArtist(name: String): DeezerArtistHit? {

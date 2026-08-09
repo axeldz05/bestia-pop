@@ -3,13 +3,13 @@ package com.bestiapop.android.domain.radio
 import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.data.model.toPlayable
-import com.bestiapop.android.domain.usecase.MatchListenBrainzTracksUseCase
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import kotlin.random.Random
+import com.bestiapop.android.domain.util.TrackMatchKeys
 
 class LocalMetadataRadioTest {
 
@@ -55,7 +55,7 @@ class LocalMetadataRadioTest {
         val other = song(2, "Keep", "Artist A")
         val cooldown = song(3, "Skip", "Artist A")
         val radio = LocalMetadataRadio(random = Random(0))
-        val exclude = setOf(MatchListenBrainzTracksUseCase.matchKey("Artist A", "Skip"))
+        val exclude = setOf(TrackMatchKeys.matchKey("Artist A", "Skip"))
 
         val result = radio.suggest(
             seed = seed,

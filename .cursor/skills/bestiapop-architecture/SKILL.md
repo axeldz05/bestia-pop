@@ -20,15 +20,15 @@ Módulo único Gradle: `:app`. Nombre del proyecto: **BestiaPop**.
 | Estado UI | `MusicPlayerViewModel` (AndroidViewModel) + StateFlow |
 | Reproducción | Media3 ExoPlayer + `MediaLibraryService` (`MusicService`) |
 | Persistencia | Room (`bestiapop_music_db`, v3) |
-| Preferencias | DataStore (`ThemePreferencesRepository`, `ListenBrainzPreferencesRepository`, `PlaybackPreferencesRepository`, `LibraryPreferencesRepository` display+nav, `ActiveDownloadsStore`, `IdentifyReviewStore` cola identify, `PlaybackSessionStore` last-played + cola) |
-| Red / catálogo | OkHttp + `MetadataFetcher` (iTunes/Deezer) + `YouTubeExtractor` + `ListenBrainzClient` |
+| Preferencias | DataStore (`ThemePreferencesRepository`, `ListenBrainzPreferencesRepository`, `PlaybackPreferencesRepository`, `LibraryPreferencesRepository` display+nav, `ActiveDownloadsStore`, `IdentifyReviewStore` cola identify, `PlaybackSessionStore` last-played + cola, `AppUpdateCheckStore` last GitHub check) |
+| Red / catálogo | OkHttp + `MetadataFetcher` (iTunes/Deezer) + `YouTubeExtractor` + `ListenBrainzClient` + `GitHubUpdateClient` (releases) |
 | Sync WiFi | Ktor CIO embebido (`WebServerService`) |
 | Imágenes | Coil |
 | Crash reporting | Firebase Crashlytics vía `CrashReporter` (`BestiaPopApplication`); sin Analytics / sin `AD_ID` |
 
 minSdk 26 · targetSdk 36 · compileSdk 36 · Java/Kotlin 17 · AGP 9.3 + KSP · Room 2.8.
-Release: R8 minify + `ndk.debugSymbolLevel=SYMBOL_TABLE` (mapping y native symbols en el AAB para Play).
-Versión de release: `version.properties` (`VERSION_CODE` / `VERSION_NAME`). Play Console closed/alpha: `./deploy-play.sh --upload --rollout`.
+Release: R8 minify + `ndk.debugSymbolLevel=SYMBOL_TABLE` (mapping y native symbols).
+Versión: `version.properties` (`VERSION_CODE` / `VERSION_NAME`). Distro amigos: GitHub Releases (`./release.sh`, `github-release.properties`). Play AAB (`./deploy-play.sh`) queda como path legacy.
 
 ## Capas y paquetes
 
@@ -61,7 +61,7 @@ service/     MusicService (playback), WebServerService (WiFi sync)
 1. Playlists (`PlaylistsScreen` + `PlaylistDetailNav`)
 2. Descargas (`DownloadsScreen`)
 3. WiFi Sync (`WebServerScreen`)
-4. Ajustes (`SettingsScreen` / temas / ListenBrainz / Reproducción / Sonido)
+4. Ajustes (`SettingsScreen` / temas / ListenBrainz / Reproducción / Sonido / update GitHub)
 
 Overlay: `BottomPlayerBar` → `NowPlayingScreen` (⋮ canción/álbum; merge álbum en `MainScreen`); cola en `QueueScreen`.
 Mini player se rehidrata desde `MediaController` (sesión viva) o `PlaybackSessionStore` (cola persistida + last-played) / seed idle (ver features §10b).

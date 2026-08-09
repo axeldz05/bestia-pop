@@ -1,0 +1,30 @@
+package com.bestiapop.android.data.update
+
+import android.content.Context
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.longPreferencesKey
+import androidx.datastore.preferences.preferencesDataStore
+import com.bestiapop.android.data.preferences.put
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+
+private val Context.appUpdateDataStore: DataStore<Preferences> by preferencesDataStore(
+    name = "app_update"
+)
+
+class AppUpdateCheckStore(private val context: Context) {
+
+    suspend fun lastCheckAtMs(): Long =
+        context.appUpdateDataStore.data.map { prefs ->
+            prefs[Keys.LAST_CHECK_AT_MS] ?: 0L
+        }.first()
+
+    suspend fun setLastCheckAtMs(epochMs: Long) {
+        context.appUpdateDataStore.put(Keys.LAST_CHECK_AT_MS, epochMs)
+    }
+
+    private object Keys {
+        val LAST_CHECK_AT_MS = longPreferencesKey("last_check_at_ms")
+    }
+}

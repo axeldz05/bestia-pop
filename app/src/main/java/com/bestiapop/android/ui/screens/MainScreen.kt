@@ -43,8 +43,12 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import com.bestiapop.android.data.preferences.activeDownloadBadgeCount
+import com.bestiapop.android.data.update.ApkUpdateInstaller
 import com.bestiapop.android.ui.MusicPlayerViewModel
 import com.bestiapop.android.ui.components.BottomPlayerBar
+import com.bestiapop.android.ui.update.AppUpdateDialogs
+import com.bestiapop.android.ui.update.AppUpdateUiState
+import com.bestiapop.android.ui.update.AppUpdateViewModel
 import kotlinx.coroutines.launch
 
 private const val EXIT_CONFIRM_WINDOW_MS = 2_000L
@@ -52,7 +56,9 @@ private const val EXIT_CONFIRM_WINDOW_MS = 2_000L
 @Composable
 fun MainScreen(
     viewModel: MusicPlayerViewModel,
-    onSelectFolderClick: () -> Unit
+    appUpdateViewModel: AppUpdateViewModel,
+    onSelectFolderClick: () -> Unit,
+    onRequestUnknownSources: () -> Unit
 ) {
     val selectedNavIndex by viewModel.selectedNavIndex.collectAsState()
     var showFullPlayer by remember { mutableStateOf(false) }
@@ -75,6 +81,7 @@ fun MainScreen(
     val downloadConflict by viewModel.downloadConflict.collectAsState()
     val identifyReview by viewModel.identifyReview.collectAsState()
     val pendingAlbumMerge by viewModel.pendingAlbumMerge.collectAsState()
+    val appUpdateState by appUpdateViewModel.state.collectAsState()
     val downloadBadgeCount = activeDownloadBadgeCount(activeDownloads)
 
     val miniPlayerStatusLabel = when {
@@ -94,6 +101,21 @@ fun MainScreen(
             clearPendingExit()
             viewModel.consumeOpenDownloads()
         }
+    }
+
+    LaunchedEffect(Unit) {
+        appUpdateViewModel.maybeCheckOnLaunch()
+    }
+
+    val needsUnknownSources = appUpdateState is AppUpdateUiState.NeedsInstallPermission
+    val apkReadyToInstall = (appUpdateState as? AppUpdateUiState.ReadyToInstall)?.apkFile
+    LaunchedEffect(needsUnknownSources) {
+        if (needsUnknownSources) onRequestUnknownSources()
+    }
+    LaunchedEffect(apkReadyToInstall) {
+        val apk = apkReadyToInstall ?: return@LaunchedEffect
+        context.startActivity(ApkUpdateInstaller.installIntent(context, apk))
+        appUpdateViewModel.markInstallLaunched()
     }
 
     var targetPlaylistForAddition by remember { mutableStateOf<com.bestiapop.android.data.model.Playlist?>(null) }
@@ -187,7 +209,10 @@ fun MainScreen(
                     )
                     2 -> DownloadsScreen(viewModel = viewModel)
                     3 -> WebServerScreen(viewModel = viewModel)
-                    4 -> SettingsScreen(viewModel = viewModel)
+                    4 -> SettingsScreen(
+                        viewModel = viewModel,
+                        appUpdateViewModel = appUpdateViewModel
+                    )
                 }
             }
         }
@@ -291,6 +316,12 @@ fun MainScreen(
                 }
             )
         }
+
+        AppUpdateDialogs(
+            state = appUpdateState,
+            onConfirmUpdate = { appUpdateViewModel.confirmUpdate() },
+            onDismiss = { appUpdateViewModel.dismiss() }
+        )
     }
 }
 

@@ -328,10 +328,11 @@ Manifest: `android:enableOnBackInvokedCallback="true"` en `MainActivity`.
 | Call sites | `YouTubeExtractor.extractAudioStreamDetailed`, `MusicService` `onPlayerError`, `WebServerService` start/transfer, `MusicPlayerViewModel.runTrackedDownloadLocked` onFailure |
 | Config Firebase | `app/google-services.json` (gitignored) |
 | Firma release | `keystore.properties` + `.jks` (gitignored; plantilla `keystore.properties.example`) |
-| Versión | `version.properties` (`VERSION_CODE` / `VERSION_NAME`) |
-| Play Console AAB | `./deploy-play.sh --upload --rollout` → track **alpha** (closed); JSON `play-service-account.json` (plantilla `.example`); ícono `play/icon.png` 512×512 → `@mipmap/ic_launcher`; release R8 mapping + native `SYMBOL_TABLE` en el AAB |
-| Closed testing opt-in | Ajustes → Invitar amigos: Google Group (`play/closed-testing.properties` `GROUP_JOIN_URL`) + `https://play.google.com/apps/testing/com.bestiapop.android` (un `ACTION_SEND`, dos pasos; Play no une ambos en un URL) |
-| Distribución amigos | Play closed testing (updates por Store); sideload APK solo `install.sh --release` local |
+| Versión | `version.properties` (`VERSION_CODE` / `VERSION_NAME`; bump en `./release.sh`) |
+| GitHub Releases | `./release.sh` → APK `BestiaPop-{VERSION_NAME}.apk` + `latest.json` (`versionCode`/`versionName`); tag `v{VERSION_NAME}`; repo `github-release.properties` `GITHUB_REPOSITORY` → `BuildConfig.GITHUB_REPOSITORY` |
+| Invitar amigos | Ajustes → Invitar amigos: `ACTION_SEND` con `https://github.com/{repo}/releases/latest` (`GitHubReleaseUrls.latestPageUrl`) |
+| Update in-app | Al abrir (release, máx. 1/12h) + Ajustes → Buscar actualización: `GitHubUpdateClient.fetchLatest` vs `VERSION_CODE`; descarga APK + `FileProvider` + `REQUEST_INSTALL_PACKAGES`. UI `AppUpdateViewModel` / `AppUpdateDialogs` (no `MusicPlayerViewModel`) |
+| Play Console AAB | `./deploy-play.sh --upload --rollout` path legacy (no distribución de producto) |
 
 ## Relacionado
 

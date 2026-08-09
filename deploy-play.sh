@@ -17,6 +17,8 @@ OPT_IN_URL="https://play.google.com/apps/testing/${PACKAGE}"
 PLAY_ICON="play/icon.png"
 PLAY_ICON_PX=512
 VERSION_FILE="version.properties"
+# shellcheck source=scripts/version.sh
+source "$ROOT/scripts/version.sh"
 KEYSTORE_PROPS="keystore.properties"
 GOOGLE_SERVICES="app/google-services.json"
 PLAY_SA="${PLAY_SERVICE_ACCOUNT_JSON:-play-service-account.json}"
@@ -91,46 +93,6 @@ case "$TRACK" in
         exit 1
         ;;
 esac
-
-read_prop() {
-    local file="$1" key="$2"
-    python3 - "$file" "$key" <<'PY'
-import sys
-from pathlib import Path
-path, key = sys.argv[1], sys.argv[2]
-for raw in Path(path).read_text(encoding="utf-8").splitlines():
-    line = raw.strip()
-    if not line or line.startswith("#") or "=" not in line:
-        continue
-    k, _, v = line.partition("=")
-    if k.strip() == key:
-        print(v.strip())
-        raise SystemExit(0)
-raise SystemExit(f"missing {key} in {path}")
-PY
-}
-
-write_version_file() {
-    local code="$1" name="$2"
-    cat > "$VERSION_FILE" <<EOF
-# Fuente de verdad de versión (Play Console + install.sh --release).
-# ./deploy-play.sh incrementa VERSION_CODE y el último número de VERSION_NAME.
-VERSION_CODE=${code}
-VERSION_NAME=${name}
-EOF
-}
-
-bump_last_numeric() {
-    python3 -c '
-import re, sys
-name = sys.argv[1]
-matches = list(re.finditer(r"\d+", name))
-if not matches:
-    raise SystemExit(f"versionName {name!r} no tiene dígitos para incrementar")
-last = matches[-1]
-print(f"{name[:last.start()]}{int(last.group()) + 1}{name[last.end():]}")
-' "$1"
-}
 
 gradle_cmd() {
     if [[ -x ./gradlew ]]; then

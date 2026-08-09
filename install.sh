@@ -134,6 +134,5 @@ adb shell cmd appops write-settings >/dev/null 2>&1 || true
 
 echo -e "\n${GREEN}Instalación y despliegue completados (${BUILD_TYPE}).${NC}"
 if [ "$BUILD_TYPE" = "release" ]; then
-    echo -e "${CYAN}Para amigos: subí este APK a Firebase App Distribution.${NC}"
-    echo -e "${CYAN}Para Play Console: ./deploy-play.sh (AAB firmado + bump de versión).${NC}"
+    echo -e "${CYAN}Para amigos: ./release.sh (APK firmado → GitHub Releases).${NC}"
 fi

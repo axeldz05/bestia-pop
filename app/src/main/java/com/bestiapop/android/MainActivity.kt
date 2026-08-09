@@ -13,15 +13,24 @@ import androidx.activity.viewModels
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.core.content.ContextCompat
+import com.bestiapop.android.data.update.ApkUpdateInstaller
 import com.bestiapop.android.service.DownloadNotificationHelper
 import com.bestiapop.android.ui.MusicPlayerViewModel
 import com.bestiapop.android.ui.screens.MainScreen
 import com.bestiapop.android.ui.theme.BestiaPopTheme
 import com.bestiapop.android.ui.theme.ThemePresets
+import com.bestiapop.android.ui.update.AppUpdateViewModel
 
 class MainActivity : ComponentActivity() {
 
     private val viewModel: MusicPlayerViewModel by viewModels()
+    private val appUpdateViewModel: AppUpdateViewModel by viewModels()
+
+    private val unknownSourcesLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) {
+        appUpdateViewModel.onReturnedFromUnknownSources()
+    }
 
     private val folderPickerLauncher = registerForActivityResult(
         ActivityResultContracts.OpenDocumentTree()
@@ -66,8 +75,12 @@ class MainActivity : ComponentActivity() {
             BestiaPopTheme(customTheme = currentTheme) {
                 MainScreen(
                     viewModel = viewModel,
+                    appUpdateViewModel = appUpdateViewModel,
                     onSelectFolderClick = {
                         folderPickerLauncher.launch(null)
+                    },
+                    onRequestUnknownSources = {
+                        unknownSourcesLauncher.launch(ApkUpdateInstaller.unknownSourcesIntent(this))
                     }
                 )
             }

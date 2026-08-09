@@ -1,6 +1,7 @@
 package com.bestiapop.android.ui.screens
 
 import android.content.Intent
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -23,12 +24,14 @@ import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -40,8 +43,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.bestiapop.android.BuildConfig
+import com.bestiapop.android.data.update.GitHubReleaseUrls
 import com.bestiapop.android.ui.MusicPlayerViewModel
 import com.bestiapop.android.ui.components.ScreenBackHeader
+import com.bestiapop.android.ui.update.AppUpdateUiState
+import com.bestiapop.android.ui.update.AppUpdateViewModel
 
 private enum class SettingsSection {
     Themes,
@@ -51,7 +57,7 @@ private enum class SettingsSection {
 }
 
 @Composable
-fun SettingsScreen(viewModel: MusicPlayerViewModel) {
+fun SettingsScreen(viewModel: MusicPlayerViewModel, appUpdateViewModel: AppUpdateViewModel) {
     var section by remember { mutableStateOf<SettingsSection?>(null) }
     BackHandler(enabled = section != null) {
         section = null
@@ -59,6 +65,7 @@ fun SettingsScreen(viewModel: MusicPlayerViewModel) {
 
     when (section) {
         null -> SettingsHome(
+            appUpdateViewModel = appUpdateViewModel,
             onOpenThemes = { section = SettingsSection.Themes },
             onOpenListenBrainz = { section = SettingsSection.ListenBrainz },
             onOpenPlayback = { section = SettingsSection.Playback },
@@ -97,25 +104,29 @@ private fun SettingsSectionPage(
 
 @Composable
 private fun SettingsHome(
+    appUpdateViewModel: AppUpdateViewModel,
     onOpenThemes: () -> Unit,
     onOpenListenBrainz: () -> Unit,
     onOpenPlayback: () -> Unit,
     onOpenSound: () -> Unit
 ) {
     val context = LocalContext.current
-    val groupJoinUrl = BuildConfig.CLOSED_TESTING_GROUP_JOIN_URL
-    val optInUrl = "https://play.google.com/apps/testing/${BuildConfig.APPLICATION_ID}"
-    // Play no ofrece un URL que una grupo + opt-in; un solo mensaje, dos pasos.
+    val updateState by appUpdateViewModel.state.collectAsState()
+    val repo = BuildConfig.GITHUB_REPOSITORY.trim()
+    val latestUrl = if (repo.isNotEmpty()) GitHubReleaseUrls.latestPageUrl(repo) else ""
     val inviteText = """
-        Sumate al testing cerrado de BestiaPop.
-        Usá la misma cuenta de Google en el grupo, en el link de Play y en la Play Store del celular.
+        BestiaPop — descargá la app:
 
-        1) Unite al grupo de testers:
-        $groupJoinUrl
+        $latestUrl
 
-        2) Convertite en tester e instalá desde Play:
-        $optInUrl
+        En el celular: descargá el APK y permití “Instalar apps desconocidas” para el navegador.
     """.trimIndent()
+    val updateSubtitle = when (val s = updateState) {
+        AppUpdateUiState.Checking -> "Buscando…"
+        is AppUpdateUiState.Downloading -> "Descargando ${s.info.versionName}…"
+        is AppUpdateUiState.Available -> "Nueva versión ${s.info.versionName}"
+        else -> "GitHub Releases"
+    }
 
     Column(
         modifier = Modifier
@@ -146,6 +157,12 @@ private fun SettingsHome(
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = "Versión ${BuildConfig.VERSION_NAME}",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
 
         Spacer(modifier = Modifier.height(24.dp))
 
@@ -170,20 +187,35 @@ private fun SettingsHome(
                 onOpenSound
             ),
             SettingsHomeEntry(
+                "Buscar actualización",
+                updateSubtitle,
+                Icons.Default.SystemUpdate
+            ) {
+                appUpdateViewModel.checkNow()
+            },
+            SettingsHomeEntry(
                 "Invitar amigos",
-                "Grupo de testers + instalar desde Play",
+                "Link de descarga del APK",
                 Icons.Default.Share
             ) {
-                context.startActivity(
-                    Intent.createChooser(
-                        Intent(Intent.ACTION_SEND).apply {
-                            type = "text/plain"
-                            putExtra(Intent.EXTRA_SUBJECT, "BestiaPop — testing cerrado")
-                            putExtra(Intent.EXTRA_TEXT, inviteText)
-                        },
-                        "Invitar amigos"
+                if (repo.isEmpty()) {
+                    Toast.makeText(
+                        context,
+                        "Falta GITHUB_REPOSITORY en github-release.properties",
+                        Toast.LENGTH_LONG
+                    ).show()
+                } else {
+                    context.startActivity(
+                        Intent.createChooser(
+                            Intent(Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(Intent.EXTRA_SUBJECT, "BestiaPop")
+                                putExtra(Intent.EXTRA_TEXT, inviteText)
+                            },
+                            "Invitar amigos"
+                        )
                     )
-                )
+                }
             }
         )
         entries.forEachIndexed { index, entry ->

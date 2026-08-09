@@ -21,16 +21,14 @@ check(versionPropertiesFile.exists()) {
 }
 versionPropertiesFile.inputStream().use { versionProperties.load(it) }
 
-val closedTestingFile = rootProject.file("play/closed-testing.properties")
-val closedTesting = Properties()
-if (closedTestingFile.exists()) {
-    closedTestingFile.inputStream().use { closedTesting.load(it) }
+val githubReleaseFile = rootProject.file("github-release.properties")
+val githubRelease = Properties()
+if (githubReleaseFile.exists()) {
+    githubReleaseFile.inputStream().use { githubRelease.load(it) }
 }
-val closedTestingGroupJoinUrl =
-    closedTesting.getProperty("GROUP_JOIN_URL")?.trim().orEmpty()
-        .ifEmpty { "https://groups.google.com/g/YOUR_GROUP" }
-check(!closedTestingGroupJoinUrl.contains('"') && !closedTestingGroupJoinUrl.contains('\\')) {
-    "GROUP_JOIN_URL in play/closed-testing.properties must not contain quotes or backslashes"
+val githubRepository = githubRelease.getProperty("GITHUB_REPOSITORY")?.trim().orEmpty()
+check(!githubRepository.contains('"') && !githubRepository.contains('\\')) {
+    "GITHUB_REPOSITORY in github-release.properties must not contain quotes or backslashes"
 }
 
 android {
@@ -46,8 +44,8 @@ android {
         versionName = versionProperties.getProperty("VERSION_NAME")
         buildConfigField(
             "String",
-            "CLOSED_TESTING_GROUP_JOIN_URL",
-            "\"$closedTestingGroupJoinUrl\""
+            "GITHUB_REPOSITORY",
+            "\"$githubRepository\""
         )
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -138,10 +136,9 @@ dependencies {
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.compose.material.icons.extended)
 
-    // Firebase (Crashlytics + Analytics)
+    // Firebase Crashlytics only (no Analytics / advertising ID)
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.crashlytics)
-    implementation(libs.firebase.analytics)
 
     // Media3
     implementation(libs.androidx.media3.exoplayer)

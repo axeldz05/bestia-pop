@@ -123,6 +123,14 @@ fi
 
 echo -e "\n${GREEN}Lanzando la aplicación...${NC}"
 adb shell am start -n com.bestiapop.android/.MainActivity
+# Sideloaded APKs on Motorola default to background_restricted (appops ignore).
+# That demotes mediaPlayback FGS when the Activity pauses. Play apps sit in
+# adaptive_bucket + RUN_ANY_IN_BACKGROUND allow. Apply after launch: force-stop
+# / cold start can reset the op.
+sleep 1
+adb shell cmd activity set-bg-restriction-level --user 0 "$PACKAGE" adaptive_bucket || true
+adb shell cmd appops set "$PACKAGE" RUN_ANY_IN_BACKGROUND allow || true
+adb shell cmd appops write-settings >/dev/null 2>&1 || true
 
 echo -e "\n${GREEN}Instalación y despliegue completados (${BUILD_TYPE}).${NC}"
 if [ "$BUILD_TYPE" = "release" ]; then

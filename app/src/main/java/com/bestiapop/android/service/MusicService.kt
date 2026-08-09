@@ -199,16 +199,6 @@ class MusicService : MediaLibraryService() {
         super.onUpdateNotification(session, startInForegroundRequired)
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val session = mediaLibrarySession
-        if (session != null) {
-            promotePlaybackForeground(session)
-        } else {
-            promotePlaybackForegroundPlaceholder()
-        }
-        return super.onStartCommand(intent, flags, startId)
-    }
-
     override fun onDestroy() {
         serviceScope.cancel()
         releaseLoudnessEnhancer()
@@ -249,13 +239,6 @@ class MusicService : MediaLibraryService() {
                 .setLightsEnabled(false)
                 .setVibrationEnabled(false)
                 .setSound(null, null)
-                .build()
-        )
-    }
-
-    private fun promotePlaybackForegroundPlaceholder() {
-        startPlaybackForeground(
-            playbackNotificationBuilder("Bestia Pop", "Reproduciendo", mainActivityPendingIntent())
                 .build()
         )
     }

@@ -81,7 +81,7 @@ Mini player se rehidrata desde `MediaController` (sesión viva) o `PlaybackSessi
 
 | Servicio | Rol |
 |----------|-----|
-| `MusicService` | `MediaLibraryService` + ExoPlayer; FGS `mediaPlayback` se mantiene mientras hay playback (`promotePlaybackForeground` + `setSessionActivity`); `UserAgentMediaSourceFactory` lee UA de `StreamPlaybackTag`; `StereoBalanceAudioProcessor` + `LoudnessEnhancer` desde `PlaybackPreferencesRepository` |
+| `MusicService` | `MediaLibraryService` + ExoPlayer; FGS `mediaPlayback` vía `promotePlaybackForeground` (`startForeground`, no `startForegroundService`) mientras hay playback + `setSessionActivity`; `UserAgentMediaSourceFactory` lee UA de `StreamPlaybackTag`; `StereoBalanceAudioProcessor` + `LoudnessEnhancer` desde `PlaybackPreferencesRepository` |
 | `WebServerService` | Servidor Ktor local para sync/upload por WiFi |
 
 ## Base de datos

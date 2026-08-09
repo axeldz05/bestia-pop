@@ -26,7 +26,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -47,19 +46,15 @@ private enum class SettingsSection {
 @Composable
 fun SettingsScreen(viewModel: MusicPlayerViewModel) {
     var section by remember { mutableStateOf<SettingsSection?>(null) }
-    val backgroundRestricted by viewModel.backgroundRestricted.collectAsState()
-
     BackHandler(enabled = section != null) {
         section = null
     }
 
     when (section) {
         null -> SettingsHome(
-            backgroundRestricted = backgroundRestricted,
             onOpenThemes = { section = SettingsSection.Themes },
             onOpenListenBrainz = { section = SettingsSection.ListenBrainz },
-            onOpenSound = { section = SettingsSection.Sound },
-            onOpenBackgroundSettings = { viewModel.openAppDetailsSettings() }
+            onOpenSound = { section = SettingsSection.Sound }
         )
         SettingsSection.Themes -> Column(modifier = Modifier.fillMaxSize()) {
             SettingsSubHeader(
@@ -87,11 +82,9 @@ fun SettingsScreen(viewModel: MusicPlayerViewModel) {
 
 @Composable
 private fun SettingsHome(
-    backgroundRestricted: Boolean,
     onOpenThemes: () -> Unit,
     onOpenListenBrainz: () -> Unit,
-    onOpenSound: () -> Unit,
-    onOpenBackgroundSettings: () -> Unit
+    onOpenSound: () -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -148,16 +141,6 @@ private fun SettingsHome(
             icon = Icons.AutoMirrored.Filled.VolumeUp,
             onClick = onOpenSound
         )
-
-        if (backgroundRestricted) {
-            Spacer(modifier = Modifier.height(12.dp))
-            SettingsEntryCard(
-                title = "Reproducción en segundo plano",
-                subtitle = "Android está limitando la app. Abrí Batería → Sin restricciones",
-                icon = Icons.Default.Settings,
-                onClick = onOpenBackgroundSettings
-            )
-        }
     }
 }
 

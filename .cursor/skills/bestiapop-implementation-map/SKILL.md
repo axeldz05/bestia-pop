@@ -20,7 +20,7 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 | Activity | `MainActivity.kt` |
 | Manifest / permisos / services | `app/src/main/AndroidManifest.xml` |
 | Gradle app | `app/build.gradle.kts` (`signingConfigs.release`, debug+release same cert si hay keystore, `versionCode`/`versionName`) |
-| Deploy script | `install.sh` (`--debug` default, `--release`; `adb install -r -d`, fallback `cmd package uninstall -k`) |
+| Deploy script | `install.sh` (`--debug` default, `--release`; `adb install -r -d`, fallback `cmd package uninstall -k`; `appops RUN_ANY_IN_BACKGROUND allow`) |
 | Firebase config template | `app/google-services.json.example` |
 | Release keystore template | `keystore.properties.example` |
 
@@ -122,7 +122,7 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 
 | Servicio | Archivo |
 |----------|---------|
-| Playback Media3 + UA HTTP | `service/MusicService.kt` (`promotePlaybackForeground`, `PLAYBACK_CHANNEL_ID`, `setSessionActivity`); VM `playWithForegroundService`, `refreshBackgroundRestriction`, `openAppDetailsSettings`, `backgroundRestricted`; `service/StreamPlaybackTag.kt` |
+| Playback Media3 + UA HTTP | `service/MusicService.kt` (`promotePlaybackForeground`, `PLAYBACK_CHANNEL_ID`, `setSessionActivity`); VM `playWithForegroundService` → `MediaController.play()`; `service/StreamPlaybackTag.kt` |
 | Stereo balance (PCM) | `service/StereoBalanceAudioProcessor.kt` + `MusicService.applyStereoBalance` |
 | Volume boost (LoudnessEnhancer) | `MusicService.applyBoost` + `PlaybackPreferencesRepository` |
 | Ktor WiFi server | `service/WebServerService.kt` (`serverState`, `transfers`, `dismissTransfer`, `/existing-files` Room+BestiaPop); identify post-upload en VM vía `transfers` |

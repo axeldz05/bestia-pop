@@ -213,7 +213,7 @@ Centro de descargas online → sección 2 (`DownloadsScreen`, tab Descargas).
 | Modelo | `PlayableItem`, `ResolvedStream` en `data/model/PlayableItem.kt` |
 | Resolver | `StreamResolver.resolve` / `prefetch` en `data/stream/StreamResolver.kt` |
 | UA ExoPlayer | `StreamPlaybackTag` + `MusicService` `UserAgentMediaSourceFactory` |
-| FGS background | Canal `playback_channel` + `promotePlaybackForeground`; `playWithForegroundService` (sin diálogo de batería). Si `ActivityManager.isBackgroundRestricted`, Android baja el FGS al salir → banner / Ajustes → ficha de la app → Batería → Sin restricciones |
+| FGS background | Canal `playback_channel` + `promotePlaybackForeground` (`Service.startForeground` tipo `mediaPlayback`) al dar play con la Activity visible. VM solo `controller.play()`. Play Store: `mediaPlayback` FGS basta (sin pedir batería). Sideload OEM (Moto): `install.sh` alinea `adaptive_bucket` + `RUN_ANY_IN_BACKGROUND allow` vía adb — no viaja en el APK |
 | Cola / play | `playPlayableCollection`, `currentItem`, `resolvingRemote` en `MusicPlayerViewModel` |
 | Stream desde catálogo | `playOnlineCatalogTrackAsStream` + preview in-dialog (`CatalogTrackItem` / `CandidateTrackCard` + `CatalogPreviewBar`); `cycleSongCatalogResult` / `cycleTrackCandidate` (“Buscar otro”) |
 | UI player | `BottomPlayerBar` / `NowPlayingScreen` / `QueueScreen` observan `PlayableItem` |

@@ -3,12 +3,9 @@ package com.bestiapop.android.ui
 import android.Manifest
 import android.app.Application
 import android.content.ComponentName
-import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
-import android.app.ActivityManager
-import android.provider.Settings
 import androidx.annotation.OptIn
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
@@ -408,24 +405,6 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         _queueFocusEpoch.value = _queueFocusEpoch.value + 1
     }
 
-    private val _backgroundRestricted = MutableStateFlow(false)
-    val backgroundRestricted = _backgroundRestricted.asStateFlow()
-
-    fun refreshBackgroundRestriction() {
-        val am = getApplication<Application>().getSystemService(ActivityManager::class.java)
-        _backgroundRestricted.value = am?.isBackgroundRestricted == true
-    }
-
-    fun openAppDetailsSettings() {
-        val app = getApplication<Application>()
-        app.startActivity(
-            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                data = Uri.fromParts("package", app.packageName, null)
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-        )
-    }
-
     private val audioManager = getApplication<Application>().getSystemService(Context.AUDIO_SERVICE) as AudioManager
 
     private val _volumeLevel = MutableStateFlow(getDeviceVolumeRatio())
@@ -584,7 +563,6 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     init {
-        refreshBackgroundRestriction()
         initMediaController()
         startPositionTracker()
         viewModelScope.launch {
@@ -1568,12 +1546,10 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     private fun playWithForegroundService(controller: MediaController) {
-        val app = getApplication<Application>()
-        try {
-            ContextCompat.startForegroundService(app, Intent(app, MusicService::class.java))
-        } catch (_: Exception) {
-            app.startService(Intent(app, MusicService::class.java))
-        }
+        // Media3 promotes MusicService to mediaPlayback FGS from onUpdateNotification
+        // when play() runs while the Activity is visible. Do not call
+        // startForegroundService here: a second start from cached uidState fails on
+        // Android 12+ and Motorola demotes the existing FGS.
         controller.play()
     }
 

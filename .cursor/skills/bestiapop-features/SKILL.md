@@ -245,7 +245,7 @@ Centro de descargas online → sección 2 (`DownloadsScreen`, tab Descargas).
 
 **Invariantes:**
 - Tras reconnect de `MediaController`, `syncUiFromController` rehidrata `_queue` / `currentItem` / `isPlaying` / posición desde la sesión viva (prioridad sobre snapshot persistido).
-- Sin sesión viva: hidratar cola persistida (`queue_json`: current + upcoming + last `MAX_QUEUE_HISTORY` = 20). Locals rematch por id/uri; Remotes identity+mbid+query/`videoId` **sin** CDN. Si current se borró, avanzar al siguiente (posición 0). Si no hay cola usable: last-played local o aleatoria. Autoplay solo si `autoplayOnLaunch` (Local = Remote). `ensureRemoteReadyAt(..., startPlaying)` no llama `play()` si el player está en pausa / idle.
+- Sin sesión viva: hidratar cola persistida (`queue_json`: current + upcoming + last `MAX_QUEUE_HISTORY` = 20). Locals rematch por id/uri; Remotes identity+mbid+query/`videoId` **sin** CDN. Si current se borró, avanzar al siguiente (posición 0). Si no hay cola usable: last-played local o aleatoria. Autoplay solo si `autoplayOnLaunch` (Local = Remote). `ensureRemoteReadyAt(..., startPlaying = playWhenReady)` en sync y `onMediaItemTransition` — hydrate/`prepare` no dispara `play()` en remoto.
 - Idle play: si el controller ya tiene items → play/pause. Si current Remote necesita resolve o `mediaItemCount == 0` con `_queue` hidratada → `playPlayableCollection(queue, index, rotate = false)` (no reconstruir biblioteca).
 - Biblioteca vacía y sin sesión → `BottomPlayerBar` oculto (`currentItem == null`).
 - Con playback activo, `MusicService` permanece FGS `mediaPlayback` (notif Now playing + `setSessionActivity`) aunque la Activity esté en segundo plano; sin FGS el proceso queda cached y LMK lo mata al abrir otras apps.

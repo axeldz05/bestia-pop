@@ -1121,7 +1121,10 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                         ?: mediaItemToPlayable(item, songsState.value)
                     setCurrentItem(playable)
                     remoteErrorRetryUsed = false
-                    ensureRemoteReadyAt(newIndex)
+                    ensureRemoteReadyAt(
+                        newIndex,
+                        startPlaying = controller?.playWhenReady == true
+                    )
                     prefetchAround(newIndex)
                     if (_radioActive.value) {
                         rememberRadioPlayed(playable)

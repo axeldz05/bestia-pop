@@ -62,8 +62,7 @@ import com.bestiapop.android.ui.components.LabeledPlayShuffleButtons
 import com.bestiapop.android.ui.components.MultiSelectActionBar
 import com.bestiapop.android.ui.components.PlaylistAdditionActionBar
 import com.bestiapop.android.ui.components.rememberSongQueueActions
-import com.bestiapop.android.ui.screens.library.ConfirmMergeAlbumsDialog
-import com.bestiapop.android.ui.screens.library.EditAlbumMetadataDialog
+import com.bestiapop.android.ui.screens.library.AlbumEditDialogsHost
 import com.bestiapop.android.ui.screens.library.LibraryAlbumGrid
 import com.bestiapop.android.ui.screens.library.LibraryArtistList
 import com.bestiapop.android.ui.screens.library.LibraryProgressBanner
@@ -94,7 +93,6 @@ fun LibraryScreen(
     val libraryTab by viewModel.libraryTab.collectAsState()
     val selectedAlbumName by viewModel.libraryAlbumName.collectAsState()
     val selectedArtistName by viewModel.libraryArtistName.collectAsState()
-    val pendingAlbumMerge by viewModel.pendingAlbumMerge.collectAsState()
     val libraryJobProgress by viewModel.libraryJobProgress.collectAsState()
 
     var sortMenuExpanded by remember { mutableStateOf(false) }
@@ -612,54 +610,11 @@ fun LibraryScreen(
         }
     )
 
-    albumForEdit?.let { album ->
-        if (pendingAlbumMerge == null) {
-            EditAlbumMetadataDialog(
-                album = album,
-                onDismiss = { albumForEdit = null },
-                onSaveAlbumOnly = { displayName, artist, genre, year, artworkUri ->
-                    viewModel.requestSaveAlbumMetadata(
-                        source = album,
-                        displayName = displayName,
-                        artist = artist,
-                        genre = genre,
-                        year = year,
-                        artworkUri = artworkUri,
-                        propagateToSongs = false
-                    )
-                    // Keep dialog open until merge prompt or successful save settles;
-                    // close when no merge is pending after a short beat via collecting.
-                    albumForEdit = null
-                },
-                onSaveAlbumAndSongs = { displayName, artist, genre, year, artworkUri ->
-                    viewModel.requestSaveAlbumMetadata(
-                        source = album,
-                        displayName = displayName,
-                        artist = artist,
-                        genre = genre,
-                        year = year,
-                        artworkUri = artworkUri,
-                        propagateToSongs = true
-                    )
-                    albumForEdit = null
-                }
-            )
-        }
-    }
-
-    pendingAlbumMerge?.let { pending ->
-        ConfirmMergeAlbumsDialog(
-            source = pending.source,
-            target = pending.target,
-            onDismiss = { viewModel.dismissPendingAlbumMerge() },
-            onConfirm = {
-                val sourceKey = pending.source.name
-                val targetKey = pending.target.name
-                viewModel.confirmPendingAlbumMerge()
-                viewModel.renameRestoredLibraryAlbum(sourceKey, targetKey)
-            }
-        )
-    }
+    AlbumEditDialogsHost(
+        albumForEdit = albumForEdit,
+        viewModel = viewModel,
+        onDismissEdit = { albumForEdit = null }
+    )
 
     albumForCoverChange?.let { album ->
         SetAlbumArtworkDialog(

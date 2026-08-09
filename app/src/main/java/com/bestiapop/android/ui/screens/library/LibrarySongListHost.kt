@@ -2,6 +2,7 @@ package com.bestiapop.android.ui.screens.library
 
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import com.bestiapop.android.data.model.Album
 import com.bestiapop.android.data.model.Playlist
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.ui.MusicPlayerViewModel
@@ -76,7 +77,6 @@ fun LibrarySongListHost(
 
 /**
  * L3: edit / add-to-playlist / delete dialogs for song actions.
- * Album-specific dialogs stay at the call site.
  */
 @Composable
 fun SongActionDialogsHost(
@@ -134,6 +134,48 @@ fun SongActionDialogsHost(
                 viewModel.deleteSongsFromDevice(targetSongs)
                 onDismissDelete()
                 onAfterDelete(targetSongs)
+            }
+        )
+    }
+}
+
+/**
+ * L3: album metadata editor. Merge confirmation is hosted once in [com.bestiapop.android.ui.screens.MainScreen]
+ * (shared VM state). Cover-only picker stays at the call site.
+ */
+@Composable
+fun AlbumEditDialogsHost(
+    albumForEdit: Album?,
+    viewModel: MusicPlayerViewModel,
+    onDismissEdit: () -> Unit
+) {
+    albumForEdit?.let { album ->
+        EditAlbumMetadataDialog(
+            album = album,
+            onDismiss = onDismissEdit,
+            onSaveAlbumOnly = { displayName, artist, genre, year, artworkUri ->
+                viewModel.requestSaveAlbumMetadata(
+                    source = album,
+                    displayName = displayName,
+                    artist = artist,
+                    genre = genre,
+                    year = year,
+                    artworkUri = artworkUri,
+                    propagateToSongs = false
+                )
+                onDismissEdit()
+            },
+            onSaveAlbumAndSongs = { displayName, artist, genre, year, artworkUri ->
+                viewModel.requestSaveAlbumMetadata(
+                    source = album,
+                    displayName = displayName,
+                    artist = artist,
+                    genre = genre,
+                    year = year,
+                    artworkUri = artworkUri,
+                    propagateToSongs = true
+                )
+                onDismissEdit()
             }
         )
     }

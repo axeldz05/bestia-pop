@@ -93,6 +93,9 @@ interface IMusicRepository {
     suspend fun addSongToPlaylist(playlistId: Long, songId: Long)
     suspend fun removeSongFromPlaylist(playlistId: Long, songId: Long)
 
+    /** Playlist ids that currently contain [songId]. */
+    suspend fun getPlaylistIdsForSong(songId: Long): List<Long>
+
     /** Song ids that share at least one playlist with [songId] (for local radio scoring). */
     suspend fun getCoPlaylistSongIds(songId: Long): Set<Long>
 

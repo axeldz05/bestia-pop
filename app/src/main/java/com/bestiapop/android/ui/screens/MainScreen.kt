@@ -74,6 +74,7 @@ fun MainScreen(
     val pendingOpenDownloads by viewModel.pendingOpenDownloads.collectAsState()
     val downloadConflict by viewModel.downloadConflict.collectAsState()
     val identifyReview by viewModel.identifyReview.collectAsState()
+    val pendingAlbumMerge by viewModel.pendingAlbumMerge.collectAsState()
     val downloadBadgeCount = activeDownloadBadgeCount(activeDownloads)
 
     val miniPlayerStatusLabel = when {
@@ -274,6 +275,20 @@ fun MainScreen(
                 onOverwrite = { viewModel.resolveDownloadConflictOverwrite() },
                 onSaveAs = { title -> viewModel.resolveDownloadConflictSaveAs(title) },
                 onCancel = { viewModel.cancelDownloadConflict() }
+            )
+        }
+
+        pendingAlbumMerge?.let { pending ->
+            com.bestiapop.android.ui.screens.library.ConfirmMergeAlbumsDialog(
+                source = pending.source,
+                target = pending.target,
+                onDismiss = { viewModel.dismissPendingAlbumMerge() },
+                onConfirm = {
+                    val sourceKey = pending.source.name
+                    val targetKey = pending.target.name
+                    viewModel.confirmPendingAlbumMerge()
+                    viewModel.renameRestoredLibraryAlbum(sourceKey, targetKey)
+                }
             )
         }
     }

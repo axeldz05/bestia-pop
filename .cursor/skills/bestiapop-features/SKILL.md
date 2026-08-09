@@ -259,6 +259,21 @@ Centro de descargas online → sección 2 (`DownloadsScreen`, tab Descargas).
 | Seed idle | `maybeSeedIdlePlayer` / `applyHydratedQueue` / `maybeAutoplayAfterIdleSeed` |
 | Mini bar UI | `BottomPlayerBar` (`statusLabel`, Previous); wiring en `MainScreen` |
 
+## 10c. Acciones de canción/álbum en Now Playing
+
+**Invariante:** ⋮ junto al título (radio sigue en el header). Nav a biblioteca/playlist **cierra** NP + limpia search. Editar / añadir a playlist / identificar / radio no cierran NP.
+
+| Acción | Cuándo | Entry point |
+|--------|--------|-------------|
+| Ir al álbum / artista | Match en `albumsState` / `artistsState` | `openLibraryAlbum` / `openLibraryArtist` + `setSelectedNavIndex(0)` |
+| Ir a playlist local | Membresía Room (`getPlaylistIdsForSong`) | `openLocalPlaylist` + tab Playlists |
+| Ir a Para Ti / Recomendados | `DiscoverPlaybackOrigin` (sesión; no persistido) si play/shuffle desde LB/CF | `openListenBrainzPlaylistDetail` / `openCfRecommendationsDetail` |
+| Añadir a playlist / Identificar / Editar canción | Solo `PlayableItem.Local` | `SongActionDialogsHost` / `identifySongForReview` |
+| Editar álbum | Local + álbum en biblioteca | `AlbumEditDialogsHost`; merge único en `MainScreen` (`pendingAlbumMerge`) |
+| Iniciar radio | Siempre | `startRadio()` (mismo que icono header) |
+
+Origen Discover: set en `playListenBrainzPlaylist*` / `playCf*`; clear en `playPlayableCollection` / radio que muta cola / `applyHydratedQueue`.
+
 ## 11. Radio (similares)
 
 **Invariantes:**
@@ -281,7 +296,7 @@ Centro de descargas online → sección 2 (`DownloadsScreen`, tab Descargas).
 | CF fill | `CfRecommendationsRadio.suggest` (`artist_type=similar`, cache TTL) |
 | Deezer fill | `DeezerSimilarRadio.suggest` + `MetadataFetcher.resolveDeezerArtistId` / `fetchDeezerArtistRadio` / `fetchDeezerRelatedArtistIds` / `fetchDeezerArtistTop` / `fetchItunesArtistSongs` |
 | Sesión | `startRadio`, `stopRadio`, `setRadioPreferredMode`, `suggestRadioWithRetry`, `replaceUpcomingWithRadio`, refill/auto |
-| UI | Now Playing (tap/long-press); mini bar `statusLabel` (radio / resolving); menú canción “Iniciar radio” |
+| UI | Now Playing (tap/long-press + ⋮ “Iniciar radio”); mini bar `statusLabel` (radio / resolving); menú canción biblioteca “Iniciar radio” |
 
 ## 12. System back (jerarquía UI)
 
@@ -289,7 +304,7 @@ Centro de descargas online → sección 2 (`DownloadsScreen`, tab Descargas).
 
 | Prioridad | Comportamiento | Entry point |
 |-----------|----------------|-------------|
-| Diálogos / menús | Framework `onDismissRequest` | `Dialog` / `AlertDialog` / `DropdownMenu` |
+| Diálogos / menús | Framework `onDismissRequest` | `Dialog` / `AlertDialog` / `DropdownMenu` (NP ⋮ + merge álbum en `MainScreen`) |
 | Identify review | Oculta overlay, conserva cola (`dismissIdentifyReview`); `skipAllIdentifyReview` vacía | `IdentifyReviewScreen` `BackHandler` |
 | Add Music colección | `clearSelectedCollection` antes de cerrar | `AddMusicDialog` `BackHandler` + `onDismissRequest` |
 | Now Playing | `dismissFullPlayer` | `NowPlayingScreen` `BackHandler` |

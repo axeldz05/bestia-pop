@@ -77,6 +77,7 @@ import com.bestiapop.android.service.DownloadNotificationHelper
 import com.bestiapop.android.service.MusicService
 import com.bestiapop.android.service.StreamPlaybackTag
 import com.bestiapop.android.service.WebServerService
+import com.bestiapop.android.ui.state.DiscoverPlaybackOrigin
 import com.bestiapop.android.ui.state.IdentifyReviewItem
 import com.bestiapop.android.ui.state.IdentifyReviewState
 import com.bestiapop.android.ui.state.LibraryListItem
@@ -288,6 +289,10 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     private val _playlistDetail = MutableStateFlow<PlaylistDetailNav>(PlaylistDetailNav.None)
     val playlistDetail = _playlistDetail.asStateFlow()
+
+    private val _discoverPlaybackOrigin =
+        MutableStateFlow<DiscoverPlaybackOrigin>(DiscoverPlaybackOrigin.None)
+    val discoverPlaybackOrigin = _discoverPlaybackOrigin.asStateFlow()
 
     private var uiPrefsHydrated = false
 
@@ -1089,6 +1094,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     private fun applyHydratedQueue(hydrated: HydratedQueue) {
+        clearDiscoverPlaybackOrigin()
         _queue.value = hydrated.items
         lastMediaItemIndex = hydrated.currentIndex
         _shufflePlayOrder.value = PlaybackQueueOrder.validPlayOrderOrNull(
@@ -1563,6 +1569,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         startShuffled: Boolean = false
     ) {
         if (items.isEmpty()) return
+        clearDiscoverPlaybackOrigin()
         if (!fromRadio) clearRadioSession()
         val validIndex = startIndex.coerceIn(0, items.size - 1)
         val shouldRotate = rotate && !fromRadio && validIndex > 0
@@ -2054,6 +2061,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 }
 
                 if (keepCurrentPlaying) {
+                    clearDiscoverPlaybackOrigin()
                     replaceUpcomingWithRadio(suggestions)
                     toast("Se agregaron canciones de la radio a la cola")
                     val idx = mediaController?.currentMediaItemIndex ?: lastMediaItemIndex
@@ -2282,6 +2290,12 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 repository.addSongToPlaylist(playlistId, id)
             }
         }
+    }
+
+    suspend fun playlistsContainingSong(songId: Long): List<Playlist> {
+        val ids = repository.getPlaylistIdsForSong(songId).toSet()
+        if (ids.isEmpty()) return emptyList()
+        return repository.playlistsFlow.first().filter { it.id in ids }
     }
 
     fun deleteSongsFromApp(songs: List<Song>) {
@@ -3281,13 +3295,14 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         return ok
     }
 
-    private fun playMatchedCollection(items: List<PlayableItem>, startIndex: Int = 0) {
-        if (items.isEmpty() || startIndex !in items.indices) return
+    private fun playMatchedCollection(items: List<PlayableItem>, startIndex: Int = 0): Boolean {
+        if (items.isEmpty() || startIndex !in items.indices) return false
         playPlayableCollection(items, startIndex)
+        return true
     }
 
-    private fun shuffleMatchedCollection(items: List<PlayableItem>) {
-        if (items.isEmpty()) return
+    private fun shuffleMatchedCollection(items: List<PlayableItem>): Boolean {
+        if (items.isEmpty()) return false
         playPlayableCollection(
             items,
             startIndex = items.indices.random(),
@@ -3295,16 +3310,30 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             applyManualModes = false,
             startShuffled = true
         )
+        return true
     }
 
-    fun playCfRecommendations() =
-        playMatchedCollection(_cfRecommendations.value?.toPlayableItems().orEmpty())
+    fun playCfRecommendations() {
+        val items = _cfRecommendations.value?.toPlayableItems().orEmpty()
+        if (!playMatchedCollection(items)) return
+        markCfDiscoverOrigin()
+    }
 
-    fun shuffleCfRecommendations() =
-        shuffleMatchedCollection(_cfRecommendations.value?.toPlayableItems().orEmpty())
+    fun shuffleCfRecommendations() {
+        val items = _cfRecommendations.value?.toPlayableItems().orEmpty()
+        if (!shuffleMatchedCollection(items)) return
+        markCfDiscoverOrigin()
+    }
 
-    fun playCfAt(index: Int) =
-        playMatchedCollection(_cfRecommendations.value?.toPlayableItems().orEmpty(), index)
+    fun playCfAt(index: Int) {
+        val items = _cfRecommendations.value?.toPlayableItems().orEmpty()
+        if (!playMatchedCollection(items, index)) return
+        markCfDiscoverOrigin()
+    }
+
+    private fun markCfDiscoverOrigin() {
+        _discoverPlaybackOrigin.value = DiscoverPlaybackOrigin.CfRecommendations
+    }
 
     fun openListenBrainzPlaylist(mbid: String) {
         viewModelScope.launch {
@@ -3350,14 +3379,36 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         _lbPlaylistDetailState.value = LbPlaylistDetailUiState.Idle
     }
 
-    fun playListenBrainzPlaylist() =
-        playMatchedCollection(_selectedLbPlaylist.value?.toPlayableItems().orEmpty())
+    fun playListenBrainzPlaylist() {
+        val matched = _selectedLbPlaylist.value ?: return
+        if (!playMatchedCollection(matched.toPlayableItems())) return
+        setListenBrainzDiscoverOrigin(matched)
+    }
 
-    fun shuffleListenBrainzPlaylist() =
-        shuffleMatchedCollection(_selectedLbPlaylist.value?.toPlayableItems().orEmpty())
+    fun shuffleListenBrainzPlaylist() {
+        val matched = _selectedLbPlaylist.value ?: return
+        if (!shuffleMatchedCollection(matched.toPlayableItems())) return
+        setListenBrainzDiscoverOrigin(matched)
+    }
 
-    fun playListenBrainzPlaylistAt(index: Int) =
-        playMatchedCollection(_selectedLbPlaylist.value?.toPlayableItems().orEmpty(), index)
+    fun playListenBrainzPlaylistAt(index: Int) {
+        val matched = _selectedLbPlaylist.value ?: return
+        if (!playMatchedCollection(matched.toPlayableItems(), index)) return
+        setListenBrainzDiscoverOrigin(matched)
+    }
+
+    private fun setListenBrainzDiscoverOrigin(matched: MatchedLbPlaylist) {
+        _discoverPlaybackOrigin.value = DiscoverPlaybackOrigin.ListenBrainz(
+            mbid = matched.detail.summary.mbid,
+            title = matched.detail.summary.title
+        )
+    }
+
+    private fun clearDiscoverPlaybackOrigin() {
+        if (_discoverPlaybackOrigin.value != DiscoverPlaybackOrigin.None) {
+            _discoverPlaybackOrigin.value = DiscoverPlaybackOrigin.None
+        }
+    }
 
     /** Saves matched locals + unmatched as pending metadata (no download yet). */
     fun saveListenBrainzPlaylistAsLocal(onCreated: ((Long) -> Unit)? = null) {

@@ -978,6 +978,10 @@ class MusicRepository(private val context: Context) : IMusicRepository {
         musicDao.removeSongFromPlaylist(playlistId, songId)
     }
 
+    override suspend fun getPlaylistIdsForSong(songId: Long): List<Long> = withContext(Dispatchers.IO) {
+        musicDao.getPlaylistIdsForSong(songId)
+    }
+
     override suspend fun getCoPlaylistSongIds(songId: Long): Set<Long> = withContext(Dispatchers.IO) {
         musicDao.getCoPlaylistSongIds(songId).toSet()
     }

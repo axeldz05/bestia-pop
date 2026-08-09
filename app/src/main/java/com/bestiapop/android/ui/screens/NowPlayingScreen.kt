@@ -42,6 +42,7 @@ import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Lyrics
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -98,14 +99,19 @@ import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import com.bestiapop.android.data.model.Album
 import com.bestiapop.android.data.model.PlayableItem
+import com.bestiapop.android.data.model.Playlist
 import com.bestiapop.android.data.model.RepeatMode
 import com.bestiapop.android.data.model.Song
+import com.bestiapop.android.data.preferences.NAV_LIBRARY
+import com.bestiapop.android.data.preferences.NAV_PLAYLISTS
 import com.bestiapop.android.domain.radio.RadioMode
 import com.bestiapop.android.ui.MusicPlayerViewModel
-import com.bestiapop.android.ui.components.ArtworkThumbnail
 import com.bestiapop.android.ui.components.QueueItemRow
 import com.bestiapop.android.ui.components.formatDuration
+import com.bestiapop.android.ui.screens.library.AlbumEditDialogsHost
+import com.bestiapop.android.ui.screens.library.SongActionDialogsHost
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
@@ -161,7 +167,16 @@ fun NowPlayingScreen(
     val radioActive by viewModel.radioActive.collectAsState()
     val radioLoading by viewModel.radioLoading.collectAsState()
     val radioStatusLabel by viewModel.radioStatusLabel.collectAsState()
+    val albums by viewModel.albumsState.collectAsState()
+    val artists by viewModel.artistsState.collectAsState()
+    val playlists by viewModel.playlists.collectAsState(initial = emptyList())
+    val discoverOrigin by viewModel.discoverPlaybackOrigin.collectAsState()
     var radioMenuExpanded by remember { mutableStateOf(false) }
+    var actionsMenuExpanded by remember { mutableStateOf(false) }
+    var editingSong by remember { mutableStateOf<Song?>(null) }
+    var songForPlaylistAddition by remember { mutableStateOf<Song?>(null) }
+    var albumForEdit by remember { mutableStateOf<Album?>(null) }
+    var containingPlaylists by remember { mutableStateOf<List<Playlist>>(emptyList()) }
 
     var selectedTab by remember { mutableIntStateOf(0) } // 0 = Portada, 1 = Letra, 2 = Cola
     val queueListState = rememberLazyListState()
@@ -171,6 +186,38 @@ fun NowPlayingScreen(
     val albumLabel = when (item) {
         is PlayableItem.Local -> item.song.album
         is PlayableItem.Remote -> item.album.takeIf { it.isNotBlank() } ?: "Stream"
+    }
+    val matchedAlbum = remember(albums, item.album) {
+        item.album.takeIf { it.isNotBlank() }?.let { albumName ->
+            albums.firstOrNull { it.name.equals(albumName, ignoreCase = true) }
+        }
+    }
+    val matchedArtist = remember(artists, item.artist) {
+        item.artist.takeIf { it.isNotBlank() }?.let { artistName ->
+            artists.firstOrNull { it.name.equals(artistName, ignoreCase = true) }
+        }
+    }
+
+    LaunchedEffect(localSong?.id, playlists) {
+        val songId = localSong?.id
+        containingPlaylists = if (songId != null) {
+            viewModel.playlistsContainingSong(songId)
+        } else {
+            emptyList()
+        }
+    }
+
+    fun goToLibrary(open: () -> Unit) {
+        viewModel.setSearchQuery("")
+        viewModel.setSelectedNavIndex(NAV_LIBRARY)
+        open()
+        onDismiss()
+    }
+
+    fun goToPlaylists(open: () -> Unit) {
+        viewModel.setSelectedNavIndex(NAV_PLAYLISTS)
+        open()
+        onDismiss()
     }
 
     // Swipe-to-dismiss: Portada uses nested scroll; Letra/Cola dismiss only outside the
@@ -515,49 +562,92 @@ fun NowPlayingScreen(
             Spacer(modifier = Modifier.height(20.dp))
 
             // Title & Artist Info (Clean & readable)
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(
-                    text = item.title,
-                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                    color = MaterialTheme.colorScheme.onBackground,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = "${item.artist} • $albumLabel",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                if (resolvingRemote) {
-                    Spacer(modifier = Modifier.height(4.dp))
+            Box(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(end = 40.dp)
+                ) {
                     Text(
-                        text = "Resolviendo stream…",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary
+                        text = item.title,
+                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                        color = MaterialTheme.colorScheme.onBackground,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth()
                     )
-                } else if (radioLoading) {
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = MusicPlayerViewModel.RADIO_LOADING_LABEL,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary
+                        text = "${item.artist} • $albumLabel",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth()
                     )
-                } else if (radioStatusLabel != null) {
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = radioStatusLabel!!,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary
+                    if (resolvingRemote) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Resolviendo stream…",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    } else if (radioLoading) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = MusicPlayerViewModel.RADIO_LOADING_LABEL,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    } else if (radioStatusLabel != null) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = radioStatusLabel!!,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+                Box(modifier = Modifier.align(Alignment.TopEnd)) {
+                    IconButton(onClick = { actionsMenuExpanded = true }) {
+                        Icon(
+                            imageVector = Icons.Default.MoreVert,
+                            contentDescription = "Acciones de la canción",
+                            tint = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.8f)
+                        )
+                    }
+                    NowPlayingActionsMenu(
+                        expanded = actionsMenuExpanded,
+                        onDismiss = { actionsMenuExpanded = false },
+                        matchedAlbumName = matchedAlbum?.name,
+                        matchedArtistName = matchedArtist?.name,
+                        containingPlaylists = containingPlaylists,
+                        discoverOrigin = discoverOrigin,
+                        isLocal = localSong != null,
+                        canEditAlbum = localSong != null && matchedAlbum != null,
+                        onGoToAlbum = { name ->
+                            goToLibrary { viewModel.openLibraryAlbum(name, fromArtist = false) }
+                        },
+                        onGoToArtist = { name ->
+                            goToLibrary { viewModel.openLibraryArtist(name) }
+                        },
+                        onGoToLocalPlaylist = { id ->
+                            goToPlaylists { viewModel.openLocalPlaylist(id) }
+                        },
+                        onGoToListenBrainz = { mbid ->
+                            goToPlaylists { viewModel.openListenBrainzPlaylistDetail(mbid) }
+                        },
+                        onGoToCfRecommendations = {
+                            goToPlaylists { viewModel.openCfRecommendationsDetail() }
+                        },
+                        onAddToPlaylist = { localSong?.let { songForPlaylistAddition = it } },
+                        onIdentify = { localSong?.let { viewModel.identifySongForReview(it) } },
+                        onEditSong = { localSong?.let { editingSong = it } },
+                        onEditAlbum = { albumForEdit = matchedAlbum },
+                        onStartRadio = { viewModel.startRadio() }
                     )
                 }
             }
@@ -705,6 +795,22 @@ fun NowPlayingScreen(
             }
         }
     }
+
+    SongActionDialogsHost(
+        editingSong = editingSong,
+        songForPlaylistAddition = songForPlaylistAddition,
+        songsForDeletion = null,
+        playlists = playlists,
+        viewModel = viewModel,
+        onDismissEdit = { editingSong = null },
+        onDismissPlaylist = { songForPlaylistAddition = null },
+        onDismissDelete = {}
+    )
+    AlbumEditDialogsHost(
+        albumForEdit = albumForEdit,
+        viewModel = viewModel,
+        onDismissEdit = { albumForEdit = null }
+    )
 }
 
 @Composable

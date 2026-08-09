@@ -20,7 +20,7 @@ Módulo único Gradle: `:app`. Nombre del proyecto: **BestiaPop**.
 | Estado UI | `MusicPlayerViewModel` (AndroidViewModel) + StateFlow |
 | Reproducción | Media3 ExoPlayer + `MediaLibraryService` (`MusicService`) |
 | Persistencia | Room (`bestiapop_music_db`, v3) |
-| Preferencias | DataStore (`ThemePreferencesRepository`, `ListenBrainzPreferencesRepository`, `PlaybackPreferencesRepository`, `LibraryPreferencesRepository` display+nav, `ActiveDownloadsStore`) |
+| Preferencias | DataStore (`ThemePreferencesRepository`, `ListenBrainzPreferencesRepository`, `PlaybackPreferencesRepository`, `LibraryPreferencesRepository` display+nav, `ActiveDownloadsStore`, `PlaybackSessionStore` last-played + cola) |
 | Red / catálogo | OkHttp + `MetadataFetcher` (iTunes/Deezer) + `YouTubeExtractor` + `ListenBrainzClient` |
 | Sync WiFi | Ktor CIO embebido (`WebServerService`) |
 | Imágenes | Coil |
@@ -46,7 +46,7 @@ service/     MusicService (playback), WebServerService (WiFi sync)
 1. Room / MediaStore → `MusicRepository` (`MusicFileStore` para I/O local) → `Flow<List<Song>>`
 2. ViewModel combina flows + search/sort → `songsState` / `albumsState` / `artistsState`
 3. Screens Compose observan StateFlows y llaman métodos del ViewModel
-4. Reproducción: ViewModel cola `List<PlayableItem>` (`Local` | `Remote`) → `MediaController` → `MusicService` (ExoPlayer)
+4. Reproducción: ViewModel cola `List<PlayableItem>` (`Local` | `Remote`; tap de colección rota origen a índice 0) → `MediaController` → `MusicService` (ExoPlayer). Kill → `PlaybackSessionStore` (`queue_json` + last-played).
 5. Stream remoto: `StreamResolver.resolve` / `resolveQuery` → `YouTubeExtractor.extractAudioStreamDetailed` → MediaItem HTTPS + `StreamPlaybackTag` (UA) → ExoPlayer
 6. Radio: `RadioEngine` (KNOWN / NEW / BOTH; fill LB→CF→Deezer; dedupe global `tryAddRemote`) → `playPlayableCollection` / refill de cola; remotos reusan stream
 7. Para Ti: `MatchListenBrainzTracksUseCase` → `MatchedLbPlaylist.toPlayableItems` → `playPlayableCollection`; CF: `FetchAndMatchCfRecommendationsUseCase` → `matchFromMetadata` → `MatchedCfRecommendations.toPlayableItems`; descarga manual `downloadRemoteItem` (`DISCOVER`); opcional `saveWhileListening` → download background; import Room vía `ImportListenBrainzPlaylistUseCase` + `LB_IMPORT`
@@ -62,7 +62,7 @@ service/     MusicService (playback), WebServerService (WiFi sync)
 4. Ajustes (`SettingsScreen` / temas / ListenBrainz / Reproducción / Sonido)
 
 Overlay: `BottomPlayerBar` → `NowPlayingScreen`; cola en `QueueScreen`.
-Mini player se rehidrata desde `MediaController` (sesión viva) o `PlaybackSessionStore` / seed idle (ver features §10b).
+Mini player se rehidrata desde `MediaController` (sesión viva) o `PlaybackSessionStore` (cola persistida + last-played) / seed idle (ver features §10b).
 
 **System back:** un paso por gesto en la jerarquía UI (`BackHandler` anidados; sin Navigation Compose). Prioridad: diálogos/menús → Now Playing → nested del tab → doble atrás para salir en raíz (`MainScreen`). Ver features §12.
 

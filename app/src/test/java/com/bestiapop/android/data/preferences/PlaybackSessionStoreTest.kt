@@ -1,6 +1,8 @@
 package com.bestiapop.android.data.preferences
 
+import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.data.model.Song
+import com.bestiapop.android.data.model.TrackIdentity
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -113,5 +115,78 @@ class PlaybackSessionStoreTest {
         assertEquals(s.title, snap.title)
         assertEquals(s.artworkUri, snap.artworkUri)
         assertTrue(LastPlayedCodec.decode(LastPlayedCodec.encode(snap)) == snap)
+    }
+
+    @Test
+    fun hydrateQueue_matchesLocalByIdAndUri() {
+        val library = listOf(song(1), song(2, uri = "content://x"), song(3))
+        val snapshot = QueueSnapshot(
+            currentIndex = 1,
+            positionMs = 4_000L,
+            items = listOf(
+                PersistedQueueItem.Local(songId = 1L, uriString = "content://song/1"),
+                PersistedQueueItem.Local(songId = 99L, uriString = "content://x"),
+                PersistedQueueItem.Local(songId = 3L, uriString = "content://song/3")
+            )
+        )
+        val hydrated = PlaybackHydration.hydrateQueue(snapshot, library)!!
+        assertEquals(3, hydrated.items.size)
+        assertEquals(1, hydrated.currentIndex)
+        assertEquals(2L, (hydrated.items[1] as PlayableItem.Local).song.id)
+        assertEquals(4_000L, hydrated.positionMs)
+    }
+
+    @Test
+    fun hydrateQueue_skipsDeletedCurrent_advancesAndClearsPosition() {
+        val library = listOf(song(1), song(3))
+        val snapshot = QueueSnapshot(
+            currentIndex = 1,
+            positionMs = 9_000L,
+            items = listOf(
+                PersistedQueueItem.Local(songId = 1L, uriString = "content://song/1"),
+                PersistedQueueItem.Local(songId = 2L, uriString = "content://song/2"),
+                PersistedQueueItem.Local(songId = 3L, uriString = "content://song/3")
+            )
+        )
+        val hydrated = PlaybackHydration.hydrateQueue(snapshot, library)!!
+        assertEquals(2, hydrated.items.size)
+        assertEquals(1, hydrated.currentIndex)
+        assertEquals(3L, (hydrated.items[1] as PlayableItem.Local).song.id)
+        assertEquals(0L, hydrated.positionMs)
+    }
+
+    @Test
+    fun hydrateQueue_keepsRemoteAndCapsResumePosition() {
+        val library = listOf(song(1).copy(durationMs = 10_000L))
+        val snapshot = QueueSnapshot(
+            currentIndex = 0,
+            positionMs = 50_000L,
+            items = listOf(
+                PersistedQueueItem.Local(
+                    songId = 1L,
+                    uriString = "content://song/1",
+                    durationMs = 10_000L
+                ),
+                PersistedQueueItem.Remote(
+                    identity = TrackIdentity(title = "R", artist = "A"),
+                    youtubeQueryOrId = "A R"
+                )
+            )
+        )
+        val hydrated = PlaybackHydration.hydrateQueue(snapshot, library)!!
+        assertEquals(2, hydrated.items.size)
+        assertTrue(hydrated.items[1] is PlayableItem.Remote)
+        assertEquals(10_000L, hydrated.positionMs)
+    }
+
+    @Test
+    fun hydrateQueue_nullOrAllDeleted_returnsNull() {
+        assertNull(PlaybackHydration.hydrateQueue(null, listOf(song(1))))
+        val gone = QueueSnapshot(
+            currentIndex = 0,
+            positionMs = 0L,
+            items = listOf(PersistedQueueItem.Local(songId = 9L, uriString = "missing"))
+        )
+        assertNull(PlaybackHydration.hydrateQueue(gone, listOf(song(1))))
     }
 }

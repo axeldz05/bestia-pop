@@ -44,8 +44,11 @@ import com.bestiapop.android.data.preferences.MIN_SAVE_WHILE_LISTENING_PERCENT
 import com.bestiapop.android.data.preferences.PlaybackModeRestore
 import com.bestiapop.android.data.preferences.PlaybackPreferencesRepository
 import com.bestiapop.android.data.preferences.PlaybackSettings
+import com.bestiapop.android.data.playback.PlaybackQueueOrder
+import com.bestiapop.android.data.preferences.HydratedQueue
 import com.bestiapop.android.data.preferences.PlaybackHydration
 import com.bestiapop.android.data.preferences.PlaybackSessionStore
+import com.bestiapop.android.data.preferences.QueueSnapshotCodec
 import com.bestiapop.android.data.preferences.ThemePreferencesRepository
 import com.bestiapop.android.data.repository.MusicRepository
 import com.bestiapop.android.data.stream.StreamResolver
@@ -801,27 +804,52 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         if (localSong != null) {
             listenTracker.onTrackChanged(localSong)
             requestMetadataEnhancement(localSong)
-            if (persistLastPlayed) {
-                saveLastPlayed(localSong, _playbackPositionMs.value)
-            }
         } else {
             listenTracker.onTrackChanged(null)
         }
+        if (persistLastPlayed) {
+            persistPlaybackSession(force = true)
+        }
     }
 
-    private fun saveLastPlayed(song: Song, positionMs: Long) {
-        val snapshot = PlaybackHydration.snapshotFromSong(song, positionMs)
+    private fun currentQueueIndex(): Int {
+        val queue = _queue.value
+        if (queue.isEmpty()) return 0
+        val fromController = mediaController?.currentMediaItemIndex
+        if (fromController != null && fromController in queue.indices) return fromController
+        if (lastMediaItemIndex in queue.indices) return lastMediaItemIndex
+        val current = _currentItem.value ?: return 0
+        return queue.indexOfFirst { it.mediaId == current.mediaId }.coerceAtLeast(0)
+    }
+
+    private fun persistPlaybackSession(force: Boolean = false) {
+        val now = System.currentTimeMillis()
+        if (!force && now - lastPersistedPositionAtMs < LAST_PLAYED_POSITION_SAVE_INTERVAL_MS) return
+        lastPersistedPositionAtMs = now
+        val positionMs = _playbackPositionMs.value
+        val local = (_currentItem.value as? PlayableItem.Local)?.song
+        val queue = _queue.value
+        val index = currentQueueIndex()
         viewModelScope.launch(Dispatchers.IO) {
-            playbackSessionStore.save(snapshot)
+            val lastPlayed = local?.let { PlaybackHydration.snapshotFromSong(it, positionMs) }
+            if (queue.isEmpty()) {
+                playbackSessionStore.saveSession(lastPlayed = lastPlayed, clearQueue = true)
+            } else {
+                val trimmed = PlaybackQueueOrder.trimHistory(queue, index)
+                playbackSessionStore.saveSession(
+                    lastPlayed = lastPlayed,
+                    queue = QueueSnapshotCodec.fromPlayable(
+                        items = trimmed.items,
+                        currentIndex = trimmed.currentIndex,
+                        positionMs = positionMs
+                    )
+                )
+            }
         }
-        lastPersistedPositionAtMs = System.currentTimeMillis()
     }
 
     private fun persistCurrentPosition(force: Boolean = false) {
-        val song = (_currentItem.value as? PlayableItem.Local)?.song ?: return
-        val now = System.currentTimeMillis()
-        if (!force && now - lastPersistedPositionAtMs < LAST_PLAYED_POSITION_SAVE_INTERVAL_MS) return
-        saveLastPlayed(song, _playbackPositionMs.value)
+        persistPlaybackSession(force = force)
     }
 
     /**
@@ -831,6 +859,10 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private fun syncUiFromController() {
         val controller = mediaController ?: return
         if (controller.mediaItemCount <= 0) {
+            if (_queue.value.isNotEmpty() && _currentItem.value != null) {
+                loadHydratedQueueIntoController()
+                return
+            }
             maybeSeedIdlePlayer()
             return
         }
@@ -852,11 +884,11 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
         val index = controller.currentMediaItemIndex.coerceIn(0, rebuilt.lastIndex)
         _queue.value = rebuilt
-        setCurrentItem(rebuilt[index])
         lastMediaItemIndex = index
         _isPlaying.value = controller.isPlaying
         _playbackPositionMs.value = controller.currentPosition.coerceAtLeast(0L)
         _repeatMode.value = repeatModeFromPlayer(controller.repeatMode)
+        setCurrentItem(rebuilt[index])
 
         ensureRemoteReadyAt(index)
         prefetchAround(index)
@@ -920,6 +952,29 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         )
     }
 
+    private fun loadHydratedQueueIntoController() {
+        val controller = mediaController ?: return
+        if (controller.mediaItemCount > 0) return
+        val items = _queue.value
+        if (items.isEmpty()) return
+        val idx = lastMediaItemIndex.takeIf { it in items.indices }
+            ?: items.indexOfFirst { it.mediaId == _currentItem.value?.mediaId }.takeIf { it >= 0 }
+            ?: 0
+        val pos = _playbackPositionMs.value.coerceAtLeast(0L)
+        controller.setMediaItems(items.map { playableToMediaItem(it) }, idx, pos)
+        controller.prepare()
+    }
+
+    private fun applyHydratedQueue(hydrated: HydratedQueue) {
+        _queue.value = hydrated.items
+        lastMediaItemIndex = hydrated.currentIndex
+        setCurrentItem(hydrated.items[hydrated.currentIndex], persistLastPlayed = false)
+        _playbackPositionMs.value = hydrated.positionMs
+        _isPlaying.value = false
+        pendingResumePositionMs = hydrated.positionMs.takeIf { it > 0L }
+        loadHydratedQueueIntoController()
+    }
+
     private fun maybeSeedIdlePlayer() {
         if (liveSessionHydrated || idleSeedDone || _currentItem.value != null) return
         val songs = songsState.value
@@ -937,8 +992,15 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         idleSeedDone = true
         viewModelScope.launch {
             val last = withContext(Dispatchers.IO) { playbackSessionStore.load() }
+            val queueSnap = withContext(Dispatchers.IO) { playbackSessionStore.loadQueue() }
             if (liveSessionHydrated || _currentItem.value != null) return@launch
             val library = songsState.value
+            val hydrated = PlaybackHydration.hydrateQueue(queueSnap, library)
+            if (hydrated != null && hydrated.items.isNotEmpty()) {
+                if (liveSessionHydrated || _currentItem.value != null) return@launch
+                applyHydratedQueue(hydrated)
+                return@launch
+            }
             val song = PlaybackHydration.resolveIdleSeed(library, last) ?: return@launch
             if (liveSessionHydrated || _currentItem.value != null) return@launch
             setCurrentItem(song.toPlayable(), persistLastPlayed = false)
@@ -1215,9 +1277,9 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         suppressShuffleWrapDetection = true
         try {
             _queue.value = shuffled
+            lastMediaItemIndex = 0
             setCurrentItem(shuffled.first())
             setShuffleEnabled(true)
-            lastMediaItemIndex = 0
             mediaController?.let { controller ->
                 val resumePosition = if (keepItemFirst != null) {
                     controller.currentPosition.coerceAtLeast(0L)
@@ -1392,22 +1454,30 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     fun playPlayableCollection(
         items: List<PlayableItem>,
         startIndex: Int = 0,
-        fromRadio: Boolean = false
+        fromRadio: Boolean = false,
+        rotate: Boolean = true
     ) {
         if (items.isEmpty()) return
         if (!fromRadio) clearRadioSession()
         val validIndex = startIndex.coerceIn(0, items.size - 1)
+        val shouldRotate = rotate && !fromRadio && validIndex > 0
+        val ordered = if (shouldRotate) {
+            PlaybackQueueOrder.rotateToStart(items, validIndex)
+        } else {
+            items
+        }
+        val startAt = if (shouldRotate) 0 else validIndex
         viewModelScope.launch {
-            var working = items.toMutableList()
-            val startItem = working[validIndex]
+            var working = ordered.toMutableList()
+            val startItem = working[startAt]
             if (startItem is PlayableItem.Remote && remoteNeedsResolve(startItem)) {
                 _resolvingRemote.value = true
                 try {
                     val resolved = resolveRemote(startItem)
                     if (resolved == null) {
-                        // Try next items
+                        // Try next items (rest of wrapped circle after rotate)
                         val nextRemote = working.withIndex()
-                            .filter { it.index != validIndex && it.value is PlayableItem.Remote }
+                            .filter { it.index != startAt && it.value is PlayableItem.Remote }
                         var played = false
                         for ((idx, remote) in nextRemote) {
                             val r = resolveRemote(remote as PlayableItem.Remote) ?: continue
@@ -1419,23 +1489,23 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                         if (!played) return@launch
                         return@launch
                     }
-                    working[validIndex] = resolved
+                    working[startAt] = resolved
                 } finally {
                     _resolvingRemote.value = false
                 }
             }
-            finishPlayPlayableCollection(working, validIndex)
-            prefetchAround(validIndex)
+            finishPlayPlayableCollection(working, startAt)
+            prefetchAround(startAt)
             if (fromRadio && _radioActive.value) {
-                maybeRefillRadio(validIndex)
+                maybeRefillRadio(startAt)
             }
         }
     }
 
     private fun finishPlayPlayableCollection(items: List<PlayableItem>, index: Int) {
         _queue.value = items
-        setCurrentItem(items[index])
         lastMediaItemIndex = index
+        setCurrentItem(items[index])
         setShuffleEnabled(false)
         remoteErrorRetryUsed = false
         liveSessionHydrated = true
@@ -1630,7 +1700,10 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     fun togglePlayPause() {
         val controller = mediaController
-        if (controller != null && controller.mediaItemCount > 0) {
+        val current = _currentItem.value
+        val queue = _queue.value
+        val needsResolve = current is PlayableItem.Remote && remoteNeedsResolve(current)
+        if (controller != null && controller.mediaItemCount > 0 && !needsResolve) {
             if (controller.isPlaying) {
                 controller.pause()
             } else {
@@ -1639,9 +1712,16 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             return
         }
 
-        val current = _currentItem.value ?: return
+        if (current == null) return
         val resumeMs = _playbackPositionMs.value
         pendingResumePositionMs = resumeMs.takeIf { it > 0L }
+        if (queue.isNotEmpty()) {
+            val index = queue.indexOfFirst { it.mediaId == current.mediaId }
+                .takeIf { it >= 0 }
+                ?: lastMediaItemIndex.coerceIn(0, queue.lastIndex)
+            playPlayableCollection(queue, index, rotate = false)
+            return
+        }
         when (current) {
             is PlayableItem.Local -> playSong(current.song)
             is PlayableItem.Remote -> playPlayableCollection(listOf(current), 0)
@@ -1710,6 +1790,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         mediaController?.let { controller ->
             controller.addMediaItems(items.map { playableToMediaItem(it) })
         }
+        persistPlaybackSession(force = true)
     }
 
     fun setRadioPreferredMode(mode: RadioMode) {
@@ -1825,7 +1906,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                     val idx = mediaController?.currentMediaItemIndex ?: lastMediaItemIndex
                     if (idx >= 0) prefetchAround(idx)
                 } else {
-                    playPlayableCollection(suggestions, startIndex = 0, fromRadio = true)
+                    playPlayableCollection(suggestions, startIndex = 0, fromRadio = true, rotate = false)
                 }
             } finally {
                 _radioLoading.value = false
@@ -1905,7 +1986,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         val currentIndex = (controller?.currentMediaItemIndex ?: lastMediaItemIndex).coerceAtLeast(0)
         val currentList = _queue.value
         if (currentIndex !in currentList.indices) {
-            playPlayableCollection(suggestions, startIndex = 0, fromRadio = true)
+            playPlayableCollection(suggestions, startIndex = 0, fromRadio = true, rotate = false)
             return
         }
 
@@ -1920,6 +2001,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             }
             c.addMediaItems(suggestions.map { playableToMediaItem(it) })
         }
+        persistPlaybackSession(force = true)
     }
 
     /**
@@ -2027,6 +2109,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         mediaController?.let { controller ->
             controller.addMediaItems(insertIndex, playables.map { playableToMediaItem(it) })
         }
+        persistPlaybackSession(force = true)
     }
 
     fun addSongsToPlaylist(playlistId: Long, songs: List<Song>) {
@@ -2078,6 +2161,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             currentList.removeAt(index)
             _queue.value = currentList
             mediaController?.removeMediaItem(index)
+            persistPlaybackSession(force = true)
         }
     }
 
@@ -2088,6 +2172,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             list.add(toIndex, item)
             _queue.value = list
             mediaController?.moveMediaItem(fromIndex, toIndex)
+            persistPlaybackSession(force = true)
         }
     }
 
@@ -2119,6 +2204,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 mediaController?.seekTo(index, 0L)
                 prefetchAround(index)
             }
+            persistPlaybackSession(force = true)
         }
     }
 

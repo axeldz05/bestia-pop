@@ -17,13 +17,14 @@ Cada feature lista **invariantes** + **entry points**. Si el código diverge, ac
 
 | Acción | ViewModel | Pipeline |
 |--------|-----------|----------|
-| Reproducir colección | `playCollection(songs, startIndex)` / `playCollection(songs, startSong)` | `playPlayableCollection` |
-| Reproducir Local\|Remote | `playPlayableCollection(items, startIndex)` | ViewModel + `StreamResolver` |
-| Shuffle | `shuffleCollection(songs)` | `applyShuffledQueue` |
+| Reproducir colección | `playCollection(songs, startIndex)` / `playCollection(songs, startSong)` | `playPlayableCollection` (`rotate=true`: tap queda índice 0, prefijo al final) |
+| Reproducir Local\|Remote | `playPlayableCollection(items, startIndex, rotate)` | ViewModel + `StreamResolver` |
+| Shuffle | `shuffleCollection(songs)` | `applyShuffledQueue` (ya arranca en 0; sin wrap extra) |
 | Encolar | `enqueueCollection(songs)` | append a cola `PlayableItem` |
 | Una canción | `playSong(song, playlistOrQueue)` | (arma cola + MediaController) |
+| Tap en Cola / NP | `skipToQueueIndex(index)` | seek in-place; **no** rota ni cambia origen |
 
-Archivos: `ui/MusicPlayerViewModel.kt` (`playPlayableCollection` / `applyShuffledQueue`); `ui/components/PlayShuffleButtons.kt`.
+Archivos: `ui/MusicPlayerViewModel.kt` (`playPlayableCollection` / `applyShuffledQueue` / `skipToQueueIndex`); `data/playback/PlaybackQueueOrder.kt`; `ui/components/PlayShuffleButtons.kt`.
 
 ## 2. Búsqueda online y descarga de audio
 
@@ -240,18 +241,19 @@ Centro de descargas online → sección 2 (`DownloadsScreen`, tab Descargas).
 ## 10b. Continuidad del mini player
 
 **Invariantes:**
-- Tras reconnect de `MediaController`, `syncUiFromController` rehidrata `_queue` / `currentItem` / `isPlaying` / posición desde la sesión viva (prioridad sobre last-played).
-- Sin sesión viva: seed idle con última canción **local** persistida (`PlaybackSessionStore`) o, si no hay historial, una aleatoria de la biblioteca; sin autoplay.
+- Tras reconnect de `MediaController`, `syncUiFromController` rehidrata `_queue` / `currentItem` / `isPlaying` / posición desde la sesión viva (prioridad sobre snapshot persistido).
+- Sin sesión viva: hidratar cola persistida (`queue_json`: current + upcoming + last `MAX_QUEUE_HISTORY` = 20). Locals rematch por id/uri; Remotes identity+mbid+query/`videoId` **sin** CDN. Si current se borró, avanzar al siguiente (posición 0). Si no hay cola usable: last-played local o aleatoria; sin autoplay.
+- Idle play: si el controller ya tiene items → play/pause. Si current Remote necesita resolve o `mediaItemCount == 0` con `_queue` hidratada → `playPlayableCollection(queue, index, rotate = false)` (no reconstruir biblioteca).
 - Biblioteca vacía y sin sesión → `BottomPlayerBar` oculto (`currentItem == null`).
-- Idle play: si `mediaItemCount == 0` y hay `currentItem`, `togglePlayPause` carga vía `playSong` / `playPlayableCollection` (resume de posición).
 - Con playback activo, `MusicService` permanece FGS `mediaPlayback` (notif Now playing + `setSessionActivity`) aunque la Activity esté en segundo plano; sin FGS el proceso queda cached y LMK lo mata al abrir otras apps.
 - No persistir CDN de `Remote`. Mini bar: Previous + status (`Resolviendo…` / `Armando radio…` / `radioStatusLabel`).
 
 | Capacidad | Entry point |
 |-----------|-------------|
-| Resync sesión | `MusicPlayerViewModel.syncUiFromController` / `mediaItemToPlayable` |
-| Last-played | `PlaybackSessionStore`, `LastPlayedCodec`, `PlaybackHydration` en `data/preferences/PlaybackSessionStore.kt` |
-| Seed idle | `maybeSeedIdlePlayer` |
+| Resync sesión | `MusicPlayerViewModel.syncUiFromController` / `mediaItemToPlayable` / `loadHydratedQueueIntoController` |
+| Last-played + cola | `PlaybackSessionStore`, `LastPlayedCodec`, `QueueSnapshotCodec`, `PlaybackHydration.hydrateQueue` en `data/preferences/PlaybackSessionStore.kt` |
+| Wrap / trim | `PlaybackQueueOrder.rotateToStart` / `trimHistory` en `data/playback/PlaybackQueueOrder.kt` |
+| Seed idle | `maybeSeedIdlePlayer` / `applyHydratedQueue` |
 | Mini bar UI | `BottomPlayerBar` (`statusLabel`, Previous); wiring en `MainScreen` |
 
 ## 11. Radio (similares)

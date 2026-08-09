@@ -48,6 +48,7 @@ import com.bestiapop.android.data.preferences.ThemePreferencesRepository
 import com.bestiapop.android.data.repository.MusicRepository
 import com.bestiapop.android.data.stream.StreamResolver
 import com.bestiapop.android.data.util.CrashReporter
+import com.bestiapop.android.data.util.MusicFileStore
 import com.bestiapop.android.data.util.SongPathNormalizer
 import com.bestiapop.android.data.util.looksLikeStoragePath
 import com.bestiapop.android.domain.radio.CfRecommendationsRadio
@@ -144,6 +145,7 @@ sealed class CfRecommendationsUiState {
 class MusicPlayerViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository = MusicRepository(application)
+    private val audioStore = MusicFileStore(application)
     private val themeRepository = ThemePreferencesRepository(application)
     private val listenBrainzPreferences = ListenBrainzPreferencesRepository(application)
     private val playbackPreferences = PlaybackPreferencesRepository(application)
@@ -595,6 +597,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         }
 
         viewModelScope.launch(Dispatchers.IO) {
+            repository.migrateCanonicalAudioUris()
             repository.migrateLegacyYouTubeMusicSongs()
         }
 
@@ -1304,11 +1307,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     private fun parseToMediaUri(uriStr: String?): Uri {
         if (uriStr.isNullOrBlank()) return Uri.EMPTY
-        val trimmed = uriStr.trim()
-        SongPathNormalizer.toAbsolutePath(trimmed)?.let { abs ->
-            return Uri.fromFile(java.io.File(abs))
-        }
-        return Uri.parse(trimmed)
+        return audioStore.playableUri(uriStr.trim())
     }
 
     private fun parseToArtworkUri(uriStr: String?): Uri? {

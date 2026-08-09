@@ -121,6 +121,15 @@ interface MusicDao {
     @Query("DELETE FROM playlist_song_cross_ref WHERE playlistId = :playlistId AND songId = :songId")
     suspend fun removeSongFromPlaylist(playlistId: Long, songId: Long)
 
+    @Query("SELECT playlistId FROM playlist_song_cross_ref WHERE songId = :songId")
+    suspend fun getPlaylistIdsForSong(songId: Long): List<Long>
+
+    @Query("DELETE FROM playlist_song_cross_ref WHERE songId = :songId AND playlistId IN (:playlistIds)")
+    suspend fun deleteSongFromPlaylists(songId: Long, playlistIds: List<Long>)
+
+    @Query("UPDATE playlist_song_cross_ref SET songId = :keepId WHERE songId = :dropId")
+    suspend fun remapPlaylistSongId(dropId: Long, keepId: Long)
+
     /** Song ids that share at least one playlist with [songId] (excluding [songId]). */
     @Query(
         """

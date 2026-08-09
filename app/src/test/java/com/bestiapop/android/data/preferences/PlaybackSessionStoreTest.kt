@@ -78,6 +78,18 @@ class PlaybackSessionStoreTest {
     }
 
     @Test
+    fun resolveIdleSeed_matchesSafSnapshotToAbsLibraryUri() {
+        val abs = "/storage/emulated/0/Music/BestiaPop/01_pretext.mp3"
+        val saf =
+            "content://com.android.externalstorage.documents/tree/primary%3AMusic%2FBestiaPop/document/primary%3AMusic%2FBestiaPop%2F01_pretext.mp3"
+        val library = listOf(song(1, uri = abs).copy(folderPath = "/storage/emulated/0/Music/BestiaPop"))
+        val last = LastPlayedSnapshot(songId = 99L, uriString = saf, positionMs = 1500L)
+        val picked = PlaybackHydration.resolveIdleSeed(library, last) { error("no random") }
+        assertEquals(1L, picked?.id)
+        assertEquals(1500L, PlaybackHydration.resumePositionMs(library[0], last))
+    }
+
+    @Test
     fun resumePositionMs_onlyWhenMatchingAndCapped() {
         val s = song(5).copy(durationMs = 10_000L)
         val last = LastPlayedSnapshot(

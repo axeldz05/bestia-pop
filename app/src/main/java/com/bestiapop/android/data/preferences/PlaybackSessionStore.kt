@@ -7,6 +7,8 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.bestiapop.android.data.model.Song
+import com.bestiapop.android.data.util.AudioPersistRef
+import com.bestiapop.android.data.util.SongPathNormalizer
 import com.bestiapop.android.data.util.optNullableString
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -83,17 +85,24 @@ object PlaybackHydration {
         if (library.isEmpty()) return null
         val matched = lastPlayed?.let { snap ->
             library.find { snap.songId > 0L && it.id == snap.songId }
-                ?: library.find { it.uriString == snap.uriString }
+                ?: library.find { matchesLastPlayed(it, snap) }
         }
         return matched ?: random(library)
+    }
+
+    fun matchesLastPlayed(song: Song, lastPlayed: LastPlayedSnapshot): Boolean {
+        if (lastPlayed.songId > 0L && song.id == lastPlayed.songId) return true
+        if (song.uriString == lastPlayed.uriString) return true
+        val songCanon = AudioPersistRef.canonicalize(song.uriString, song.folderPath).uriString
+        val snapCanon = AudioPersistRef.canonicalize(lastPlayed.uriString).uriString
+        if (songCanon.isNotBlank() && songCanon == snapCanon) return true
+        return SongPathNormalizer.pathsReferToSameFile(song.uriString, lastPlayed.uriString)
     }
 
     /** Position to show / resume when [song] matches [lastPlayed]. */
     fun resumePositionMs(song: Song, lastPlayed: LastPlayedSnapshot?): Long {
         if (lastPlayed == null) return 0L
-        val matches = (lastPlayed.songId > 0L && song.id == lastPlayed.songId) ||
-            song.uriString == lastPlayed.uriString
-        if (!matches) return 0L
+        if (!matchesLastPlayed(song, lastPlayed)) return 0L
         val cap = song.durationMs.takeIf { it > 0 } ?: lastPlayed.durationMs
         val pos = lastPlayed.positionMs.coerceAtLeast(0L)
         return if (cap > 0) pos.coerceAtMost(cap) else pos

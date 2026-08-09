@@ -2,7 +2,6 @@ package com.bestiapop.android.data.util
 
 import android.content.Context
 import android.media.MediaMetadataRetriever
-import android.net.Uri
 import com.bestiapop.android.data.db.SongEntity
 
 data class FilenameMetadataHints(
@@ -79,13 +78,11 @@ data class AudioFileMetadata(
             artworkIdentifier: String = path,
             extractEmbeddedArtwork: (path: String, identifier: String) -> String?
         ): AudioFileMetadata {
+            val store = MusicFileStore(context)
+            val ref = AudioPersistRef.canonicalize(path)
             val retriever = MediaMetadataRetriever()
             try {
-                if (path.startsWith("content://")) {
-                    retriever.setDataSource(context, Uri.parse(path))
-                } else {
-                    retriever.setDataSource(path)
-                }
+                store.applyDataSource(retriever, ref)
                 val tagged = AudioFileMetadata(
                     title = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE)
                         ?: fallbackTitle,
@@ -99,7 +96,7 @@ data class AudioFileMetadata(
                         .extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
                         ?.toLongOrNull()
                         ?: 0L,
-                    artworkUri = extractEmbeddedArtwork(path, artworkIdentifier)
+                    artworkUri = extractEmbeddedArtwork(ref.uriString, artworkIdentifier)
                 )
                 return applyFilenameHints(tagged, fallbackTitle)
             } finally {

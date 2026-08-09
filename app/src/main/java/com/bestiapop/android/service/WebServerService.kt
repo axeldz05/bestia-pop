@@ -15,8 +15,8 @@ import com.bestiapop.android.data.model.WifiTransferState
 import com.bestiapop.android.data.repository.MusicRepository
 import com.bestiapop.android.data.util.AudioFileMetadata
 import com.bestiapop.android.data.util.CrashReporter
+import com.bestiapop.android.data.util.MusicFileStore
 import com.bestiapop.android.data.util.SongPathNormalizer
-import com.bestiapop.android.data.util.StorageUtils
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.call
@@ -128,6 +128,7 @@ class WebServerService : Service() {
         serviceScope.launch {
             try {
                 val repository = MusicRepository(applicationContext)
+                val audioStore = MusicFileStore(applicationContext)
 
                 server = embeddedServer(CIO, port = PORT) {
                     routing {
@@ -140,7 +141,7 @@ class WebServerService : Service() {
 
                         get("/existing-files") {
                             call.response.header("Cache-Control", "no-cache, no-store, must-revalidate")
-                            val fromFolder = StorageUtils.listAudioFileNames(applicationContext)
+                            val fromFolder = audioStore.listManagedNames()
                             val fromRoom = repository.getAllSongsSync().mapNotNull { song ->
                                 SongPathNormalizer.fileName(song.uriString, song.folderPath)
                                     .lowercase()
@@ -160,11 +161,7 @@ class WebServerService : Service() {
 
                             val rawName = call.request.queryParameters["name"] ?: "audio_${System.currentTimeMillis()}.mp3"
                             val safeName = rawName.substringAfterLast("/").substringAfterLast("\\").replace(Regex("[^a-zA-Z0-9._-]"), "_")
-                            val pendingWrite = StorageUtils.prepareWrite(
-                                applicationContext,
-                                safeName,
-                                StorageUtils.mimeFromFileName(safeName)
-                            )
+                            val pendingWrite = audioStore.prepareWrite(safeName)
                             val destinationFile = pendingWrite.stagingFile
                             val transferId = UUID.randomUUID().toString()
                             val displayTitle = safeName.substringBeforeLast(".")
@@ -214,17 +211,18 @@ class WebServerService : Service() {
 
                                 try {
                                     val path = pendingWrite.publish()
+                                    val ref = audioStore.canonicalize(path)
                                     val metadata = AudioFileMetadata.fromPath(
                                         context = applicationContext,
-                                        path = path,
+                                        path = ref.uriString,
                                         fallbackTitle = safeName.substringBeforeLast("."),
-                                        artworkIdentifier = File(path).name,
+                                        artworkIdentifier = File(ref.uriString).name,
                                         extractEmbeddedArtwork = repository::extractAndSaveEmbeddedArtwork
                                     )
                                     val songId = repository.saveUploadedSong(
                                         metadata.toSongEntity(
-                                            uriString = path,
-                                            folderPath = destinationFile.parent ?: ""
+                                            uriString = ref.uriString,
+                                            folderPath = ref.folderPath
                                         )
                                     )
                                     updateTransfer(transferId) {

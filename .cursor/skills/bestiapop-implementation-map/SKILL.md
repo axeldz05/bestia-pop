@@ -91,7 +91,7 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 
 | Concern | Archivo |
 |---------|---------|
-| Repo impl | `data/repository/MusicRepository.kt` (`scanMediaStore`, `resyncAppManagedMusic`, `scanFolderUri`, `proposeSongIdentity`, `applySongIdentity`, `identifySongMetadata`) |
+| Repo impl | `data/repository/MusicRepository.kt` (`scanMediaStore`, `resyncAppManagedMusic`, `scanFolderUri`, `proposeSongIdentity`, `applySongIdentity`, `identifySongMetadata`, `migrateCanonicalAudioUris`) |
 | Modelos dominio UI | `data/model/Models.kt` (`OnlineCatalogTrack`, `CatalogTrackCandidate`, `DownloadStatus`, `ActiveDownload` + factories `queued`/`downloading`/`conflict`/`success`/`error` + `targetPlaylistId` / `resultSongId`, `ActiveDownloadSource` incl. `LB_IMPORT` / `DISCOVER`, `CandidateDownloadState` incl. `QUEUED`, `PlaylistPendingTrack`, `AlbumOverride`, `WifiTransferItem` / `WifiTransferState`, `Album.displayName`, `LibraryJobProgress` / `LibraryJobKind`, `IdentifyResult`, `IdentifyCandidate`, `IdentifyConfidence`, `IdentifyProposal`) |
 | Cola Local/Remote | `data/model/PlayableItem.kt` (`PlayableItem`, `ResolvedStream`, `Song.toPlayable`, `remoteFrom`, `fromLibraryOrRemote`, `Remote.toOnlineCatalogTrack`) |
 | Room DB | `data/db/AppDatabase.kt` (v6) |
@@ -108,13 +108,13 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 | Library initial scan flag | `data/preferences/LibraryPreferencesRepository.kt` (`isInitialScanCompleted` / `setInitialScanCompleted`) |
 | Playback / sonido | `data/preferences/PlaybackPreferencesRepository.kt` (`PlaybackSettings`, `MAX_VOLUME_BOOST_GAIN_MB`, `stereoLeftGain` / `stereoRightGain`) |
 | Active downloads persist | `data/preferences/ActiveDownloadsStore.kt` (`ActiveDownloadCodec`, `activeDownloadBadgeCount`) |
-| Last-played / idle seed | `data/preferences/PlaybackSessionStore.kt` (`LastPlayedCodec`, `PlaybackHydration`, `LastPlayedSnapshot`) |
+| Last-played / idle seed | `data/preferences/PlaybackSessionStore.kt` (`LastPlayedCodec`, `PlaybackHydration`, `LastPlayedSnapshot`, `matchesLastPlayed`) |
 | ListenBrainz prefs | `data/preferences/ListenBrainzPreferencesRepository.kt` |
 | ListenBrainz API | `data/network/ListenBrainzClient.kt` (`submitListens`, createdfor, playlist, `lookupRecordingMetadata`, `fetchLbRadioArtist`, `fetchRecordingMetadata`, `fetchCfRecordingRecommendations`, `parseCfRecommendations`) |
 | LB models + sync | `data/listenbrainz/LbPlaylistModels.kt` (`MatchedLbPlaylist.toPlayableItems`, `streamCount`), `LbRadioModels.kt`, `CfRecommendationModels.kt` (`MatchedCfRecommendations`), `ListenTracker.kt`, `ListenSyncCoordinator.kt` |
 | Connectivity | `data/network/ConnectivityObserver.kt` |
 | Pending listens Room | `data/db/PendingListenEntity.kt`, `PendingListenDao.kt` |
-| Storage helpers | `data/util/StorageUtils.kt` (`getPublicMusicDirectory`, `prepareWrite`, `listAudioFileNames`, `listManagedAudioFiles`, `deleteManagedAudio`), `data/util/SongPathNormalizer.kt` (`toAbsolutePath`, `safTreeDocumentToAbsolutePath`, `fileName`, `hasUsableArtwork`, path normalize / app-owned checks), `data/util/JsonExt.kt` (`optNullableString`), `data/util/AudioFileMetadata.kt` (`AudioFileMetadata.fromPath` / `applyFilenameHints` / `toSongEntity`, `parseFilenameMetadataHints`, `looksLikeStoragePath`) |
+| Storage helpers | `data/util/MusicFileStore.kt` (`canonicalize`, `playableUri`, `openRead`, `applyDataSource`, `prepareWrite`, `delete`, `listManaged`), `data/util/AudioPersistRef.kt` (`canonicalize`), `data/util/StorageUtils.kt` (`getPublicMusicDirectory`, `prepareWrite`, `listAudioFileNames`, `listManagedAudioFiles`, `deleteManagedAudio`), `data/util/SongPathNormalizer.kt` (`toAbsolutePath`, `safTreeDocumentToAbsolutePath`, `fileName`, `hasUsableArtwork`, path normalize / app-owned checks), `data/util/JsonExt.kt` (`optNullableString`), `data/util/AudioFileMetadata.kt` (`AudioFileMetadata.fromPath` / `applyFilenameHints` / `toSongEntity`, `parseFilenameMetadataHints`, `looksLikeStoragePath`) |
 | Download conflict models | `data/model/Models.kt` (`DownloadConflictPolicy`, `DuplicateSongException`, `DownloadConflict`) |
 | One-shot dedup archive | branch `archive/library-dedup-v1-migrator` (`LibraryDedupMigrator` / `LibraryDedupLogic` / prefs; not on LB) |
 
@@ -143,6 +143,7 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 | ActiveDownload cycle | `app/src/test/.../ActiveDownloadCycleTest.kt` |
 | ActiveDownload codec / badge | `app/src/test/.../ActiveDownloadCodecTest.kt` |
 | Last-played / idle hydration | `app/src/test/.../PlaybackSessionStoreTest.kt` |
+| Audio persist canonicalize | `app/src/test/.../AudioPersistRefTest.kt` |
 | Import LB playlist | `app/src/test/.../ImportListenBrainzPlaylistUseCaseTest.kt` |
 | Path normalize | `app/src/test/.../SongPathNormalizerTest.kt` |
 | Filename metadata hints | `app/src/test/.../FilenameMetadataHintsTest.kt` (`looksLikeStoragePath`) |

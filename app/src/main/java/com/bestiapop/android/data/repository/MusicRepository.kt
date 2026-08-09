@@ -1,6 +1,5 @@
 package com.bestiapop.android.data.repository
 
-import android.content.ContentUris
 import android.content.Context
 import android.media.MediaMetadataRetriever
 import android.net.Uri
@@ -30,8 +29,8 @@ import com.bestiapop.android.data.network.MetadataFetcher
 import com.bestiapop.android.data.stream.StreamResolver
 import com.bestiapop.android.data.util.AudioFileMetadata
 import com.bestiapop.android.data.util.FilenameMetadataHints
+import com.bestiapop.android.data.util.MusicFileStore
 import com.bestiapop.android.data.util.SongPathNormalizer
-import com.bestiapop.android.data.util.StorageUtils
 import com.bestiapop.android.data.util.looksLikeStoragePath
 import com.bestiapop.android.data.util.parseFilenameMetadataHints
 import com.bestiapop.android.domain.repository.IMusicRepository
@@ -83,6 +82,7 @@ class MusicRepository(private val context: Context) : IMusicRepository {
     private val db = AppDatabase.getDatabase(context)
     private val musicDao = db.musicDao()
     private val streamResolver = StreamResolver()
+    private val audioStore = MusicFileStore(context)
 
     private val sharedDownloadClient = okhttp3.OkHttpClient.Builder()
         .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
@@ -190,9 +190,11 @@ class MusicRepository(private val context: Context) : IMusicRepository {
                 if (key.isNotEmpty() && existingKeys.contains(key)) {
                     continue
                 }
-                scannedEntities.add(entity)
+                val ref = audioStore.canonicalize(entity.uriString, entity.folderPath)
+                scannedEntities.add(entity.copy(uriString = ref.uriString, folderPath = ref.folderPath))
                 if (key.isNotEmpty()) existingKeys.add(key)
                 if (dataPath.isNotEmpty()) existingPaths.add(dataPath.lowercase())
+                existingPaths.add(ref.uriString.lowercase())
             }
         }
 
@@ -203,8 +205,8 @@ class MusicRepository(private val context: Context) : IMusicRepository {
 
     override suspend fun resyncAppManagedMusic(onProgress: LibraryScanProgress?): Int =
         withContext(Dispatchers.IO) {
-            val files = com.bestiapop.android.data.util.StorageUtils.listManagedAudioFiles(context)
-            if (files.isEmpty()) return@withContext 0
+            val managed = audioStore.listManaged()
+            if (managed.isEmpty()) return@withContext 0
 
             val existing = musicDao.getAllSongs()
             val existingKeys = existing.mapNotNull { song ->
@@ -214,10 +216,10 @@ class MusicRepository(private val context: Context) : IMusicRepository {
                 SongPathNormalizer.resolveFilePath(song.uriString, song.folderPath)
             }.map { it.lowercase() }.toHashSet()
 
-            val ticker = ScanProgressTicker(files.size, onProgress)
+            val ticker = ScanProgressTicker(managed.size, onProgress)
             val scanned = mutableListOf<SongEntity>()
             indexAudioFiles(
-                files = files,
+                files = managed,
                 list = scanned,
                 existingKeys = existingKeys,
                 existingPaths = existingPaths,
@@ -285,18 +287,19 @@ class MusicRepository(private val context: Context) : IMusicRepository {
             if (!file.isFile || !isAudioFile(file.name)) continue
             onFileVisited?.invoke(file.name)
             val path = file.absolutePath
-            val pathKey = path.lowercase()
-            if (existingPaths.contains(pathKey)) continue
+            val ref = audioStore.canonicalize(path, file.parent ?: "")
+            val pathKey = ref.uriString.lowercase()
+            if (existingPaths.contains(pathKey) || existingPaths.contains(path.lowercase())) continue
             try {
                 val metadata = AudioFileMetadata.fromPath(
                     context = context,
-                    path = path,
+                    path = ref.uriString,
                     fallbackTitle = file.nameWithoutExtension,
                     extractEmbeddedArtwork = ::extractAndSaveEmbeddedArtwork
                 )
                 if (!isRealMusicTrack(
                         durationMs = metadata.durationMs,
-                        filePath = path,
+                        filePath = ref.uriString,
                         fileName = file.name,
                         allowUnknownDuration = true
                     )
@@ -308,8 +311,8 @@ class MusicRepository(private val context: Context) : IMusicRepository {
 
                 list.add(
                     metadata.toSongEntity(
-                        uriString = path,
-                        folderPath = file.parent ?: ""
+                        uriString = ref.uriString,
+                        folderPath = ref.folderPath
                     )
                 )
                 if (key.isNotEmpty()) existingKeys.add(key)
@@ -344,8 +347,8 @@ class MusicRepository(private val context: Context) : IMusicRepository {
                 val uri = file.uri
                 try {
                     val path = uri.toString()
-                    val storedUri = SongPathNormalizer.toAbsolutePath(path) ?: path
-                    val pathKey = storedUri.lowercase()
+                    val ref = audioStore.canonicalize(path, folder.name ?: "")
+                    val pathKey = ref.uriString.lowercase()
                     if (existingPaths.contains(pathKey) || existingPaths.contains(path.lowercase())) continue
 
                     val metadata = AudioFileMetadata.fromPath(
@@ -358,7 +361,7 @@ class MusicRepository(private val context: Context) : IMusicRepository {
                     // Folder import is explicit: do not skip Music/BestiaPop; allow unknown duration.
                     if (!isRealMusicTrack(
                             durationMs = metadata.durationMs,
-                            filePath = storedUri,
+                            filePath = ref.uriString,
                             fileName = file.name ?: "",
                             allowUnknownDuration = true
                         )
@@ -368,15 +371,10 @@ class MusicRepository(private val context: Context) : IMusicRepository {
                     val key = MatchListenBrainzTracksUseCase.matchKey(metadata.artist, metadata.title)
                     if (key.isNotEmpty() && existingKeys.contains(key)) continue
 
-                    val storedFolder = if (storedUri.startsWith("/")) {
-                        File(storedUri).parent.orEmpty()
-                    } else {
-                        folder.name ?: ""
-                    }
                     list.add(
                         metadata.toSongEntity(
-                            uriString = storedUri,
-                            folderPath = storedFolder
+                            uriString = ref.uriString,
+                            folderPath = ref.folderPath
                         )
                     )
                     if (key.isNotEmpty()) existingKeys.add(key)
@@ -395,11 +393,7 @@ class MusicRepository(private val context: Context) : IMusicRepository {
     override fun extractAndSaveEmbeddedArtwork(audioPathOrUri: String, identifier: String): String? {
         val retriever = MediaMetadataRetriever()
         try {
-            if (audioPathOrUri.startsWith("content://")) {
-                retriever.setDataSource(context, android.net.Uri.parse(audioPathOrUri))
-            } else {
-                retriever.setDataSource(audioPathOrUri)
-            }
+            audioStore.applyDataSource(retriever, audioStore.canonicalize(audioPathOrUri))
             val pictureBytes = retriever.embeddedPicture
             if (pictureBytes != null && pictureBytes.isNotEmpty()) {
                 val artDir = File(context.cacheDir, "album_art")
@@ -461,19 +455,17 @@ class MusicRepository(private val context: Context) : IMusicRepository {
     }
 
     override suspend fun saveUploadedSong(song: SongEntity): Long = withContext(Dispatchers.IO) {
-        val normalizedUri = SongPathNormalizer.toAbsolutePath(song.uriString) ?: song.uriString
-        val normalized = song.copy(uriString = normalizedUri)
+        val ref = audioStore.canonicalize(song.uriString, song.folderPath)
+        val normalized = song.copy(uriString = ref.uriString, folderPath = ref.folderPath)
         val key = MatchListenBrainzTracksUseCase.matchKey(normalized.artist, normalized.title)
         if (key.isNotEmpty()) {
             val existing = findSongEntityByArtistTitle(normalized.artist, normalized.title)
             if (existing != null) {
-                val oldPath = SongPathNormalizer.resolveFilePath(existing.uriString, existing.folderPath)
-                val newPath = SongPathNormalizer.resolveFilePath(normalized.uriString, normalized.folderPath)
-                if (oldPath != null && newPath != null &&
-                    !SongPathNormalizer.pathsReferToSameFile(oldPath, newPath) &&
-                    SongPathNormalizer.isSafeToDeleteAppManagedFile(oldPath)
+                val oldRef = audioStore.canonicalize(existing.uriString, existing.folderPath)
+                if (oldRef.uriString != normalized.uriString &&
+                    !SongPathNormalizer.pathsReferToSameFile(oldRef.uriString, normalized.uriString)
                 ) {
-                    StorageUtils.deleteManagedAudio(context, oldPath)
+                    audioStore.delete(oldRef)
                 }
                 val updated = existing.copy(
                     uriString = normalized.uriString,
@@ -500,24 +492,9 @@ class MusicRepository(private val context: Context) : IMusicRepository {
     }
 
     override suspend fun deleteSongsFromDevice(songs: List<Song>) = withContext(Dispatchers.IO) {
-        val oldUploadDir = File(context.getExternalFilesDir(null), "UploadedMusic")
-        val oldDownloadDir = File(context.getExternalFilesDir(null), "DownloadedMusic")
         songs.forEach { song ->
             try {
-                if (song.uriString.startsWith("content://")) {
-                    context.contentResolver.delete(Uri.parse(song.uriString), null, null)
-                }
-
-                val cleanPath = cleanFilePath(song.uriString)
-                if (cleanPath.isNotBlank()) {
-                    StorageUtils.deleteManagedAudio(context, cleanPath)
-                }
-
-                val fileName = SongPathNormalizer.fileName(song.uriString, song.folderPath)
-                if (fileName.isNotEmpty()) {
-                    if (oldUploadDir.exists()) File(oldUploadDir, fileName).takeIf { it.exists() }?.delete()
-                    if (oldDownloadDir.exists()) File(oldDownloadDir, fileName).takeIf { it.exists() }?.delete()
-                }
+                audioStore.delete(audioStore.canonicalize(song.uriString, song.folderPath))
             } catch (e: Exception) {
                 e.printStackTrace()
             }
@@ -527,9 +504,6 @@ class MusicRepository(private val context: Context) : IMusicRepository {
             musicDao.deleteSongsByIds(ids)
         }
     }
-
-    private fun cleanFilePath(uriString: String): String =
-        SongPathNormalizer.toAbsolutePath(uriString) ?: uriString
 
     private fun hasUsableArtwork(artworkUri: String?): Boolean =
         SongPathNormalizer.hasUsableArtwork(artworkUri)
@@ -546,8 +520,8 @@ class MusicRepository(private val context: Context) : IMusicRepository {
         var artUrl = if (hasUsableArt) song.artworkUri else existingAlbumArt
 
         if (!hasUsableArtwork(artUrl)) {
-            val cleanPath = cleanFilePath(song.uriString)
-            val embedded = extractAndSaveEmbeddedArtwork(cleanPath, "${song.artist}_${albumName}")
+            val ref = audioStore.canonicalize(song.uriString, song.folderPath)
+            val embedded = extractAndSaveEmbeddedArtwork(ref.uriString, "${song.artist}_${albumName}")
             if (!embedded.isNullOrEmpty()) {
                 artUrl = embedded
             } else {
@@ -570,8 +544,8 @@ class MusicRepository(private val context: Context) : IMusicRepository {
         }
 
         if (song.durationMs <= 0) {
-            val cleanPath = cleanFilePath(song.uriString)
-            var calculatedDur = calculateAudioDurationMs(cleanPath)
+            val ref = audioStore.canonicalize(song.uriString, song.folderPath)
+            var calculatedDur = calculateAudioDurationMs(ref.uriString)
             if (calculatedDur <= 0) {
                 calculatedDur = MetadataFetcher.fetchTrackDurationMs(song.artist, song.title)
             }
@@ -749,15 +723,11 @@ class MusicRepository(private val context: Context) : IMusicRepository {
     }
 
     fun calculateAudioDurationMs(audioPathOrUri: String): Long {
-        val uri = Uri.parse(audioPathOrUri)
+        val ref = audioStore.canonicalize(audioPathOrUri)
 
         try {
             val retriever = MediaMetadataRetriever()
-            if (audioPathOrUri.startsWith("content://")) {
-                retriever.setDataSource(context, uri)
-            } else {
-                retriever.setDataSource(audioPathOrUri)
-            }
+            audioStore.applyDataSource(retriever, ref)
             val durStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
             retriever.release()
             val dur = durStr?.toLongOrNull() ?: 0L
@@ -766,11 +736,7 @@ class MusicRepository(private val context: Context) : IMusicRepository {
 
         try {
             val extractor = android.media.MediaExtractor()
-            if (audioPathOrUri.startsWith("content://")) {
-                extractor.setDataSource(context, uri, null)
-            } else {
-                extractor.setDataSource(audioPathOrUri)
-            }
+            audioStore.applyDataSource(extractor, ref)
             for (i in 0 until extractor.trackCount) {
                 val format = extractor.getTrackFormat(i)
                 val mime = format.getString(android.media.MediaFormat.KEY_MIME)
@@ -785,11 +751,7 @@ class MusicRepository(private val context: Context) : IMusicRepository {
 
         try {
             val mp = android.media.MediaPlayer()
-            if (audioPathOrUri.startsWith("content://")) {
-                mp.setDataSource(context, uri)
-            } else {
-                mp.setDataSource(audioPathOrUri)
-            }
+            audioStore.applyDataSource(mp, ref)
             mp.prepare()
             val dur = mp.duration.toLong()
             mp.release()
@@ -1100,16 +1062,9 @@ class MusicRepository(private val context: Context) : IMusicRepository {
         val sanitizedName = (finalArtist + "_" + finalTitle).replace(Regex("[^a-zA-Z0-9_.-]"), "_")
         val displayName = "$sanitizedName.$ext"
         overwriteTarget?.let { target ->
-            val existingPath = SongPathNormalizer.resolveFilePath(target.uriString, target.folderPath)
-            if (existingPath != null && SongPathNormalizer.isSafeToDeleteAppManagedFile(existingPath)) {
-                StorageUtils.deleteManagedAudio(context, existingPath)
-            }
+            audioStore.delete(audioStore.canonicalize(target.uriString, target.folderPath))
         }
-        val pendingWrite = StorageUtils.prepareWrite(
-            context,
-            displayName,
-            StorageUtils.mimeFromFileName(displayName)
-        )
+        val pendingWrite = audioStore.prepareWrite(displayName)
         val file = pendingWrite.stagingFile
         if (file.exists()) {
             file.delete()
@@ -1172,7 +1127,7 @@ class MusicRepository(private val context: Context) : IMusicRepository {
             )
         }
 
-        val savedUri = pendingWrite.publish()
+        val savedRef = audioStore.canonicalize(pendingWrite.publish())
 
         onProgress?.invoke("Obteniendo información del álbum y portada...")
 
@@ -1211,14 +1166,14 @@ class MusicRepository(private val context: Context) : IMusicRepository {
 
         if (overwriteTarget != null) {
             val updated = overwriteTarget.copy(
-                uriString = savedUri,
+                uriString = savedRef.uriString,
                 title = finalTitle,
                 artist = finalArtist.ifBlank { overwriteTarget.artist },
                 album = finalAlbum,
                 durationMs = if (finalDurationMs > 0) finalDurationMs else overwriteTarget.durationMs,
                 artworkUri = finalArtwork ?: overwriteTarget.artworkUri,
                 lyrics = lyrics ?: overwriteTarget.lyrics,
-                folderPath = "Music/BestiaPop"
+                folderPath = savedRef.folderPath
             )
             musicDao.updateSong(updated)
             onProgress?.invoke("¡Canción sobrescrita con éxito!")
@@ -1226,7 +1181,7 @@ class MusicRepository(private val context: Context) : IMusicRepository {
         }
 
         val songEntity = SongEntity(
-            uriString = savedUri,
+            uriString = savedRef.uriString,
             title = finalTitle,
             artist = finalArtist,
             album = finalAlbum,
@@ -1236,7 +1191,7 @@ class MusicRepository(private val context: Context) : IMusicRepository {
             trackNumber = 0,
             artworkUri = finalArtwork,
             lyrics = lyrics,
-            folderPath = "Music/BestiaPop",
+            folderPath = savedRef.folderPath,
             dateAdded = System.currentTimeMillis()
         )
 
@@ -1252,6 +1207,56 @@ class MusicRepository(private val context: Context) : IMusicRepository {
         if (key.isEmpty()) return null
         val entities = musicDao.getAllSongs()
         return TrackMatchKeys.buildIndex(entities, { it.artist }, { it.title })[key]
+    }
+
+    suspend fun migrateCanonicalAudioUris() = withContext(Dispatchers.IO) {
+        try {
+            val songs = musicDao.getAllSongs()
+            if (songs.isEmpty()) return@withContext
+            val planned = songs.map { song ->
+                song to audioStore.canonicalize(song.uriString, song.folderPath)
+            }
+            val groups = planned.groupBy { it.second.uriString }
+            for ((_, members) in groups) {
+                if (members.size == 1) {
+                    val (song, ref) = members[0]
+                    if (song.uriString != ref.uriString || song.folderPath != ref.folderPath) {
+                        musicDao.updateSong(
+                            song.copy(uriString = ref.uriString, folderPath = ref.folderPath)
+                        )
+                    }
+                    continue
+                }
+                val keepPair = members.firstOrNull { it.first.uriString == it.second.uriString }
+                    ?: members.minBy { it.first.id }
+                val keep = keepPair.first
+                val keepRef = keepPair.second
+                if (keep.uriString != keepRef.uriString || keep.folderPath != keepRef.folderPath) {
+                    musicDao.updateSong(
+                        keep.copy(uriString = keepRef.uriString, folderPath = keepRef.folderPath)
+                    )
+                }
+                for ((drop, _) in members) {
+                    if (drop.id == keep.id) continue
+                    remapPlaylistsThenDelete(dropId = drop.id, keepId = keep.id)
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            com.bestiapop.android.data.util.CrashReporter.recordNonFatal(
+                e,
+                mapOf("migrate_phase" to "canonical_audio_uris")
+            )
+        }
+    }
+
+    private suspend fun remapPlaylistsThenDelete(dropId: Long, keepId: Long) {
+        val keepPlaylists = musicDao.getPlaylistIdsForSong(keepId)
+        if (keepPlaylists.isNotEmpty()) {
+            musicDao.deleteSongFromPlaylists(dropId, keepPlaylists)
+        }
+        musicDao.remapPlaylistSongId(dropId, keepId)
+        musicDao.deleteSong(dropId)
     }
 
     suspend fun migrateLegacyYouTubeMusicSongs() = withContext(Dispatchers.IO) {

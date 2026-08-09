@@ -43,7 +43,7 @@ service/     MusicService (playback), WebServerService (WiFi sync)
 
 ## Flujo de datos (happy path)
 
-1. Room / MediaStore → `MusicRepository` → `Flow<List<Song>>`
+1. Room / MediaStore → `MusicRepository` (`MusicFileStore` para I/O local) → `Flow<List<Song>>`
 2. ViewModel combina flows + search/sort → `songsState` / `albumsState` / `artistsState`
 3. Screens Compose observan StateFlows y llaman métodos del ViewModel
 4. Reproducción: ViewModel cola `List<PlayableItem>` (`Local` | `Remote`) → `MediaController` → `MusicService` (ExoPlayer)
@@ -87,7 +87,7 @@ Mini player se rehidrata desde `MediaController` (sesión viva) o `PlaybackSessi
 ## Base de datos
 
 Entidades: `SongEntity`, `PlaylistEntity`, `PlaylistSongCrossRef`, `PlaylistPendingTrackEntity`, `PendingListenEntity`, `AlbumOverrideEntity`.
-Índice único Room: `songs.uriString`. Deduplicación lógica por `matchKey(artist, title)` en filtros de scan / download conflict (`Music/BestiaPop` app-managed). URIs app-owned: path absoluto (`SongPathNormalizer`); document IDs SAF de `Music/BestiaPop` se resuelven a path. One-shot migrator archivado en branch `archive/library-dedup-v1-migrator`.
+Índice único Room: `songs.uriString`. Deduplicación lógica por `matchKey(artist, title)` en filtros de scan / download conflict (`Music/BestiaPop` app-managed). I/O local solo vía `MusicFileStore` / `AudioPersistRef.canonicalize`: BestiaPop = path absoluto; MediaStore ajeno = `content://media`. One-shot `migrateCanonicalAudioUris` reescribe SAF/cache. Migrator dedup histórico: branch `archive/library-dedup-v1-migrator`.
 Migraciones Room: 1→2 (dedupe + unique index), 2→3 (playlist description/coverUri), 3→4 (pending_listens), 4→5 (playlist_pending_tracks), 5→6 (`album_overrides`), 6→7 (index `playlist_song_cross_ref.songId`).
 
 ## Relacionado

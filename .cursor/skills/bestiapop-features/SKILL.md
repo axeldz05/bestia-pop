@@ -88,8 +88,9 @@ UI: `PlaylistsScreen`.
 - Unicidad lógica por `matchKey(artist, title)` (además del índice Room `uriString`).
 - `Music/BestiaPop` es app-managed: `scanMediaStore` **no** reinserta esos archivos (evita duplicar `file:`/path vs `content://`). Tras reinstall, `resyncAppManagedMusic()` reindexa esos archivos por path absoluto.
 - Import disco (MediaStore + BestiaPop) solo en **primer arranque** / post-uninstall (`LibraryPreferencesRepository.initial_library_scan_completed`); updates no re-escanean (Room migraciones sí).
-- URIs de descarga/upload se guardan como **path absoluto** en la única carpeta `Music/BestiaPop` (`StorageUtils`). Escrita por File si el dir es writable; si no (UID viejo), vía MediaStore al mismo relative path. Debug y release (mismo `applicationId`) usan esa carpeta. WiFi `/existing-files` = union Room basename + archivos en esa carpeta.
-- Import SAF (`scanFolderUri`) persiste path absoluto si el document id mapea a filesystem (`SongPathNormalizer.toAbsolutePath`). Reproducción resuelve URIs `content://...externalstorage.documents/...` viejos a `file://` (el grant persistente se pierde tras reinstall; sin esto ExoPlayer da Permission Denial y el error local se tragaba). Fallo local → toast «No se pudo reproducir».
+- Audio local: un solo API `MusicFileStore` + `AudioPersistRef.canonicalize` (escribir/abrir/borrar/playableUri). BestiaPop se persiste como **path absoluto** en `Music/BestiaPop`; música ajena de MediaStore queda `content://media`. Callers no ramifican por scheme. Arranque: `migrateCanonicalAudioUris` (SAF/cache → abs; colisión remapea playlists). WiFi `/existing-files` = union Room basename + `listManagedNames`.
+- Escritura BestiaPop: `MusicFileStore.prepareWrite` → File si el dir es writable; si no (UID viejo), MediaStore al mismo relative path (`StorageUtils`). Debug y release (mismo `applicationId`) usan esa carpeta.
+- Import SAF (`scanFolderUri`) guarda `AudioPersistRef` (abs si el document id mapea a filesystem). Reproducción: `playableUri` (SAF viejo → `file://`). Fallo local → toast «No se pudo reproducir».
 - Playlists/overrides viven en Room (app-private): **no** sobreviven uninstall (solo los archivos de audio en `Music/BestiaPop`).
 - Descarga con conflicto → `DuplicateSongException` / `DownloadConflict` → diálogo Sobrescribir | Crear nueva | Cancelar (`DownloadConflictPolicy`).
 - One-shot migrator histórico: branch `archive/library-dedup-v1-migrator` (no compila en LB).
@@ -105,7 +106,8 @@ UI: `PlaylistsScreen`.
 | Reindex app music | `resyncAppManagedMusic(onProgress?)` → `Music/BestiaPop` filesystem walk; VM `ensureInitialLibraryImport` (1ª vez) / `refreshLibraryFromDisk` (force) |
 | Scan carpeta SAF | `scanFolderUri(treeUri, onProgress?): Int` (incluye BestiaPop; guarda abs path si se puede resolver; toast en `importFolder`) |
 | Metadata archivo → Room | `AudioFileMetadata.fromPath` / `toSongEntity` (+ filename hints si Unknown) |
-| Upload WiFi → DB | `saveUploadedSong` (`absolutePath`; merge por matchKey); VM observa `DONE` → `identifySongs(force=true, showReview=false)` |
+| Upload WiFi → DB | `saveUploadedSong` (`AudioPersistRef`; merge por matchKey); VM observa `DONE` → `identifySongs(force=true, showReview=false)` |
+| Canonicalizar URIs | `MusicRepository.migrateCanonicalAudioUris` (startup, junto a `migrateLegacyYouTubeMusicSongs`) |
 | Lookup duplicado | `findSongByArtistTitle` |
 | Descarga + política | `downloadAndSaveOnlineTrack(..., conflictPolicy)` |
 | Conflicto UI | `downloadConflict` / `resolveDownloadConflictOverwrite` / `resolveDownloadConflictSaveAs` / `cancelDownloadConflict` + `DownloadConflictDialog` |
@@ -150,7 +152,7 @@ State: `currentThemeState`.
 | Capacidad | Entry point |
 |-----------|-------------|
 | Servidor local | `WebServerService` + toggle en `WebServerScreen` |
-| Omitir existentes | `GET /existing-files` = Room basename ∪ `StorageUtils.listAudioFileNames` (`Music/BestiaPop`) |
+| Omitir existentes | `GET /existing-files` = Room basename ∪ `MusicFileStore.listManagedNames` (`Music/BestiaPop`) |
 | Transferencias en app | `WebServerService.transfers` (`WifiTransferItem` / `WifiTransferState`); lista en `WebServerScreen` (progreso + `SongListItem` al completar) |
 | Identify al importar | Tags embebidos (ID3) → Room → mismo `identifySongs(force=true)`; conflictos en cola compartida |
 | Revisar conflictos | Botón `Revisar conflictos de información (N)` → `showIdentifyReview()`; N = `identifyReview.pendingCount` |

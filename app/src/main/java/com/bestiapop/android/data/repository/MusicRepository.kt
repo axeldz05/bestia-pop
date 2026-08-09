@@ -344,8 +344,9 @@ class MusicRepository(private val context: Context) : IMusicRepository {
                 val uri = file.uri
                 try {
                     val path = uri.toString()
-                    val pathKey = path.lowercase()
-                    if (existingPaths.contains(pathKey)) continue
+                    val storedUri = SongPathNormalizer.toAbsolutePath(path) ?: path
+                    val pathKey = storedUri.lowercase()
+                    if (existingPaths.contains(pathKey) || existingPaths.contains(path.lowercase())) continue
 
                     val metadata = AudioFileMetadata.fromPath(
                         context = context,
@@ -357,7 +358,7 @@ class MusicRepository(private val context: Context) : IMusicRepository {
                     // Folder import is explicit: do not skip Music/BestiaPop; allow unknown duration.
                     if (!isRealMusicTrack(
                             durationMs = metadata.durationMs,
-                            filePath = path,
+                            filePath = storedUri,
                             fileName = file.name ?: "",
                             allowUnknownDuration = true
                         )
@@ -367,10 +368,15 @@ class MusicRepository(private val context: Context) : IMusicRepository {
                     val key = MatchListenBrainzTracksUseCase.matchKey(metadata.artist, metadata.title)
                     if (key.isNotEmpty() && existingKeys.contains(key)) continue
 
+                    val storedFolder = if (storedUri.startsWith("/")) {
+                        File(storedUri).parent.orEmpty()
+                    } else {
+                        folder.name ?: ""
+                    }
                     list.add(
                         metadata.toSongEntity(
-                            uriString = path,
-                            folderPath = folder.name ?: ""
+                            uriString = storedUri,
+                            folderPath = storedFolder
                         )
                     )
                     if (key.isNotEmpty()) existingKeys.add(key)

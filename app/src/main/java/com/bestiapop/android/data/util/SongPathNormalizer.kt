@@ -1,6 +1,8 @@
 package com.bestiapop.android.data.util
 
 import java.io.File
+import java.net.URLDecoder
+import java.nio.charset.StandardCharsets
 
 /**
  * Normalizes song URI / path strings so downloads, WiFi uploads, and MediaStore DATA
@@ -12,6 +14,8 @@ object SongPathNormalizer {
         val raw = uriOrPath.trim()
         if (raw.isEmpty()) return null
         return when {
+            raw.startsWith("content://com.android.externalstorage.documents", ignoreCase = true) ->
+                safTreeDocumentToAbsolutePath(raw)
             raw.startsWith("content://", ignoreCase = true) -> null
             raw.startsWith("file://", ignoreCase = true) -> {
                 // file:///storage/... or file://localhost/storage/...
@@ -28,6 +32,40 @@ object SongPathNormalizer {
             }
             raw.startsWith("/") -> raw
             else -> null
+        }
+    }
+
+    /**
+     * SAF tree/document URIs lose persistable grants after reinstall; the document id
+     * still encodes a filesystem path (primary:Music/BestiaPop/track.mp3).
+     */
+    internal fun safTreeDocumentToAbsolutePath(uri: String): String? {
+        val marker = "/document/"
+        val idx = uri.indexOf(marker, ignoreCase = true)
+        if (idx < 0) return null
+        val encoded = uri.substring(idx + marker.length)
+            .substringBefore('?')
+            .substringBefore('#')
+        if (encoded.isBlank()) return null
+        val docId = percentDecode(encoded)
+        val colon = docId.indexOf(':')
+        if (colon <= 0 || colon >= docId.length - 1) return null
+        val volume = docId.substring(0, colon)
+        val rel = docId.substring(colon + 1).trimStart('/')
+        if (rel.isEmpty()) return null
+        val root = if (volume.equals("primary", ignoreCase = true)) {
+            "/storage/emulated/0"
+        } else {
+            "/storage/$volume"
+        }
+        return "$root/$rel"
+    }
+
+    private fun percentDecode(value: String): String {
+        return try {
+            URLDecoder.decode(value.replace("+", "%2B"), StandardCharsets.UTF_8.name())
+        } catch (_: Exception) {
+            value
         }
     }
 
@@ -71,7 +109,10 @@ object SongPathNormalizer {
     }
 
     fun isAppOwnedUri(uriString: String, folderPath: String = ""): Boolean {
-        if (uriString.startsWith("content://", ignoreCase = true)) return false
+        if (uriString.startsWith("content://", ignoreCase = true)) {
+            val resolved = toAbsolutePath(uriString)
+            return resolved != null && isUnderBestiaPop(resolved)
+        }
         return isUnderBestiaPop(uriString) || isUnderBestiaPop(folderPath)
     }
 

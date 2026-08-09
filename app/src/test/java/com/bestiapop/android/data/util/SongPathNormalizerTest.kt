@@ -26,6 +26,22 @@ class SongPathNormalizerTest {
     }
 
     @Test
+    fun toAbsolutePath_decodesSafTreeDocumentUris() {
+        assertEquals(
+            "/storage/emulated/0/Music/BestiaPop/14_trackerplatz.mp3",
+            SongPathNormalizer.toAbsolutePath(
+                "content://com.android.externalstorage.documents/tree/primary%3AMusic%2FBestiaPop/document/primary%3AMusic%2FBestiaPop%2F14_trackerplatz.mp3"
+            )
+        )
+        assertEquals(
+            "/storage/ABCD-1234/Music/BestiaPop/a.mp3",
+            SongPathNormalizer.toAbsolutePath(
+                "content://com.android.externalstorage.documents/tree/ABCD-1234%3AMusic%2FBestiaPop/document/ABCD-1234%3AMusic%2FBestiaPop%2Fa.mp3"
+            )
+        )
+    }
+
+    @Test
     fun fileName_usesBasename() {
         assertEquals(
             "a.mp3",
@@ -57,6 +73,11 @@ class SongPathNormalizerTest {
             SongPathNormalizer.isAppOwnedUri(
                 "/storage/emulated/0/Music/BestiaPop/x.mp3",
                 "Music/BestiaPop"
+            )
+        )
+        assertTrue(
+            SongPathNormalizer.isAppOwnedUri(
+                "content://com.android.externalstorage.documents/tree/primary%3AMusic%2FBestiaPop/document/primary%3AMusic%2FBestiaPop%2Fx.mp3"
             )
         )
     }

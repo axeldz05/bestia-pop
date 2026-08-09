@@ -114,7 +114,7 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 | LB models + sync | `data/listenbrainz/LbPlaylistModels.kt` (`MatchedLbPlaylist.toPlayableItems`, `streamCount`), `LbRadioModels.kt`, `CfRecommendationModels.kt` (`MatchedCfRecommendations`), `ListenTracker.kt`, `ListenSyncCoordinator.kt` |
 | Connectivity | `data/network/ConnectivityObserver.kt` |
 | Pending listens Room | `data/db/PendingListenEntity.kt`, `PendingListenDao.kt` |
-| Storage helpers | `data/util/StorageUtils.kt` (`getPublicMusicDirectory`, `prepareWrite`, `listAudioFileNames`, `listManagedAudioFiles`, `deleteManagedAudio`), `data/util/SongPathNormalizer.kt` (`fileName`, `hasUsableArtwork`, path normalize / app-owned checks), `data/util/JsonExt.kt` (`optNullableString`), `data/util/AudioFileMetadata.kt` (`AudioFileMetadata.fromPath` / `applyFilenameHints` / `toSongEntity`, `parseFilenameMetadataHints`, `looksLikeStoragePath`) |
+| Storage helpers | `data/util/StorageUtils.kt` (`getPublicMusicDirectory`, `prepareWrite`, `listAudioFileNames`, `listManagedAudioFiles`, `deleteManagedAudio`), `data/util/SongPathNormalizer.kt` (`toAbsolutePath`, `safTreeDocumentToAbsolutePath`, `fileName`, `hasUsableArtwork`, path normalize / app-owned checks), `data/util/JsonExt.kt` (`optNullableString`), `data/util/AudioFileMetadata.kt` (`AudioFileMetadata.fromPath` / `applyFilenameHints` / `toSongEntity`, `parseFilenameMetadataHints`, `looksLikeStoragePath`) |
 | Download conflict models | `data/model/Models.kt` (`DownloadConflictPolicy`, `DuplicateSongException`, `DownloadConflict`) |
 | One-shot dedup archive | branch `archive/library-dedup-v1-migrator` (`LibraryDedupMigrator` / `LibraryDedupLogic` / prefs; not on LB) |
 

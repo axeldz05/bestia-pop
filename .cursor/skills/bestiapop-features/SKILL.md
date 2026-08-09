@@ -89,6 +89,7 @@ UI: `PlaylistsScreen`.
 - `Music/BestiaPop` es app-managed: `scanMediaStore` **no** reinserta esos archivos (evita duplicar `file:`/path vs `content://`). Tras reinstall, `resyncAppManagedMusic()` reindexa esos archivos por path absoluto.
 - Import disco (MediaStore + BestiaPop) solo en **primer arranque** / post-uninstall (`LibraryPreferencesRepository.initial_library_scan_completed`); updates no re-escanean (Room migraciones sí).
 - URIs de descarga/upload se guardan como **path absoluto** en la única carpeta `Music/BestiaPop` (`StorageUtils`). Escrita por File si el dir es writable; si no (UID viejo), vía MediaStore al mismo relative path. Debug y release (mismo `applicationId`) usan esa carpeta. WiFi `/existing-files` = union Room basename + archivos en esa carpeta.
+- Import SAF (`scanFolderUri`) persiste path absoluto si el document id mapea a filesystem (`SongPathNormalizer.toAbsolutePath`). Reproducción resuelve URIs `content://...externalstorage.documents/...` viejos a `file://` (el grant persistente se pierde tras reinstall; sin esto ExoPlayer da Permission Denial y el error local se tragaba). Fallo local → toast «No se pudo reproducir».
 - Playlists/overrides viven en Room (app-private): **no** sobreviven uninstall (solo los archivos de audio en `Music/BestiaPop`).
 - Descarga con conflicto → `DuplicateSongException` / `DownloadConflict` → diálogo Sobrescribir | Crear nueva | Cancelar (`DownloadConflictPolicy`).
 - One-shot migrator histórico: branch `archive/library-dedup-v1-migrator` (no compila en LB).
@@ -102,7 +103,7 @@ UI: `PlaylistsScreen`.
 |--------|-----|
 | Scan MediaStore | `scanMediaStore(onProgress?)` (skip BestiaPop + path/matchKey conocidos) |
 | Reindex app music | `resyncAppManagedMusic(onProgress?)` → `Music/BestiaPop` filesystem walk; VM `ensureInitialLibraryImport` (1ª vez) / `refreshLibraryFromDisk` (force) |
-| Scan carpeta SAF | `scanFolderUri(treeUri, onProgress?): Int` (incluye BestiaPop; toast en `importFolder`) |
+| Scan carpeta SAF | `scanFolderUri(treeUri, onProgress?): Int` (incluye BestiaPop; guarda abs path si se puede resolver; toast en `importFolder`) |
 | Metadata archivo → Room | `AudioFileMetadata.fromPath` / `toSongEntity` (+ filename hints si Unknown) |
 | Upload WiFi → DB | `saveUploadedSong` (`absolutePath`; merge por matchKey); VM observa `DONE` → `identifySongs(force=true, showReview=false)` |
 | Lookup duplicado | `findSongByArtistTitle` |

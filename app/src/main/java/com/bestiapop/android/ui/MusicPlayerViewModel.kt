@@ -1070,8 +1070,16 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     private fun handlePlayerError(error: PlaybackException) {
         val index = mediaController?.currentMediaItemIndex ?: return
-        val item = _queue.value.getOrNull(index) as? PlayableItem.Remote
-        if (item == null) return
+        val queued = _queue.value.getOrNull(index)
+        val item = queued as? PlayableItem.Remote
+        if (item == null) {
+            val title = (queued as? PlayableItem.Local)?.song?.title?.takeIf { it.isNotBlank() }
+            toast(
+                if (title != null) "No se pudo reproducir «$title»"
+                else "No se pudo reproducir"
+            )
+            return
+        }
 
         val isHttpFailure = error.errorCode == PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS ||
             error.errorCode == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED ||
@@ -1297,15 +1305,10 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private fun parseToMediaUri(uriStr: String?): Uri {
         if (uriStr.isNullOrBlank()) return Uri.EMPTY
         val trimmed = uriStr.trim()
-        if (trimmed.startsWith("http://") || trimmed.startsWith("https://") || trimmed.startsWith("content://")) {
-            return Uri.parse(trimmed)
+        SongPathNormalizer.toAbsolutePath(trimmed)?.let { abs ->
+            return Uri.fromFile(java.io.File(abs))
         }
-        var cleanPath = trimmed
-        while (cleanPath.startsWith("file:")) {
-            cleanPath = cleanPath.removePrefix("file:")
-        }
-        cleanPath = "/" + cleanPath.trimStart('/')
-        return Uri.fromFile(java.io.File(cleanPath))
+        return Uri.parse(trimmed)
     }
 
     private fun parseToArtworkUri(uriStr: String?): Uri? {

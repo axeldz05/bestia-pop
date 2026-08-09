@@ -59,7 +59,8 @@ data class IdentifyCandidate(
     val durationMs: Long,
     val provider: String,
     val score: Float,
-    val reasons: List<String> = emptyList()
+    val reasons: List<String> = emptyList(),
+    val trackNumber: Int = 0
 ) {
     /** Ephemeral catalog track for stream preview (no CDN URL persisted). */
     fun toOnlineCatalogTrack(): OnlineCatalogTrack = OnlineCatalogTrack(
@@ -70,7 +71,8 @@ data class IdentifyCandidate(
         artworkUrl = artworkUrl,
         durationMs = durationMs,
         audioUrl = "",
-        provider = provider
+        provider = provider,
+        trackNumber = trackNumber
     )
 }
 
@@ -205,7 +207,8 @@ data class OnlineCatalogTrack(
     val durationMs: Long,
     val audioUrl: String,
     val provider: String = "YouTube",
-    val userAgent: String = "Mozilla/5.0 (SmartHub; SMART-TV; U; Linux/SmartTV) AppleWebKit/538.1 (KHTML, like Gecko) TV Safari/538.1"
+    val userAgent: String = "Mozilla/5.0 (SmartHub; SMART-TV; U; Linux/SmartTV) AppleWebKit/538.1 (KHTML, like Gecko) TV Safari/538.1",
+    val trackNumber: Int = 0
 )
 
 

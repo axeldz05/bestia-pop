@@ -4,6 +4,7 @@ import com.bestiapop.android.data.model.Album
 import com.bestiapop.android.data.model.AlbumOverride
 import com.bestiapop.android.data.model.Artist
 import com.bestiapop.android.data.model.Song
+import com.bestiapop.android.data.util.albumTrackSortKey
 import com.bestiapop.android.ui.SortOption
 import com.bestiapop.android.ui.state.LibraryListItem
 import com.bestiapop.android.ui.state.LibraryViewMode
@@ -48,9 +49,22 @@ class GetLibrarySongsUseCase {
         }
     }
 
+    fun compareSongsWithinAlbum(a: Song, b: Song): Int {
+        val byTrack = albumTrackSortKey(a.trackNumber).compareTo(albumTrackSortKey(b.trackNumber))
+        if (byTrack != 0) return byTrack
+        return a.title.lowercase().compareTo(b.title.lowercase())
+    }
+
+    fun sortSongsWithinAlbum(songs: List<Song>): List<Song> =
+        songs.sortedWith(::compareSongsWithinAlbum)
+
+    fun songsFromListItems(items: List<LibraryListItem>): List<Song> =
+        items.mapNotNull { (it as? LibraryListItem.SongRow)?.song }
+
     /**
-     * Builds a flat, keyed list for LazyColumn: optional album headers + song rows
-     * with stable indices into [songs] for playCollection.
+     * Builds a flat, keyed list for LazyColumn: optional album headers + song rows.
+     * [LibraryListItem.SongRow.index] is the play index into [songsFromListItems].
+     * ALBUM_GROUPS sorts each album by track number (unknown tracks last).
      */
     fun buildListItems(
         songs: List<Song>,
@@ -64,11 +78,10 @@ class GetLibrarySongsUseCase {
             }
 
             LibraryViewMode.ALBUM_GROUPS -> {
-                val indexById = HashMap<Long, Int>(songs.size)
-                songs.forEachIndexed { index, song -> indexById[song.id] = index }
-
                 val items = ArrayList<LibraryListItem>(songs.size + songs.size / 4 + 1)
-                songs.groupBy { it.album }.forEach { (albumName, albumSongs) ->
+                var songIndex = 0
+                songs.groupBy { it.album }.forEach { (albumName, groupSongs) ->
+                    val albumSongs = sortSongsWithinAlbum(groupSongs)
                     items += LibraryListItem.AlbumHeader(
                         albumName = albumName,
                         artistName = albumSongs.firstOrNull()?.artist ?: "Artista desconocido",
@@ -77,10 +90,8 @@ class GetLibrarySongsUseCase {
                         albumSongs = albumSongs
                     )
                     albumSongs.forEach { song ->
-                        items += LibraryListItem.SongRow(
-                            song = song,
-                            index = indexById[song.id] ?: 0
-                        )
+                        items += LibraryListItem.SongRow(song = song, index = songIndex)
+                        songIndex++
                     }
                 }
                 items

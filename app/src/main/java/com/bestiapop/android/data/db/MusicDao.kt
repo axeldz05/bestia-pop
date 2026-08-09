@@ -45,14 +45,15 @@ interface MusicDao {
     @Query("UPDATE songs SET artworkUri = :artworkUri, lyrics = :lyrics WHERE id = :songId")
     suspend fun updateMetadataAndLyrics(songId: Long, artworkUri: String?, lyrics: String?)
 
-    @Query("UPDATE songs SET title = :title, artist = :artist, album = :album, genre = :genre, year = :year WHERE id = :songId")
+    @Query("UPDATE songs SET title = :title, artist = :artist, album = :album, genre = :genre, year = :year, trackNumber = :trackNumber WHERE id = :songId")
     suspend fun updateSongMetadata(
         songId: Long,
         title: String,
         artist: String,
         album: String,
         genre: String,
-        year: Int
+        year: Int,
+        trackNumber: Int
     )
 
     @Query(

@@ -97,8 +97,8 @@ fun SongActionDialogsHost(
         EditSongMetadataDialog(
             song = song,
             onDismiss = onDismissEdit,
-            onConfirm = { title, artist, album, genre, year ->
-                viewModel.updateSongMetadata(song.id, title, artist, album, genre, year)
+            onConfirm = { title, artist, album, genre, year, trackNumber ->
+                viewModel.updateSongMetadata(song.id, title, artist, album, genre, year, trackNumber)
                 onDismissEdit()
             }
         )

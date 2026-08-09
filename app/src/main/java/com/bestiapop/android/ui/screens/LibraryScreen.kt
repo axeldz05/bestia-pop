@@ -102,6 +102,17 @@ fun LibraryScreen(
     val isPlaylistAdditionMode = targetPlaylistForAddition != null
     val selectedTabIndex = if (isPlaylistAdditionMode) 0 else libraryTab
     val showAlbumHeaders = libraryViewMode == LibraryViewMode.ALBUM_GROUPS
+    val songsViewMode = if (showAlbumHeaders) {
+        LibraryViewMode.ALBUM_GROUPS
+    } else {
+        LibraryViewMode.FLAT
+    }
+    val songListItems = remember(songs, songsViewMode) {
+        viewModel.buildLibraryListItems(songs, songsViewMode)
+    }
+    val songsInViewOrder = remember(songListItems) {
+        viewModel.songsFromLibraryListItems(songListItems)
+    }
 
     var collapsedAlbumNames by remember { mutableStateOf(setOf<String>()) }
 
@@ -377,9 +388,9 @@ fun LibraryScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 LabeledPlayShuffleButtons(
-                    onPlay = { viewModel.playCollection(songs) },
-                    onShuffle = { viewModel.shuffleCollection(songs) },
-                    enabled = songs.isNotEmpty(),
+                    onPlay = { viewModel.playCollection(songsInViewOrder) },
+                    onShuffle = { viewModel.shuffleCollection(songsInViewOrder) },
+                    enabled = songsInViewOrder.isNotEmpty(),
                     playLabel = "Reproducir todo",
                     shuffleLabel = "Mezclar",
                     modifier = Modifier.weight(1f)
@@ -461,8 +472,9 @@ fun LibraryScreen(
         Box(modifier = Modifier.weight(1f)) {
             when {
                 selectedAlbumName != null -> {
-                    val albumSongs = remember(songs, selectedAlbumName) {
-                        songs.filter { it.album.equals(selectedAlbumName, ignoreCase = true) }
+                    val albumName = selectedAlbumName!!
+                    val albumSongs = remember(songs, albumName) {
+                        viewModel.songsForAlbum(songs, albumName)
                     }
                     val albumListItems = remember(albumSongs) {
                         viewModel.buildLibraryListItems(albumSongs, LibraryViewMode.FLAT)
@@ -488,6 +500,9 @@ fun LibraryScreen(
                     val artistListItems = remember(artistSongs) {
                         viewModel.buildLibraryListItems(artistSongs, LibraryViewMode.ALBUM_GROUPS)
                     }
+                    val artistSongsInViewOrder = remember(artistListItems) {
+                        viewModel.songsFromLibraryListItems(artistListItems)
+                    }
                     LibrarySongListHost(
                         items = artistListItems,
                         currentSongId = currentSongId,
@@ -497,20 +512,16 @@ fun LibraryScreen(
                         sortOption = sortOption,
                         actions = songListActions,
                         onSongClick = { song, index ->
-                            if (isMultiSelectMode) toggleSelectSong(song) else viewModel.playCollection(artistSongs, index)
+                            if (isMultiSelectMode) {
+                                toggleSelectSong(song)
+                            } else {
+                                viewModel.playCollection(artistSongsInViewOrder, index)
+                            }
                         }
                     )
                 }
 
                 selectedTabIndex == 0 -> {
-                    val songsViewMode = if (showAlbumHeaders) {
-                        LibraryViewMode.ALBUM_GROUPS
-                    } else {
-                        LibraryViewMode.FLAT
-                    }
-                    val songListItems = remember(songs, songsViewMode) {
-                        viewModel.buildLibraryListItems(songs, songsViewMode)
-                    }
                     LibrarySongListHost(
                         items = songListItems,
                         currentSongId = currentSongId,
@@ -523,7 +534,7 @@ fun LibraryScreen(
                             if (isPlaylistAdditionMode || isMultiSelectMode) {
                                 toggleSelectSong(song)
                             } else {
-                                viewModel.playCollection(songs, index)
+                                viewModel.playCollection(songsInViewOrder, index)
                             }
                         }
                     )
@@ -535,12 +546,10 @@ fun LibraryScreen(
                         sortOption = sortOption,
                         onAlbumClick = { viewModel.openLibraryAlbum(it.name, fromArtist = false) },
                         onPlayAlbum = { album ->
-                            val albumSongs = songs.filter { it.album.equals(album.name, ignoreCase = true) }
-                            viewModel.playCollection(albumSongs)
+                            viewModel.playCollection(viewModel.songsForAlbum(songs, album.name))
                         },
                         onShuffleAlbum = { album ->
-                            val albumSongs = songs.filter { it.album.equals(album.name, ignoreCase = true) }
-                            viewModel.shuffleCollection(albumSongs)
+                            viewModel.shuffleCollection(viewModel.songsForAlbum(songs, album.name))
                         },
                         onChangeAlbumCover = { albumForCoverChange = it },
                         onEditAlbum = { albumForEdit = it }

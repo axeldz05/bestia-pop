@@ -35,7 +35,7 @@ Archivos: `ui/MusicPlayerViewModel.kt` (`playPlayableCollection` / `applyShuffle
 | Query YT desde catálogo | `YouTubeExtractor.resolveYouTubeQueryOrId` (ignora ids Deezer/iTunes; usa `audioUrl` o `artist title`) |
 | Álbumes / playlists online | `MetadataFetcher.searchAlbums` / `searchPlaylists` + `fetchAlbumTrackCandidates` / `fetchPlaylistTrackCandidates` |
 | Extraer stream | `YouTubeExtractor.extractAudioStream` / `extractAudioStreamDetailed` |
-| Descargar + persistir | `DownloadAudioTrackUseCase.execute` → `IMusicRepository.downloadAndSaveOnlineTrack` |
+| Descargar + persistir | `DownloadAudioTrackUseCase.execute` → `IMusicRepository.downloadAndSaveOnlineTrack` (persiste `OnlineCatalogTrack.trackNumber` / `FullTrackMetadata.trackNumber`) |
 | UI diálogo | `ui/components/AddMusicDialog.kt` |
 | Centro de descargas | `DownloadsScreen` + `ActiveDownloadRow`; persistencia `ActiveDownloadsStore` / `ActiveDownloadCodec`; notif `DownloadNotificationHelper`; badge `activeDownloadBadgeCount` en tab Descargas (`MainScreen`) |
 | Orquestación VM | `enqueueTrackedBatch` → `runTrackedDownload` ← `downloadSingleCandidate`, `downloadSelectedCandidatesBatch`, `downloadFromUrl`, `downloadOnlineTrack`, `downloadRemoteItem`, `maybeEnqueueSaveWhileListening`; candidatos vía `expandCandidates`; acciones `retryActiveDownload` / `cycleActiveDownload` / `previewActiveDownload` / `playActiveDownload` / `dismissActiveDownload` / `dismissAllActiveDownloads`; deep-link `requestOpenDownloads` / `pendingOpenDownloads` |
@@ -46,14 +46,14 @@ Modelo clave: `OnlineCatalogTrack`, `CatalogTrackCandidate`, `DownloadStatus` (l
 
 ## 3. Biblioteca: filtro, orden y vistas
 
-**Invariante:** `songsState` filtra por título/artista/álbum/género y ordena con `SortOption`. Orden, vista, tab Canciones/Álbumes/Artistas y pila artista→álbum **persisten** entre sesiones (`LibraryPreferencesRepository`).
+**Invariante:** `songsState` filtra por título/artista/álbum/género y ordena con `SortOption`. Orden, vista, tab Canciones/Álbumes/Artistas y pila artista→álbum **persisten** entre sesiones (`LibraryPreferencesRepository`). Con `ALBUM_GROUPS`, canciones **dentro de cada álbum** van por `trackNumber` (0 al final + título); play/shuffle/tap usan ese orden visual (`songsFromListItems`). Detalle de álbum siempre por pista.
 
 | Capacidad | API |
 |-----------|-----|
 | Query | `MusicPlayerViewModel.searchQuery` (no se persiste) |
 | Sort | `SortOption`: TITLE, ARTIST, ALBUM, GENRE, DATE_ADDED → `setSortOption` (DataStore); menú marca la activa con check |
 | Filtrado/orden | `GetLibrarySongsUseCase.execute` |
-| Vista plana vs grupos álbum | `LibraryViewMode.FLAT` / `ALBUM_GROUPS` → `setLibraryViewMode` / `toggleLibraryViewMode`; `buildLibraryListItems` / `buildListItems` |
+| Vista plana vs grupos álbum | `LibraryViewMode.FLAT` / `ALBUM_GROUPS` → `setLibraryViewMode` / `toggleLibraryViewMode`; `buildLibraryListItems` / `buildListItems`; within-album `compareSongsWithinAlbum` / `sortSongsWithinAlbum` / `songsFromListItems` |
 | Tab + pila | `libraryTab`, `openLibraryAlbum(fromArtist)`, `openLibraryArtist`, `popLibraryNested` (álbum encima de artista) |
 | Colapsar álbum / todos | `collapsedAlbumNames` + toggle por header (`onToggleCollapseAlbum`); expandir/colapsar todo en `LibraryScreen` (vista grupos; no persistido) |
 | Derivados | `extractAlbums`, `extractArtists` → `albumsState`, `artistsState` |
@@ -70,7 +70,7 @@ Estado: `ui/state/LibraryUiState.kt`, `LibraryListItem.kt`. Prefs: `LibraryDispl
 | **Álbum merge** | Renombrar a un álbum existente → `ConfirmMergeAlbumsDialog`; al confirmar, canciones de A adoptan metadata de B. Match con `normalizeAlbumName` (trim, `…`/`â€¦` → `...`, ignoreCase) vía Room en `requestSaveAlbumMetadata`. `mergeAlbumInto` también pliega otras keys equivalentes (mojibake) | `requestSaveAlbumMetadata` / `confirmPendingAlbumMerge` / `findAlbumMergeTarget` / `AlbumNames.kt` |
 | **Álbum portada** | `setAlbumArtwork` → propagate via `updateAlbumMetadataPropagateToSongs` | `MusicPlayerViewModel.setAlbumArtwork` |
 | **Playlist** | `Playlist.coverUri` / `PlaylistEntity.coverUri` es de la lista; **no** pisa artwork de canciones | `createPlaylist` / `updatePlaylist`, `savePlaylistCoverImage` |
-| **Canción** | Editar una canción **no** reescribe el álbum ni siblings | `updateSongMetadata` (incluye `year`); UI `EditSongMetadataDialog` |
+| **Canción** | Editar una canción **no** reescribe el álbum ni siblings | `updateSongMetadata` (incluye `year` + `trackNumber`); UI `EditSongMetadataDialog` (Nº de pista; encoding MediaStore `disc*1000+track` vía `encodeAlbumTrack`) |
 | **Persistencia local** | Copiar imagen a `context.filesDir` (`album_covers` / playlist covers); URI unificada `file.toURI()` vía `persistUserCover` | `saveAlbumCoverImage`, `savePlaylistCoverImage`, `extractAndSaveEmbeddedArtwork` |
 
 Herencia visual en lista: `GetLibrarySongsUseCase.execute` unifica artwork faltante desde otras canciones del mismo álbum; `extractAlbums(songs, overrides)` aplica `AlbumOverride`.
@@ -106,7 +106,7 @@ UI: `PlaylistsScreen`. Detalle abierto = `PlaylistDetailNav` persistido (`openLo
 | Scan MediaStore | `scanMediaStore(onProgress?)` (skip BestiaPop + path/matchKey conocidos) |
 | Reindex app music | `resyncAppManagedMusic(onProgress?)` → `Music/BestiaPop` filesystem walk; VM `ensureInitialLibraryImport` (1ª vez) / `refreshLibraryFromDisk` (force) |
 | Scan carpeta SAF | `scanFolderUri(treeUri, onProgress?): Int` (incluye BestiaPop; guarda abs path si se puede resolver; toast en `importFolder`) |
-| Metadata archivo → Room | `AudioFileMetadata.fromPath` / `toSongEntity` (+ filename hints si Unknown) |
+| Metadata archivo → Room | `AudioFileMetadata.fromPath` / `toSongEntity` (+ filename hints si Unknown; `parseCdTrackNumber` de tags CD_TRACK/DISC) |
 | Upload WiFi → DB | `saveUploadedSong` (`AudioPersistRef`; merge por matchKey); VM observa `DONE` → `identifySongs(force=true, showReview=false)` |
 | Canonicalizar URIs | `MusicRepository.migrateCanonicalAudioUris` (startup, junto a `migrateLegacyYouTubeMusicSongs`) |
 | Lookup duplicado | `findSongByArtistTitle` |
@@ -115,7 +115,7 @@ UI: `PlaylistsScreen`. Detalle abierto = `PlaylistDetailNav` persistido (`openLo
 | Borrar app / dispositivo | `deleteSongsFromApp` / `deleteSongsFromDevice` |
 | Enriquecer meta/letras | `enhanceSongMetadataAndLyrics` (portada/letras/duración; **no** artist/álbum) |
 | Proponer identidad | `proposeSongIdentity(song, customQuery?, force?)` → `IdentifyProposal` |
-| Aplicar candidato | `applySongIdentity(songId, candidate)` → `IdentifyResult` |
+| Aplicar candidato | `applySongIdentity(songId, candidate)` → `IdentifyResult` (persiste `trackNumber` si `> 0`; si no conserva Room) |
 | Identificar lote | VM `identifySongs(songs, force, showReview)` → auto HIGH + cola review |
 | Identificar una | VM `identifySongForReview` (menú ⋮, `force=true`); UI `IdentifyReviewScreen` |
 | Review preview | Local `previewIdentifyLocalSong`; candidato stream `previewIdentifyCandidate` → `playOnlineCatalogTrackAsStream` (`PreviewPlayPauseButton`) |

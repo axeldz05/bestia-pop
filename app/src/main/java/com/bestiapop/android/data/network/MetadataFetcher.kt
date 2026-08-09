@@ -4,6 +4,7 @@ import com.bestiapop.android.data.model.CatalogAlbum
 import com.bestiapop.android.data.model.CatalogPlaylist
 import com.bestiapop.android.data.model.CatalogTrackCandidate
 import com.bestiapop.android.data.model.OnlineCatalogTrack
+import com.bestiapop.android.data.util.encodeAlbumTrack
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -19,7 +20,8 @@ data class FullTrackMetadata(
     val artworkUrl: String?,
     val artistName: String?,
     val title: String?,
-    val durationMs: Long = 0L
+    val durationMs: Long = 0L,
+    val trackNumber: Int = 0
 )
 
 data class DeezerArtistHit(
@@ -53,6 +55,9 @@ object MetadataFetcher {
 
     private fun encodeQuery(queryText: String): String =
         URLEncoder.encode(queryText, StandardCharsets.UTF_8.name())
+
+    private fun deezerAlbumTrackNumber(obj: JSONObject): Int =
+        encodeAlbumTrack(obj.optInt("track_position", 0), obj.optInt("disk_number", 0))
 
     // --- L1: artwork / JSON primitives (kept accessible) ---
 
@@ -100,7 +105,8 @@ object MetadataFetcher {
                     artist = artistName,
                     album = albumTitle,
                     artworkUrl = cover,
-                    durationMs = if (durationSec > 0) durationSec * 1000L else 0L
+                    durationMs = if (durationSec > 0) durationSec * 1000L else 0L,
+                    trackNumber = deezerAlbumTrackNumber(obj)
                 )
             )
         }
@@ -135,7 +141,8 @@ object MetadataFetcher {
                     artworkUrl = cover,
                     durationMs = obj.optLong("duration", 180L) * 1000L,
                     audioUrl = "$artistName $title",
-                    provider = provider
+                    provider = provider,
+                    trackNumber = deezerAlbumTrackNumber(obj)
                 )
             )
         }
@@ -169,7 +176,11 @@ object MetadataFetcher {
                     artworkUrl = normalizeItunesArtwork(obj.optString("artworkUrl100")),
                     durationMs = obj.optLong("trackTimeMillis", 180000L),
                     audioUrl = "$artistName $title",
-                    provider = provider
+                    provider = provider,
+                    trackNumber = encodeAlbumTrack(
+                        obj.optInt("trackNumber", 0),
+                        obj.optInt("discNumber", 0)
+                    )
                 )
             )
         }
@@ -213,7 +224,8 @@ object MetadataFetcher {
             artworkUrl = hint.artworkUrl,
             artistName = hint.artist,
             title = hint.title,
-            durationMs = hint.durationMs
+            durationMs = hint.durationMs,
+            trackNumber = hint.trackNumber
         )
     }
 
@@ -233,7 +245,8 @@ object MetadataFetcher {
             artworkUrl = track.artworkUrl,
             artistName = track.artist.ifBlank { null },
             title = title,
-            durationMs = track.durationMs
+            durationMs = track.durationMs,
+            trackNumber = track.trackNumber
         )
     }
 
@@ -342,7 +355,8 @@ object MetadataFetcher {
                     artist = track.artist.ifBlank { cleanArtistName },
                     album = track.album.ifBlank { null },
                     artworkUrl = track.artworkUrl,
-                    durationMs = track.durationMs
+                    durationMs = track.durationMs,
+                    trackNumber = track.trackNumber
                 )
             }
         }
@@ -366,7 +380,8 @@ object MetadataFetcher {
             artworkUrl = deezer.artworkUrl ?: itunes.artworkUrl,
             artistName = deezer.artistName ?: itunes.artistName,
             title = deezer.title ?: itunes.title,
-            durationMs = if (deezer.durationMs > 0) deezer.durationMs else itunes.durationMs
+            durationMs = if (deezer.durationMs > 0) deezer.durationMs else itunes.durationMs,
+            trackNumber = if (deezer.trackNumber > 0) deezer.trackNumber else itunes.trackNumber
         )
     }
 
@@ -536,7 +551,8 @@ object MetadataFetcher {
                                 artworkUrl = albumCoverUrl,
                                 durationMs = obj.optLong("duration", 180L) * 1000L,
                                 audioUrl = "$trackArtist $trackTitle",
-                                provider = "YouTube"
+                                provider = "YouTube",
+                                trackNumber = deezerAlbumTrackNumber(obj)
                             )
                         )
                     )
@@ -610,7 +626,8 @@ object MetadataFetcher {
                                 artworkUrl = cover,
                                 durationMs = obj.optLong("duration", 180L) * 1000L,
                                 audioUrl = "$trackArtist $trackTitle",
-                                provider = "YouTube"
+                                provider = "YouTube",
+                                trackNumber = deezerAlbumTrackNumber(obj)
                             )
                         )
                     )

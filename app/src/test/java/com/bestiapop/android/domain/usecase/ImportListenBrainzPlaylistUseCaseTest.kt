@@ -178,7 +178,8 @@ class ImportListenBrainzPlaylistUseCaseTest {
             artist: String,
             album: String,
             genre: String,
-            year: Int
+            year: Int,
+            trackNumber: Int
         ) = Unit
         override suspend fun upsertAlbumOverride(override: com.bestiapop.android.data.model.AlbumOverride) = Unit
         override suspend fun updateAlbumMetadataPropagateToSongs(override: com.bestiapop.android.data.model.AlbumOverride) = Unit

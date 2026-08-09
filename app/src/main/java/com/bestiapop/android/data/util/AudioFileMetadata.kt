@@ -43,7 +43,8 @@ data class AudioFileMetadata(
     val album: String,
     val genre: String,
     val durationMs: Long,
-    val artworkUri: String?
+    val artworkUri: String?,
+    val trackNumber: Int = 0
 ) {
     fun toSongEntity(
         uriString: String,
@@ -57,7 +58,7 @@ data class AudioFileMetadata(
         genre = genre,
         durationMs = durationMs,
         year = 0,
-        trackNumber = 0,
+        trackNumber = trackNumber,
         artworkUri = artworkUri,
         lyrics = null,
         folderPath = folderPath,
@@ -96,7 +97,11 @@ data class AudioFileMetadata(
                         .extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
                         ?.toLongOrNull()
                         ?: 0L,
-                    artworkUri = extractEmbeddedArtwork(ref.uriString, artworkIdentifier)
+                    artworkUri = extractEmbeddedArtwork(ref.uriString, artworkIdentifier),
+                    trackNumber = parseCdTrackNumber(
+                        retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_CD_TRACK_NUMBER),
+                        retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DISC_NUMBER)
+                    )
                 )
                 return applyFilenameHints(tagged, fallbackTitle)
             } finally {

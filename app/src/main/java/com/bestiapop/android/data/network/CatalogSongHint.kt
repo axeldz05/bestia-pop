@@ -9,5 +9,6 @@ data class CatalogSongHint(
     val artist: String,
     val album: String? = null,
     val artworkUrl: String? = null,
-    val durationMs: Long = 0L
+    val durationMs: Long = 0L,
+    val trackNumber: Int = 0
 )

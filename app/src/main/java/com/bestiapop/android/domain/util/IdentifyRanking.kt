@@ -223,7 +223,8 @@ object IdentifyRanking {
             durationMs = track.durationMs,
             provider = track.provider,
             score = score,
-            reasons = reasons
+            reasons = reasons,
+            trackNumber = track.trackNumber
         )
     }
 

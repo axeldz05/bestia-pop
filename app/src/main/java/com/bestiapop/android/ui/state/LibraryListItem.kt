@@ -27,7 +27,7 @@ sealed interface LibraryListItem {
     @Immutable
     data class SongRow(
         val song: Song,
-        /** Index into the source [List] used by playCollection. */
+        /** Play index into the visual song order ([GetLibrarySongsUseCase.songsFromListItems]). */
         val index: Int
     ) : LibraryListItem {
         override val key: Any get() = song.id

@@ -30,6 +30,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.bestiapop.android.data.model.Playlist
 import com.bestiapop.android.data.model.Song
+import com.bestiapop.android.data.util.albumDiscNumber
+import com.bestiapop.android.data.util.albumTrackDisplayNumber
+import com.bestiapop.android.data.util.encodeAlbumTrack
 import com.bestiapop.android.ui.components.ArtworkPickerBlock
 import com.bestiapop.android.ui.components.ArtworkThumbnail
 import com.bestiapop.android.ui.components.rememberImagePicker
@@ -38,13 +41,15 @@ import com.bestiapop.android.ui.components.rememberImagePicker
 fun EditSongMetadataDialog(
     song: Song,
     onDismiss: () -> Unit,
-    onConfirm: (title: String, artist: String, album: String, genre: String, year: Int) -> Unit
+    onConfirm: (title: String, artist: String, album: String, genre: String, year: Int, trackNumber: Int) -> Unit
 ) {
     var title by remember { mutableStateOf(song.title) }
     var artist by remember { mutableStateOf(song.artist) }
     var album by remember { mutableStateOf(song.album) }
     var genre by remember { mutableStateOf(song.genre) }
     var yearText by remember { mutableStateOf(if (song.year > 0) song.year.toString() else "") }
+    val displayTrack = albumTrackDisplayNumber(song.trackNumber)
+    var trackText by remember { mutableStateOf(if (displayTrack > 0) displayTrack.toString() else "") }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -84,18 +89,34 @@ fun EditSongMetadataDialog(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
-                OutlinedTextField(
-                    value = yearText,
-                    onValueChange = { yearText = it.filter { ch -> ch.isDigit() }.take(4) },
-                    label = { Text("Año") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedTextField(
+                        value = yearText,
+                        onValueChange = { yearText = it.filter { ch -> ch.isDigit() }.take(4) },
+                        label = { Text("Año") },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f)
+                    )
+                    OutlinedTextField(
+                        value = trackText,
+                        onValueChange = { trackText = it.filter { ch -> ch.isDigit() }.take(3) },
+                        label = { Text("Nº de pista") },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
             }
         },
         confirmButton = {
             Button(onClick = {
-                onConfirm(title, artist, album, genre, yearText.toIntOrNull() ?: 0)
+                val track = encodeAlbumTrack(
+                    trackText.toIntOrNull() ?: 0,
+                    albumDiscNumber(song.trackNumber)
+                )
+                onConfirm(title, artist, album, genre, yearText.toIntOrNull() ?: 0, track)
             }) {
                 Text("Guardar")
             }

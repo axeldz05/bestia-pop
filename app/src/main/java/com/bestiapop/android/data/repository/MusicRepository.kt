@@ -475,7 +475,12 @@ class MusicRepository(private val context: Context) : IMusicRepository {
                     genre = normalized.genre,
                     durationMs = normalized.durationMs,
                     artworkUri = normalized.artworkUri ?: existing.artworkUri,
-                    folderPath = normalized.folderPath.ifBlank { existing.folderPath }
+                    folderPath = normalized.folderPath.ifBlank { existing.folderPath },
+                    trackNumber = if (normalized.trackNumber > 0) {
+                        normalized.trackNumber
+                    } else {
+                        existing.trackNumber
+                    }
                 )
                 musicDao.updateSong(updated)
                 return@withContext existing.id
@@ -652,7 +657,8 @@ class MusicRepository(private val context: Context) : IMusicRepository {
                 artist = newArtist,
                 album = newAlbum,
                 artworkUri = newArt,
-                durationMs = newDuration
+                durationMs = newDuration,
+                trackNumber = if (candidate.trackNumber > 0) candidate.trackNumber else entity.trackNumber
             )
         )
         IdentifyResult.Updated(
@@ -714,7 +720,8 @@ class MusicRepository(private val context: Context) : IMusicRepository {
             artworkUrl = artworkUrl,
             durationMs = durationMs,
             audioUrl = "",
-            provider = "Catalog"
+            provider = "Catalog",
+            trackNumber = trackNumber
         )
     }
 
@@ -771,16 +778,20 @@ class MusicRepository(private val context: Context) : IMusicRepository {
         artist: String,
         album: String,
         genre: String,
-        year: Int
+        year: Int,
+        trackNumber: Int
     ) = withContext(Dispatchers.IO) {
         val safeTitle = title.ifBlank { "Unknown Track" }
         val safeArtist = artist.ifBlank { "Unknown Artist" }
         val safeAlbum = album.ifBlank { "Unknown Album" }
         val safeGenre = genre.ifBlank { "Music" }
         val safeYear = year.coerceAtLeast(0)
+        val safeTrack = trackNumber.coerceAtLeast(0)
 
         // Per-song edit only — does not rewrite sibling songs or album overrides.
-        musicDao.updateSongMetadata(songId, safeTitle, safeArtist, safeAlbum, safeGenre, safeYear)
+        musicDao.updateSongMetadata(
+            songId, safeTitle, safeArtist, safeAlbum, safeGenre, safeYear, safeTrack
+        )
     }
 
     override suspend fun getAlbumOverride(albumKey: String): com.bestiapop.android.data.model.AlbumOverride? =
@@ -1015,6 +1026,7 @@ class MusicRepository(private val context: Context) : IMusicRepository {
         var finalArtist = track.artist
         var finalArtwork = track.artworkUrl
         var finalDurationMs = track.durationMs
+        var finalTrackNumber = track.trackNumber
 
         val queryOrId = com.bestiapop.android.data.network.YouTubeExtractor.resolveYouTubeQueryOrId(track)
         val ytStream = streamResolver.resolveQuery(queryOrId).getOrElse { e ->
@@ -1151,6 +1163,9 @@ class MusicRepository(private val context: Context) : IMusicRepository {
                 if (finalDurationMs <= 0 && fullMeta.durationMs > 0) {
                     finalDurationMs = fullMeta.durationMs
                 }
+                if (finalTrackNumber <= 0 && fullMeta.trackNumber > 0) {
+                    finalTrackNumber = fullMeta.trackNumber
+                }
             }
         }
 
@@ -1173,7 +1188,8 @@ class MusicRepository(private val context: Context) : IMusicRepository {
                 durationMs = if (finalDurationMs > 0) finalDurationMs else overwriteTarget.durationMs,
                 artworkUri = finalArtwork ?: overwriteTarget.artworkUri,
                 lyrics = lyrics ?: overwriteTarget.lyrics,
-                folderPath = savedRef.folderPath
+                folderPath = savedRef.folderPath,
+                trackNumber = if (finalTrackNumber > 0) finalTrackNumber else overwriteTarget.trackNumber
             )
             musicDao.updateSong(updated)
             onProgress?.invoke("¡Canción sobrescrita con éxito!")
@@ -1188,7 +1204,7 @@ class MusicRepository(private val context: Context) : IMusicRepository {
             genre = "Music",
             durationMs = if (finalDurationMs > 0) finalDurationMs else 180000L,
             year = 0,
-            trackNumber = 0,
+            trackNumber = finalTrackNumber,
             artworkUri = finalArtwork,
             lyrics = lyrics,
             folderPath = savedRef.folderPath,

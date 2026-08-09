@@ -15,7 +15,8 @@ class IdentifyRankingTest {
         artist: String,
         album: String = "OK Computer",
         durationMs: Long = 238_000L,
-        provider: String = "Deezer"
+        provider: String = "Deezer",
+        trackNumber: Int = 0
     ) = OnlineCatalogTrack(
         id = "$artist|$title",
         title = title,
@@ -24,7 +25,8 @@ class IdentifyRankingTest {
         artworkUrl = null,
         durationMs = durationMs,
         audioUrl = "",
-        provider = provider
+        provider = provider,
+        trackNumber = trackNumber
     )
 
     @Test
@@ -319,5 +321,16 @@ class IdentifyRankingTest {
         assertTrue(ranked.isNotEmpty())
         assertNotEquals(IdentifyConfidence.HIGH, IdentifyRanking.confidence(ranked))
         assertTrue(ranked.first().reasons.any { it.startsWith("artista distinto") })
+    }
+
+    @Test
+    fun toCandidate_copiesTrackNumber() {
+        val candidate = IdentifyRanking.toCandidate(
+            track("Creep", "Radiohead", trackNumber = 2),
+            score = 0.9f,
+            reasons = listOf("título")
+        )
+        assertEquals(2, candidate.trackNumber)
+        assertEquals(2, candidate.toOnlineCatalogTrack().trackNumber)
     }
 }

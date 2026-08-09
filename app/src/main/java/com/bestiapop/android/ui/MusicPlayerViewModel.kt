@@ -298,6 +298,15 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     ): List<LibraryListItem> =
         getLibrarySongsUseCase.buildListItems(songs, viewMode)
 
+    fun sortSongsWithinAlbum(songs: List<Song>): List<Song> =
+        getLibrarySongsUseCase.sortSongsWithinAlbum(songs)
+
+    fun songsForAlbum(songs: List<Song>, albumName: String): List<Song> =
+        sortSongsWithinAlbum(songs.filter { it.album.equals(albumName, ignoreCase = true) })
+
+    fun songsFromLibraryListItems(items: List<LibraryListItem>): List<Song> =
+        getLibrarySongsUseCase.songsFromListItems(items)
+
     val albumsState: StateFlow<List<Album>> = combine(
         songsState,
         repository.albumOverridesFlow
@@ -2053,10 +2062,11 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         artist: String,
         album: String,
         genre: String,
-        year: Int = 0
+        year: Int = 0,
+        trackNumber: Int = 0
     ) {
         viewModelScope.launch {
-            repository.updateSongMetadata(songId, title, artist, album, genre, year)
+            repository.updateSongMetadata(songId, title, artist, album, genre, year, trackNumber)
         }
     }
 

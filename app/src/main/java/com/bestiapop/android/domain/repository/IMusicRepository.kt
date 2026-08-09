@@ -62,7 +62,8 @@ interface IMusicRepository {
         artist: String,
         album: String,
         genre: String,
-        year: Int = 0
+        year: Int = 0,
+        trackNumber: Int = 0
     )
 
     /** Persist album-level override only (does not rewrite songs). */

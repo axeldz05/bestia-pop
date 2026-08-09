@@ -50,6 +50,32 @@ class GetLibrarySongsUseCaseListItemsTest {
     }
 
     @Test
+    fun buildListItems_albumGroups_sortsByTrackThenTitle() {
+        val mixed = listOf(
+            Song(id = 1, uriString = "u1", title = "Zebra", album = "Opera", trackNumber = 3),
+            Song(id = 2, uriString = "u2", title = "Alpha", album = "Opera", trackNumber = 0),
+            Song(id = 3, uriString = "u3", title = "Beta", album = "Opera", trackNumber = 1),
+            Song(id = 4, uriString = "u4", title = "Only", album = "Hotel", trackNumber = 2)
+        )
+        val items = useCase.buildListItems(mixed, LibraryViewMode.ALBUM_GROUPS)
+        val operaRows = items.filterIsInstance<LibraryListItem.SongRow>()
+            .filter { it.song.album == "Opera" }
+        assertEquals(listOf(3L, 1L, 2L), operaRows.map { it.song.id })
+        assertEquals(listOf(0, 1, 2), operaRows.map { it.index })
+        assertEquals(listOf(3L, 1L, 2L, 4L), useCase.songsFromListItems(items).map { it.id })
+    }
+
+    @Test
+    fun sortSongsWithinAlbum_unknownTracksLast() {
+        val mixed = listOf(
+            Song(id = 1, uriString = "u1", title = "B", trackNumber = 0),
+            Song(id = 2, uriString = "u2", title = "A", trackNumber = 2),
+            Song(id = 3, uriString = "u3", title = "C", trackNumber = 1)
+        )
+        assertEquals(listOf(3L, 2L, 1L), useCase.sortSongsWithinAlbum(mixed).map { it.id })
+    }
+
+    @Test
     fun buildListItems_empty_returnsEmpty() {
         assertTrue(useCase.buildListItems(emptyList(), LibraryViewMode.ALBUM_GROUPS).isEmpty())
     }

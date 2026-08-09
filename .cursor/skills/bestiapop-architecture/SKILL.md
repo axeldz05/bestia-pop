@@ -20,7 +20,7 @@ Módulo único Gradle: `:app`. Nombre del proyecto: **BestiaPop**.
 | Estado UI | `MusicPlayerViewModel` (AndroidViewModel) + StateFlow |
 | Reproducción | Media3 ExoPlayer + `MediaLibraryService` (`MusicService`) |
 | Persistencia | Room (`bestiapop_music_db`, v3) |
-| Preferencias | DataStore (`ThemePreferencesRepository`, `ListenBrainzPreferencesRepository`, `PlaybackPreferencesRepository`, `ActiveDownloadsStore`) |
+| Preferencias | DataStore (`ThemePreferencesRepository`, `ListenBrainzPreferencesRepository`, `PlaybackPreferencesRepository`, `LibraryPreferencesRepository` display+nav, `ActiveDownloadsStore`) |
 | Red / catálogo | OkHttp + `MetadataFetcher` (iTunes/Deezer) + `YouTubeExtractor` + `ListenBrainzClient` |
 | Sync WiFi | Ktor CIO embebido (`WebServerService`) |
 | Imágenes | Coil |
@@ -54,9 +54,9 @@ service/     MusicService (playback), WebServerService (WiFi sync)
 
 ## Navegación UI
 
-`MainScreen` bottom nav:
+`MainScreen` bottom nav (índice persistido en `LibraryPreferencesRepository` / `selectedNavIndex`; deep-link descargas = `openDownloadsTabTransient` sin pisar snapshot):
 0. Biblioteca (`LibraryScreen` + subviews album/artist/song)
-1. Playlists (`PlaylistsScreen`)
+1. Playlists (`PlaylistsScreen` + `PlaylistDetailNav`)
 2. Descargas (`DownloadsScreen`)
 3. WiFi Sync (`WebServerScreen`)
 4. Ajustes (`SettingsScreen` / temas / ListenBrainz / Sonido)

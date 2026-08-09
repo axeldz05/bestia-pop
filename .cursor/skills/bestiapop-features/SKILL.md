@@ -46,19 +46,20 @@ Modelo clave: `OnlineCatalogTrack`, `CatalogTrackCandidate`, `DownloadStatus` (l
 
 ## 3. Biblioteca: filtro, orden y vistas
 
-**Invariante:** `songsState` filtra por título/artista/álbum/género y ordena con `SortOption`.
+**Invariante:** `songsState` filtra por título/artista/álbum/género y ordena con `SortOption`. Orden, vista, tab Canciones/Álbumes/Artistas y pila artista→álbum **persisten** entre sesiones (`LibraryPreferencesRepository`).
 
 | Capacidad | API |
 |-----------|-----|
-| Query | `MusicPlayerViewModel.searchQuery` |
-| Sort | `SortOption`: TITLE, ARTIST, ALBUM, GENRE, DATE_ADDED |
+| Query | `MusicPlayerViewModel.searchQuery` (no se persiste) |
+| Sort | `SortOption`: TITLE, ARTIST, ALBUM, GENRE, DATE_ADDED → `setSortOption` (DataStore); menú marca la activa con check |
 | Filtrado/orden | `GetLibrarySongsUseCase.execute` |
-| Vista plana vs grupos álbum | `LibraryViewMode.FLAT` / `ALBUM_GROUPS` → `buildLibraryListItems` / `buildListItems` |
-| Colapsar álbum / todos | `collapsedAlbumNames` + toggle por header (`onToggleCollapseAlbum`); expandir/colapsar todo en `LibraryScreen` (vista grupos) |
+| Vista plana vs grupos álbum | `LibraryViewMode.FLAT` / `ALBUM_GROUPS` → `setLibraryViewMode` / `toggleLibraryViewMode`; `buildLibraryListItems` / `buildListItems` |
+| Tab + pila | `libraryTab`, `openLibraryAlbum(fromArtist)`, `openLibraryArtist`, `popLibraryNested` (álbum encima de artista) |
+| Colapsar álbum / todos | `collapsedAlbumNames` + toggle por header (`onToggleCollapseAlbum`); expandir/colapsar todo en `LibraryScreen` (vista grupos; no persistido) |
 | Derivados | `extractAlbums`, `extractArtists` → `albumsState`, `artistsState` |
 
-UI: `LibraryScreen`, `LibrarySongList`, `LibraryAlbumGrid`, `LibraryArtistList`.
-Estado: `ui/state/LibraryUiState.kt`, `LibraryListItem.kt`.
+UI: `LibraryScreen`, `LibrarySongList` (`onOpenAlbum`), `LibraryAlbumGrid`, `LibraryArtistList`.
+Estado: `ui/state/LibraryUiState.kt`, `LibraryListItem.kt`. Prefs: `LibraryDisplaySettings` + `UiNavSnapshot` / `LibraryUiPreferencesCodec`.
 
 ## 4. Portadas y metadata: álbum ≠ playlist ≠ canción
 
@@ -80,7 +81,7 @@ CRUD + membresía vía `IMusicRepository`:
 `createPlaylist`, `updatePlaylist`, `deletePlaylist`, `addSongToPlaylist`, `removeSongFromPlaylist`.
 Import LB: matched + `PlaylistPendingTrack` (`getPlaylistPendingTracksFlow` / `downloadPlaylistPendingTracks`).
 Flows: `playlistsFlow`, `getPlaylistSongsFlow`, `getPlaylistDetailsFlow`.
-UI: `PlaylistsScreen`.
+UI: `PlaylistsScreen`. Detalle abierto = `PlaylistDetailNav` persistido (`openLocalPlaylist` / `closePlaylistDetail`); id inválido al restore → lista general.
 
 ## 6. Importación / biblioteca local
 
@@ -198,6 +199,7 @@ Centro de descargas online → sección 2 (`DownloadsScreen`, tab Descargas).
 | Descarga manual Remote | `downloadRemoteItem` → `runTrackedDownload` (`DISCOVER`); UI `RemoteTrackPlaceholderRow.onDownload` en detalle LB/CF |
 | CF Recomendados | `ListenBrainzClient.fetchCfRecordingRecommendations` → `FetchAndMatchCfRecommendationsUseCase` → `refreshCfRecommendations` / `openCfRecommendations` / `playCfRecommendations` / `shuffleCfRecommendations` / `playCfAt` |
 | UI sección | `PlaylistsScreen` — "Para Ti" + "Recomendados"; Guardar / Descargar faltantes / descarga por track; detalle local muestra pendientes |
+| Restore sesión | `playlistDetail` `ListenBrainz` / `CfRecommendations` + `selectedNavIndex`; fetch al hidratar/abrir tab Playlists; fallo (sin red, Discover off, API) → lista general + toast (`restoreDiscoverDetailOrFallback`) |
 
 ## 10. Stream remoto (playback sin descarga)
 
@@ -269,8 +271,8 @@ Centro de descargas online → sección 2 (`DownloadsScreen`, tab Descargas).
 | Identify review | Oculta overlay, conserva cola (`dismissIdentifyReview`); `skipAllIdentifyReview` vacía | `IdentifyReviewScreen` `BackHandler` |
 | Add Music colección | `clearSelectedCollection` antes de cerrar | `AddMusicDialog` `BackHandler` + `onDismissRequest` |
 | Now Playing | `dismissFullPlayer` | `NowPlayingScreen` `BackHandler` |
-| Library nested | multi-select → cancel addition → album/artist → clear search | `LibraryScreen` `BackHandler` |
-| Playlists nested | CF → LB Discover → playlist local | `PlaylistsScreen` `BackHandler` |
+| Library nested | multi-select → cancel addition → álbum (`closeLibraryAlbum`, conserva artista) → artista → clear search | `LibraryScreen` `BackHandler` / `popLibraryNested` |
+| Playlists nested | un detalle a la vez (local / LB / CF) → lista | `PlaylistsScreen` `BackHandler` → `closePlaylistDetail` |
 | Settings nested | Temas / LB / Sonido → home | `SettingsScreen` `BackHandler` |
 | Raíz de tab | Doble atrás (~2s) + snackbar “Pulsa otra vez para salir” | `MainScreen` `BackHandler` + `SnackbarHost` |
 

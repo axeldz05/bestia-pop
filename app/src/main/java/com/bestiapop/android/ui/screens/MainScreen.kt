@@ -54,7 +54,7 @@ fun MainScreen(
     viewModel: MusicPlayerViewModel,
     onSelectFolderClick: () -> Unit
 ) {
-    var selectedNavIndex by remember { mutableIntStateOf(0) }
+    val selectedNavIndex by viewModel.selectedNavIndex.collectAsState()
     var showFullPlayer by remember { mutableStateOf(false) }
     /** Ignores only the same-gesture UP after mid-drag dismiss lands on the mini bar. */
     var suppressBarOpenUntilElapsedRealtime by remember { mutableLongStateOf(0L) }
@@ -88,7 +88,7 @@ fun MainScreen(
 
     LaunchedEffect(pendingOpenDownloads) {
         if (pendingOpenDownloads) {
-            selectedNavIndex = 2
+            viewModel.openDownloadsTabTransient()
             showFullPlayer = false
             clearPendingExit()
             viewModel.consumeOpenDownloads()
@@ -96,7 +96,6 @@ fun MainScreen(
     }
 
     var targetPlaylistForAddition by remember { mutableStateOf<com.bestiapop.android.data.model.Playlist?>(null) }
-    var selectedPlaylistIdForDetail by remember { mutableStateOf<Long?>(null) }
 
     val density = LocalDensity.current
     var bottomChromeHeightPx by remember { mutableIntStateOf(0) }
@@ -156,35 +155,32 @@ fun MainScreen(
                         viewModel = viewModel,
                         targetPlaylistForAddition = targetPlaylistForAddition,
                         onCompletePlaylistAddition = {
-                            selectedPlaylistIdForDetail = targetPlaylistForAddition?.id
+                            val playlistId = targetPlaylistForAddition?.id
                             targetPlaylistForAddition = null
-                            selectedNavIndex = 1
+                            if (playlistId != null) viewModel.openLocalPlaylist(playlistId)
+                            viewModel.setSelectedNavIndex(1)
                             clearPendingExit()
                         },
                         onCancelPlaylistAddition = {
-                            selectedPlaylistIdForDetail = targetPlaylistForAddition?.id
+                            val playlistId = targetPlaylistForAddition?.id
                             targetPlaylistForAddition = null
-                            selectedNavIndex = 1
+                            if (playlistId != null) viewModel.openLocalPlaylist(playlistId)
+                            viewModel.setSelectedNavIndex(1)
                             clearPendingExit()
                         },
                         onSelectFolderClick = onSelectFolderClick,
                         onSongSelect = { openFullPlayer() },
                         onOpenDownloads = {
-                            selectedNavIndex = 2
+                            viewModel.setSelectedNavIndex(2)
                             clearPendingExit()
                         }
                     )
                     1 -> PlaylistsScreen(
                         viewModel = viewModel,
-                        activeSelectedPlaylistId = selectedPlaylistIdForDetail,
-                        onSelectPlaylistDetail = { id ->
-                            selectedPlaylistIdForDetail = id
-                            clearPendingExit()
-                        },
                         onAddSongsRequest = { playlist ->
-                            selectedPlaylistIdForDetail = playlist.id
+                            viewModel.openLocalPlaylist(playlist.id)
                             targetPlaylistForAddition = playlist
-                            selectedNavIndex = 0
+                            viewModel.setSelectedNavIndex(0)
                             clearPendingExit()
                         }
                     )
@@ -222,7 +218,7 @@ fun MainScreen(
                     NavigationBarItem(
                         selected = selectedNavIndex == index,
                         onClick = {
-                            selectedNavIndex = index
+                            viewModel.setSelectedNavIndex(index)
                             dismissFullPlayer()
                             clearPendingExit()
                         },

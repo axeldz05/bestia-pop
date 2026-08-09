@@ -72,6 +72,7 @@ fun LibrarySongList(
     onToggleCollapseAlbum: (String) -> Unit = {},
     onEditAlbum: (String) -> Unit = {},
     onChangeAlbumCover: (String) -> Unit = {},
+    onOpenAlbum: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     if (items.isEmpty()) {
@@ -109,6 +110,7 @@ fun LibrarySongList(
     val onToggleCollapseAlbumState = rememberUpdatedState(onToggleCollapseAlbum)
     val onEditAlbumState = rememberUpdatedState(onEditAlbum)
     val onChangeAlbumCoverState = rememberUpdatedState(onChangeAlbumCover)
+    val onOpenAlbumState = rememberUpdatedState(onOpenAlbum)
 
     LazyColumn(modifier = modifier.fillMaxSize()) {
         items(
@@ -148,6 +150,9 @@ fun LibrarySongList(
                     val changeAlbumCover = remember(item.albumName) {
                         { onChangeAlbumCoverState.value(item.albumName) }
                     }
+                    val openAlbum = remember(item.albumName) {
+                        { onOpenAlbumState.value(item.albumName) }
+                    }
                     TauonAlbumHeader(
                         albumName = item.albumName,
                         artistName = item.artistName,
@@ -162,7 +167,8 @@ fun LibrarySongList(
                         onLongClick = albumLongClick,
                         onToggleCollapse = toggleCollapse,
                         onEditAlbum = editAlbum,
-                        onChangeAlbumCover = changeAlbumCover
+                        onChangeAlbumCover = changeAlbumCover,
+                        onOpenAlbum = openAlbum
                     )
                 }
 
@@ -316,7 +322,8 @@ fun TauonAlbumHeader(
     onLongClick: () -> Unit = {},
     onToggleCollapse: () -> Unit = {},
     onEditAlbum: () -> Unit = {},
-    onChangeAlbumCover: () -> Unit = {}
+    onChangeAlbumCover: () -> Unit = {},
+    onOpenAlbum: () -> Unit = {}
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
 
@@ -329,6 +336,8 @@ fun TauonAlbumHeader(
                 onClick = {
                     if (isSelectionMode) {
                         onToggleSelect()
+                    } else {
+                        onOpenAlbum()
                     }
                 },
                 onLongClick = onLongClick

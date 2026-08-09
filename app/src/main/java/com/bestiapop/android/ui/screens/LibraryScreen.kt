@@ -43,10 +43,8 @@ import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -92,23 +90,19 @@ fun LibraryScreen(
     val currentSong by viewModel.currentSong.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
     val sortOption by viewModel.sortOption.collectAsState()
+    val libraryViewMode by viewModel.libraryViewMode.collectAsState()
+    val libraryTab by viewModel.libraryTab.collectAsState()
+    val selectedAlbumName by viewModel.libraryAlbumName.collectAsState()
+    val selectedArtistName by viewModel.libraryArtistName.collectAsState()
     val pendingAlbumMerge by viewModel.pendingAlbumMerge.collectAsState()
     val libraryJobProgress by viewModel.libraryJobProgress.collectAsState()
 
-    var selectedTabIndex by remember { mutableIntStateOf(0) }
     var sortMenuExpanded by remember { mutableStateOf(false) }
 
     val isPlaylistAdditionMode = targetPlaylistForAddition != null
+    val selectedTabIndex = if (isPlaylistAdditionMode) 0 else libraryTab
+    val showAlbumHeaders = libraryViewMode == LibraryViewMode.ALBUM_GROUPS
 
-    LaunchedEffect(targetPlaylistForAddition) {
-        if (targetPlaylistForAddition != null) {
-            selectedTabIndex = 0
-        }
-    }
-
-    var showAlbumHeaders by remember { mutableStateOf(true) }
-    var selectedAlbumName by remember { mutableStateOf<String?>(null) }
-    var selectedArtistName by remember { mutableStateOf<String?>(null) }
     var collapsedAlbumNames by remember { mutableStateOf(setOf<String>()) }
 
     // Multi-selection state
@@ -211,10 +205,7 @@ fun LibraryScreen(
         when {
             isMultiSelectMode -> clearSelection()
             isPlaylistAdditionMode -> onCancelPlaylistAddition()
-            selectedAlbumName != null || selectedArtistName != null -> {
-                selectedAlbumName = null
-                selectedArtistName = null
-            }
+            selectedAlbumName != null || selectedArtistName != null -> viewModel.popLibraryNested()
             searchQuery.isNotEmpty() -> viewModel.setSearchQuery("")
         }
     }
@@ -236,7 +227,7 @@ fun LibraryScreen(
     val songListActions = remember(
         onPlayNext, onAddToQueue, onStartRadio, onAddToPlaylist, onEditMetadata, onIdentify, onDeleteSong,
         onPlayAlbum, onShuffleAlbum, toggleSelectSong, toggleSelectAlbum, onAlbumLongClick,
-        toggleCollapseAlbum, onEditAlbumByKey, onChangeAlbumCoverByKey
+        toggleCollapseAlbum, onEditAlbumByKey, onChangeAlbumCoverByKey, selectedArtistName
     ) {
         LibrarySongListActions(
             onPlayNext = onPlayNext,
@@ -253,7 +244,10 @@ fun LibraryScreen(
             onAlbumLongClick = onAlbumLongClick,
             onToggleCollapseAlbum = toggleCollapseAlbum,
             onEditAlbum = onEditAlbumByKey,
-            onChangeAlbumCover = onChangeAlbumCoverByKey
+            onChangeAlbumCover = onChangeAlbumCoverByKey,
+            onOpenAlbum = { albumName ->
+                viewModel.openLibraryAlbum(albumName, fromArtist = selectedArtistName != null)
+            }
         )
     }
 
@@ -269,10 +263,7 @@ fun LibraryScreen(
             verticalAlignment = Alignment.CenterVertically
         ) {
             if (selectedAlbumName != null || selectedArtistName != null) {
-                IconButton(onClick = {
-                    selectedAlbumName = null
-                    selectedArtistName = null
-                }) {
+                IconButton(onClick = { viewModel.popLibraryNested() }) {
                     Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Volver")
                 }
             }
@@ -315,7 +306,8 @@ fun LibraryScreen(
                     expanded = sortMenuExpanded,
                     onDismissRequest = { sortMenuExpanded = false }
                 ) {
-                    SortOption.values().forEach { option ->
+                    SortOption.entries.forEach { option ->
+                        val selected = sortOption == option
                         DropdownMenuItem(
                             text = {
                                 Text(
@@ -326,8 +318,18 @@ fun LibraryScreen(
                                         SortOption.GENRE -> "Género"
                                         SortOption.DATE_ADDED -> "Fecha de adición"
                                     },
-                                    fontWeight = if (sortOption == option) FontWeight.Bold else FontWeight.Normal
+                                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
                                 )
+                            },
+                            trailingIcon = if (selected) {
+                                {
+                                    Icon(
+                                        imageVector = Icons.Default.Check,
+                                        contentDescription = "Seleccionado"
+                                    )
+                                }
+                            } else {
+                                null
                             },
                             onClick = {
                                 viewModel.setSortOption(option)
@@ -345,17 +347,17 @@ fun LibraryScreen(
             TabRow(selectedTabIndex = selectedTabIndex) {
                 Tab(
                     selected = selectedTabIndex == 0,
-                    onClick = { selectedTabIndex = 0 },
+                    onClick = { viewModel.setLibraryTab(0) },
                     text = { Text("Canciones (${songs.size})") }
                 )
                 Tab(
                     selected = selectedTabIndex == 1,
-                    onClick = { selectedTabIndex = 1 },
+                    onClick = { viewModel.setLibraryTab(1) },
                     text = { Text("Álbumes (${albums.size})") }
                 )
                 Tab(
                     selected = selectedTabIndex == 2,
-                    onClick = { selectedTabIndex = 2 },
+                    onClick = { viewModel.setLibraryTab(2) },
                     text = { Text("Artistas (${artists.size})") }
                 )
             }
@@ -400,7 +402,7 @@ fun LibraryScreen(
                             )
                         }
                     }
-                    IconButton(onClick = { showAlbumHeaders = !showAlbumHeaders }) {
+                    IconButton(onClick = { viewModel.toggleLibraryViewMode() }) {
                         Icon(
                             imageVector = Icons.Default.ViewAgenda,
                             contentDescription = "Cambiar vista",
@@ -531,7 +533,7 @@ fun LibraryScreen(
                     LibraryAlbumGrid(
                         albums = albums,
                         sortOption = sortOption,
-                        onAlbumClick = { selectedAlbumName = it.name },
+                        onAlbumClick = { viewModel.openLibraryAlbum(it.name, fromArtist = false) },
                         onPlayAlbum = { album ->
                             val albumSongs = songs.filter { it.album.equals(album.name, ignoreCase = true) }
                             viewModel.playCollection(albumSongs)
@@ -549,7 +551,7 @@ fun LibraryScreen(
                     LibraryArtistList(
                         artists = artists,
                         sortOption = sortOption,
-                        onArtistClick = { selectedArtistName = it.name },
+                        onArtistClick = { viewModel.openLibraryArtist(it.name) },
                         onPlayArtist = { artist ->
                             val artistSongs = songs.filter { it.artist.equals(artist.name, ignoreCase = true) }
                             viewModel.playCollection(artistSongs)
@@ -645,9 +647,7 @@ fun LibraryScreen(
                 val sourceKey = pending.source.name
                 val targetKey = pending.target.name
                 viewModel.confirmPendingAlbumMerge()
-                if (selectedAlbumName.equals(sourceKey, ignoreCase = true)) {
-                    selectedAlbumName = targetKey
-                }
+                viewModel.renameRestoredLibraryAlbum(sourceKey, targetKey)
             }
         )
     }

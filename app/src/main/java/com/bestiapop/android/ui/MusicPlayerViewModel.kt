@@ -33,6 +33,10 @@ import com.bestiapop.android.data.network.MetadataFetcher
 import com.bestiapop.android.data.network.YouTubeExtractor
 import com.bestiapop.android.data.preferences.ActiveDownloadsStore
 import com.bestiapop.android.data.preferences.LibraryPreferencesRepository
+import com.bestiapop.android.data.preferences.LibraryUiPreferencesCodec
+import com.bestiapop.android.data.preferences.NAV_DOWNLOADS
+import com.bestiapop.android.data.preferences.NAV_PLAYLISTS
+import com.bestiapop.android.data.preferences.UiNavSnapshot
 import com.bestiapop.android.data.preferences.ListenBrainzPreferencesRepository
 import com.bestiapop.android.data.preferences.ListenBrainzSettings
 import com.bestiapop.android.data.preferences.MAX_SAVE_WHILE_LISTENING_PERCENT
@@ -70,6 +74,10 @@ import com.bestiapop.android.ui.state.IdentifyReviewItem
 import com.bestiapop.android.ui.state.IdentifyReviewState
 import com.bestiapop.android.ui.state.LibraryListItem
 import com.bestiapop.android.ui.state.LibraryViewMode
+import com.bestiapop.android.ui.state.PlaylistDetailNav
+import com.bestiapop.android.ui.state.kindName
+import com.bestiapop.android.ui.state.lbMbidOrNull
+import com.bestiapop.android.ui.state.localIdOrNull
 import com.bestiapop.android.ui.theme.ThemePresets
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
@@ -255,6 +263,26 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     private val _sortOption = MutableStateFlow(SortOption.TITLE)
     val sortOption = _sortOption.asStateFlow()
+
+    private val _libraryViewMode = MutableStateFlow(LibraryViewMode.ALBUM_GROUPS)
+    val libraryViewMode = _libraryViewMode.asStateFlow()
+
+    private val _selectedNavIndex = MutableStateFlow(0)
+    val selectedNavIndex = _selectedNavIndex.asStateFlow()
+
+    private val _libraryTab = MutableStateFlow(0)
+    val libraryTab = _libraryTab.asStateFlow()
+
+    private val _libraryArtistName = MutableStateFlow<String?>(null)
+    val libraryArtistName = _libraryArtistName.asStateFlow()
+
+    private val _libraryAlbumName = MutableStateFlow<String?>(null)
+    val libraryAlbumName = _libraryAlbumName.asStateFlow()
+
+    private val _playlistDetail = MutableStateFlow<PlaylistDetailNav>(PlaylistDetailNav.None)
+    val playlistDetail = _playlistDetail.asStateFlow()
+
+    private var uiPrefsHydrated = false
 
     private val getLibrarySongsUseCase = com.bestiapop.android.domain.usecase.GetLibrarySongsUseCase()
     private val downloadAudioTrackUseCase =
@@ -565,6 +593,9 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     init {
         initMediaController()
         startPositionTracker()
+        viewModelScope.launch {
+            hydrateUiPreferences()
+        }
         viewModelScope.launch {
             ensureInitialLibraryImport(showRecoveryToast = true)
         }
@@ -2061,8 +2092,238 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     fun setSortOption(option: SortOption) {
+        if (_sortOption.value == option) return
         _sortOption.value = option
+        viewModelScope.launch { libraryPreferences.setSortOptionName(option.name) }
     }
+
+    fun setLibraryViewMode(mode: LibraryViewMode) {
+        if (_libraryViewMode.value == mode) return
+        _libraryViewMode.value = mode
+        viewModelScope.launch { libraryPreferences.setViewModeName(mode.name) }
+    }
+
+    fun toggleLibraryViewMode() {
+        val next = if (_libraryViewMode.value == LibraryViewMode.ALBUM_GROUPS) {
+            LibraryViewMode.FLAT
+        } else {
+            LibraryViewMode.ALBUM_GROUPS
+        }
+        setLibraryViewMode(next)
+    }
+
+    fun setSelectedNavIndex(index: Int, persist: Boolean = true) {
+        val sanitized = LibraryUiPreferencesCodec.sanitizeNavIndex(index)
+        if (_selectedNavIndex.value == sanitized) {
+            if (sanitized == NAV_PLAYLISTS) maybeRestoreDiscoverDetail()
+            return
+        }
+        _selectedNavIndex.value = sanitized
+        if (persist) persistNavSnapshot()
+        if (sanitized == NAV_PLAYLISTS) maybeRestoreDiscoverDetail()
+    }
+
+    fun openDownloadsTabTransient() {
+        _selectedNavIndex.value = NAV_DOWNLOADS
+    }
+
+    fun setLibraryTab(tab: Int) {
+        val sanitized = LibraryUiPreferencesCodec.sanitizeLibraryTab(tab)
+        if (_libraryTab.value == sanitized) return
+        _libraryTab.value = sanitized
+        persistNavSnapshot()
+    }
+
+    fun openLibraryAlbum(name: String, fromArtist: Boolean = false) {
+        val trimmed = name.trim()
+        if (trimmed.isEmpty()) return
+        if (!fromArtist) _libraryArtistName.value = null
+        _libraryAlbumName.value = trimmed
+        persistNavSnapshot()
+    }
+
+    fun openLibraryArtist(name: String) {
+        val trimmed = name.trim()
+        if (trimmed.isEmpty()) return
+        _libraryArtistName.value = trimmed
+        _libraryAlbumName.value = null
+        persistNavSnapshot()
+    }
+
+    fun closeLibraryAlbum() {
+        if (_libraryAlbumName.value == null) return
+        _libraryAlbumName.value = null
+        persistNavSnapshot()
+    }
+
+    fun closeLibraryArtist() {
+        if (_libraryArtistName.value == null && _libraryAlbumName.value == null) return
+        _libraryArtistName.value = null
+        _libraryAlbumName.value = null
+        persistNavSnapshot()
+    }
+
+    fun popLibraryNested() {
+        when {
+            _libraryAlbumName.value != null -> closeLibraryAlbum()
+            _libraryArtistName.value != null -> closeLibraryArtist()
+        }
+    }
+
+    fun renameRestoredLibraryAlbum(sourceKey: String, targetKey: String) {
+        if (_libraryAlbumName.value.equals(sourceKey, ignoreCase = true)) {
+            _libraryAlbumName.value = targetKey
+            persistNavSnapshot()
+        }
+    }
+
+    fun openLocalPlaylist(id: Long) {
+        closeDiscoverSessionUi()
+        _playlistDetail.value = PlaylistDetailNav.Local(id)
+        persistNavSnapshot()
+    }
+
+    fun openListenBrainzPlaylistDetail(mbid: String) {
+        closeDiscoverSessionUi()
+        _playlistDetail.value = PlaylistDetailNav.ListenBrainz(mbid)
+        persistNavSnapshot()
+        openListenBrainzPlaylist(mbid)
+    }
+
+    fun openCfRecommendationsDetail() {
+        closeDiscoverSessionUi()
+        _playlistDetail.value = PlaylistDetailNav.CfRecommendations
+        persistNavSnapshot()
+        openCfRecommendations()
+    }
+
+    fun closePlaylistDetail() {
+        closeDiscoverSessionUi()
+        if (_playlistDetail.value is PlaylistDetailNav.None) return
+        _playlistDetail.value = PlaylistDetailNav.None
+        persistNavSnapshot()
+    }
+
+    fun dismissDiscoverDetails() {
+        val detail = _playlistDetail.value
+        if (detail is PlaylistDetailNav.ListenBrainz || detail is PlaylistDetailNav.CfRecommendations) {
+            closePlaylistDetail()
+        } else {
+            closeDiscoverSessionUi()
+        }
+    }
+
+    private fun closeDiscoverSessionUi() {
+        closeListenBrainzPlaylist()
+        closeCfRecommendations()
+    }
+
+    private suspend fun hydrateUiPreferences() {
+        val display = libraryPreferences.displaySettingsFlow.first()
+        _sortOption.value = parseSortOption(display.sortOptionName)
+        _libraryViewMode.value = parseLibraryViewMode(display.viewModeName)
+
+        val nav = libraryPreferences.navSnapshotFlow.first()
+        applyNavSnapshot(nav)
+        uiPrefsHydrated = true
+
+        pruneRestoredLibraryStack()
+        pruneRestoredLocalPlaylist()
+        if (_selectedNavIndex.value == NAV_PLAYLISTS) {
+            restoreDiscoverDetailOrFallback()
+        }
+    }
+
+    private fun applyNavSnapshot(nav: UiNavSnapshot) {
+        _selectedNavIndex.value = nav.navIndex
+        _libraryTab.value = nav.libraryTab
+        _libraryArtistName.value = nav.libraryArtistName
+        _libraryAlbumName.value = nav.libraryAlbumName
+        _playlistDetail.value = PlaylistDetailNav.fromSnapshot(nav)
+    }
+
+    private fun persistNavSnapshot() {
+        if (!uiPrefsHydrated) return
+        val detail = _playlistDetail.value
+        val snapshot = UiNavSnapshot(
+            navIndex = _selectedNavIndex.value,
+            libraryTab = _libraryTab.value,
+            libraryArtistName = _libraryArtistName.value,
+            libraryAlbumName = _libraryAlbumName.value,
+            playlistDetailKind = detail.kindName(),
+            playlistLocalId = detail.localIdOrNull(),
+            playlistLbMbid = detail.lbMbidOrNull()
+        )
+        viewModelScope.launch { libraryPreferences.setNavSnapshot(snapshot) }
+    }
+
+    private suspend fun pruneRestoredLibraryStack() {
+        val songs = rawSongs.first()
+        val pruned = LibraryUiPreferencesCodec.pruneLibraryStack(
+            albumName = _libraryAlbumName.value,
+            artistName = _libraryArtistName.value,
+            albumExists = { name -> songs.any { it.album.equals(name, ignoreCase = true) } },
+            artistExists = { name -> songs.any { it.artist.equals(name, ignoreCase = true) } }
+        )
+        if (pruned.albumName != _libraryAlbumName.value || pruned.artistName != _libraryArtistName.value) {
+            _libraryAlbumName.value = pruned.albumName
+            _libraryArtistName.value = pruned.artistName
+            persistNavSnapshot()
+        }
+    }
+
+    private suspend fun pruneRestoredLocalPlaylist() {
+        val detail = _playlistDetail.value as? PlaylistDetailNav.Local ?: return
+        val lists = playlists.first()
+        if (lists.none { it.id == detail.id }) {
+            _playlistDetail.value = PlaylistDetailNav.None
+            persistNavSnapshot()
+        }
+    }
+
+    private fun maybeRestoreDiscoverDetail() {
+        val detail = _playlistDetail.value
+        if (detail !is PlaylistDetailNav.ListenBrainz && detail !is PlaylistDetailNav.CfRecommendations) {
+            return
+        }
+        val needsFetch = when (detail) {
+            is PlaylistDetailNav.ListenBrainz ->
+                _selectedLbPlaylist.value == null &&
+                    _lbPlaylistDetailState.value !is LbPlaylistDetailUiState.Loading
+            PlaylistDetailNav.CfRecommendations ->
+                _cfRecommendations.value == null &&
+                    _cfListState.value !is CfRecommendationsUiState.Loading
+            else -> false
+        }
+        if (!needsFetch) return
+        viewModelScope.launch { restoreDiscoverDetailOrFallback() }
+    }
+
+    private suspend fun restoreDiscoverDetailOrFallback() {
+        when (val detail = _playlistDetail.value) {
+            is PlaylistDetailNav.ListenBrainz -> {
+                val ok = loadListenBrainzPlaylist(detail.mbid, forRestore = true)
+                if (!ok) fallbackDiscoverRestore(announce = true)
+            }
+            PlaylistDetailNav.CfRecommendations -> {
+                val ok = loadCfRecommendationsForRestore()
+                if (!ok) fallbackDiscoverRestore(announce = true)
+            }
+            else -> Unit
+        }
+    }
+
+    private fun fallbackDiscoverRestore(announce: Boolean) {
+        closePlaylistDetail()
+        if (announce) toast("No se pudo abrir la playlist")
+    }
+
+    private fun parseSortOption(name: String): SortOption =
+        SortOption.entries.find { it.name == name } ?: SortOption.TITLE
+
+    private fun parseLibraryViewMode(name: String): LibraryViewMode =
+        LibraryViewMode.entries.find { it.name == name } ?: LibraryViewMode.ALBUM_GROUPS
+
 
     private fun reportLibraryProgress(
         kind: LibraryJobKind,
@@ -2507,6 +2768,10 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     fun deletePlaylist(id: Long) {
+        val detail = _playlistDetail.value
+        if (detail is PlaylistDetailNav.Local && detail.id == id) {
+            closePlaylistDetail()
+        }
         viewModelScope.launch {
             repository.deletePlaylist(id)
         }
@@ -2707,6 +2972,19 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         _cfDetailState.value = CfRecommendationsUiState.Idle
     }
 
+    private suspend fun loadCfRecommendationsForRestore(): Boolean {
+        val settings = listenBrainzPreferences.settingsFlow.first()
+        if (!settings.showDiscoverPlaylists) return false
+        refreshCfRecommendationsInternal(settings)
+        val ok = _cfRecommendations.value != null &&
+            _cfListState.value is CfRecommendationsUiState.Success
+        if (ok) {
+            _cfDetailOpen.value = true
+            _cfDetailState.value = CfRecommendationsUiState.Success
+        }
+        return ok
+    }
+
     private fun playMatchedCollection(items: List<PlayableItem>, startIndex: Int = 0) {
         if (items.isEmpty() || startIndex !in items.indices) return
         playPlayableCollection(items, startIndex)
@@ -2728,24 +3006,39 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     fun openListenBrainzPlaylist(mbid: String) {
         viewModelScope.launch {
-            val settings = listenBrainzPreferences.settingsFlow.first()
-            if (!settings.showDiscoverPlaylists || mbid.isBlank()) return@launch
-            _lbPlaylistDetailState.value = LbPlaylistDetailUiState.Loading
-            _selectedLbPlaylist.value = null
-            when (
-                val result = ListenBrainzClient.fetchPlaylist(
-                    playlistMbid = mbid,
-                    token = settings.userToken
-                )
-            ) {
-                is LbApiResult.Success -> {
-                    val library = rawSongs.first()
-                    _selectedLbPlaylist.value = matchListenBrainzTracksUseCase.execute(result.data, library)
-                    _lbPlaylistDetailState.value = LbPlaylistDetailUiState.Success
-                }
-                is LbApiResult.Failure -> {
+            loadListenBrainzPlaylist(mbid, forRestore = false)
+        }
+    }
+
+    private suspend fun loadListenBrainzPlaylist(mbid: String, forRestore: Boolean): Boolean {
+        val settings = listenBrainzPreferences.settingsFlow.first()
+        if (!settings.showDiscoverPlaylists || mbid.isBlank()) {
+            if (!forRestore) {
+                _lbPlaylistDetailState.value = LbPlaylistDetailUiState.Error("ListenBrainz no disponible")
+            }
+            return false
+        }
+        _lbPlaylistDetailState.value = LbPlaylistDetailUiState.Loading
+        _selectedLbPlaylist.value = null
+        return when (
+            val result = ListenBrainzClient.fetchPlaylist(
+                playlistMbid = mbid,
+                token = settings.userToken
+            )
+        ) {
+            is LbApiResult.Success -> {
+                val library = rawSongs.first()
+                _selectedLbPlaylist.value = matchListenBrainzTracksUseCase.execute(result.data, library)
+                _lbPlaylistDetailState.value = LbPlaylistDetailUiState.Success
+                true
+            }
+            is LbApiResult.Failure -> {
+                if (forRestore) {
+                    _lbPlaylistDetailState.value = LbPlaylistDetailUiState.Idle
+                } else {
                     _lbPlaylistDetailState.value = LbPlaylistDetailUiState.Error(result.message)
                 }
+                false
             }
         }
     }
@@ -2961,6 +3254,11 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         _lbDiscoverListState.value = LbDiscoverListUiState.Idle
         closeListenBrainzPlaylist()
         clearCfState()
+        val detail = _playlistDetail.value
+        if (detail is PlaylistDetailNav.ListenBrainz || detail is PlaylistDetailNav.CfRecommendations) {
+            _playlistDetail.value = PlaylistDetailNav.None
+            persistNavSnapshot()
+        }
     }
 
     private fun clearCfState() {

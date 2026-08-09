@@ -80,6 +80,7 @@ import com.bestiapop.android.ui.CfRecommendationsUiState
 import com.bestiapop.android.ui.LbDiscoverListUiState
 import com.bestiapop.android.ui.LbPlaylistDetailUiState
 import com.bestiapop.android.ui.MusicPlayerViewModel
+import com.bestiapop.android.ui.state.PlaylistDetailNav
 import com.bestiapop.android.ui.components.ArtworkPickerBlock
 import com.bestiapop.android.ui.components.ArtworkThumbnail
 import com.bestiapop.android.ui.components.LabeledPlayShuffleButtons
@@ -103,8 +104,6 @@ fun matchedStreamCountLabel(matched: Int, stream: Int): String =
 @Composable
 fun PlaylistsScreen(
     viewModel: MusicPlayerViewModel,
-    activeSelectedPlaylistId: Long? = null,
-    onSelectPlaylistDetail: (Long?) -> Unit = {},
     onAddSongsRequest: (Playlist) -> Unit = {}
 ) {
     val playlists by viewModel.playlists.collectAsState(initial = emptyList())
@@ -116,50 +115,30 @@ fun PlaylistsScreen(
     val lbPlaylistDetailState by viewModel.lbPlaylistDetailState.collectAsState()
     val cfRecommendations by viewModel.cfRecommendations.collectAsState()
     val cfListState by viewModel.cfListState.collectAsState()
-    val cfDetailOpen by viewModel.cfDetailOpen.collectAsState()
     val cfDetailState by viewModel.cfDetailState.collectAsState()
+    val playlistDetail by viewModel.playlistDetail.collectAsState()
 
     var showCreateDialog by remember { mutableStateOf(false) }
-    var selectedPlaylistId by remember { mutableStateOf<Long?>(activeSelectedPlaylistId) }
-    var selectedLbPlaylistMbid by remember { mutableStateOf<String?>(null) }
     var playlistToDelete by remember { mutableStateOf<Playlist?>(null) }
 
     val songActions = rememberSongQueueActions(viewModel)
 
     val showDiscover = lbSettings.showDiscoverPlaylists
-
-    LaunchedEffect(activeSelectedPlaylistId) {
-        if (activeSelectedPlaylistId != null) {
-            selectedPlaylistId = activeSelectedPlaylistId
-            selectedLbPlaylistMbid = null
-            viewModel.closeListenBrainzPlaylist()
-            viewModel.closeCfRecommendations()
-        }
-    }
+    val selectedPlaylistId = (playlistDetail as? PlaylistDetailNav.Local)?.id
+    val selectedLbPlaylistMbid = (playlistDetail as? PlaylistDetailNav.ListenBrainz)?.mbid
+    val cfDetailOpen = playlistDetail is PlaylistDetailNav.CfRecommendations
 
     LaunchedEffect(showDiscover) {
         if (showDiscover) {
             viewModel.refreshListenBrainzDiscoverPlaylists()
         } else {
-            selectedLbPlaylistMbid = null
-            viewModel.closeListenBrainzPlaylist()
-            viewModel.closeCfRecommendations()
+            viewModel.dismissDiscoverDetails()
         }
     }
 
-    val hasNestedBack = cfDetailOpen || selectedLbPlaylistMbid != null || selectedPlaylistId != null
+    val hasNestedBack = playlistDetail !is PlaylistDetailNav.None
     BackHandler(enabled = hasNestedBack) {
-        when {
-            cfDetailOpen -> viewModel.closeCfRecommendations()
-            selectedLbPlaylistMbid != null -> {
-                selectedLbPlaylistMbid = null
-                viewModel.closeListenBrainzPlaylist()
-            }
-            selectedPlaylistId != null -> {
-                selectedPlaylistId = null
-                onSelectPlaylistDetail(null)
-            }
-        }
+        viewModel.closePlaylistDetail()
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -241,11 +220,7 @@ fun PlaylistsScreen(
                                         LbPlaylistCardItem(
                                             playlist = playlist,
                                             onClick = {
-                                                selectedPlaylistId = null
-                                                onSelectPlaylistDetail(null)
-                                                viewModel.closeCfRecommendations()
-                                                selectedLbPlaylistMbid = playlist.mbid
-                                                viewModel.openListenBrainzPlaylist(playlist.mbid)
+                                                viewModel.openListenBrainzPlaylistDetail(playlist.mbid)
                                             }
                                         )
                                     }
@@ -323,11 +298,7 @@ fun PlaylistsScreen(
                                         CfRecommendationsCardItem(
                                             matched = matched,
                                             onClick = {
-                                                selectedPlaylistId = null
-                                                onSelectPlaylistDetail(null)
-                                                selectedLbPlaylistMbid = null
-                                                viewModel.closeListenBrainzPlaylist()
-                                                viewModel.openCfRecommendations()
+                                                viewModel.openCfRecommendationsDetail()
                                             }
                                         )
                                     }
@@ -388,11 +359,7 @@ fun PlaylistsScreen(
                             PlaylistCardItem(
                                 playlist = playlist,
                                 onClick = {
-                                    selectedLbPlaylistMbid = null
-                                    viewModel.closeListenBrainzPlaylist()
-                                    viewModel.closeCfRecommendations()
-                                    selectedPlaylistId = playlist.id
-                                    onSelectPlaylistDetail(playlist.id)
+                                    viewModel.openLocalPlaylist(playlist.id)
                                 },
                                 onDelete = { playlistToDelete = playlist }
                             )
@@ -429,10 +396,7 @@ fun PlaylistsScreen(
                     songs = songsInPlaylist,
                     pendingTracks = pendingTracks,
                     allSongs = allSongs,
-                    onBack = {
-                        selectedPlaylistId = null
-                        onSelectPlaylistDetail(null)
-                    },
+                    onBack = { viewModel.closePlaylistDetail() },
                     viewModel = viewModel,
                     onAddSongsRequest = { onAddSongsRequest(it) },
                     onDeletePlaylist = { playlistToDelete = playlist },
@@ -448,19 +412,13 @@ fun PlaylistsScreen(
             LbPlaylistDetailScreen(
                 detailState = lbPlaylistDetailState,
                 matchedPlaylist = selectedLbPlaylist,
-                onBack = {
-                    selectedLbPlaylistMbid = null
-                    viewModel.closeListenBrainzPlaylist()
-                },
+                onBack = { viewModel.closePlaylistDetail() },
                 onPlay = { viewModel.playListenBrainzPlaylist() },
                 onShuffle = { viewModel.shuffleListenBrainzPlaylist() },
                 onPlayAt = { index -> viewModel.playListenBrainzPlaylistAt(index) },
                 onSaveAsLocal = {
                     viewModel.saveListenBrainzPlaylistAsLocal { newId ->
-                        selectedLbPlaylistMbid = null
-                        viewModel.closeListenBrainzPlaylist()
-                        selectedPlaylistId = newId
-                        onSelectPlaylistDetail(newId)
+                        viewModel.openLocalPlaylist(newId)
                     }
                 },
                 onImportWithDownloads = {
@@ -480,7 +438,7 @@ fun PlaylistsScreen(
             CfRecommendationsDetailScreen(
                 detailState = cfDetailState,
                 matched = cfRecommendations,
-                onBack = { viewModel.closeCfRecommendations() },
+                onBack = { viewModel.closePlaylistDetail() },
                 onPlay = { viewModel.playCfRecommendations() },
                 onShuffle = { viewModel.shuffleCfRecommendations() },
                 onPlayAt = { index -> viewModel.playCfAt(index) },
@@ -502,10 +460,7 @@ fun PlaylistsScreen(
                 onDismiss = { showCreateDialog = false },
                 onSave = { name, desc, coverUri ->
                     viewModel.createPlaylist(name, desc, coverUri) { newId ->
-                        selectedLbPlaylistMbid = null
-                        viewModel.closeListenBrainzPlaylist()
-                        selectedPlaylistId = newId
-                        onSelectPlaylistDetail(newId)
+                        viewModel.openLocalPlaylist(newId)
                     }
                     showCreateDialog = false
                 }
@@ -523,9 +478,6 @@ fun PlaylistsScreen(
                     Button(
                         onClick = {
                             viewModel.deletePlaylist(target.id)
-                            if (selectedPlaylistId == target.id) {
-                                selectedPlaylistId = null
-                            }
                             playlistToDelete = null
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)

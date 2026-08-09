@@ -252,7 +252,7 @@ object YouTubeExtractor {
                             title = title,
                             artist = artist,
                             album = "YouTube",
-                            artworkUrl = artworkUrl,
+                            artworkUri = artworkUrl,
                             durationMs = durationMs,
                             audioUrl = "https://www.youtube.com/watch?v=$videoId",
                             provider = "YouTube"

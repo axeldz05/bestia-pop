@@ -1,8 +1,8 @@
 package com.bestiapop.android.domain.radio
 
-import com.bestiapop.android.data.network.CatalogSongHint
 import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.data.model.Song
+import com.bestiapop.android.data.model.TrackIdentity
 import com.bestiapop.android.domain.usecase.MatchListenBrainzTracksUseCase
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -13,10 +13,10 @@ import kotlinx.coroutines.sync.withLock
  */
 class DeezerSimilarRadio(
     private val resolveArtistId: suspend (artist: String) -> Long?,
-    private val fetchArtistRadio: suspend (artistId: Long) -> List<CatalogSongHint>,
+    private val fetchArtistRadio: suspend (artistId: Long) -> List<TrackIdentity>,
     private val fetchRelatedArtistIds: suspend (artistId: Long, limit: Int) -> List<Long>,
-    private val fetchArtistTop: suspend (artistId: Long, limit: Int) -> List<CatalogSongHint>,
-    private val fetchItunesArtistSongs: suspend (artist: String, limit: Int) -> List<CatalogSongHint> =
+    private val fetchArtistTop: suspend (artistId: Long, limit: Int) -> List<TrackIdentity>,
+    private val fetchItunesArtistSongs: suspend (artist: String, limit: Int) -> List<TrackIdentity> =
         { _, _ -> emptyList() },
     private val clockMs: () -> Long = { System.currentTimeMillis() },
     private val cacheTtlMs: Long = CACHE_TTL_MS,
@@ -30,7 +30,7 @@ class DeezerSimilarRadio(
     private val mutex = Mutex()
     private var cachedArtistKey: String? = null
     private var cachedAtMs: Long = 0L
-    private var cachedHints: List<CatalogSongHint> = emptyList()
+    private var cachedHints: List<TrackIdentity> = emptyList()
 
     override suspend fun suggest(
         seed: PlayableItem,
@@ -46,22 +46,14 @@ class DeezerSimilarRadio(
         val libraryIndex = MatchListenBrainzTracksUseCase.buildLibraryIndex(library)
         val remotes = ArrayList<PlayableItem.Remote>(limit)
         val localSeen = HashSet<String>()
-        fun tryAdd(hint: CatalogSongHint) {
+        fun tryAdd(hint: TrackIdentity) {
             if (remotes.size >= limit) return
             val key = MatchListenBrainzTracksUseCase.matchKey(hint.artist, hint.title)
             if (key.isEmpty() || key in localSeen) return
             // NEW/BOTH remote pool: skip tracks already in the library
             if (libraryIndex.containsKey(key)) return
             localSeen.add(key)
-            remotes.add(
-                PlayableItem.remoteFrom(
-                    artist = hint.artist,
-                    title = hint.title,
-                    album = hint.album,
-                    artworkUri = hint.artworkUrl,
-                    durationMs = hint.durationMs
-                )
-            )
+            remotes.add(PlayableItem.remoteFrom(identity = hint))
         }
 
         for (hint in pool) {
@@ -85,7 +77,7 @@ class DeezerSimilarRadio(
         return remotes
     }
 
-    private suspend fun resolvePool(artist: String): List<CatalogSongHint> {
+    private suspend fun resolvePool(artist: String): List<TrackIdentity> {
         val artistKey = MatchListenBrainzTracksUseCase.normalize(artist)
         if (artistKey.isEmpty()) return emptyList()
 
@@ -97,10 +89,10 @@ class DeezerSimilarRadio(
         }
 
         val artistId = runCatching { resolveArtistId(artist) }.getOrNull() ?: return emptyList()
-        val hints = ArrayList<CatalogSongHint>()
+        val hints = ArrayList<TrackIdentity>()
         val seenKeys = HashSet<String>()
 
-        fun append(list: List<CatalogSongHint>) {
+        fun append(list: List<TrackIdentity>) {
             for (hint in list) {
                 val key = MatchListenBrainzTracksUseCase.matchKey(hint.artist, hint.title)
                 if (key.isEmpty() || key in seenKeys) continue

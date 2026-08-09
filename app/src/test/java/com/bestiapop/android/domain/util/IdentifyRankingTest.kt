@@ -22,7 +22,7 @@ class IdentifyRankingTest {
         title = title,
         artist = artist,
         album = album,
-        artworkUrl = null,
+        artworkUri = null,
         durationMs = durationMs,
         audioUrl = "",
         provider = provider,
@@ -331,6 +331,6 @@ class IdentifyRankingTest {
             reasons = listOf("título")
         )
         assertEquals(2, candidate.trackNumber)
-        assertEquals(2, candidate.toOnlineCatalogTrack().trackNumber)
+        assertEquals(2, candidate.track.trackNumber)
     }
 }

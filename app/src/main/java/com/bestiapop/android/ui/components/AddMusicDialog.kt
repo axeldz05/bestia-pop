@@ -716,7 +716,7 @@ private fun OnlineCatalogTab(
             CatalogPreviewBar(
                 title = previewItem?.title ?: previewTrack?.title ?: "Preview",
                 artist = previewItem?.artist ?: previewTrack?.artist ?: "",
-                artworkUri = previewItem?.artworkUri ?: previewTrack?.artworkUrl,
+                artworkUri = previewItem?.artworkUri ?: previewTrack?.artworkUri,
                 durationMs = previewItem?.durationMs?.takeIf { it > 0 }
                     ?: previewTrack?.durationMs
                     ?: 0L,
@@ -872,7 +872,7 @@ private fun CollectionTrackInspectionView(
                     title = previewItem?.title ?: previewCandidate?.trackTitle ?: "Preview",
                     artist = previewItem?.artist ?: previewCandidate?.artist ?: "",
                     artworkUri = previewItem?.artworkUri
-                        ?: previewCandidate?.currentTrack?.artworkUrl
+                        ?: previewCandidate?.currentTrack?.artworkUri
                         ?: previewCandidate?.coverUrl,
                     durationMs = previewItem?.durationMs?.takeIf { it > 0 }
                         ?: previewCandidate?.currentTrack?.durationMs
@@ -945,7 +945,7 @@ private fun CandidateTrackCard(
                 Spacer(modifier = Modifier.width(6.dp))
 
                 ArtworkThumbnail(
-                    artworkUri = currentYt?.artworkUrl ?: item.coverUrl,
+                    artworkUri = currentYt?.artworkUri ?: item.coverUrl,
                     size = 50.dp,
                     cornerRadius = 10.dp,
                     contentDescription = item.trackTitle
@@ -1199,7 +1199,7 @@ private fun CatalogTrackItem(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 ArtworkThumbnail(
-                    artworkUri = track.artworkUrl,
+                    artworkUri = track.artworkUri,
                     size = 50.dp,
                     cornerRadius = 10.dp,
                     contentDescription = track.title

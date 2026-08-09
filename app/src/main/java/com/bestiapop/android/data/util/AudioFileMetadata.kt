@@ -3,6 +3,8 @@ package com.bestiapop.android.data.util
 import android.content.Context
 import android.media.MediaMetadataRetriever
 import com.bestiapop.android.data.db.SongEntity
+import com.bestiapop.android.data.model.TrackIdentity
+import com.bestiapop.android.data.model.TrackMeta
 
 data class FilenameMetadataHints(
     val artist: String?,
@@ -38,14 +40,12 @@ fun parseFilenameMetadataHints(nameWithoutExtension: String): FilenameMetadataHi
 }
 
 data class AudioFileMetadata(
-    val title: String,
-    val artist: String,
-    val album: String,
-    val genre: String,
-    val durationMs: Long,
-    val artworkUri: String?,
-    val trackNumber: Int = 0
-) {
+    val identity: TrackIdentity,
+    val genre: String
+) : TrackMeta by identity {
+    fun withIdentity(transform: TrackIdentity.() -> TrackIdentity): AudioFileMetadata =
+        copy(identity = identity.transform())
+
     fun toSongEntity(
         uriString: String,
         folderPath: String,
@@ -71,6 +71,27 @@ data class AudioFileMetadata(
 
         private fun isUnknownAlbum(album: String): Boolean =
             album.isBlank() || album.equals("Unknown Album", ignoreCase = true)
+
+        /** L2: flat file-tag construction. */
+        operator fun invoke(
+            title: String,
+            artist: String,
+            album: String,
+            genre: String,
+            durationMs: Long,
+            artworkUri: String?,
+            trackNumber: Int = 0
+        ): AudioFileMetadata = AudioFileMetadata(
+            identity = TrackIdentity(
+                title = title,
+                artist = artist,
+                album = album,
+                artworkUri = artworkUri,
+                durationMs = durationMs,
+                trackNumber = trackNumber
+            ),
+            genre = genre
+        )
 
         fun fromPath(
             context: Context,
@@ -133,7 +154,7 @@ data class AudioFileMetadata(
             val titleFromFile = !hints.title.isNullOrBlank() &&
                 (metadata.title.isBlank() || metadata.title.equals(fallbackTitle, ignoreCase = true))
             val title = if (titleFromFile) hints.title!! else metadata.title
-            return metadata.copy(artist = artist, title = title)
+            return metadata.withIdentity { copy(artist = artist, title = title) }
         }
     }
 }

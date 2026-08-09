@@ -410,7 +410,7 @@ class RadioEngineTest {
             resolveArtistId = { 7L },
             fetchArtistRadio = {
                 listOf(
-                    com.bestiapop.android.data.network.CatalogSongHint("Deezer Hit", "Neighbor")
+                    com.bestiapop.android.data.model.TrackIdentity("Deezer Hit", "Neighbor")
                 )
             },
             fetchRelatedArtistIds = { _, _ -> emptyList() },
@@ -448,8 +448,8 @@ class RadioEngineTest {
             resolveArtistId = { 1L },
             fetchArtistRadio = {
                 listOf(
-                    com.bestiapop.android.data.network.CatalogSongHint("In Library", "Artist A"),
-                    com.bestiapop.android.data.network.CatalogSongHint("Brand New", "Artist B")
+                    com.bestiapop.android.data.model.TrackIdentity("In Library", "Artist A"),
+                    com.bestiapop.android.data.model.TrackIdentity("Brand New", "Artist B")
                 )
             },
             fetchRelatedArtistIds = { _, _ -> emptyList() },
@@ -520,8 +520,8 @@ class RadioEngineTest {
     @Test
     fun interleaveEquitableStartsWithOnlineAndDrainsRemainder() {
         val online = listOf(
-            PlayableItem.Remote(title = "R1", artist = "A"),
-            PlayableItem.Remote(title = "R2", artist = "A")
+            PlayableItem.remoteFrom(title = "R1", artist = "A"),
+            PlayableItem.remoteFrom(title = "R2", artist = "A")
         )
         val offline = listOf(
             song(1, "L1", "A").toPlayable(),

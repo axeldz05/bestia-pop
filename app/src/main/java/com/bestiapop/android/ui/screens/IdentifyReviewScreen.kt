@@ -160,7 +160,7 @@ fun IdentifyReviewScreen(
                         items = item.proposal.candidates,
                         key = { index, c -> "${c.provider}|${c.artist}|${c.title}|${c.album}|$index" }
                     ) { index, candidate ->
-                        val track = candidate.toOnlineCatalogTrack()
+                        val track = candidate.track
                         val previewKey = viewModel.catalogPreviewKeyFor(track)
                         val isThisPreview = catalogPreviewKey == previewKey
                         IdentifyCandidateRow(
@@ -331,7 +331,7 @@ fun IdentifyCandidateRow(
         verticalAlignment = Alignment.CenterVertically
     ) {
         ArtworkThumbnail(
-            artworkUri = candidate.artworkUrl,
+            artworkUri = candidate.artworkUri,
             size = 52.dp,
             contentDescription = candidate.title
         )

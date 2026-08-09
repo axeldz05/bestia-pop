@@ -1,6 +1,7 @@
 package com.bestiapop.android.domain.util
 
 import com.bestiapop.android.data.model.Song
+import com.bestiapop.android.data.model.TrackMeta
 
 /**
  * Shared artist+title matching keys used by radio, downloads, imports, and library lookups.
@@ -50,3 +51,5 @@ object TrackMatchKeys {
         return map
     }
 }
+
+fun TrackMeta.matchKey(): String = TrackMatchKeys.matchKey(artist, title)

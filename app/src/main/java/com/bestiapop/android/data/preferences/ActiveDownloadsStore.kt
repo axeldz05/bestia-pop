@@ -109,10 +109,11 @@ object ActiveDownloadCodec {
             put("title", track.title)
             put("artist", track.artist)
             put("album", track.album)
-            put("artworkUrl", track.artworkUrl ?: JSONObject.NULL)
+            put("artworkUrl", track.artworkUri ?: JSONObject.NULL)
             put("durationMs", track.durationMs)
             put("audioUrl", track.audioUrl)
             put("provider", track.provider)
+            put("trackNumber", track.trackNumber)
         }
 
     private fun decodeOne(obj: JSONObject): ActiveDownload? {
@@ -167,10 +168,11 @@ object ActiveDownloadCodec {
             title = obj.optString("title", ""),
             artist = obj.optString("artist", ""),
             album = obj.optString("album", ""),
-            artworkUrl = obj.optNullableString("artworkUrl"),
+            artworkUri = obj.optNullableString("artworkUrl"),
             durationMs = obj.optLong("durationMs", 0L),
             audioUrl = obj.optString("audioUrl", ""),
-            provider = obj.optString("provider", "YouTube")
+            provider = obj.optString("provider", "YouTube"),
+            trackNumber = obj.optInt("trackNumber", 0)
         )
 }
 

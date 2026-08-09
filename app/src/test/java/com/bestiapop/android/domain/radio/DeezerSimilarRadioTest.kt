@@ -3,7 +3,7 @@ package com.bestiapop.android.domain.radio
 import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.data.model.toPlayable
-import com.bestiapop.android.data.network.CatalogSongHint
+import com.bestiapop.android.data.model.TrackIdentity
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -24,7 +24,7 @@ class DeezerSimilarRadioTest {
     )
 
     private fun hint(title: String, artist: String, album: String? = null) =
-        CatalogSongHint(title = title, artist = artist, album = album)
+        TrackIdentity(title = title, artist = artist, album = album.orEmpty())
 
     @Test
     fun suggestReturnsRemotesFromRadioAndRelated() = runBlocking {

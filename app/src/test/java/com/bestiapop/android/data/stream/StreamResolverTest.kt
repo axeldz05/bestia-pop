@@ -33,7 +33,7 @@ class StreamResolverTest {
             ttlMs = 4 * 60 * 1000L
         )
 
-        val item = PlayableItem.Remote(title = "Song", artist = "Artist")
+        val item = PlayableItem.remoteFrom(title = "Song", artist = "Artist")
         val first = resolver.resolve(item).getOrThrow()
         val second = resolver.resolve(item).getOrThrow()
 
@@ -65,7 +65,7 @@ class StreamResolverTest {
             ttlMs = 4 * 60 * 1000L
         )
 
-        val item = PlayableItem.Remote(title = "Song", artist = "Artist")
+        val item = PlayableItem.remoteFrom(title = "Song", artist = "Artist")
         resolver.resolve(item).getOrThrow()
         now = 4 * 60 * 1000L + 1
         val refreshed = resolver.resolve(item).getOrThrow()
@@ -80,7 +80,7 @@ class StreamResolverTest {
             extract = { YouTubeExtractResult.Error("boom") },
             clockMs = { 0L }
         )
-        val result = resolver.resolve(PlayableItem.Remote(title = "A", artist = "B"))
+        val result = resolver.resolve(PlayableItem.remoteFrom(title = "A", artist = "B"))
         assertTrue(result.isFailure)
         assertEquals("boom", result.exceptionOrNull()?.message)
     }

@@ -1255,7 +1255,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                                 is PlayableItem.Remote -> {
                                     val idx = controller.currentMediaItemIndex
                                     if (idx in _queue.value.indices) {
-                                        updateQueueItem(idx, curr.copy(durationMs = dur))
+                                        updateQueueItem(idx, curr.withIdentity { copy(durationMs = dur) })
                                     }
                                 }
                             }
@@ -1470,11 +1470,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         _catalogPreviewKey.value = key
         val queryOrId = YouTubeExtractor.resolveYouTubeQueryOrId(track)
         val remote = PlayableItem.remoteFrom(
-            artist = track.artist,
-            title = track.title,
-            album = track.album,
-            artworkUri = track.artworkUrl,
-            durationMs = track.durationMs,
+            identity = track.identity,
             youtubeQueryOrId = queryOrId
         )
         playPlayableCollection(listOf(remote), 0)
@@ -1492,7 +1488,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     /** Stream-preview a ranked identify candidate via YouTube (same path as catalog). */
     fun previewIdentifyCandidate(candidate: IdentifyCandidate) {
-        playOnlineCatalogTrackAsStream(candidate.toOnlineCatalogTrack())
+        playOnlineCatalogTrackAsStream(candidate.track)
     }
 
     fun clearCatalogPreview() {
@@ -3198,7 +3194,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         val track: OnlineCatalogTrack,
         val displayTitle: String = track.title,
         val displayArtist: String = track.artist,
-        val artworkUrl: String? = track.artworkUrl,
+        val artworkUrl: String? = track.artworkUri,
         val candidates: List<OnlineCatalogTrack> = listOf(track),
         val currentCandidateIndex: Int = 0,
         val mirrorCandidateTitle: String? = null,
@@ -3426,11 +3422,13 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             val currentIdx = searchResults.indexOfFirst { it.id == current.id }
             val next = searchResults[(currentIdx + 1).coerceAtLeast(0) % searchResults.size]
             // Keep catalog album metadata when YouTube only says "YouTube"
-            list[index] = next.copy(
-                album = current.album.takeIf { !IdentifyRanking.isGenericAlbum(it) }
-                    ?: next.album,
-                artworkUrl = next.artworkUrl ?: current.artworkUrl
-            )
+            list[index] = next.withIdentity {
+                copy(
+                    album = current.album.takeIf { !IdentifyRanking.isGenericAlbum(it) }
+                        ?: album,
+                    artworkUri = artworkUri ?: current.artworkUri
+                )
+            }
             _catalogSearchResults.value = list
             list[index]
         }
@@ -3535,7 +3533,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             runTrackedDownload(
                 downloadId = conflict.downloadId,
                 source = conflict.source,
-                track = conflict.track.copy(title = title),
+                track = conflict.track.withIdentity { copy(title = title) },
                 displayTitle = title,
                 displayArtist = conflict.displayArtist,
                 artworkUrl = conflict.artworkUrl,
@@ -3665,7 +3663,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         track: OnlineCatalogTrack,
         displayTitle: String = track.title.ifBlank { "Descarga" },
         displayArtist: String = track.artist,
-        artworkUrl: String? = track.artworkUrl,
+        artworkUrl: String? = track.artworkUri,
         existingCandidates: List<OnlineCatalogTrack>? = null,
         currentCandidateIndex: Int = 0,
         mirrorCandidateTitle: String? = null,
@@ -3796,7 +3794,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         }
 
         val trackForDownload = when (val policy = resolvedPolicy) {
-            is DownloadConflictPolicy.SaveAs -> activeTrack.copy(title = policy.newTitle)
+            is DownloadConflictPolicy.SaveAs -> activeTrack.withIdentity { copy(title = policy.newTitle) }
             else -> activeTrack
         }
 
@@ -4082,7 +4080,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 track = track,
                 displayTitle = candidate.trackTitle.ifBlank { track.title },
                 displayArtist = candidate.artist.ifBlank { track.artist },
-                artworkUrl = candidate.coverUrl ?: track.artworkUrl,
+                artworkUrl = candidate.coverUrl ?: track.artworkUri,
                 existingCandidates = candidate.candidates,
                 currentCandidateIndex = candidate.currentCandidateIndex,
                 mirrorCandidateTitle = candidate.trackTitle,
@@ -4104,7 +4102,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                     track = track,
                     displayTitle = candidate.trackTitle.ifBlank { track.title },
                     displayArtist = candidate.artist.ifBlank { track.artist },
-                    artworkUrl = candidate.coverUrl ?: track.artworkUrl,
+                    artworkUrl = candidate.coverUrl ?: track.artworkUri,
                     candidates = candidate.candidates,
                     currentCandidateIndex = candidate.currentCandidateIndex,
                     mirrorCandidateTitle = candidate.trackTitle,
@@ -4154,7 +4152,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 title = "",
                 artist = "",
                 album = "",
-                artworkUrl = null,
+                artworkUri = null,
                 durationMs = 0L,
                 audioUrl = trimmed,
                 provider = "YouTube"
@@ -4177,7 +4175,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                     if (source == ActiveDownloadSource.LINK) "Enlace YouTube" else "Descarga"
                 },
                 displayArtist = track.artist,
-                artworkUrl = track.artworkUrl
+                artworkUrl = track.artworkUri
             )
         }
     }

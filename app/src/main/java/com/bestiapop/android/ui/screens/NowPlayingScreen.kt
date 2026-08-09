@@ -170,7 +170,7 @@ fun NowPlayingScreen(
     val localSong = (item as? PlayableItem.Local)?.song
     val albumLabel = when (item) {
         is PlayableItem.Local -> item.song.album
-        is PlayableItem.Remote -> item.album?.takeIf { it.isNotBlank() } ?: "Stream"
+        is PlayableItem.Remote -> item.album.takeIf { it.isNotBlank() } ?: "Stream"
     }
 
     // Swipe-to-dismiss: Portada uses nested scroll; Letra/Cola dismiss only outside the

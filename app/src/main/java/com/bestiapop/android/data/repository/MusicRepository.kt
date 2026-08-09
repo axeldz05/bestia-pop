@@ -24,7 +24,8 @@ import com.bestiapop.android.data.model.OnlineCatalogTrack
 import com.bestiapop.android.data.model.Playlist
 import com.bestiapop.android.data.model.PlaylistPendingTrack
 import com.bestiapop.android.data.model.Song
-import com.bestiapop.android.data.network.FullTrackMetadata
+import com.bestiapop.android.data.model.TrackIdentity
+import com.bestiapop.android.data.model.withIdentity
 import com.bestiapop.android.data.network.MetadataFetcher
 import com.bestiapop.android.data.stream.StreamResolver
 import com.bestiapop.android.data.util.AudioFileMetadata
@@ -648,7 +649,7 @@ class MusicRepository(private val context: Context) : IMusicRepository {
             ?: "$newArtist - Single"
         val rawTitle = candidate.title.takeIf { it.isNotBlank() } ?: entity.title
         val newTitle = IdentifyRanking.cleanIdentityTitle(rawTitle).ifBlank { rawTitle }
-        val newArt = candidate.artworkUrl?.takeIf { it.isNotBlank() } ?: entity.artworkUri
+        val newArt = candidate.artworkUri?.takeIf { it.isNotBlank() } ?: entity.artworkUri
         val newDuration = if (candidate.durationMs > 0) candidate.durationMs else entity.durationMs
 
         musicDao.updateSong(
@@ -693,7 +694,7 @@ class MusicRepository(private val context: Context) : IMusicRepository {
         }
 
         MetadataFetcher.fetchFullTrackMetadata(artist, title)?.let { meta ->
-            addAll(listOf(meta.toOnlineCatalogTrack()))
+            addAll(listOf(meta.toIdentifyCatalogTrack()))
         }
 
         val primaryQuery = if (artistPlaceholder) title else "$artist $title"
@@ -709,21 +710,12 @@ class MusicRepository(private val context: Context) : IMusicRepository {
         return merged.values.toList()
     }
 
-    private fun FullTrackMetadata.toOnlineCatalogTrack(): OnlineCatalogTrack {
-        val safeTitle = title?.takeIf { it.isNotBlank() } ?: ""
-        val safeArtist = artistName?.takeIf { it.isNotBlank() } ?: ""
-        return OnlineCatalogTrack(
-            id = "identify:${TrackMatchKeys.matchKey(safeArtist, safeTitle)}",
-            title = safeTitle,
-            artist = safeArtist,
-            album = album.orEmpty(),
-            artworkUrl = artworkUrl,
-            durationMs = durationMs,
-            audioUrl = "",
-            provider = "Catalog",
-            trackNumber = trackNumber
-        )
-    }
+    private fun TrackIdentity.toIdentifyCatalogTrack(): OnlineCatalogTrack = OnlineCatalogTrack(
+        identity = this,
+        id = "identify:${TrackMatchKeys.matchKey(artist, title)}",
+        audioUrl = "",
+        provider = "Catalog"
+    )
 
     private fun needsMetadataIdentify(artist: String, album: String): Boolean {
         return IdentifyRanking.isPlaceholderArtist(artist) || IdentifyRanking.isGenericAlbum(album)
@@ -1024,7 +1016,7 @@ class MusicRepository(private val context: Context) : IMusicRepository {
 
         var finalTitle = track.title
         var finalArtist = track.artist
-        var finalArtwork = track.artworkUrl
+        var finalArtwork = track.artworkUri
         var finalDurationMs = track.durationMs
         var finalTrackNumber = track.trackNumber
 
@@ -1057,7 +1049,10 @@ class MusicRepository(private val context: Context) : IMusicRepository {
             null -> {
                 val existing = findSongEntityByArtistTitle(finalArtist, finalTitle)
                 if (existing != null) {
-                    throw DuplicateSongException(existing.toSong(), track.copy(title = finalTitle, artist = finalArtist))
+                    throw DuplicateSongException(
+                        existing.toSong(),
+                        track.withIdentity { copy(title = finalTitle, artist = finalArtist) }
+                    )
                 }
             }
         }
@@ -1151,14 +1146,14 @@ class MusicRepository(private val context: Context) : IMusicRepository {
             val fullMeta = MetadataFetcher.fetchFullTrackMetadata(finalArtist, finalTitle)
             if (fullMeta != null) {
                 val lookedUpAlbum = fullMeta.album
-                if (!lookedUpAlbum.isNullOrBlank() && !IdentifyRanking.isGenericAlbum(lookedUpAlbum)) {
+                if (lookedUpAlbum.isNotBlank() && !IdentifyRanking.isGenericAlbum(lookedUpAlbum)) {
                     finalAlbum = lookedUpAlbum
                 }
-                if (finalArtwork.isNullOrEmpty() && !fullMeta.artworkUrl.isNullOrEmpty()) {
-                    finalArtwork = fullMeta.artworkUrl
+                if (finalArtwork.isNullOrEmpty() && !fullMeta.artworkUri.isNullOrEmpty()) {
+                    finalArtwork = fullMeta.artworkUri
                 }
-                if (!fullMeta.artistName.isNullOrBlank() && IdentifyRanking.isPlaceholderArtist(finalArtist)) {
-                    finalArtist = fullMeta.artistName
+                if (fullMeta.artist.isNotBlank() && IdentifyRanking.isPlaceholderArtist(finalArtist)) {
+                    finalArtist = fullMeta.artist
                 }
                 if (finalDurationMs <= 0 && fullMeta.durationMs > 0) {
                     finalDurationMs = fullMeta.durationMs

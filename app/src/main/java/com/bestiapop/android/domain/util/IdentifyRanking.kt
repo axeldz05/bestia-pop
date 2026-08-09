@@ -3,6 +3,7 @@ package com.bestiapop.android.domain.util
 import com.bestiapop.android.data.model.IdentifyCandidate
 import com.bestiapop.android.data.model.IdentifyConfidence
 import com.bestiapop.android.data.model.OnlineCatalogTrack
+import com.bestiapop.android.data.model.withIdentity
 import kotlin.math.abs
 import kotlin.math.max
 
@@ -216,15 +217,13 @@ object IdentifyRanking {
     fun toCandidate(track: OnlineCatalogTrack, score: Float, reasons: List<String>): IdentifyCandidate {
         val cleaned = cleanIdentityTitle(track.title).ifBlank { track.title }
         return IdentifyCandidate(
-            title = cleaned,
-            artist = track.artist,
-            album = track.album,
-            artworkUrl = track.artworkUrl,
-            durationMs = track.durationMs,
-            provider = track.provider,
+            track = if (cleaned == track.title) {
+                track
+            } else {
+                track.withIdentity { copy(title = cleaned) }
+            },
             score = score,
-            reasons = reasons,
-            trackNumber = track.trackNumber
+            reasons = reasons
         )
     }
 

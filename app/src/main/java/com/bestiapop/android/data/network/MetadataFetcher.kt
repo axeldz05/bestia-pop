@@ -4,6 +4,8 @@ import com.bestiapop.android.data.model.CatalogAlbum
 import com.bestiapop.android.data.model.CatalogPlaylist
 import com.bestiapop.android.data.model.CatalogTrackCandidate
 import com.bestiapop.android.data.model.OnlineCatalogTrack
+import com.bestiapop.android.data.model.TrackIdentity
+import com.bestiapop.android.data.model.mergePreferring
 import com.bestiapop.android.data.util.encodeAlbumTrack
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -14,15 +16,6 @@ import org.json.JSONObject
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 import java.util.concurrent.TimeUnit
-
-data class FullTrackMetadata(
-    val album: String?,
-    val artworkUrl: String?,
-    val artistName: String?,
-    val title: String?,
-    val durationMs: Long = 0L,
-    val trackNumber: Int = 0
-)
 
 data class DeezerArtistHit(
     val id: Long,
@@ -84,31 +77,58 @@ object MetadataFetcher {
         }
     }
 
-    fun parseDeezerTrackArray(data: JSONArray?): List<CatalogSongHint> {
+    private fun JSONObject.toDeezerTrackIdentity(
+        requireTitleArtist: Boolean = false,
+        defaultTitle: String = "Canción",
+        defaultArtist: String = "Artista",
+        defaultAlbum: String = "Álbum",
+        defaultDurationSec: Long = 180L
+    ): TrackIdentity? {
+        val rawTitle = optString("title")
+        val title = rawTitle.ifBlank {
+            if (requireTitleArtist) return null else defaultTitle
+        }
+        val artistName = optJSONObject("artist")?.optString("name")?.ifBlank { null }
+            ?: if (requireTitleArtist) return null else defaultArtist
+        val albumObj = optJSONObject("album")
+        val albumTitle = albumObj?.optString("title")?.ifBlank { null }
+            ?: if (requireTitleArtist) "" else defaultAlbum
+        val cover = pickCoverUrl(
+            albumObj?.optString("cover_xl"),
+            albumObj?.optString("cover_big")
+        )
+        val durationSec = optLong("duration", defaultDurationSec)
+        return TrackIdentity(
+            title = title,
+            artist = artistName,
+            album = albumTitle,
+            artworkUri = cover,
+            durationMs = if (durationSec > 0L) durationSec * 1000L else 0L,
+            trackNumber = deezerAlbumTrackNumber(this)
+        )
+    }
+
+    private fun JSONObject.toItunesTrackIdentity(
+        defaultTitle: String = "Canción",
+        defaultArtist: String = "Artista",
+        defaultAlbum: String = "Álbum"
+    ): TrackIdentity = TrackIdentity(
+        title = optString("trackName", defaultTitle),
+        artist = optString("artistName", defaultArtist),
+        album = optString("collectionName", defaultAlbum),
+        artworkUri = normalizeItunesArtwork(optString("artworkUrl100")),
+        durationMs = optLong("trackTimeMillis", 180000L),
+        trackNumber = encodeAlbumTrack(optInt("trackNumber", 0), optInt("discNumber", 0))
+    )
+
+    fun parseDeezerTrackArray(data: JSONArray?): List<TrackIdentity> {
         if (data == null || data.length() == 0) return emptyList()
-        val out = ArrayList<CatalogSongHint>(data.length())
+        val out = ArrayList<TrackIdentity>(data.length())
         for (i in 0 until data.length()) {
-            val obj = data.getJSONObject(i)
-            val title = obj.optString("title").ifBlank { null } ?: continue
-            val artistObj = obj.optJSONObject("artist")
-            val artistName = artistObj?.optString("name")?.ifBlank { null } ?: continue
-            val albumObj = obj.optJSONObject("album")
-            val albumTitle = albumObj?.optString("title")?.ifBlank { null }
-            val cover = pickCoverUrl(
-                albumObj?.optString("cover_xl"),
-                albumObj?.optString("cover_big")
-            )
-            val durationSec = obj.optLong("duration", 0L)
-            out.add(
-                CatalogSongHint(
-                    title = title,
-                    artist = artistName,
-                    album = albumTitle,
-                    artworkUrl = cover,
-                    durationMs = if (durationSec > 0) durationSec * 1000L else 0L,
-                    trackNumber = deezerAlbumTrackNumber(obj)
-                )
-            )
+            data.getJSONObject(i).toDeezerTrackIdentity(
+                requireTitleArtist = true,
+                defaultDurationSec = 0L
+            )?.let { out.add(it) }
         }
         return out
     }
@@ -123,26 +143,13 @@ object MetadataFetcher {
         val tracks = ArrayList<OnlineCatalogTrack>(data.length())
         for (i in 0 until data.length()) {
             val obj = data.getJSONObject(i)
-            val title = obj.optString("title", "Canción")
-            val artistObj = obj.optJSONObject("artist")
-            val artistName = artistObj?.optString("name", "Artista") ?: "Artista"
-            val albumObj = obj.optJSONObject("album")
-            val albumTitle = albumObj?.optString("title", "Álbum") ?: "Álbum"
-            val cover = pickCoverUrl(
-                albumObj?.optString("cover_xl"),
-                albumObj?.optString("cover_big")
-            )
+            val identity = obj.toDeezerTrackIdentity() ?: continue
             tracks.add(
                 OnlineCatalogTrack(
-                    id = obj.optString("id").ifBlank { "$artistName $title#$i" },
-                    title = title,
-                    artist = artistName,
-                    album = albumTitle,
-                    artworkUrl = cover,
-                    durationMs = obj.optLong("duration", 180L) * 1000L,
-                    audioUrl = "$artistName $title",
-                    provider = provider,
-                    trackNumber = deezerAlbumTrackNumber(obj)
+                    identity = identity,
+                    id = obj.optString("id").ifBlank { "${identity.artist} ${identity.title}#$i" },
+                    audioUrl = "${identity.artist} ${identity.title}",
+                    provider = provider
                 )
             )
         }
@@ -162,25 +169,15 @@ object MetadataFetcher {
         for (i in 0 until results.length()) {
             if (tracks.size >= limit) break
             val obj = results.getJSONObject(i)
-            val title = obj.optString("trackName", defaultTitle)
-            val artistName = obj.optString("artistName", defaultArtist)
-            val albumTitle = obj.optString("collectionName", defaultAlbum)
+            val identity = obj.toItunesTrackIdentity(defaultTitle, defaultArtist, defaultAlbum)
             tracks.add(
                 OnlineCatalogTrack(
+                    identity = identity,
                     id = obj.optString("trackId").ifBlank {
-                        "$artistName $title#${obj.optString("collectionId", "$i")}"
+                        "${identity.artist} ${identity.title}#${obj.optString("collectionId", "$i")}"
                     },
-                    title = title,
-                    artist = artistName,
-                    album = albumTitle,
-                    artworkUrl = normalizeItunesArtwork(obj.optString("artworkUrl100")),
-                    durationMs = obj.optLong("trackTimeMillis", 180000L),
-                    audioUrl = "$artistName $title",
-                    provider = provider,
-                    trackNumber = encodeAlbumTrack(
-                        obj.optInt("trackNumber", 0),
-                        obj.optInt("discNumber", 0)
-                    )
+                    audioUrl = "${identity.artist} ${identity.title}",
+                    provider = provider
                 )
             )
         }
@@ -192,7 +189,7 @@ object MetadataFetcher {
             trackTitle = track.title,
             artist = track.artist,
             albumName = track.album,
-            coverUrl = track.artworkUrl,
+            coverUrl = track.artworkUri,
             candidates = listOf(track),
             currentCandidateIndex = 0,
             isSelected = true
@@ -215,21 +212,13 @@ object MetadataFetcher {
         )
     }
 
-    private fun searchDeezerTrack(queryText: String): FullTrackMetadata? {
+    private fun searchDeezerTrack(queryText: String): TrackIdentity? {
         val url = "https://api.deezer.com/search?q=${encodeQuery(queryText)}&limit=1"
         val json = getJson(url) ?: return null
-        val hint = parseDeezerTrackArray(json.optJSONArray("data")).firstOrNull() ?: return null
-        return FullTrackMetadata(
-            album = hint.album,
-            artworkUrl = hint.artworkUrl,
-            artistName = hint.artist,
-            title = hint.title,
-            durationMs = hint.durationMs,
-            trackNumber = hint.trackNumber
-        )
+        return parseDeezerTrackArray(json.optJSONArray("data")).firstOrNull()
     }
 
-    private fun searchItunesSong(queryText: String): FullTrackMetadata? {
+    private fun searchItunesSong(queryText: String): TrackIdentity? {
         val url = "https://itunes.apple.com/search?term=${encodeQuery(queryText)}&entity=song&limit=1"
         val json = getJson(url) ?: return null
         val track = parseItunesSongResults(
@@ -239,15 +228,8 @@ object MetadataFetcher {
             defaultArtist = "",
             defaultAlbum = ""
         ).firstOrNull() ?: return null
-        val title = track.title.ifBlank { null } ?: return null
-        return FullTrackMetadata(
-            album = track.album.ifBlank { null },
-            artworkUrl = track.artworkUrl,
-            artistName = track.artist.ifBlank { null },
-            title = title,
-            durationMs = track.durationMs,
-            trackNumber = track.trackNumber
-        )
+        if (track.title.isBlank()) return null
+        return track.identity
     }
 
     private fun searchDeezerAlbumArt(queryText: String): String? {
@@ -302,7 +284,7 @@ object MetadataFetcher {
     }
 
     /** Tracks from Deezer artist radio mix. */
-    suspend fun fetchDeezerArtistRadio(artistId: Long): List<CatalogSongHint> = withContext(Dispatchers.IO) {
+    suspend fun fetchDeezerArtistRadio(artistId: Long): List<TrackIdentity> = withContext(Dispatchers.IO) {
         if (artistId <= 0L) return@withContext emptyList()
         val url = "https://api.deezer.com/artist/$artistId/radio"
         val json = getJson(url) ?: return@withContext emptyList()
@@ -326,7 +308,7 @@ object MetadataFetcher {
         }
 
     /** Top tracks for a Deezer artist. */
-    suspend fun fetchDeezerArtistTop(artistId: Long, limit: Int = 5): List<CatalogSongHint> =
+    suspend fun fetchDeezerArtistTop(artistId: Long, limit: Int = 5): List<TrackIdentity> =
         withContext(Dispatchers.IO) {
             if (artistId <= 0L || limit <= 0) return@withContext emptyList()
             val url = "https://api.deezer.com/artist/$artistId/top?limit=$limit"
@@ -337,7 +319,7 @@ object MetadataFetcher {
     /**
      * Same-artist songs from iTunes (secondary fill when Deezer remotes are short).
      */
-    suspend fun fetchItunesArtistSongs(artist: String, limit: Int = 25): List<CatalogSongHint> =
+    suspend fun fetchItunesArtistSongs(artist: String, limit: Int = 25): List<TrackIdentity> =
         withContext(Dispatchers.IO) {
             val cleanArtistName = cleanArtist(artist)
             if (cleanArtistName.isEmpty() || limit <= 0) return@withContext emptyList()
@@ -349,14 +331,10 @@ object MetadataFetcher {
                 limit = limit,
                 defaultAlbum = ""
             ).mapNotNull { track ->
-                val title = track.title.ifBlank { null } ?: return@mapNotNull null
-                CatalogSongHint(
-                    title = title,
+                if (track.title.isBlank()) return@mapNotNull null
+                track.identity.copy(
                     artist = track.artist.ifBlank { cleanArtistName },
-                    album = track.album.ifBlank { null },
-                    artworkUrl = track.artworkUrl,
-                    durationMs = track.durationMs,
-                    trackNumber = track.trackNumber
+                    album = track.album
                 )
             }
         }
@@ -364,25 +342,18 @@ object MetadataFetcher {
     suspend fun fetchAlbumArtUrl(artist: String, titleOrAlbum: String): String? = withContext(Dispatchers.IO) {
         val queryText = buildQueryText(artist, titleOrAlbum) ?: return@withContext null
         searchDeezerAlbumArt(queryText)?.let { return@withContext it }
-        return@withContext searchItunesSong(queryText)?.artworkUrl
+        return@withContext searchItunesSong(queryText)?.artworkUri
     }
 
-    suspend fun fetchFullTrackMetadata(artist: String, title: String): FullTrackMetadata? = withContext(Dispatchers.IO) {
+    suspend fun fetchFullTrackMetadata(artist: String, title: String): TrackIdentity? = withContext(Dispatchers.IO) {
         val queryText = buildQueryText(artist, title) ?: return@withContext null
         val deezer = searchDeezerTrack(queryText)
-        if (deezer != null && !deezer.album.isNullOrEmpty()) {
+        if (deezer != null && deezer.album.isNotBlank()) {
             return@withContext deezer
         }
         val itunes = searchItunesSong(queryText) ?: return@withContext deezer
         if (deezer == null) return@withContext itunes
-        return@withContext FullTrackMetadata(
-            album = deezer.album ?: itunes.album,
-            artworkUrl = deezer.artworkUrl ?: itunes.artworkUrl,
-            artistName = deezer.artistName ?: itunes.artistName,
-            title = deezer.title ?: itunes.title,
-            durationMs = if (deezer.durationMs > 0) deezer.durationMs else itunes.durationMs,
-            trackNumber = if (deezer.trackNumber > 0) deezer.trackNumber else itunes.trackNumber
-        )
+        return@withContext deezer.mergePreferring(itunes)
     }
 
     suspend fun fetchLyrics(artist: String, title: String): String? = withContext(Dispatchers.IO) {
@@ -544,15 +515,17 @@ object MetadataFetcher {
                     resultCandidates.add(
                         toCatalogCandidate(
                             OnlineCatalogTrack(
+                                identity = TrackIdentity(
+                                    title = trackTitle,
+                                    artist = trackArtist,
+                                    album = albumTitle,
+                                    artworkUri = albumCoverUrl,
+                                    durationMs = obj.optLong("duration", 180L) * 1000L,
+                                    trackNumber = deezerAlbumTrackNumber(obj)
+                                ),
                                 id = "$trackArtist $trackTitle",
-                                title = trackTitle,
-                                artist = trackArtist,
-                                album = albumTitle,
-                                artworkUrl = albumCoverUrl,
-                                durationMs = obj.optLong("duration", 180L) * 1000L,
                                 audioUrl = "$trackArtist $trackTitle",
-                                provider = "YouTube",
-                                trackNumber = deezerAlbumTrackNumber(obj)
+                                provider = "YouTube"
                             )
                         )
                     )
@@ -576,12 +549,12 @@ object MetadataFetcher {
                     defaultArtist = artistName
                 )
                 for (track in tracks) {
-                    val cover = track.artworkUrl ?: albumCoverUrl
+                    val cover = track.artworkUri ?: albumCoverUrl
                     resultCandidates.add(
                         toCatalogCandidate(
                             track.copy(
+                                identity = track.identity.copy(artworkUri = cover),
                                 id = "${track.artist} ${track.title}",
-                                artworkUrl = cover,
                                 audioUrl = "${track.artist} ${track.title}",
                                 provider = "YouTube"
                             )
@@ -619,15 +592,17 @@ object MetadataFetcher {
                     resultCandidates.add(
                         toCatalogCandidate(
                             OnlineCatalogTrack(
+                                identity = TrackIdentity(
+                                    title = trackTitle,
+                                    artist = trackArtist,
+                                    album = albumName,
+                                    artworkUri = cover,
+                                    durationMs = obj.optLong("duration", 180L) * 1000L,
+                                    trackNumber = deezerAlbumTrackNumber(obj)
+                                ),
                                 id = "$trackArtist $trackTitle",
-                                title = trackTitle,
-                                artist = trackArtist,
-                                album = albumName,
-                                artworkUrl = cover,
-                                durationMs = obj.optLong("duration", 180L) * 1000L,
                                 audioUrl = "$trackArtist $trackTitle",
-                                provider = "YouTube",
-                                trackNumber = deezerAlbumTrackNumber(obj)
+                                provider = "YouTube"
                             )
                         )
                     )

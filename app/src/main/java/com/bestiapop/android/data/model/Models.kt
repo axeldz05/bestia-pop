@@ -9,18 +9,18 @@ enum class RepeatMode {
 data class Song(
     val id: Long = 0,
     val uriString: String,
-    val title: String,
-    val artist: String = "Unknown Artist",
-    val album: String = "Unknown Album",
+    override val title: String,
+    override val artist: String = "Unknown Artist",
+    override val album: String = "Unknown Album",
     val genre: String = "Unknown Genre",
-    val durationMs: Long = 0,
+    override val durationMs: Long = 0,
     val year: Int = 0,
-    val trackNumber: Int = 0,
-    val artworkUri: String? = null,
+    override val trackNumber: Int = 0,
+    override val artworkUri: String? = null,
     val lyrics: String? = null,
     val folderPath: String = "",
     val dateAdded: Long = System.currentTimeMillis()
-)
+) : TrackMeta
 
 enum class LibraryJobKind {
     IMPORT,
@@ -52,28 +52,11 @@ sealed class IdentifyResult {
 
 /** Ranked catalog hit for identify (top-N after multi-signal scoring). */
 data class IdentifyCandidate(
-    val title: String,
-    val artist: String,
-    val album: String,
-    val artworkUrl: String?,
-    val durationMs: Long,
-    val provider: String,
+    val track: OnlineCatalogTrack,
     val score: Float,
-    val reasons: List<String> = emptyList(),
-    val trackNumber: Int = 0
-) {
-    /** Ephemeral catalog track for stream preview (no CDN URL persisted). */
-    fun toOnlineCatalogTrack(): OnlineCatalogTrack = OnlineCatalogTrack(
-        id = "idcand:$provider:$artist|$title|$album",
-        title = title,
-        artist = artist,
-        album = album,
-        artworkUrl = artworkUrl,
-        durationMs = durationMs,
-        audioUrl = "",
-        provider = provider,
-        trackNumber = trackNumber
-    )
+    val reasons: List<String> = emptyList()
+) : TrackMeta by track {
+    val provider: String get() = track.provider
 }
 
 enum class IdentifyConfidence {
@@ -199,17 +182,41 @@ data class CustomTheme(
 )
 
 data class OnlineCatalogTrack(
+    val identity: TrackIdentity,
     val id: String,
-    val title: String,
-    val artist: String,
-    val album: String,
-    val artworkUrl: String?,
-    val durationMs: Long,
-    val audioUrl: String,
+    val audioUrl: String = "",
     val provider: String = "YouTube",
-    val userAgent: String = "Mozilla/5.0 (SmartHub; SMART-TV; U; Linux/SmartTV) AppleWebKit/538.1 (KHTML, like Gecko) TV Safari/538.1",
-    val trackNumber: Int = 0
-)
+    val userAgent: String = DEFAULT_CATALOG_USER_AGENT
+) : TrackMeta by identity {
+    companion object {
+        /** L2: flat catalog construction (identity is Level 1). */
+        operator fun invoke(
+            id: String,
+            title: String,
+            artist: String,
+            album: String = "",
+            artworkUri: String? = null,
+            durationMs: Long = 0L,
+            audioUrl: String = "",
+            provider: String = "YouTube",
+            userAgent: String = DEFAULT_CATALOG_USER_AGENT,
+            trackNumber: Int = 0
+        ): OnlineCatalogTrack = OnlineCatalogTrack(
+            identity = TrackIdentity(
+                title = title,
+                artist = artist,
+                album = album,
+                artworkUri = artworkUri,
+                durationMs = durationMs,
+                trackNumber = trackNumber
+            ),
+            id = id,
+            audioUrl = audioUrl,
+            provider = provider,
+            userAgent = userAgent
+        )
+    }
+}
 
 
 enum class CatalogCategory {
@@ -478,18 +485,20 @@ data class ActiveDownload(
             return download.copy(
                 candidates = newCandidates.mapIndexed { i, t ->
                     if (i == nextIndex) {
-                        t.copy(
-                            album = preservedAlbum ?: t.album,
-                            artworkUrl = t.artworkUrl ?: download.artworkUrl,
-                            title = t.title.ifBlank { download.displayTitle },
-                            artist = t.artist.ifBlank { download.displayArtist }
-                        )
+                        t.withIdentity {
+                            copy(
+                                album = preservedAlbum ?: album,
+                                artworkUri = artworkUri ?: download.artworkUrl,
+                                title = title.ifBlank { download.displayTitle },
+                                artist = artist.ifBlank { download.displayArtist }
+                            )
+                        }
                     } else t
                 },
                 currentCandidateIndex = nextIndex,
                 displayTitle = next.title.ifBlank { download.displayTitle },
                 displayArtist = next.artist.ifBlank { download.displayArtist },
-                artworkUrl = next.artworkUrl ?: download.artworkUrl,
+                artworkUrl = next.artworkUri ?: download.artworkUrl,
                 state = if (stillFailed) CandidateDownloadState.ERROR else CandidateDownloadState.IDLE,
                 progressMessage = null,
                 progressPercent = 0,

@@ -76,6 +76,7 @@ Mini player se rehidrata desde `MediaController` (sesión viva) o `PlaybackSessi
 6. **Radio** — sesión con seed + providers (`LocalMetadataRadio` / `ListenBrainzRadio` / `CfRecommendationsRadio` / `DeezerSimilarRadio` via `SimilarTracksProvider`); fill NEW/BOTH sin exigir token LB (red + Deezer); refill de cola; no pipeline paralelo.
 7. **Para Ti mixto** — Discover + CF Recomendados reproducen Local+Remote; descarga manual por track (`DISCOVER`) / “Guardar al escuchar” / import LB no bloquean ni persisten URLs CDN; faltantes de import usan `activeDownloads` (`LB_IMPORT` + `targetPlaylistId`).
 8. **Cola de descargas** — `QUEUED`/`SUCCESS` visibles; máx. 3 concurrentes; playlist del catálogo crea playlist local.
+9. **TrackIdentity hub** — hechos musicales compartidos (`title`/`artist`/`album`/`artworkUri`/`durationMs`/`trackNumber`) viven en `TrackMeta` / `TrackIdentity` (`data/model/TrackIdentity.kt`). Catálogo (`OnlineCatalogTrack`), identify (`IdentifyCandidate`), remoto (`PlayableItem.Remote`) y tags de archivo (`AudioFileMetadata`) envuelven ese núcleo. `Song` / `SongEntity` siguen **planos** (hot path Room + filtro/sort/`song.copy`) e implementan `TrackMeta` sin anidar. No clonar DTO satélite ni un Track gordo con mbid+score+CDN.
 
 ## Servicios Android
 

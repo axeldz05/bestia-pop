@@ -53,7 +53,7 @@ class YouTubeAudioPreferenceTest {
             title = "Harder Better Faster Stronger",
             artist = "Daft Punk",
             album = "Discovery",
-            artworkUrl = null,
+            artworkUri = null,
             durationMs = 224000L,
             audioUrl = "Daft Punk Harder Better Faster Stronger",
             provider = "Deezer/YouTube"

@@ -16,7 +16,7 @@ class ActiveDownloadCycleTest {
         title = title,
         artist = artist,
         album = "Album",
-        artworkUrl = null,
+        artworkUri = null,
         durationMs = 1000L,
         audioUrl = id
     )

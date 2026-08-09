@@ -43,10 +43,24 @@ if (layout.push_button("Reset Orientation")) { … }
 
 layout.complete(this);
 ```
+## Redundant data models (BestiaPop)
+
+Cloning the same song facts into N data classes (`CatalogSongHint`, `FullTrackMetadata`, `IdentifyCandidate` fields, …) is **decompression**. Mappers in a circle (`A→B→C→A`) and “add one field → touch every constructor” are the smell.
+
+When the same stack frame appears 3+ times:
+
+* Extract a **shared value** (`TrackIdentity` / `TrackMeta`: title, artist, album, artworkUri, durationMs, trackNumber).
+* **Wrap, don’t copy**: `IdentifyCandidate(track, score, reasons)`, `Remote(identity, mbid, stream)`, `AudioFileMetadata(identity, genre)`.
+* Keep hot-path persist types **flat** (`Song` / `SongEntity`) — they *implement* the contract, they do not nest the value (extra alloc + nested `copy` on every library filter).
+* Do **not** invent a class hierarchy (`LocalTrack : Track`) and do **not** make a god-object with mbid+score+uri+CDN nullable fields.
+
+Indicator: changing one identity field should edit **one** hub type (+ Room columns if persisted). Follow-up still wrapping the hub: `LbPlaylistTrack`, `MatchedCfTrack`, `PlaylistPendingTrack`.
+
 ## What to Avoid
 * No class hierarchies based on domain nouns (Employee, Manager) before writing code.
 * No deep inheritance, templates, or patterns introduced before duplication exists.
 * No abstraction from a single use‑case – at least two real examples are required.
+* No parallel DTOs that only rename the same song fields for a different subsystem.
 
 ## Quality Indicators
 * High semantic density: each line expresses a clear domain action.

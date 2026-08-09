@@ -15,7 +15,7 @@ class ActiveDownloadCodecTest {
         title = "Song",
         artist = "Artist",
         album = "Album",
-        artworkUrl = "https://example.com/a.jpg",
+        artworkUri = "https://example.com/a.jpg",
         durationMs = 120_000L,
         audioUrl = id,
         provider = "YouTube"
@@ -116,6 +116,17 @@ class ActiveDownloadCodecTest {
         assertEquals(1, restored.size)
         assertEquals(ActiveDownloadSource.LB_IMPORT, restored[0].source)
         assertEquals(42L, restored[0].targetPlaylistId)
+    }
+
+    @Test
+    fun roundTrip_preservesTrackNumber() {
+        val original = listOf(
+            download(CandidateDownloadState.ERROR).copy(
+                candidates = listOf(track().copy(identity = track().identity.copy(trackNumber = 2004)))
+            )
+        )
+        val restored = ActiveDownloadCodec.decode(ActiveDownloadCodec.encode(original))
+        assertEquals(2004, restored[0].currentTrack?.trackNumber)
     }
 
     @Test

@@ -29,6 +29,8 @@ data class PlaybackSettings(
     val stereoRightGain: Float = 1f,
     val rememberShuffleOnLaunch: Boolean = true,
     val rememberRepeatOnLaunch: Boolean = true,
+    /** Cold start: resume last queue/track. Local and remote use the same flag. Default off. */
+    val autoplayOnLaunch: Boolean = false,
     val lastShuffleEnabled: Boolean = false,
     val lastRepeatMode: RepeatMode = RepeatMode.OFF
 )
@@ -93,6 +95,7 @@ class PlaybackPreferencesRepository(private val context: Context) {
         val STEREO_RIGHT_GAIN = floatPreferencesKey("stereo_right_gain")
         val REMEMBER_SHUFFLE_ON_LAUNCH = booleanPreferencesKey("remember_shuffle_on_launch")
         val REMEMBER_REPEAT_ON_LAUNCH = booleanPreferencesKey("remember_repeat_on_launch")
+        val AUTOPLAY_ON_LAUNCH = booleanPreferencesKey("autoplay_on_launch")
         val LAST_SHUFFLE_ENABLED = booleanPreferencesKey("last_shuffle_enabled")
         val LAST_REPEAT_MODE = stringPreferencesKey("last_repeat_mode")
     }
@@ -105,6 +108,7 @@ class PlaybackPreferencesRepository(private val context: Context) {
             stereoRightGain = clampStereoGain(prefs[Keys.STEREO_RIGHT_GAIN] ?: 1f),
             rememberShuffleOnLaunch = prefs[Keys.REMEMBER_SHUFFLE_ON_LAUNCH] ?: true,
             rememberRepeatOnLaunch = prefs[Keys.REMEMBER_REPEAT_ON_LAUNCH] ?: true,
+            autoplayOnLaunch = prefs[Keys.AUTOPLAY_ON_LAUNCH] ?: false,
             lastShuffleEnabled = prefs[Keys.LAST_SHUFFLE_ENABLED] ?: false,
             lastRepeatMode = parseRepeatModeName(prefs[Keys.LAST_REPEAT_MODE])
         )
@@ -139,6 +143,10 @@ class PlaybackPreferencesRepository(private val context: Context) {
 
     suspend fun setRememberRepeatOnLaunch(enabled: Boolean) {
         context.playbackDataStore.put(Keys.REMEMBER_REPEAT_ON_LAUNCH, enabled)
+    }
+
+    suspend fun setAutoplayOnLaunch(enabled: Boolean) {
+        context.playbackDataStore.put(Keys.AUTOPLAY_ON_LAUNCH, enabled)
     }
 
     suspend fun setLastShuffleEnabled(enabled: Boolean) {

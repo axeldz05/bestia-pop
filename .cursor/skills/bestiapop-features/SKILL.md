@@ -153,6 +153,7 @@ State: `currentThemeState`.
 - Último `_isShuffle` + `RepeatMode` se persisten siempre (`lastShuffleEnabled` / `lastRepeatMode`).
 - Shuffle es flag de VM (cola reordenada en `applyShuffledQueue`); **no** `Player.shuffleModeEnabled`.
 - Arranque en frío (sin timeline): restaurar según `rememberShuffleOnLaunch` / `rememberRepeatOnLaunch` (on por defecto). Off → ese modo arranca apagado.
+- **Autoplay al abrir** (`autoplayOnLaunch`, off por defecto): mismo flag para Local y Remote. Off → mini player / cola hidratada sin `play()`. On → `maybeAutoplayAfterIdleSeed` → `togglePlayPause`. Sesión FGS viva que ya suena no se toca.
 - Sesión viva: repeat del `MediaController`; shuffle desde prefs (única fuente). Switches de Ajustes no cambian la sesión actual.
 - `playCollection` sigue apagando shuffle; `shuffleCollection` lo enciende.
 
@@ -162,7 +163,7 @@ State: `currentThemeState`.
 | Settings UI | `PlaybackSettingsScreen` vía `SettingsScreen` sección Reproducción |
 | Restore | `MusicPlayerViewModel.restorePlaybackModes` tras `syncUiFromController` |
 | Persist | `setShuffleEnabled` / `setRepeatMode` / `toggleShuffle` / `toggleRepeatMode` / `applyShuffledQueue` / `finishPlayPlayableCollection` |
-| Remember flags | `setRememberShuffleOnLaunch` / `setRememberRepeatOnLaunch` |
+| Remember flags | `setRememberShuffleOnLaunch` / `setRememberRepeatOnLaunch` / `setAutoplayOnLaunch` |
 
 ## 8. WiFi Sync
 
@@ -242,7 +243,7 @@ Centro de descargas online → sección 2 (`DownloadsScreen`, tab Descargas).
 
 **Invariantes:**
 - Tras reconnect de `MediaController`, `syncUiFromController` rehidrata `_queue` / `currentItem` / `isPlaying` / posición desde la sesión viva (prioridad sobre snapshot persistido).
-- Sin sesión viva: hidratar cola persistida (`queue_json`: current + upcoming + last `MAX_QUEUE_HISTORY` = 20). Locals rematch por id/uri; Remotes identity+mbid+query/`videoId` **sin** CDN. Si current se borró, avanzar al siguiente (posición 0). Si no hay cola usable: last-played local o aleatoria; sin autoplay.
+- Sin sesión viva: hidratar cola persistida (`queue_json`: current + upcoming + last `MAX_QUEUE_HISTORY` = 20). Locals rematch por id/uri; Remotes identity+mbid+query/`videoId` **sin** CDN. Si current se borró, avanzar al siguiente (posición 0). Si no hay cola usable: last-played local o aleatoria. Autoplay solo si `autoplayOnLaunch` (Local = Remote). `ensureRemoteReadyAt(..., startPlaying)` no llama `play()` si el player está en pausa / idle.
 - Idle play: si el controller ya tiene items → play/pause. Si current Remote necesita resolve o `mediaItemCount == 0` con `_queue` hidratada → `playPlayableCollection(queue, index, rotate = false)` (no reconstruir biblioteca).
 - Biblioteca vacía y sin sesión → `BottomPlayerBar` oculto (`currentItem == null`).
 - Con playback activo, `MusicService` permanece FGS `mediaPlayback` (notif Now playing + `setSessionActivity`) aunque la Activity esté en segundo plano; sin FGS el proceso queda cached y LMK lo mata al abrir otras apps.
@@ -253,7 +254,7 @@ Centro de descargas online → sección 2 (`DownloadsScreen`, tab Descargas).
 | Resync sesión | `MusicPlayerViewModel.syncUiFromController` / `mediaItemToPlayable` / `loadHydratedQueueIntoController` |
 | Last-played + cola | `PlaybackSessionStore`, `LastPlayedCodec`, `QueueSnapshotCodec`, `PlaybackHydration.hydrateQueue` en `data/preferences/PlaybackSessionStore.kt` |
 | Wrap / trim | `PlaybackQueueOrder.rotateToStart` / `trimHistory` en `data/playback/PlaybackQueueOrder.kt` |
-| Seed idle | `maybeSeedIdlePlayer` / `applyHydratedQueue` |
+| Seed idle | `maybeSeedIdlePlayer` / `applyHydratedQueue` / `maybeAutoplayAfterIdleSeed` |
 | Mini bar UI | `BottomPlayerBar` (`statusLabel`, Previous); wiring en `MainScreen` |
 
 ## 11. Radio (similares)

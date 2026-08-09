@@ -200,6 +200,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     val stereoRightGain: StateFlow<Float> = playbackPref(1f) { it.stereoRightGain }
     val rememberShuffleOnLaunch: StateFlow<Boolean> = playbackPref(true) { it.rememberShuffleOnLaunch }
     val rememberRepeatOnLaunch: StateFlow<Boolean> = playbackPref(true) { it.rememberRepeatOnLaunch }
+    val autoplayOnLaunch: StateFlow<Boolean> = playbackPref(false) { it.autoplayOnLaunch }
 
     val pendingListenCount: StateFlow<Int> = pendingListenDao.countFlow()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
@@ -577,6 +578,10 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         persistPlayback { setRememberRepeatOnLaunch(enabled) }
     }
 
+    fun setAutoplayOnLaunch(enabled: Boolean) {
+        persistPlayback { setAutoplayOnLaunch(enabled) }
+    }
+
     private fun restoreVolumeBoostIfNeeded() {
         val settings = playbackSettings.value
         if (!settings.volumeBoostEnabled) {
@@ -890,7 +895,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         _repeatMode.value = repeatModeFromPlayer(controller.repeatMode)
         setCurrentItem(rebuilt[index])
 
-        ensureRemoteReadyAt(index)
+        ensureRemoteReadyAt(index, startPlaying = controller.isPlaying)
         prefetchAround(index)
     }
 
@@ -993,12 +998,14 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         viewModelScope.launch {
             val last = withContext(Dispatchers.IO) { playbackSessionStore.load() }
             val queueSnap = withContext(Dispatchers.IO) { playbackSessionStore.loadQueue() }
+            val settings = playbackPreferences.settingsFlow.first()
             if (liveSessionHydrated || _currentItem.value != null) return@launch
             val library = songsState.value
             val hydrated = PlaybackHydration.hydrateQueue(queueSnap, library)
             if (hydrated != null && hydrated.items.isNotEmpty()) {
                 if (liveSessionHydrated || _currentItem.value != null) return@launch
                 applyHydratedQueue(hydrated)
+                maybeAutoplayAfterIdleSeed(settings.autoplayOnLaunch)
                 return@launch
             }
             val song = PlaybackHydration.resolveIdleSeed(library, last) ?: return@launch
@@ -1006,7 +1013,15 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             setCurrentItem(song.toPlayable(), persistLastPlayed = false)
             _playbackPositionMs.value = PlaybackHydration.resumePositionMs(song, last)
             _isPlaying.value = false
+            maybeAutoplayAfterIdleSeed(settings.autoplayOnLaunch)
         }
+    }
+
+    private fun maybeAutoplayAfterIdleSeed(autoplay: Boolean) {
+        if (!autoplay || liveSessionHydrated) return
+        if (mediaController?.isPlaying == true) return
+        if (_currentItem.value == null) return
+        togglePlayPause()
     }
 
     private fun setupPlayerListener() {
@@ -1143,7 +1158,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
-    private fun ensureRemoteReadyAt(index: Int) {
+    private fun ensureRemoteReadyAt(index: Int, startPlaying: Boolean = true) {
         val item = _queue.value.getOrNull(index) as? PlayableItem.Remote ?: return
         if (!remoteNeedsResolve(item)) return
         resolvingTransitionJob?.cancel()
@@ -1152,13 +1167,15 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             try {
                 val resolvedItem = resolveRemote(item)
                 if (resolvedItem == null) {
-                    mediaController?.seekToNextMediaItem()
+                    if (startPlaying) mediaController?.seekToNextMediaItem()
                     return@launch
                 }
                 updateQueueItem(index, resolvedItem)
                 mediaController?.replaceMediaItem(index, playableToMediaItem(resolvedItem))
                 mediaController?.prepare()
-                mediaController?.play()
+                if (startPlaying) {
+                    mediaController?.play()
+                }
             } finally {
                 _resolvingRemote.value = false
             }

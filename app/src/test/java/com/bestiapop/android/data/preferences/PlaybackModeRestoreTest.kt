@@ -102,6 +102,11 @@ class PlaybackModeRestoreTest {
     }
 
     @Test
+    fun playbackSettings_autoplayOnLaunchDefaultsOff() {
+        assertFalse(PlaybackSettings().autoplayOnLaunch)
+    }
+
+    @Test
     fun parseRepeatModeName_validAndFallback() {
         assertEquals(RepeatMode.OFF, parseRepeatModeName(null))
         assertEquals(RepeatMode.OFF, parseRepeatModeName(""))

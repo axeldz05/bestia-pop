@@ -6,6 +6,7 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
+import com.bestiapop.android.data.model.AlbumOverride
 import com.bestiapop.android.data.model.Song
 
 @Database(
@@ -15,7 +16,7 @@ import com.bestiapop.android.data.model.Song
         PlaylistSongCrossRef::class,
         PlaylistPendingTrackEntity::class,
         PendingListenEntity::class,
-        AlbumOverrideEntity::class
+        AlbumOverride::class
     ],
     version = 7,
     exportSchema = false

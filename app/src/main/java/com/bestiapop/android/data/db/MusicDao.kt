@@ -6,6 +6,7 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
 import androidx.room.Update
+import com.bestiapop.android.data.model.AlbumOverride
 import com.bestiapop.android.data.model.Song
 import kotlinx.coroutines.flow.Flow
 
@@ -87,13 +88,13 @@ interface MusicDao {
 
     // Album overrides
     @Query("SELECT * FROM album_overrides")
-    fun getAllAlbumOverridesFlow(): Flow<List<AlbumOverrideEntity>>
+    fun getAllAlbumOverridesFlow(): Flow<List<AlbumOverride>>
 
     @Query("SELECT * FROM album_overrides WHERE albumKey = :albumKey LIMIT 1")
-    suspend fun getAlbumOverride(albumKey: String): AlbumOverrideEntity?
+    suspend fun getAlbumOverride(albumKey: String): AlbumOverride?
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun upsertAlbumOverride(override: AlbumOverrideEntity)
+    suspend fun upsertAlbumOverride(override: AlbumOverride)
 
     @Query("DELETE FROM album_overrides WHERE albumKey = :albumKey")
     suspend fun deleteAlbumOverride(albumKey: String)

@@ -101,16 +101,6 @@ data class WifiTransferItem(
     val artworkUri: String? = null
 )
 
-/** Persisted album-level metadata that can diverge from individual songs. */
-data class AlbumOverride(
-    val albumKey: String,
-    val displayName: String,
-    val artist: String? = null,
-    val genre: String? = null,
-    val year: Int = 0,
-    val artworkUri: String? = null
-)
-
 data class Artist(
     val name: String,
     val songCount: Int,

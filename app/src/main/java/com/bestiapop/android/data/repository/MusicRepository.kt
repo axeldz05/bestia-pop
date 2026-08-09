@@ -11,6 +11,7 @@ import com.bestiapop.android.data.db.PlaylistPendingTrackEntity
 import com.bestiapop.android.data.db.PlaylistSongCrossRef
 import com.bestiapop.android.data.db.toSong
 import com.bestiapop.android.data.model.Album
+import com.bestiapop.android.data.model.AlbumOverride
 import com.bestiapop.android.data.model.Artist
 import com.bestiapop.android.data.model.DownloadConflictPolicy
 import com.bestiapop.android.data.model.DuplicateSongException
@@ -95,10 +96,8 @@ class MusicRepository(private val context: Context) : IMusicRepository {
 
     override val allSongsFlow: Flow<List<Song>> = musicDao.getAllSongsFlow()
 
-    override val albumOverridesFlow: Flow<List<com.bestiapop.android.data.model.AlbumOverride>> =
-        musicDao.getAllAlbumOverridesFlow().map { entities ->
-            entities.map { it.toModel() }
-        }
+    override val albumOverridesFlow: Flow<List<AlbumOverride>> =
+        musicDao.getAllAlbumOverridesFlow()
 
     override val playlistsFlow: Flow<List<Playlist>> = musicDao.getAllPlaylistsFlow().map { entities ->
         entities.map { entity ->
@@ -783,19 +782,19 @@ class MusicRepository(private val context: Context) : IMusicRepository {
         )
     }
 
-    override suspend fun getAlbumOverride(albumKey: String): com.bestiapop.android.data.model.AlbumOverride? =
+    override suspend fun getAlbumOverride(albumKey: String): AlbumOverride? =
         withContext(Dispatchers.IO) {
-            musicDao.getAlbumOverride(albumKey)?.toModel()
+            musicDao.getAlbumOverride(albumKey)
         }
 
-    override suspend fun upsertAlbumOverride(override: com.bestiapop.android.data.model.AlbumOverride) =
+    override suspend fun upsertAlbumOverride(override: AlbumOverride) =
         withContext(Dispatchers.IO) {
             val savedArt = saveAlbumCoverImage(override.artworkUri) ?: override.artworkUri
-            musicDao.upsertAlbumOverride(persistOverrideEntity(override, savedArt))
+            musicDao.upsertAlbumOverride(persistOverride(override, savedArt))
         }
 
     override suspend fun updateAlbumMetadataPropagateToSongs(
-        override: com.bestiapop.android.data.model.AlbumOverride
+        override: AlbumOverride
     ) = withContext(Dispatchers.IO) {
         val oldKey = override.albumKey
         val newName = com.bestiapop.android.domain.util.normalizeAlbumName(override.displayName)
@@ -818,7 +817,7 @@ class MusicRepository(private val context: Context) : IMusicRepository {
             musicDao.deleteAlbumOverride(oldKey)
         }
         musicDao.upsertAlbumOverride(
-            persistOverrideEntity(
+            persistOverride(
                 override.copy(
                     albumKey = newName,
                     displayName = newName,
@@ -840,8 +839,8 @@ class MusicRepository(private val context: Context) : IMusicRepository {
 
         val targetSongs = musicDao.getSongsForAlbum(targetAlbumKey)
         val canonicalTarget = targetSongs.firstOrNull()?.album ?: targetAlbumKey
-        val override = musicDao.getAlbumOverride(canonicalTarget)?.toModel()
-            ?: musicDao.getAlbumOverride(targetAlbumKey)?.toModel()
+        val override = musicDao.getAlbumOverride(canonicalTarget)
+            ?: musicDao.getAlbumOverride(targetAlbumKey)
 
         val safeArtist = override?.artist?.takeIf { it.isNotBlank() }
             ?: targetSongs.firstOrNull()?.artist?.takeIf { it.isNotBlank() }
@@ -880,18 +879,16 @@ class MusicRepository(private val context: Context) : IMusicRepository {
         ).forEach { rewriteAlbumKey(it) }
     }
 
-    private fun persistOverrideEntity(
-        override: com.bestiapop.android.data.model.AlbumOverride,
+    private fun persistOverride(
+        override: AlbumOverride,
         savedArt: String?
-    ): com.bestiapop.android.data.db.AlbumOverrideEntity =
-        com.bestiapop.android.data.db.AlbumOverrideEntity(
-            albumKey = override.albumKey,
-            displayName = override.displayName.ifBlank { override.albumKey },
-            artist = override.artist?.takeIf { it.isNotBlank() },
-            genre = override.genre?.takeIf { it.isNotBlank() },
-            year = override.year.coerceAtLeast(0),
-            artworkUri = savedArt
-        )
+    ): AlbumOverride = override.copy(
+        displayName = override.displayName.ifBlank { override.albumKey },
+        artist = override.artist?.takeIf { it.isNotBlank() },
+        genre = override.genre?.takeIf { it.isNotBlank() },
+        year = override.year.coerceAtLeast(0),
+        artworkUri = savedArt
+    )
 
     /** L1: copy a user-chosen image into [subdir] under filesDir. */
     private fun copyUserImageTo(subdir: String, sourceUriStr: String?): File? {

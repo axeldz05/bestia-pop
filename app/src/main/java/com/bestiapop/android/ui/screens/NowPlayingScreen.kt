@@ -40,6 +40,7 @@ import androidx.compose.material.icons.automirrored.filled.VolumeMute
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Lyrics
 import androidx.compose.material.icons.filled.MoreVert
@@ -99,7 +100,9 @@ import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import com.bestiapop.android.data.model.ActiveDownload
 import com.bestiapop.android.data.model.Album
+import com.bestiapop.android.data.model.CandidateDownloadState
 import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.data.model.Playlist
 import com.bestiapop.android.data.model.RepeatMode
@@ -107,7 +110,11 @@ import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.data.preferences.NAV_LIBRARY
 import com.bestiapop.android.data.preferences.NAV_PLAYLISTS
 import com.bestiapop.android.domain.radio.RadioMode
+import com.bestiapop.android.domain.util.TrackMatchKeys
 import com.bestiapop.android.ui.MusicPlayerViewModel
+import com.bestiapop.android.ui.components.DownloadOutlinedActionButton
+import com.bestiapop.android.ui.components.DownloadProgressPercent
+import com.bestiapop.android.ui.components.DownloadQueuedLabel
 import com.bestiapop.android.ui.components.QueueItemRow
 import com.bestiapop.android.ui.components.formatDuration
 import com.bestiapop.android.ui.screens.library.AlbumEditDialogsHost
@@ -171,6 +178,7 @@ fun NowPlayingScreen(
     val artists by viewModel.artistsState.collectAsState()
     val playlists by viewModel.playlists.collectAsState(initial = emptyList())
     val discoverOrigin by viewModel.discoverPlaybackOrigin.collectAsState()
+    val activeDownloads by viewModel.activeDownloads.collectAsState()
     var radioMenuExpanded by remember { mutableStateOf(false) }
     var actionsMenuExpanded by remember { mutableStateOf(false) }
     var editingSong by remember { mutableStateOf<Song?>(null) }
@@ -652,6 +660,21 @@ fun NowPlayingScreen(
                 }
             }
 
+            val remoteItem = item as? PlayableItem.Remote
+            if (remoteItem != null) {
+                val downloadKey = TrackMatchKeys.downloadIdFor(remoteItem.artist, remoteItem.title)
+                val remoteDownload = if (downloadKey.isEmpty()) {
+                    null
+                } else {
+                    activeDownloads.find { it.id == downloadKey }
+                }
+                NowPlayingRemoteDownloadAction(
+                    download = remoteDownload,
+                    onDownload = { viewModel.downloadRemoteItem(remoteItem) },
+                    onRetry = viewModel::retryActiveDownload
+                )
+            }
+
             Spacer(modifier = Modifier.height(20.dp))
 
             // Interactive Time Scrubber Slider Bar
@@ -811,6 +834,43 @@ fun NowPlayingScreen(
         viewModel = viewModel,
         onDismissEdit = { albumForEdit = null }
     )
+}
+
+@Composable
+private fun NowPlayingRemoteDownloadAction(
+    download: ActiveDownload?,
+    onDownload: () -> Unit,
+    onRetry: (String) -> Unit
+) {
+    Spacer(modifier = Modifier.height(8.dp))
+    when (download?.state) {
+        CandidateDownloadState.QUEUED -> DownloadQueuedLabel()
+        CandidateDownloadState.DOWNLOADING -> DownloadProgressPercent(download.progressPercent)
+        CandidateDownloadState.SUCCESS -> Text(
+            text = "En biblioteca",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.primary
+        )
+        CandidateDownloadState.ERROR -> DownloadOutlinedActionButton(
+            label = "Reintentar",
+            onClick = { onRetry(download.id) }
+        )
+        CandidateDownloadState.IDLE, null -> Button(
+            onClick = onDownload,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.primaryContainer
+            ),
+            shape = RoundedCornerShape(12.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.Download,
+                contentDescription = null,
+                modifier = Modifier.size(16.dp)
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+            Text("Descargar ahora", color = MaterialTheme.colorScheme.onPrimaryContainer)
+        }
+    }
 }
 
 @Composable

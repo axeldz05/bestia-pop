@@ -250,7 +250,7 @@ enum class ActiveDownloadSource {
     SAVE_WHILE_LISTENING,
     BATCH,
     LB_IMPORT,
-    /** Manual download from Para Ti / Recomendados (stream → library). */
+    /** Manual download of a streamed Remote (Para Ti / Recomendados / Now Playing). */
     DISCOVER
 }
 

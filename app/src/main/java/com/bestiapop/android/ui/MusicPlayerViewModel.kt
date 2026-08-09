@@ -4265,7 +4265,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         }
 
     /**
-     * Manual download of a streamed remote (Para Ti / Recomendados) into the library.
+     * Manual download of a streamed remote (Para Ti / Recomendados / Now Playing) into the library.
      * Enqueues via [runTrackedDownload] ([ActiveDownloadSource.DISCOVER]); progress in Descargas.
      */
     fun downloadRemoteItem(remote: PlayableItem.Remote) {

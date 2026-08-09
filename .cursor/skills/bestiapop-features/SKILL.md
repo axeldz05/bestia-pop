@@ -202,7 +202,7 @@ Centro de descargas online → sección 2 (`DownloadsScreen`, tab Descargas).
 - CF Recomendados = `GET /1/cf/recommendation/user/{user}/recording` + metadata → match Local|Remote.
 - Match local por artist+title normalizado; faltantes = `PlayableItem.Remote`.
 - Reproducción: cola mixta `Local|Remote` vía `playPlayableCollection` (prefetch / 403 retry de stream).
-- **Descarga manual** de un Remote en detalle Para Ti / Recomendados: icono Descargar en `RemoteTrackPlaceholderRow` → `downloadRemoteItem` (`ActiveDownloadSource.DISCOVER`); progreso en Descargas; al éxito rematch LB + CF.
+- **Descarga manual** de un Remote en detalle Para Ti / Recomendados o Now Playing: icono Descargar en `RemoteTrackPlaceholderRow` / CTA `NowPlayingRemoteDownloadAction` → `downloadRemoteItem` (`ActiveDownloadSource.DISCOVER`); progreso en Descargas (+ estados en NP); al éxito rematch LB + CF.
 - **Guardar al escuchar** (`saveWhileListening` + `saveWhileListeningPercent`): al alcanzar ≥N% de la duración (o fin) de un Remote, encola en `activeDownloads` vía `runTrackedDownload` (sin reemplazar el MediaItem). Fallo → `ERROR` en el centro + Toast; quita la key de `saveWhileListeningAttempted` para permitir reintento manual/auto.
 - **Import a Room:** “Guardar” crea playlist local con matched + metadata pendiente de faltantes (`playlist_pending_tracks`); “Descargar faltantes” / detalle local encola vía `runTrackedDownload` (`LB_IMPORT` + `targetPlaylistId`). Progreso en tab Descargas; nunca CDN en Room.
 
@@ -217,7 +217,7 @@ Centro de descargas online → sección 2 (`DownloadsScreen`, tab Descargas).
 | Play / shuffle / índice | `playListenBrainzPlaylist` / `shuffleListenBrainzPlaylist` / `playListenBrainzPlaylistAt` |
 | Import locales + pendientes | `saveListenBrainzPlaylistAsLocal` → `ImportListenBrainzPlaylistUseCase.createLocalFromMatched` (`PlaylistPendingTrack(identity = track.identity)`; unmatched → `remoteFrom(identity).toOnlineCatalogTrack`) |
 | Import + descarga ya | `importListenBrainzPlaylistWithDownloads` / `downloadPlaylistPendingTracks` → `runTrackedDownload` (`LB_IMPORT`) |
-| Descarga manual Remote | `downloadRemoteItem` → `runTrackedDownload` (`DISCOVER`); UI `RemoteTrackPlaceholderRow.onDownload` en detalle LB/CF |
+| Descarga manual Remote | `downloadRemoteItem` → `runTrackedDownload` (`DISCOVER`); UI `RemoteTrackPlaceholderRow.onDownload` en detalle LB/CF; NP `NowPlayingRemoteDownloadAction` |
 | CF Recomendados | `ListenBrainzClient.fetchCfRecordingRecommendations` → `FetchAndMatchCfRecommendationsUseCase` → `refreshCfRecommendations` / `openCfRecommendations` / `playCfRecommendations` / `shuffleCfRecommendations` / `playCfAt` |
 | UI sección | `PlaylistsScreen` — "Para Ti" + "Recomendados"; Guardar / Descargar faltantes / descarga por track; detalle local muestra pendientes |
 | Restore sesión | `playlistDetail` `ListenBrainz` / `CfRecommendations` + `selectedNavIndex`; fetch al hidratar/abrir tab Playlists; fallo (sin red, Discover off, API) → lista general + toast (`restoreDiscoverDetailOrFallback`) |
@@ -270,6 +270,7 @@ Centro de descargas online → sección 2 (`DownloadsScreen`, tab Descargas).
 | Ir a Para Ti / Recomendados | `DiscoverPlaybackOrigin` (sesión; no persistido) si play/shuffle desde LB/CF | `openListenBrainzPlaylistDetail` / `openCfRecommendationsDetail` |
 | Añadir a playlist / Identificar / Editar canción | Solo `PlayableItem.Local` | `SongActionDialogsHost` / `identifySongForReview` |
 | Editar álbum | Local + álbum en biblioteca | `AlbumEditDialogsHost`; merge único en `MainScreen` (`pendingAlbumMerge`) |
+| Descargar ahora | Solo `PlayableItem.Remote` (visible bajo título) | `NowPlayingRemoteDownloadAction` → `downloadRemoteItem`; estados vía `activeDownloads` |
 | Iniciar radio | Siempre | `startRadio()` (mismo que icono header) |
 
 Origen Discover: set en `playListenBrainzPlaylist*` / `playCf*`; clear en `playPlayableCollection` / radio que muta cola / `applyHydratedQueue`.

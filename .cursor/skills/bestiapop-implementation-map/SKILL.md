@@ -37,7 +37,7 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 | Ajustes / ListenBrainz | `ui/screens/SettingsScreen.kt` (`BackHandler` sección), `ListenBrainzSettingsScreen.kt` |
 | Ajustes / Reproducción | `ui/screens/PlaybackSettingsScreen.kt` (`SettingsScreen` sección `Playback`) |
 | Ajustes / Sonido | `ui/screens/VolumeBoostSettingsScreen.kt` (`SettingsScreen` sección `Sound`) |
-| Now playing | `ui/screens/NowPlayingScreen.kt` (`BackHandler` → `onDismiss`; cola `displayQueue` vía `QueueItemRow`; ⋮ `NowPlayingActionsMenu`) |
+| Now playing | `ui/screens/NowPlayingScreen.kt` (`BackHandler` → `onDismiss`; cola `displayQueue` vía `QueueItemRow`; ⋮ `NowPlayingActionsMenu`; remoto `NowPlayingRemoteDownloadAction`) |
 | Cola | `ui/screens/QueueScreen.kt` (`displayQueue`, drag → `moveDisplayQueueItem`) |
 | WiFi sync | `ui/screens/WebServerScreen.kt` (`WebServerScreen(viewModel)` + transferencias + botón conflictos + `SongActionDialogsHost`) |
 | Descargas | `ui/screens/DownloadsScreen.kt` (`DownloadsScreen(viewModel)` + `ActiveDownloadRow` + `dismissAllActiveDownloads`) |

@@ -6,6 +6,7 @@ import androidx.room.Index
 import androidx.room.Junction
 import androidx.room.PrimaryKey
 import androidx.room.Relation
+import com.bestiapop.android.data.model.Song
 
 @Entity(tableName = "playlists")
 data class PlaylistEntity(
@@ -53,9 +54,10 @@ data class PlaylistPendingTrackEntity(
 data class PlaylistWithSongs(
     @Embedded val playlist: PlaylistEntity,
     @Relation(
+        entity = Song::class,
         parentColumn = "playlistId",
         entityColumn = "id",
         associateBy = Junction(PlaylistSongCrossRef::class, parentColumn = "playlistId", entityColumn = "songId")
     )
-    val songs: List<SongEntity>
+    val songs: List<Song>
 )

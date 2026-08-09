@@ -51,7 +51,7 @@ When the same stack frame appears 3+ times:
 
 * Extract a **shared value** (`TrackIdentity` / `TrackMeta`: title, artist, album, artworkUri, durationMs, trackNumber).
 * **Wrap, don’t copy**: `IdentifyCandidate(track, score, reasons)`, `Remote(identity, mbid, stream)`, `AudioFileMetadata(identity, genre)`, `LbPlaylistTrack` / `LbRecordingMetadata` / `MatchedCfTrack` / `PlaylistPendingTrack` (`identity` + mbid/score/playlist extras).
-* Keep hot-path persist types **flat** (`Song` / `SongEntity`) — they *implement* the contract, they do not nest the value (extra alloc + nested `copy` on every library filter). `PlaylistPendingTrackEntity` stays flat (`releaseName` SQL column; mapper ↔ `identity.album`).
+* Keep hot-path persist types **flat** (`Song` is the Room row) — they *implement* the contract, they do not nest the value (extra alloc + nested `copy` on every library filter). `PlaylistPendingTrackEntity` stays flat (`releaseName` SQL column; mapper ↔ `identity.album`).
 * Do **not** invent a class hierarchy (`LocalTrack : Track`) and do **not** make a god-object with mbid+score+uri+CDN nullable fields.
 
 Indicator: changing one identity field should edit **one** hub type (+ Room columns if persisted).

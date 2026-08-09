@@ -1,7 +1,6 @@
 package com.bestiapop.android.domain.usecase
 
 import android.net.Uri
-import com.bestiapop.android.data.db.SongEntity
 import com.bestiapop.android.data.listenbrainz.LbPlaylistDetail
 import com.bestiapop.android.data.listenbrainz.LbPlaylistSummary
 import com.bestiapop.android.data.listenbrainz.LbPlaylistTrack
@@ -150,7 +149,7 @@ class ImportListenBrainzPlaylistUseCaseTest {
         ) = 0
         override suspend fun getAllSongsSync(): List<Song> = emptyList()
         override suspend fun findSongByArtistTitle(artist: String, title: String): Song? = null
-        override suspend fun saveUploadedSong(song: SongEntity): Long = 0L
+        override suspend fun saveUploadedSong(song: Song): Long = 0L
         override suspend fun deleteSongsFromApp(songs: List<Song>) = Unit
         override suspend fun deleteSongsFromDevice(songs: List<Song>) = Unit
         override suspend fun enhanceSongMetadataAndLyrics(song: Song) = Unit

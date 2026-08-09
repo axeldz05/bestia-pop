@@ -1,7 +1,6 @@
 package com.bestiapop.android.domain.repository
 
 import android.net.Uri
-import com.bestiapop.android.data.db.SongEntity
 import com.bestiapop.android.data.model.AlbumOverride
 import com.bestiapop.android.data.model.IdentifyCandidate
 import com.bestiapop.android.data.model.IdentifyProposal
@@ -30,7 +29,7 @@ interface IMusicRepository {
     suspend fun scanFolderUri(treeUri: Uri, onProgress: LibraryScanProgress? = null): Int
     suspend fun getAllSongsSync(): List<Song>
     suspend fun findSongByArtistTitle(artist: String, title: String): Song?
-    suspend fun saveUploadedSong(song: SongEntity): Long
+    suspend fun saveUploadedSong(song: Song): Long
     suspend fun deleteSongsFromApp(songs: List<Song>)
     suspend fun deleteSongsFromDevice(songs: List<Song>)
     suspend fun enhanceSongMetadataAndLyrics(song: Song)

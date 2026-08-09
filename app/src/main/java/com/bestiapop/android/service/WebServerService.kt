@@ -220,7 +220,7 @@ class WebServerService : Service() {
                                         extractEmbeddedArtwork = repository::extractAndSaveEmbeddedArtwork
                                     )
                                     val songId = repository.saveUploadedSong(
-                                        metadata.toSongEntity(
+                                        metadata.toSong(
                                             uriString = ref.uriString,
                                             folderPath = ref.folderPath
                                         )

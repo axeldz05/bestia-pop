@@ -6,6 +6,7 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
 import androidx.room.Update
+import com.bestiapop.android.data.model.Song
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -13,28 +14,28 @@ interface MusicDao {
 
     // Songs
     @Query("SELECT * FROM songs ORDER BY title ASC")
-    fun getAllSongsFlow(): Flow<List<SongEntity>>
+    fun getAllSongsFlow(): Flow<List<Song>>
 
     @Query("SELECT * FROM songs ORDER BY title ASC")
-    suspend fun getAllSongs(): List<SongEntity>
+    suspend fun getAllSongs(): List<Song>
 
     @Query("SELECT * FROM songs WHERE album = 'YouTube Music'")
-    suspend fun getLegacyYouTubeMusicSongs(): List<SongEntity>
+    suspend fun getLegacyYouTubeMusicSongs(): List<Song>
 
     @Query("SELECT * FROM songs WHERE uriString = :uri LIMIT 1")
-    suspend fun getSongByUri(uri: String): SongEntity?
+    suspend fun getSongByUri(uri: String): Song?
 
     @Query("SELECT * FROM songs WHERE id = :id")
-    suspend fun getSongById(id: Long): SongEntity?
+    suspend fun getSongById(id: Long): Song?
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertSong(song: SongEntity): Long
+    suspend fun insertSong(song: Song): Long
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertSongs(songs: List<SongEntity>)
+    suspend fun insertSongs(songs: List<Song>)
 
     @Update
-    suspend fun updateSong(song: SongEntity)
+    suspend fun updateSong(song: Song)
 
     @Query("DELETE FROM songs WHERE id = :songId")
     suspend fun deleteSong(songId: Long)
@@ -73,7 +74,7 @@ interface MusicDao {
     )
 
     @Query("SELECT * FROM songs WHERE album = :albumName COLLATE NOCASE")
-    suspend fun getSongsForAlbum(albumName: String): List<SongEntity>
+    suspend fun getSongsForAlbum(albumName: String): List<Song>
 
     @Query("SELECT artworkUri FROM songs WHERE album = :albumName AND artworkUri IS NOT NULL AND artworkUri != '' LIMIT 1")
     suspend fun getArtworkForAlbum(albumName: String): String?

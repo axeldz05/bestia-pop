@@ -6,10 +6,11 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
+import com.bestiapop.android.data.model.Song
 
 @Database(
     entities = [
-        SongEntity::class,
+        Song::class,
         PlaylistEntity::class,
         PlaylistSongCrossRef::class,
         PlaylistPendingTrackEntity::class,

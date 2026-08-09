@@ -9,9 +9,7 @@ import com.bestiapop.android.data.db.AppDatabase
 import com.bestiapop.android.data.db.PlaylistEntity
 import com.bestiapop.android.data.db.PlaylistPendingTrackEntity
 import com.bestiapop.android.data.db.PlaylistSongCrossRef
-import com.bestiapop.android.data.db.SongEntity
-import com.bestiapop.android.data.db.toEntity
-import com.bestiapop.android.data.db.toSongEntity
+import com.bestiapop.android.data.db.toSong
 import com.bestiapop.android.data.model.Album
 import com.bestiapop.android.data.model.Artist
 import com.bestiapop.android.data.model.DownloadConflictPolicy
@@ -95,9 +93,7 @@ class MusicRepository(private val context: Context) : IMusicRepository {
         .followSslRedirects(true)
         .build()
 
-    override val allSongsFlow: Flow<List<Song>> = musicDao.getAllSongsFlow().map { entities ->
-        entities.map { it.toSong() }
-    }
+    override val allSongsFlow: Flow<List<Song>> = musicDao.getAllSongsFlow()
 
     override val albumOverridesFlow: Flow<List<com.bestiapop.android.data.model.AlbumOverride>> =
         musicDao.getAllAlbumOverridesFlow().map { entities ->
@@ -118,7 +114,7 @@ class MusicRepository(private val context: Context) : IMusicRepository {
 
     override fun getPlaylistSongsFlow(playlistId: Long): Flow<List<Song>> {
         return musicDao.getPlaylistWithSongsFlow(playlistId).map { withSongs ->
-            withSongs?.songs?.map { it.toSong() } ?: emptyList()
+            withSongs?.songs ?: emptyList()
         }
     }
 
@@ -135,8 +131,7 @@ class MusicRepository(private val context: Context) : IMusicRepository {
                     songCount = withSongs.songs.size,
                     createdAt = entity.createdAt
                 )
-                val songs = withSongs.songs.map { it.toSong() }
-                Pair(playlist, songs)
+                Pair(playlist, withSongs.songs)
             }
         }
     }
@@ -171,38 +166,38 @@ class MusicRepository(private val context: Context) : IMusicRepository {
             "${MediaStore.Audio.Media.TITLE} ASC"
         )
 
-        val scannedEntities = mutableListOf<SongEntity>()
+        val scanned = mutableListOf<Song>()
         val ticker = ScanProgressTicker(cursor?.count ?: 0, onProgress)
 
         cursor?.use {
             while (it.moveToNext()) {
-                val entity = it.toSongEntity()
-                val tickName = entity.title.ifBlank { entity.folderPath.substringAfterLast('/') }
+                val song = it.toSong()
+                val tickName = song.title.ifBlank { song.folderPath.substringAfterLast('/') }
                 ticker.tick(tickName)
-                if (!isRealMusicTrack(entity.durationMs, entity.folderPath)) continue
-                if (SongPathNormalizer.isUnderBestiaPop(entity.folderPath) ||
-                    SongPathNormalizer.isUnderBestiaPop(entity.uriString)
+                if (!isRealMusicTrack(song.durationMs, song.folderPath)) continue
+                if (SongPathNormalizer.isUnderBestiaPop(song.folderPath) ||
+                    SongPathNormalizer.isUnderBestiaPop(song.uriString)
                 ) {
                     continue
                 }
-                val dataPath = entity.folderPath.trim()
+                val dataPath = song.folderPath.trim()
                 if (dataPath.isNotEmpty() && existingPaths.contains(dataPath.lowercase())) {
                     continue
                 }
-                val key = MatchListenBrainzTracksUseCase.matchKey(entity.artist, entity.title)
+                val key = MatchListenBrainzTracksUseCase.matchKey(song.artist, song.title)
                 if (key.isNotEmpty() && existingKeys.contains(key)) {
                     continue
                 }
-                val ref = audioStore.canonicalize(entity.uriString, entity.folderPath)
-                scannedEntities.add(entity.copy(uriString = ref.uriString, folderPath = ref.folderPath))
+                val ref = audioStore.canonicalize(song.uriString, song.folderPath)
+                scanned.add(song.copy(uriString = ref.uriString, folderPath = ref.folderPath))
                 if (key.isNotEmpty()) existingKeys.add(key)
                 if (dataPath.isNotEmpty()) existingPaths.add(dataPath.lowercase())
                 existingPaths.add(ref.uriString.lowercase())
             }
         }
 
-        if (scannedEntities.isNotEmpty()) {
-            musicDao.insertSongs(scannedEntities)
+        if (scanned.isNotEmpty()) {
+            musicDao.insertSongs(scanned)
         }
     }
 
@@ -220,7 +215,7 @@ class MusicRepository(private val context: Context) : IMusicRepository {
             }.map { it.lowercase() }.toHashSet()
 
             val ticker = ScanProgressTicker(managed.size, onProgress)
-            val scanned = mutableListOf<SongEntity>()
+            val scanned = mutableListOf<Song>()
             indexAudioFiles(
                 files = managed,
                 list = scanned,
@@ -236,7 +231,7 @@ class MusicRepository(private val context: Context) : IMusicRepository {
 
     override suspend fun findSongByArtistTitle(artist: String, title: String): Song? =
         withContext(Dispatchers.IO) {
-            findSongEntityByArtistTitle(artist, title)?.toSong()
+            lookupSongByArtistTitle(artist, title)
         }
 
     override suspend fun scanFolderUri(treeUri: Uri, onProgress: LibraryScanProgress?): Int =
@@ -252,7 +247,7 @@ class MusicRepository(private val context: Context) : IMusicRepository {
 
             val total = countAudioDocuments(rootFolder)
             val ticker = ScanProgressTicker(total, onProgress)
-            val scanned = mutableListOf<SongEntity>()
+            val scanned = mutableListOf<Song>()
             scanDocumentFolderRecursively(
                 folder = rootFolder,
                 list = scanned,
@@ -281,7 +276,7 @@ class MusicRepository(private val context: Context) : IMusicRepository {
     /** Index audio files under public Music/BestiaPop (absolute paths, same as downloads). */
     private fun indexAudioFiles(
         files: List<File>,
-        list: MutableList<SongEntity>,
+        list: MutableList<Song>,
         existingKeys: MutableSet<String>,
         existingPaths: MutableSet<String>,
         onFileVisited: ((String) -> Unit)? = null
@@ -313,7 +308,7 @@ class MusicRepository(private val context: Context) : IMusicRepository {
                 if (key.isNotEmpty() && existingKeys.contains(key)) continue
 
                 list.add(
-                    metadata.toSongEntity(
+                    metadata.toSong(
                         uriString = ref.uriString,
                         folderPath = ref.folderPath
                     )
@@ -332,7 +327,7 @@ class MusicRepository(private val context: Context) : IMusicRepository {
 
     private fun scanDocumentFolderRecursively(
         folder: DocumentFile,
-        list: MutableList<SongEntity>,
+        list: MutableList<Song>,
         existingKeys: MutableSet<String>,
         existingPaths: MutableSet<String>,
         onFileVisited: ((String) -> Unit)? = null
@@ -375,7 +370,7 @@ class MusicRepository(private val context: Context) : IMusicRepository {
                     if (key.isNotEmpty() && existingKeys.contains(key)) continue
 
                     list.add(
-                        metadata.toSongEntity(
+                        metadata.toSong(
                             uriString = ref.uriString,
                             folderPath = ref.folderPath
                         )
@@ -454,15 +449,15 @@ class MusicRepository(private val context: Context) : IMusicRepository {
     }
 
     override suspend fun getAllSongsSync(): List<Song> = withContext(Dispatchers.IO) {
-        musicDao.getAllSongs().map { it.toSong() }
+        musicDao.getAllSongs()
     }
 
-    override suspend fun saveUploadedSong(song: SongEntity): Long = withContext(Dispatchers.IO) {
+    override suspend fun saveUploadedSong(song: Song): Long = withContext(Dispatchers.IO) {
         val ref = audioStore.canonicalize(song.uriString, song.folderPath)
         val normalized = song.copy(uriString = ref.uriString, folderPath = ref.folderPath)
         val key = MatchListenBrainzTracksUseCase.matchKey(normalized.artist, normalized.title)
         if (key.isNotEmpty()) {
-            val existing = findSongEntityByArtistTitle(normalized.artist, normalized.title)
+            val existing = lookupSongByArtistTitle(normalized.artist, normalized.title)
             if (existing != null) {
                 val oldRef = audioStore.canonicalize(existing.uriString, existing.folderPath)
                 if (oldRef.uriString != normalized.uriString &&
@@ -1037,7 +1032,7 @@ class MusicRepository(private val context: Context) : IMusicRepository {
         if (finalArtwork.isNullOrBlank()) finalArtwork = ytStream.artworkUrl
         if (finalDurationMs <= 0) finalDurationMs = ytStream.durationMs
 
-        var overwriteTarget: SongEntity? = null
+        var overwriteTarget: Song? = null
         when (conflictPolicy) {
             is DownloadConflictPolicy.Overwrite -> {
                 overwriteTarget = musicDao.getSongById(conflictPolicy.existingSongId)
@@ -1049,10 +1044,10 @@ class MusicRepository(private val context: Context) : IMusicRepository {
                 finalTitle = conflictPolicy.newTitle.trim().ifBlank { finalTitle }
             }
             null -> {
-                val existing = findSongEntityByArtistTitle(finalArtist, finalTitle)
+                val existing = lookupSongByArtistTitle(finalArtist, finalTitle)
                 if (existing != null) {
                     throw DuplicateSongException(
-                        existing.toSong(),
+                        existing,
                         track.withIdentity { copy(title = finalTitle, artist = finalArtist) }
                     )
                 }
@@ -1190,10 +1185,10 @@ class MusicRepository(private val context: Context) : IMusicRepository {
             )
             musicDao.updateSong(updated)
             onProgress?.invoke("¡Canción sobrescrita con éxito!")
-            return@withContext updated.toSong()
+            return@withContext updated
         }
 
-        val songEntity = SongEntity(
+        val song = Song(
             uriString = savedRef.uriString,
             title = finalTitle,
             artist = finalArtist,
@@ -1208,18 +1203,18 @@ class MusicRepository(private val context: Context) : IMusicRepository {
             dateAdded = System.currentTimeMillis()
         )
 
-        val insertedId = musicDao.insertSong(songEntity)
-        val savedSong = songEntity.copy(id = insertedId).toSong()
+        val insertedId = musicDao.insertSong(song)
+        val savedSong = song.copy(id = insertedId)
 
         onProgress?.invoke("¡Canción agregada con éxito!")
         return@withContext savedSong
     }
 
-    private suspend fun findSongEntityByArtistTitle(artist: String, title: String): SongEntity? {
+    private suspend fun lookupSongByArtistTitle(artist: String, title: String): Song? {
         val key = TrackMatchKeys.matchKey(artist, title)
         if (key.isEmpty()) return null
-        val entities = musicDao.getAllSongs()
-        return TrackMatchKeys.buildIndex(entities, { it.artist }, { it.title })[key]
+        val songs = musicDao.getAllSongs()
+        return TrackMatchKeys.buildIndex(songs, { it.artist }, { it.title })[key]
     }
 
     suspend fun migrateCanonicalAudioUris() = withContext(Dispatchers.IO) {
@@ -1278,7 +1273,7 @@ class MusicRepository(private val context: Context) : IMusicRepository {
             if (legacySongs.isEmpty()) return@withContext
 
             for (song in legacySongs) {
-                identifySongMetadata(song.toSong())
+                identifySongMetadata(song)
             }
         } catch (e: Exception) {
             e.printStackTrace()

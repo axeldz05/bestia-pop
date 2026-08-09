@@ -89,7 +89,7 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 | `CfRecommendationsRadio` | `domain/radio/CfRecommendationsRadio.kt` | CF pool cache → Local/Remote (fill Radio NEW/BOTH) |
 | `DeezerSimilarRadio` | `domain/radio/DeezerSimilarRadio.kt` | Deezer radio/related + iTunes same-artist fill → Remote |
 | `RadioMode` | `domain/radio/RadioMode.kt` | `KNOWN` / `NEW` / `BOTH` |
-| Puerto | `domain/repository/IMusicRepository.kt` | contrato repositorio (`getCoPlaylistSongIds`, `LibraryScanProgress`, `proposeSongIdentity`, `applySongIdentity`, `identifySongMetadata`) |
+| Puerto | `domain/repository/IMusicRepository.kt` | contrato repositorio (`getCoPlaylistSongIds`, `LibraryScanProgress`, `proposeSongIdentity`, `applySongIdentity`, `identifySongMetadata`, `saveUploadedSong(Song)`) |
 
 ## Data
 
@@ -97,11 +97,11 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 |---------|---------|
 | Repo impl | `data/repository/MusicRepository.kt` (`scanMediaStore`, `resyncAppManagedMusic`, `scanFolderUri`, `proposeSongIdentity`, `applySongIdentity`, `identifySongMetadata`, `migrateCanonicalAudioUris`) |
 | Identidad de track | `data/model/TrackIdentity.kt` (`TrackMeta`, `TrackIdentity`, `mergePreferring`, `Song.toIdentity`, `OnlineCatalogTrack.withIdentity`, `DEFAULT_CATALOG_USER_AGENT`) |
-| Modelos dominio UI | `data/model/Models.kt` (`Song` : `TrackMeta` plano, `OnlineCatalogTrack` (`identity` + id/provider/audioUrl + invoke plano), `CatalogTrackCandidate`, `DownloadStatus`, `ActiveDownload` + factories `queued`/`downloading`/`conflict`/`success`/`error` + `targetPlaylistId` / `resultSongId`, `ActiveDownloadSource` incl. `LB_IMPORT` / `DISCOVER`, `CandidateDownloadState` incl. `QUEUED`, `PlaylistPendingTrack(identity, id, playlistId, mbid, position)` + `toOnlineCatalogTrack`, `AlbumOverride`, `WifiTransferItem` / `WifiTransferState`, `Album.displayName`, `LibraryJobProgress` / `LibraryJobKind`, `IdentifyResult`, `IdentifyCandidate(track, score, reasons)`, `IdentifyConfidence`, `IdentifyProposal`) |
+| Modelos dominio UI | `data/model/Song.kt` (`Song` : `TrackMeta` plano + `@Entity songs`), `data/model/Models.kt` (`OnlineCatalogTrack` (`identity` + id/provider/audioUrl + invoke plano), `CatalogTrackCandidate`, `DownloadStatus`, `ActiveDownload` + factories `queued`/`downloading`/`conflict`/`success`/`error` + `targetPlaylistId` / `resultSongId`, `ActiveDownloadSource` incl. `LB_IMPORT` / `DISCOVER`, `CandidateDownloadState` incl. `QUEUED`, `PlaylistPendingTrack(identity, id, playlistId, mbid, position)` + `toOnlineCatalogTrack`, `AlbumOverride`, `WifiTransferItem` / `WifiTransferState`, `Album.displayName`, `LibraryJobProgress` / `LibraryJobKind`, `IdentifyResult`, `IdentifyCandidate(track, score, reasons)`, `IdentifyConfidence`, `IdentifyProposal`) |
 | Cola Local/Remote | `data/model/PlayableItem.kt` (`PlayableItem` : `TrackMeta`, `Remote(identity, mbid, youtubeQuery, resolved)`, `ResolvedStream`, `Song.toPlayable`, `remoteFrom` identity + args, `fromLibraryOrRemote(identity)` / args, `Remote.toOnlineCatalogTrack` / `withIdentity`) |
 | Room DB | `data/db/AppDatabase.kt` (v6) |
 | DAO | `data/db/MusicDao.kt` (`getCoPlaylistSongIds`) |
-| Song entity + mappers | `data/db/SongEntity.kt` |
+| Song entity + MediaStore | `data/model/Song.kt`; `data/db/MediaStoreSongMapper.kt` (`Cursor.toSong`) |
 | Album overrides | `data/db/AlbumOverrideEntity.kt` |
 | Album merge | `IMusicRepository.mergeAlbumInto` → `MusicRepository.mergeAlbumInto` + `MusicDao.updateSongsAlbumMetadata` / `getSongsForAlbum` |
 | Playlist entities | `data/db/PlaylistEntities.kt` (`PlaylistPendingTrackEntity` plano, columna `releaseName`); mapper `toPendingTrack` / `toEntity` en `MusicRepository.kt` (`album` ↔ `releaseName`) |
@@ -119,7 +119,7 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 | LB models + sync | `data/listenbrainz/LbPlaylistModels.kt` (`LbPlaylistTrack(identity, mbid)` + invoke plano, `MatchedLbTrack.toPlayableItem` → `fromLibraryOrRemote(identity)`, `MatchedLbPlaylist.toPlayableItems`, `streamCount`), `LbRadioModels.kt` (`LbRecordingMetadata(identity, mbid)` + invoke plano), `CfRecommendationModels.kt` (`MatchedCfTrack(identity, mbid, score, localSong)`, `MatchedCfRecommendations`), `ListenTracker.kt`, `ListenSyncCoordinator.kt` |
 | Connectivity | `data/network/ConnectivityObserver.kt` |
 | Pending listens Room | `data/db/PendingListenEntity.kt`, `PendingListenDao.kt` |
-| Storage helpers | `data/util/MusicFileStore.kt` (`canonicalize`, `playableUri`, `openRead`, `applyDataSource`, `prepareWrite`, `delete`, `listManaged`), `data/util/AudioPersistRef.kt` (`canonicalize`), `data/util/StorageUtils.kt` (`getPublicMusicDirectory`, `prepareWrite`, `listAudioFileNames`, `listManagedAudioFiles`, `deleteManagedAudio`), `data/util/SongPathNormalizer.kt` (`toAbsolutePath`, `safTreeDocumentToAbsolutePath`, `fileName`, `hasUsableArtwork`, path normalize / app-owned checks), `data/util/JsonExt.kt` (`optNullableString`), `data/util/AudioFileMetadata.kt` (`identity` + genre, `fromPath` / `applyFilenameHints` / `toSongEntity` / `withIdentity`, `parseFilenameMetadataHints`, `looksLikeStoragePath`) |
+| Storage helpers | `data/util/MusicFileStore.kt` (`canonicalize`, `playableUri`, `openRead`, `applyDataSource`, `prepareWrite`, `delete`, `listManaged`), `data/util/AudioPersistRef.kt` (`canonicalize`), `data/util/StorageUtils.kt` (`getPublicMusicDirectory`, `prepareWrite`, `listAudioFileNames`, `listManagedAudioFiles`, `deleteManagedAudio`), `data/util/SongPathNormalizer.kt` (`toAbsolutePath`, `safTreeDocumentToAbsolutePath`, `fileName`, `hasUsableArtwork`, path normalize / app-owned checks), `data/util/JsonExt.kt` (`optNullableString`), `data/util/AudioFileMetadata.kt` (`identity` + genre, `fromPath` / `applyFilenameHints` / `toSong` / `withIdentity`, `parseFilenameMetadataHints`, `looksLikeStoragePath`) |
 | Download conflict models | `data/model/Models.kt` (`DownloadConflictPolicy`, `DuplicateSongException`, `DownloadConflict`) |
 | One-shot dedup archive | branch `archive/library-dedup-v1-migrator` (`LibraryDedupMigrator` / `LibraryDedupLogic` / prefs; not on LB) |
 

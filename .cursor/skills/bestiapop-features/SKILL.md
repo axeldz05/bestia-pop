@@ -106,7 +106,7 @@ UI: `PlaylistsScreen`. Detalle abierto = `PlaylistDetailNav` persistido (`openLo
 | Scan MediaStore | `scanMediaStore(onProgress?)` (skip BestiaPop + path/matchKey conocidos) |
 | Reindex app music | `resyncAppManagedMusic(onProgress?)` → `Music/BestiaPop` filesystem walk; VM `ensureInitialLibraryImport` (1ª vez) / `refreshLibraryFromDisk` (force) |
 | Scan carpeta SAF | `scanFolderUri(treeUri, onProgress?): Int` (incluye BestiaPop; guarda abs path si se puede resolver; toast en `importFolder`) |
-| Metadata archivo → Room | `AudioFileMetadata.fromPath` / `toSongEntity` (`identity` + genre; filename hints si Unknown; `parseCdTrackNumber` de tags CD_TRACK/DISC) |
+| Metadata archivo → Room | `AudioFileMetadata.fromPath` / `toSong` (`identity` + genre; filename hints si Unknown; `parseCdTrackNumber` de tags CD_TRACK/DISC) |
 | Upload WiFi → DB | `saveUploadedSong` (`AudioPersistRef`; merge por matchKey); VM observa `DONE` → `identifySongs(force=true, showReview=false)` |
 | Canonicalizar URIs | `MusicRepository.migrateCanonicalAudioUris` (startup, junto a `migrateLegacyYouTubeMusicSongs`) |
 | Lookup duplicado | `findSongByArtistTitle` |

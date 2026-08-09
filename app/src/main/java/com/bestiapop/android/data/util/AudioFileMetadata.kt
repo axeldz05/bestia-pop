@@ -2,7 +2,7 @@ package com.bestiapop.android.data.util
 
 import android.content.Context
 import android.media.MediaMetadataRetriever
-import com.bestiapop.android.data.db.SongEntity
+import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.data.model.TrackIdentity
 import com.bestiapop.android.data.model.TrackMeta
 
@@ -46,11 +46,11 @@ data class AudioFileMetadata(
     fun withIdentity(transform: TrackIdentity.() -> TrackIdentity): AudioFileMetadata =
         copy(identity = identity.transform())
 
-    fun toSongEntity(
+    fun toSong(
         uriString: String,
         folderPath: String,
         dateAdded: Long = System.currentTimeMillis()
-    ): SongEntity = SongEntity(
+    ): Song = Song(
         uriString = uriString,
         title = title,
         artist = artist,

@@ -247,4 +247,4 @@ Versión: `version.properties` (`VERSION_CODE` / `VERSION_NAME`).
 
 ## Licencia
 
-[GNU General Public License v3.0](LICENSE).
+[GNU Affero General Public License v3.0](LICENSE).

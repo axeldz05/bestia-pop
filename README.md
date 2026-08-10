@@ -125,7 +125,7 @@ El gesto **atrás** cierra un nivel (diálogo → Now Playing → detalle → ta
 
 ```bash
 git clone <este-repo>
-cd sofoapps
+cd bestia-pop
 ```
 
 1. Firebase (Crashlytics en release): copiá `app/google-services.json` desde la [Firebase Console](https://console.firebase.google.com/). Si no está, `./install.sh` puede usar `app/google-services.json.example` para que compile; Crashlytics real no funciona con el example.
@@ -202,7 +202,7 @@ Versión: `version.properties` (`VERSION_CODE` / `VERSION_NAME`).
 
 - **Sin ads.** El permiso `AD_ID` se elimina del manifest mergeado. Analytics de Firebase está desactivado.
 - Crashlytics solo en builds **no debug**.
-- Playlists, overrides de álbum y preferencias viven en datos privados de la app: **se pierden al desinstalar**. Los audios en `Music/BestiaPop` suelen quedar en el almacenamiento y se reindexan al volver a instalar.
+- Playlists, overrides de álbum y preferencias viven en datos privados de la app: **se pierden al desinstalar** (en el futuro se guardará playlists y overrides de álbum para luego ser importados). Los audios en `Music/BestiaPop` suelen quedar en el almacenamiento y se reindexan al volver a instalar.
 - Las URLs de stream de YouTube caducan; la app las re-extrae al reproducir o descargar. No se guardan en la base.
 - Identificar / catálogo / radio / ListenBrainz necesitan red.
 

@@ -5,6 +5,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import com.bestiapop.android.data.listenbrainz.MatchedRemoteTrack
 import com.bestiapop.android.data.model.ActiveDownload
 import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.data.model.Song
@@ -16,6 +17,16 @@ data class MatchedTrackListItem(
     val remote: PlayableItem.Remote?,
     val key: String
 )
+
+fun MatchedRemoteTrack.toListItem(index: Int): MatchedTrackListItem {
+    val playable = toPlayableItem()
+    return MatchedTrackListItem(
+        localSong = localSong,
+        meta = this,
+        remote = if (localSong == null) playable as? PlayableItem.Remote else null,
+        key = "${index}|${recordingMbid ?: title}|${artist}|${localSong?.id}"
+    )
+}
 
 @Composable
 fun MatchedTrackLazyColumn(

@@ -41,6 +41,16 @@ fun Song.toIdentity(): TrackIdentity = TrackIdentity(
     trackNumber = trackNumber
 )
 
+/** Apply shared identity fields; leaves genre/year/lyrics/uri/folder untouched. */
+fun Song.withIdentity(identity: TrackIdentity): Song = copy(
+    title = identity.title,
+    artist = identity.artist,
+    album = identity.album,
+    artworkUri = identity.artworkUri,
+    durationMs = identity.durationMs,
+    trackNumber = identity.trackNumber
+)
+
 fun OnlineCatalogTrack.withIdentity(
     transform: TrackIdentity.() -> TrackIdentity
 ): OnlineCatalogTrack = copy(identity = identity.transform())

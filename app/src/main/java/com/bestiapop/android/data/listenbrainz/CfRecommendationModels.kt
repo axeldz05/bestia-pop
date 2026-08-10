@@ -1,9 +1,6 @@
 package com.bestiapop.android.data.listenbrainz
 
 import com.bestiapop.android.data.model.PlayableItem
-import com.bestiapop.android.data.model.Song
-import com.bestiapop.android.data.model.TrackIdentity
-import com.bestiapop.android.data.model.TrackMeta
 
 data class CfRecommendedRecording(
     val recordingMbid: String,
@@ -18,26 +15,13 @@ data class CfRecommendationsPayload(
     val artistType: String? = null
 )
 
-data class MatchedCfTrack(
-    val identity: TrackIdentity,
-    val recordingMbid: String,
-    val score: Double = 0.0,
-    val localSong: Song?
-) : TrackMeta by identity {
-    fun toPlayableItem(): PlayableItem = PlayableItem.fromLibraryOrRemote(
-        local = localSong,
-        identity = identity,
-        recordingMbid = recordingMbid
-    )
-}
-
 data class MatchedCfRecommendations(
     val payload: CfRecommendationsPayload,
-    val matches: List<MatchedCfTrack>
+    val matches: List<MatchedRemoteTrack>
 ) {
     val matchedCount: Int get() = matches.count { it.localSong != null }
     val totalCount: Int get() = matches.size
     val streamCount: Int get() = totalCount - matchedCount
 
-    fun toPlayableItems(): List<PlayableItem> = matches.map { it.toPlayableItem() }
+    fun toPlayableItems(): List<PlayableItem> = matches.toPlayableItems()
 }

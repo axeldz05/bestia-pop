@@ -5,7 +5,6 @@ import com.bestiapop.android.data.listenbrainz.LbPlaylistDetail
 import com.bestiapop.android.data.listenbrainz.LbPlaylistSummary
 import com.bestiapop.android.data.listenbrainz.LbPlaylistTrack
 import com.bestiapop.android.data.listenbrainz.MatchedLbPlaylist
-import com.bestiapop.android.data.listenbrainz.MatchedLbTrack
 import com.bestiapop.android.data.model.OnlineCatalogTrack
 import com.bestiapop.android.data.model.Playlist
 import com.bestiapop.android.data.model.PlaylistPendingTrack
@@ -43,16 +42,12 @@ class ImportListenBrainzPlaylistUseCaseTest {
         unmatched: List<Pair<String, String>> = emptyList()
     ): MatchedLbPlaylist {
         val matchRows = matched.map {
-            MatchedLbTrack(
-                track = LbPlaylistTrack(title = it.title, artist = it.artist, album = it.album),
-                localSong = it
-            )
+            LbPlaylistTrack(title = it.title, artist = it.artist, album = it.album)
+                .toMatchedRemote(localSong = it)
         }
         val remoteRows = unmatched.map { (artist, title) ->
-            MatchedLbTrack(
-                track = LbPlaylistTrack(title = title, artist = artist, album = "Rel"),
-                localSong = null
-            )
+            LbPlaylistTrack(title = title, artist = artist, album = "Rel")
+                .toMatchedRemote(localSong = null)
         }
         return MatchedLbPlaylist(
             detail = LbPlaylistDetail(
@@ -62,7 +57,9 @@ class ImportListenBrainzPlaylistUseCaseTest {
                     description = "From LB",
                     trackCount = matchRows.size + remoteRows.size
                 ),
-                tracks = (matchRows + remoteRows).map { it.track }
+                tracks = (matchRows + remoteRows).map {
+                    LbPlaylistTrack(identity = it.identity, recordingMbid = it.recordingMbid)
+                }
             ),
             matches = matchRows + remoteRows
         )

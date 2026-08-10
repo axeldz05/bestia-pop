@@ -28,6 +28,12 @@ data class LbPlaylistTrack(
             recordingMbid = recordingMbid
         )
     }
+
+    fun toMatchedRemote(localSong: Song?): MatchedRemoteTrack = MatchedRemoteTrack(
+        identity = identity,
+        recordingMbid = recordingMbid,
+        localSong = localSong
+    )
 }
 
 data class LbPlaylistDetail(
@@ -35,27 +41,16 @@ data class LbPlaylistDetail(
     val tracks: List<LbPlaylistTrack>
 )
 
-data class MatchedLbTrack(
-    val track: LbPlaylistTrack,
-    val localSong: Song?
-) {
-    fun toPlayableItem(): PlayableItem = PlayableItem.fromLibraryOrRemote(
-        local = localSong,
-        identity = track.identity,
-        recordingMbid = track.recordingMbid
-    )
-}
-
 data class MatchedLbPlaylist(
     val detail: LbPlaylistDetail,
-    val matches: List<MatchedLbTrack>
+    val matches: List<MatchedRemoteTrack>
 ) {
     val matchedCount: Int get() = matches.count { it.localSong != null }
     val totalCount: Int get() = matches.size
     val streamCount: Int get() = totalCount - matchedCount
     val matchedSongs: List<Song> get() = matches.mapNotNull { it.localSong }
 
-    fun toPlayableItems(): List<PlayableItem> = matches.map { it.toPlayableItem() }
+    fun toPlayableItems(): List<PlayableItem> = matches.toPlayableItems()
 }
 
 sealed class LbApiResult<out T> {

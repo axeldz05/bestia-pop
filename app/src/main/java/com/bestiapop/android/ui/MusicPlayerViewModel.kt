@@ -1592,10 +1592,11 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         fromRadio: Boolean = false,
         rotate: Boolean = true,
         applyManualModes: Boolean = true,
-        startShuffled: Boolean = false
+        startShuffled: Boolean = false,
+        origin: DiscoverPlaybackOrigin = DiscoverPlaybackOrigin.None
     ) {
         if (items.isEmpty()) return
-        clearDiscoverPlaybackOrigin()
+        _discoverPlaybackOrigin.value = origin
         if (!fromRadio) clearRadioSession()
         val validIndex = startIndex.coerceIn(0, items.size - 1)
         val shouldRotate = rotate && !fromRadio && validIndex > 0
@@ -1750,15 +1751,17 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     fun setAlbumArtwork(albumName: String, artworkUri: String) {
         viewModelScope.launch(Dispatchers.IO) {
             val existing = repository.getAlbumOverride(albumName)
-            val override = AlbumOverride(
-                albumKey = albumName,
-                displayName = existing?.displayName ?: albumName,
-                artist = existing?.artist,
-                genre = existing?.genre,
-                year = existing?.year ?: 0,
-                artworkUri = artworkUri
+            saveAlbumOverride(
+                AlbumOverride(
+                    albumKey = albumName,
+                    displayName = existing?.displayName ?: albumName,
+                    artist = existing?.artist,
+                    genre = existing?.genre,
+                    year = existing?.year ?: 0,
+                    artworkUri = artworkUri
+                ),
+                propagateToSongs = true
             )
-            repository.updateAlbumMetadataPropagateToSongs(override)
         }
     }
 
@@ -1788,19 +1791,17 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 return@launch
             }
             val normalizedName = normalizeAlbumName(displayName).ifBlank { source.name }
-            val override = AlbumOverride(
-                albumKey = source.name,
-                displayName = normalizedName,
-                artist = artist.takeIf { it.isNotBlank() },
-                genre = genre.takeIf { it.isNotBlank() },
-                year = year.coerceAtLeast(0),
-                artworkUri = artworkUri
+            saveAlbumOverride(
+                AlbumOverride(
+                    albumKey = source.name,
+                    displayName = normalizedName,
+                    artist = artist.takeIf { it.isNotBlank() },
+                    genre = genre.takeIf { it.isNotBlank() },
+                    year = year.coerceAtLeast(0),
+                    artworkUri = artworkUri
+                ),
+                propagateToSongs = propagateToSongs
             )
-            if (propagateToSongs) {
-                repository.updateAlbumMetadataPropagateToSongs(override)
-            } else {
-                repository.upsertAlbumOverride(override)
-            }
         }
     }
 
@@ -1817,31 +1818,13 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         _pendingAlbumMerge.value = null
     }
 
-    fun saveAlbumMetadata(
-        albumKey: String,
-        displayName: String,
-        artist: String,
-        genre: String,
-        year: Int,
-        artworkUri: String?,
+    /** Persist [override]; [propagateToSongs] chooses songs bulk-update vs override-only. */
+    private suspend fun saveAlbumOverride(
+        override: AlbumOverride,
         propagateToSongs: Boolean
     ) {
-        viewModelScope.launch {
-            val normalizedName = normalizeAlbumName(displayName).ifBlank { albumKey }
-            val override = AlbumOverride(
-                albumKey = albumKey,
-                displayName = normalizedName,
-                artist = artist.takeIf { it.isNotBlank() },
-                genre = genre.takeIf { it.isNotBlank() },
-                year = year.coerceAtLeast(0),
-                artworkUri = artworkUri
-            )
-            if (propagateToSongs) {
-                repository.updateAlbumMetadataPropagateToSongs(override)
-            } else {
-                repository.upsertAlbumOverride(override)
-            }
-        }
+        if (propagateToSongs) repository.updateAlbumMetadataPropagateToSongs(override)
+        else repository.upsertAlbumOverride(override)
     }
 
     fun mergeAlbumInto(sourceAlbumKey: String, targetAlbumKey: String) {
@@ -1855,14 +1838,18 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         shufflePlayableCollection(songs.toPlayableItems())
     }
 
-    private fun shufflePlayableCollection(items: List<PlayableItem>): Boolean {
+    private fun shufflePlayableCollection(
+        items: List<PlayableItem>,
+        origin: DiscoverPlaybackOrigin = DiscoverPlaybackOrigin.None
+    ): Boolean {
         if (items.isEmpty()) return false
         playPlayableCollection(
             items,
             startIndex = items.indices.random(),
             rotate = false,
             applyManualModes = false,
-            startShuffled = true
+            startShuffled = true,
+            origin = origin
         )
         return true
     }
@@ -3543,35 +3530,36 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         return ok
     }
 
-    private fun playMatchedCollection(items: List<PlayableItem>, startIndex: Int = 0): Boolean {
+    private fun playMatchedCollection(
+        items: List<PlayableItem>,
+        startIndex: Int = 0,
+        origin: DiscoverPlaybackOrigin = DiscoverPlaybackOrigin.None
+    ): Boolean {
         if (items.isEmpty() || startIndex !in items.indices) return false
-        playPlayableCollection(items, startIndex)
+        playPlayableCollection(items, startIndex, origin = origin)
         return true
     }
 
-    private fun shuffleMatchedCollection(items: List<PlayableItem>): Boolean =
-        shufflePlayableCollection(items)
-
     fun playCfRecommendations() {
-        val items = _cfRecommendations.value?.toPlayableItems().orEmpty()
-        if (!playMatchedCollection(items)) return
-        markCfDiscoverOrigin()
+        playMatchedCollection(
+            _cfRecommendations.value?.toPlayableItems().orEmpty(),
+            origin = DiscoverPlaybackOrigin.CfRecommendations
+        )
     }
 
     fun shuffleCfRecommendations() {
-        val items = _cfRecommendations.value?.toPlayableItems().orEmpty()
-        if (!shuffleMatchedCollection(items)) return
-        markCfDiscoverOrigin()
+        shufflePlayableCollection(
+            _cfRecommendations.value?.toPlayableItems().orEmpty(),
+            origin = DiscoverPlaybackOrigin.CfRecommendations
+        )
     }
 
     fun playCfAt(index: Int) {
-        val items = _cfRecommendations.value?.toPlayableItems().orEmpty()
-        if (!playMatchedCollection(items, index)) return
-        markCfDiscoverOrigin()
-    }
-
-    private fun markCfDiscoverOrigin() {
-        _discoverPlaybackOrigin.value = DiscoverPlaybackOrigin.CfRecommendations
+        playMatchedCollection(
+            _cfRecommendations.value?.toPlayableItems().orEmpty(),
+            startIndex = index,
+            origin = DiscoverPlaybackOrigin.CfRecommendations
+        )
     }
 
     fun openListenBrainzPlaylist(mbid: String) {
@@ -3620,28 +3608,28 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     fun playListenBrainzPlaylist() {
         val matched = _selectedLbPlaylist.value ?: return
-        if (!playMatchedCollection(matched.toPlayableItems())) return
-        setListenBrainzDiscoverOrigin(matched)
+        playMatchedCollection(matched.toPlayableItems(), origin = matched.toDiscoverOrigin())
     }
 
     fun shuffleListenBrainzPlaylist() {
         val matched = _selectedLbPlaylist.value ?: return
-        if (!shuffleMatchedCollection(matched.toPlayableItems())) return
-        setListenBrainzDiscoverOrigin(matched)
+        shufflePlayableCollection(matched.toPlayableItems(), origin = matched.toDiscoverOrigin())
     }
 
     fun playListenBrainzPlaylistAt(index: Int) {
         val matched = _selectedLbPlaylist.value ?: return
-        if (!playMatchedCollection(matched.toPlayableItems(), index)) return
-        setListenBrainzDiscoverOrigin(matched)
-    }
-
-    private fun setListenBrainzDiscoverOrigin(matched: MatchedLbPlaylist) {
-        _discoverPlaybackOrigin.value = DiscoverPlaybackOrigin.ListenBrainz(
-            mbid = matched.detail.summary.mbid,
-            title = matched.detail.summary.title
+        playMatchedCollection(
+            matched.toPlayableItems(),
+            startIndex = index,
+            origin = matched.toDiscoverOrigin()
         )
     }
+
+    private fun MatchedLbPlaylist.toDiscoverOrigin(): DiscoverPlaybackOrigin =
+        DiscoverPlaybackOrigin.ListenBrainz(
+            mbid = detail.summary.mbid,
+            title = detail.summary.title
+        )
 
     private fun clearDiscoverPlaybackOrigin() {
         if (_discoverPlaybackOrigin.value != DiscoverPlaybackOrigin.None) {
@@ -3749,7 +3737,6 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         val track: OnlineCatalogTrack,
         val candidates: List<OnlineCatalogTrack> = listOf(track),
         val currentCandidateIndex: Int = 0,
-        val mirrorCandidateTitle: String? = null,
         val idHint: String? = null,
         val lookupIdentity: TrackIdentity? = null
     )
@@ -3759,7 +3746,6 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         source: ActiveDownloadSource,
         idStrategy: (TrackedBatchItem) -> String,
         playlistId: Long?,
-        mirrorCandidateState: Boolean,
         toastQueued: Boolean = false
     ) {
         if (items.isEmpty()) return
@@ -3787,11 +3773,6 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                     targetPlaylistId = playlistId
                 )
             )
-            if (mirrorCandidateState) {
-                item.mirrorCandidateTitle?.let {
-                    updateCandidateState(it, CandidateDownloadState.QUEUED, percent = 0)
-                }
-            }
             Triple(item, downloadId, safeIndex)
         }
 
@@ -3805,9 +3786,6 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                         track = item.track,
                         existingCandidates = item.candidates,
                         currentCandidateIndex = safeIndex,
-                        mirrorCandidateTitle = item.mirrorCandidateTitle.takeIf {
-                            mirrorCandidateState
-                        },
                         targetPlaylistId = playlistId,
                         lookupIdentity = item.lookupIdentity
                     )
@@ -3830,7 +3808,6 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             TrackMatchKeys.downloadIdFor(it.track.artist, it.track.title)
         },
         playlistId = playlistId,
-        mirrorCandidateState = false,
         toastQueued = toastQueued
     )
 
@@ -4018,26 +3995,6 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         _isLoadingCollection.value = false
     }
 
-    private fun updateCandidateState(
-        trackTitle: String,
-        state: CandidateDownloadState,
-        percent: Int = 0,
-        error: String? = null
-    ) {
-        val list = _activeTrackCandidates.value.toMutableList()
-        val index = list.indexOfFirst { c ->
-            c.title == trackTitle || c.candidates.any { it.title == trackTitle }
-        }
-        if (index != -1) {
-            list[index] = list[index].copy(
-                downloadState = state,
-                downloadProgressPercent = percent,
-                errorMessage = error
-            )
-            _activeTrackCandidates.value = list
-        }
-    }
-
     private fun mapDownloadError(e: Throwable): String = when {
         e is DuplicateSongException ->
             "Ya existe en la biblioteca: ${e.existing.artist} — ${e.existing.title}"
@@ -4070,7 +4027,6 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 track = conflict.track,
                 existingCandidates = conflict.candidates,
                 currentCandidateIndex = conflict.currentCandidateIndex,
-                mirrorCandidateTitle = conflict.mirrorCandidateTitle,
                 targetPlaylistId = conflict.targetPlaylistId,
                 conflictPolicy = policy,
                 lookupIdentity = conflict.lookupIdentity
@@ -4095,7 +4051,6 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 track = conflict.track,
                 existingCandidates = conflict.candidates,
                 currentCandidateIndex = conflict.currentCandidateIndex,
-                mirrorCandidateTitle = conflict.mirrorCandidateTitle,
                 targetPlaylistId = conflict.targetPlaylistId,
                 conflictPolicy = policy,
                 lookupIdentity = conflict.lookupIdentity,
@@ -4108,9 +4063,6 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         val conflict = _downloadConflict.value ?: return
         _downloadConflict.value = null
         removeActiveDownload(conflict.downloadId)
-        conflict.mirrorCandidateTitle?.let { title ->
-            updateCandidateState(title, CandidateDownloadState.IDLE, percent = 0)
-        }
     }
 
     fun clearBatchConflictPolicy() {
@@ -4162,7 +4114,6 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         existing: Song,
         candidates: List<OnlineCatalogTrack>,
         safeIndex: Int,
-        mirrorCandidateTitle: String?,
         targetPlaylistId: Long?,
         lookupIdentity: TrackIdentity?
     ) {
@@ -4174,7 +4125,6 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             existing = existing,
             candidates = candidates,
             currentCandidateIndex = safeIndex,
-            mirrorCandidateTitle = mirrorCandidateTitle,
             targetPlaylistId = targetPlaylistId,
             applyToRemainingBatch = isBatch,
             lookupIdentity = lookupIdentity
@@ -4215,7 +4165,6 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         track: OnlineCatalogTrack,
         existingCandidates: List<OnlineCatalogTrack>? = null,
         currentCandidateIndex: Int = 0,
-        mirrorCandidateTitle: String? = null,
         targetPlaylistId: Long? = null,
         conflictPolicy: DownloadConflictPolicy? = null,
         lookupIdentity: TrackIdentity? = null,
@@ -4243,9 +4192,6 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                     titleOverride = override
                 )
             )
-            if (mirrorCandidateTitle != null) {
-                updateCandidateState(mirrorCandidateTitle, CandidateDownloadState.QUEUED, percent = 0)
-            }
         }
 
         return downloadSemaphore.withPermit {
@@ -4255,7 +4201,6 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 track = track,
                 candidates = candidates,
                 safeIndex = safeIndex,
-                mirrorCandidateTitle = mirrorCandidateTitle,
                 targetPlaylistId = targetPlaylistId,
                 conflictPolicy = conflictPolicy,
                 lookupIdentity = lookup,
@@ -4270,7 +4215,6 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         track: OnlineCatalogTrack,
         candidates: List<OnlineCatalogTrack>,
         safeIndex: Int,
-        mirrorCandidateTitle: String?,
         targetPlaylistId: Long?,
         conflictPolicy: DownloadConflictPolicy?,
         lookupIdentity: TrackIdentity?,
@@ -4305,7 +4249,6 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                     existing = existing,
                     candidates = candidates,
                     safeIndex = safeIndex,
-                    mirrorCandidateTitle = mirrorCandidateTitle,
                     targetPlaylistId = targetPlaylistId,
                     lookupIdentity = lookupIdentity
                 )
@@ -4335,11 +4278,6 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 titleOverride = displayOverride
             )
         )
-        if (mirrorCandidateTitle != null) {
-            updateCandidateState(mirrorCandidateTitle, CandidateDownloadState.DOWNLOADING, percent = 20)
-            updateCandidateState(mirrorCandidateTitle, CandidateDownloadState.DOWNLOADING, percent = 50)
-        }
-
         val trackForDownload = when (val policy = resolvedPolicy) {
             is DownloadConflictPolicy.SaveAs -> activeTrack.withIdentity { copy(title = policy.newTitle) }
             else -> activeTrack
@@ -4355,9 +4293,6 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                         progressPercent = phase.percent
                     )
                 }
-                if (mirrorCandidateTitle != null && phase.percent >= 75) {
-                    updateCandidateState(mirrorCandidateTitle, CandidateDownloadState.DOWNLOADING, percent = 75)
-                }
             },
             conflictPolicy = resolvedPolicy
         )
@@ -4372,7 +4307,6 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 existing = duplicate.existing,
                 candidates = candidates,
                 safeIndex = safeIndex,
-                mirrorCandidateTitle = mirrorCandidateTitle,
                 targetPlaylistId = targetPlaylistId,
                 lookupIdentity = lookupIdentity
             )
@@ -4401,9 +4335,6 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                         targetPlaylistId = targetPlaylistId
                     )
                 )
-                if (mirrorCandidateTitle != null) {
-                    updateCandidateState(mirrorCandidateTitle, CandidateDownloadState.SUCCESS, percent = 100)
-                }
                 if (targetPlaylistId != null) {
                     repository.addSongToPlaylist(targetPlaylistId, song.id)
                     repository.removePlaylistPendingTrack(
@@ -4441,14 +4372,6 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                         progressMessage = null,
                         progressPercent = 0,
                         errorMessage = error
-                    )
-                }
-                if (mirrorCandidateTitle != null) {
-                    updateCandidateState(
-                        mirrorCandidateTitle,
-                        CandidateDownloadState.ERROR,
-                        percent = 0,
-                        error = error
                     )
                 }
             }
@@ -4600,7 +4523,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         val downloadId = activeDownloadIdFor(
             track,
             ActiveDownloadSource.BATCH,
-            explicitId = "batch:${candidate.artist}|${candidate.title}"
+            explicitId = TrackMatchKeys.batchDownloadIdFor(candidate.artist, candidate.title)
         )
 
         viewModelScope.launch {
@@ -4611,7 +4534,6 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 track = track,
                 existingCandidates = candidate.candidates,
                 currentCandidateIndex = candidate.currentCandidateIndex,
-                mirrorCandidateTitle = candidate.title,
                 targetPlaylistId = targetPlaylistId,
                 lookupIdentity = candidate.identity
             )
@@ -4631,8 +4553,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                     track = track,
                     candidates = candidate.candidates,
                     currentCandidateIndex = candidate.currentCandidateIndex,
-                    mirrorCandidateTitle = candidate.title,
-                    idHint = "batch:${candidate.artist}|${candidate.title}",
+                    idHint = TrackMatchKeys.batchDownloadIdFor(candidate.artist, candidate.title),
                     lookupIdentity = candidate.identity
                 )
             }
@@ -4647,8 +4568,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                             explicitId = it.idHint
                         )
                     },
-                    playlistId = targetPlaylistId,
-                    mirrorCandidateState = true
+                    playlistId = targetPlaylistId
                 )
             } finally {
                 clearBatchConflictPolicy()

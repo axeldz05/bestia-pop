@@ -42,11 +42,10 @@ class ImportListenBrainzPlaylistUseCase(
 
         val pending = matched.matches.mapIndexedNotNull { index, row ->
             if (row.localSong != null) return@mapIndexedNotNull null
-            val track = row.track
             PlaylistPendingTrack(
-                identity = track.identity,
+                identity = row.identity,
                 playlistId = playlistId,
-                recordingMbid = track.recordingMbid,
+                recordingMbid = row.recordingMbid,
                 position = index
             )
         }
@@ -58,11 +57,10 @@ class ImportListenBrainzPlaylistUseCase(
         matched.matches
             .filter { it.localSong == null }
             .map { row ->
-                val track = row.track
                 OnlineCatalogTrack(
-                    identity = track.identity,
-                    id = track.recordingMbid?.takeIf { it.isNotBlank() }
-                        ?: "${track.artist} ${track.title}".trim(),
+                    identity = row.identity,
+                    id = row.recordingMbid?.takeIf { it.isNotBlank() }
+                        ?: "${row.artist} ${row.title}".trim(),
                     provider = "ListenBrainz"
                 )
             }

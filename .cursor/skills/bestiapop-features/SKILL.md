@@ -18,8 +18,8 @@ Cada feature lista **invariantes** + **entry points**. Si el código diverge, ac
 | Acción | ViewModel | Pipeline |
 |--------|-----------|----------|
 | Reproducir colección | `playCollection(songs, startIndex)` / `playCollection(songs, startSong)` | `playPlayableCollection` (`rotate=true`: tap queda índice 0, prefijo al final) |
-| Reproducir Local\|Remote | `playPlayableCollection(items, startIndex, rotate)` | ViewModel + `StreamResolver` |
-| Shuffle | `shuffleCollection(songs)` | `playPlayableCollection(..., startShuffled=true)` + permutación current-first |
+| Reproducir Local\|Remote | `playPlayableCollection(items, startIndex, rotate, origin)` | ViewModel + `StreamResolver`; `origin` marca Discover (CF/LB) en un solo sitio |
+| Shuffle | `shuffleCollection(songs)` / `shufflePlayableCollection(items, origin)` | `playPlayableCollection(..., startShuffled=true)` + permutación current-first |
 | Encolar | `enqueueCollection(songs)` | append a cola `PlayableItem` |
 | Una canción | `playSong(song, playlistOrQueue)` | (arma cola + MediaController) |
 | Tap en Cola / NP | `skipToQueueIndex(index)` | índice **display**; seek timeline; **no** rota ni apaga shuffle |
@@ -41,7 +41,7 @@ Archivos: `ui/MusicPlayerViewModel.kt` (`playPlayableCollection` / `toggleShuffl
 | Centro de descargas | `DownloadsScreen` + `ActiveDownloadRow`; persistencia `ActiveDownloadsStore` / `ActiveDownloadCodec`; notif `DownloadNotificationHelper`; badge `activeDownloadBadgeCount` en tab Descargas (`MainScreen`) |
 | Orquestación VM | `enqueueTrackedBatch` → `runTrackedDownload` ← `downloadSingleCandidate`, `downloadSelectedCandidatesBatch`, `downloadFromUrl`, `downloadOnlineTrack`, `downloadRemoteItem`, `maybeEnqueueSaveWhileListening`; candidatos vía `expandCandidates`; acciones `retryActiveDownload` / `cycleActiveDownload` / `previewActiveDownload` / `playActiveDownload` / `dismissActiveDownload` / `dismissAllActiveDownloads`; deep-link `requestOpenDownloads` / `pendingOpenDownloads` |
 
-Modelo clave: `TrackIdentity` / `TrackMeta`, `OnlineCatalogTrack` (`identity` + id/provider/audioUrl), `CatalogTrackCandidate` (`TrackMeta` vía `identity` estable de catálogo; YT en `candidates`/`currentTrack`), `DownloadStatus` (legacy Idle), `ActiveDownload` (`TrackMeta` vía `currentTrack`; `displayLabel` / `titleOverride` solo UI; Save As vía `DownloadConflictPolicy` sin mutar candidatos), conflicto/batch lookup = `lookupIdentity` (catálogo) no el hit YT, `ActiveDownloadSource` (`CATALOG`, `LINK`, `SAVE_WHILE_LISTENING`, `BATCH`, `LB_IMPORT`, `DISCOVER`), cola `activeDownloads` (+ `targetPlaylistId` opcional, `resultSongId` en SUCCESS). JSON viejo: `displayTitle` blank-fill identity; si difiere → `titleOverride`.
+Modelo clave: `TrackIdentity` / `TrackMeta`, `OnlineCatalogTrack` (`identity` + id/provider/audioUrl), `CatalogTrackCandidate` (`TrackMeta` vía `identity` estable de catálogo; YT en `candidates`/`currentTrack`; chrome de descarga **derivado** de `activeDownloads.findByTrack`, no del campo embebido), `DownloadStatus` (legacy Idle), `ActiveDownload` (`TrackMeta` vía `currentTrack`; `displayLabel` / `titleOverride` solo UI; Save As vía `DownloadConflictPolicy` sin mutar candidatos), conflicto/batch lookup = `lookupIdentity` (catálogo) no el hit YT, `ActiveDownloadSource` (`CATALOG`, `LINK`, `SAVE_WHILE_LISTENING`, `BATCH`, `LB_IMPORT`, `DISCOVER`), cola `activeDownloads` (+ `targetPlaylistId` opcional, `resultSongId` en SUCCESS). Batch ids = `TrackMatchKeys.batchDownloadIdFor`. JSON viejo: `displayTitle` blank-fill identity; si difiere → `titleOverride`.
 
 **Invariante cola:** todas las descargas online se registran en `activeDownloads` (estado `QUEUED` → `DOWNLOADING` → `SUCCESS`/`ERROR`); éxito **se mantiene** con play/limpiar hasta `dismissActiveDownload`. Fallo deja `ERROR`. Concurrencia global `Semaphore(3)` en `runTrackedDownload`. Tras kill: `ActiveDownloadCodec.forPersistence` restaura SUCCESS; DOWNLOADING/QUEUED → ERROR “Interrumpida”. Badge = DOWNLOADING + ERROR. Add Music banners leen `activeDownloads`. `LB_IMPORT` y batch de **playlist del catálogo** añaden a playlist al éxito vía `targetPlaylistId` (`ensureCatalogPlaylistForBatch`).
 
@@ -66,10 +66,10 @@ Estado: `ui/state/LibraryUiState.kt`, `LibraryListItem.kt`. Prefs: `LibraryDispl
 
 | Tipo | Comportamiento | Entry points |
 |------|----------------|--------------|
-| **Álbum (override)** | Tabla `album_overrides`; UI lee override si existe. **Guardar para álbum** = solo override; **Guardar para álbum y canciones** = override + bulk update de songs | `saveAlbumMetadata` / `upsertAlbumOverride` / `updateAlbumMetadataPropagateToSongs`; UI `EditAlbumMetadataDialog` |
+| **Álbum (override)** | Tabla `album_overrides`; UI lee override si existe. **Guardar para álbum** = solo override; **Guardar para álbum y canciones** = override + bulk update de songs. Ambos pasan por `saveAlbumOverride(propagateToSongs)` | `requestSaveAlbumMetadata` → `saveAlbumOverride` → `upsertAlbumOverride` / `updateAlbumMetadataPropagateToSongs`; UI `EditAlbumMetadataDialog` |
 | **Álbum menú** | Header de grupos (`TauonAlbumHeader` ⋮) y grilla (`AlbumGridCard` ⋮) → Editar / Cambiar portada vía `AlbumEditCoverMenuItems`; detalle de álbum también tiene IconButton Edit | `LibrarySongList` / `LibraryAlbumGrid` / `LibraryScreen` |
 | **Álbum merge** | Renombrar a un álbum existente → `ConfirmMergeAlbumsDialog`; al confirmar, canciones de A adoptan metadata de B. Match con `normalizeAlbumName` (trim, `…`/`â€¦` → `...`, ignoreCase) vía Room en `requestSaveAlbumMetadata`. `mergeAlbumInto` también pliega otras keys equivalentes (mojibake) | `requestSaveAlbumMetadata` / `confirmPendingAlbumMerge` / `findAlbumMergeTarget` / `AlbumNames.kt` |
-| **Álbum portada** | `setAlbumArtwork` → propagate via `updateAlbumMetadataPropagateToSongs` | `MusicPlayerViewModel.setAlbumArtwork` |
+| **Álbum portada** | `setAlbumArtwork` → `saveAlbumOverride(..., propagateToSongs = true)` | `MusicPlayerViewModel.setAlbumArtwork` |
 | **Playlist** | `Playlist.coverUri` / `PlaylistEntity.coverUri` es de la lista; **no** pisa artwork de canciones | `createPlaylist` / `updatePlaylist`, `savePlaylistCoverImage` |
 | **Canción** | Editar una canción **no** reescribe el álbum ni siblings | `updateSongMetadata` (incluye `year` + `trackNumber`); UI `EditSongMetadataDialog` (Nº de pista; encoding MediaStore `disc*1000+track` vía `encodeAlbumTrack`) |
 | **Persistencia local** | Copiar imagen a `context.filesDir` (`album_covers` / playlist covers); URI unificada `file.toURI()` vía `persistUserCover` | `saveAlbumCoverImage`, `savePlaylistCoverImage`, `extractAndSaveEmbeddedArtwork` |
@@ -116,7 +116,7 @@ UI: `PlaylistsScreen`. Detalle abierto = `PlaylistDetailNav` persistido (`openLo
 | Borrar app / dispositivo | `deleteSongsFromApp` / `deleteSongsFromDevice` |
 | Enriquecer meta/letras | `enhanceSongMetadataAndLyrics` (portada/letras/duración; **no** artist/álbum) |
 | Proponer identidad | `proposeSongIdentity(song, customQuery?, force?)` → `IdentifyProposal` |
-| Aplicar candidato | `applySongIdentity(songId, candidate)` → `IdentifyResult` (`IdentifyCandidate` envuelve `OnlineCatalogTrack`; persiste `trackNumber` si `> 0`; si no conserva Room) |
+| Aplicar candidato | `applySongIdentity` → `candidate.identity.mergePreferring(entity)` (+ clean title / fallback album) → `Song.withIdentity` → `IdentifyResult` |
 | Identificar lote | VM `identifySongs(songs, force, showReview)` → auto HIGH + cola review; skip `pendingSongIds` |
 | Identificar una | VM `identifySongForReview` (menú ⋮; si pending → abre ítem, si no `force=true`); UI `IdentifyReviewScreen` |
 | Review preview | Local `previewIdentifyLocalSong`; candidato stream `previewIdentifyCandidate` → `candidate.track` → `playOnlineCatalogTrackAsStream` (`PreviewPlayPauseButton`) |
@@ -214,8 +214,8 @@ Centro de descargas online → sección 2 (`DownloadsScreen`, tab Descargas).
 | Submit listens | `ListenBrainzClient.submitListens`, `ListenTracker`, `ListenSyncCoordinator` |
 | List Discover | `ListenBrainzClient.fetchCreatedForPlaylists` → `MusicPlayerViewModel.refreshListenBrainzDiscoverPlaylists` |
 | Abrir playlist | `openListenBrainzPlaylist` + `MatchListenBrainzTracksUseCase` |
-| Map a cola | `MatchedLbPlaylist.toPlayableItems` / `MatchedLbTrack.toPlayableItem` |
-| Play / shuffle / índice | `playListenBrainzPlaylist` / `shuffleListenBrainzPlaylist` / `playListenBrainzPlaylistAt` |
+| Map a cola | `MatchedLbPlaylist.toPlayableItems` / `MatchedRemoteTrack.toPlayableItem` |
+| Play / shuffle / índice | `playListenBrainzPlaylist*` / `playCf*` → `playMatchedCollection` / `shufflePlayableCollection` con `DiscoverPlaybackOrigin` |
 | Import locales + pendientes | `saveListenBrainzPlaylistAsLocal` → `ImportListenBrainzPlaylistUseCase.createLocalFromMatched` (`PlaylistPendingTrack(identity = track.identity)`; unmatched → `OnlineCatalogTrack(identity, provider = ListenBrainz)`) |
 | Import + descarga ya | `importListenBrainzPlaylistWithDownloads` / `downloadPlaylistPendingTracks` → `runTrackedDownload` (`LB_IMPORT`) |
 | Descarga manual Remote | `downloadRemoteItem` → `runTrackedDownload` (`DISCOVER`); UI `RemoteTrackPlaceholderRow.onDownload` en detalle LB/CF; NP `NowPlayingRemoteDownloadAction` |
@@ -274,7 +274,7 @@ Centro de descargas online → sección 2 (`DownloadsScreen`, tab Descargas).
 | Descargar ahora | Solo `PlayableItem.Remote` (visible bajo título) | `NowPlayingRemoteDownloadAction` → `downloadRemoteItem`; estados vía `activeDownloads` |
 | Iniciar radio | Siempre | `startRadio()` (mismo que icono header) |
 
-Origen Discover: set en `playListenBrainzPlaylist*` / `playCf*`; clear en `playPlayableCollection` / radio que muta cola / `applyHydratedQueue`.
+Origen Discover: se setea en `playPlayableCollection(..., origin)` (wrappers CF/LB pasan `CfRecommendations` / `ListenBrainz`); `None` al armar cola local / radio que muta cola / `applyHydratedQueue`.
 
 ## 11. Radio (similares)
 

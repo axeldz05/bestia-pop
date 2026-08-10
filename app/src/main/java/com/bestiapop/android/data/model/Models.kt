@@ -221,6 +221,7 @@ data class CatalogTrackCandidate(
     val candidates: List<OnlineCatalogTrack>,
     val currentCandidateIndex: Int = 0,
     val isSelected: Boolean = true,
+    /** Legacy; UI derives download chrome from ActiveDownload via findByTrack. */
     val downloadState: CandidateDownloadState = CandidateDownloadState.IDLE,
     val downloadProgressPercent: Int = 0,
     val errorMessage: String? = null
@@ -267,7 +268,6 @@ data class DownloadConflict(
     val existing: Song,
     val candidates: List<OnlineCatalogTrack>,
     val currentCandidateIndex: Int,
-    val mirrorCandidateTitle: String? = null,
     val targetPlaylistId: Long? = null,
     val applyToRemainingBatch: Boolean = false,
     val lookupIdentity: TrackIdentity? = null
@@ -397,16 +397,7 @@ data class ActiveDownload(
             val idx = currentCandidateIndex.coerceIn(0, (candidates.size - 1).coerceAtLeast(0))
             val merged = candidates.mapIndexed { i, t ->
                 if (i != idx) t
-                else t.withIdentity {
-                    copy(
-                        title = song.title.ifBlank { title },
-                        artist = song.artist.ifBlank { artist },
-                        artworkUri = song.artworkUri ?: artworkUri,
-                        album = song.album.ifBlank { album },
-                        durationMs = if (song.durationMs > 0) song.durationMs else durationMs,
-                        trackNumber = if (song.trackNumber > 0) song.trackNumber else trackNumber
-                    )
-                }
+                else t.copy(identity = song.toIdentity().mergePreferring(t.identity))
             }
             return ActiveDownload(
                 id = id,

@@ -166,11 +166,17 @@ fun PreviewPlayPauseButton(
     }
 }
 
-/** L1: lookup a tracked download by artist+title match key. */
+/** L1: lookup a tracked download by artist+title match key (plain or `batch:` catalog id). */
 fun List<ActiveDownload>.findByTrack(artist: String, title: String): ActiveDownload? {
     val key = TrackMatchKeys.downloadIdFor(artist, title)
     if (key.isEmpty()) return null
-    return find { it.id == key }
+    val batchKey = TrackMatchKeys.batchDownloadIdFor(artist, title)
+    find { it.id == key || it.id == batchKey }?.let { return it }
+    return find { download ->
+        val displayTitle = download.titleOverride?.takeIf { it.isNotBlank() } ?: download.title
+        TrackMatchKeys.downloadIdFor(download.artist, displayTitle) == key ||
+            TrackMatchKeys.downloadIdFor(download.artist, download.title) == key
+    }
 }
 
 /**

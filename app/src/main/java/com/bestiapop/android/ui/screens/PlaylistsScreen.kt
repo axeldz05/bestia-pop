@@ -85,7 +85,7 @@ import com.bestiapop.android.ui.components.ArtworkPickerBlock
 import com.bestiapop.android.ui.components.ArtworkThumbnail
 import com.bestiapop.android.ui.components.LabeledPlayShuffleButtons
 import com.bestiapop.android.ui.components.MatchedTrackLazyColumn
-import com.bestiapop.android.ui.components.MatchedTrackListItem
+import com.bestiapop.android.ui.components.toListItem
 import com.bestiapop.android.ui.components.RemoteTrackPlaceholderRow
 import com.bestiapop.android.ui.components.ScreenBackHeader
 import com.bestiapop.android.ui.components.SongListItem
@@ -536,9 +536,6 @@ fun PlaylistSurfaceCard(
     }
 }
 
-private fun unmatchedRemote(localSong: Song?, playable: PlayableItem): PlayableItem.Remote? =
-    if (localSong == null) playable as PlayableItem.Remote else null
-
 @Composable
 private fun MatchedPlaylistDetailScaffold(
     title: String,
@@ -675,14 +672,7 @@ private fun CfRecommendationsDetailScreen(
             Spacer(modifier = Modifier.height(16.dp))
 
             MatchedTrackLazyColumn(
-                matches = matched.matches.mapIndexed { index, match ->
-                    MatchedTrackListItem(
-                        localSong = match.localSong,
-                        meta = match,
-                        remote = unmatchedRemote(match.localSong, match.toPlayableItem()),
-                        key = "${index}|${match.recordingMbid}|${match.title}|${match.artist}|${match.localSong?.id}"
-                    )
-                },
+                matches = matched.matches.mapIndexed { index, match -> match.toListItem(index) },
                 remoteBadge = "Stream",
                 currentItem = currentItem,
                 activeDownloads = activeDownloads,
@@ -856,14 +846,7 @@ private fun LbPlaylistDetailScreen(
             }
         } else {
             MatchedTrackLazyColumn(
-                matches = matched.matches.mapIndexed { index, match ->
-                    MatchedTrackListItem(
-                        localSong = match.localSong,
-                        meta = match.track,
-                        remote = unmatchedRemote(match.localSong, match.toPlayableItem()),
-                        key = "${index}|${match.track.recordingMbid ?: match.track.title}|${match.track.artist}|${match.localSong?.id}"
-                    )
-                },
+                matches = matched.matches.mapIndexed { index, match -> match.toListItem(index) },
                 remoteBadge = "No en biblioteca · stream",
                 currentItem = currentItem,
                 activeDownloads = activeDownloads,

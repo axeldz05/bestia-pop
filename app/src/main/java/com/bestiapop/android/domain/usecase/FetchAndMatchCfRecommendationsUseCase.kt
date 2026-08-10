@@ -4,7 +4,7 @@ import com.bestiapop.android.data.listenbrainz.CfRecommendationsPayload
 import com.bestiapop.android.data.listenbrainz.LbApiResult
 import com.bestiapop.android.data.listenbrainz.LbRecordingMetadata
 import com.bestiapop.android.data.listenbrainz.MatchedCfRecommendations
-import com.bestiapop.android.data.listenbrainz.MatchedCfTrack
+import com.bestiapop.android.data.listenbrainz.MatchedRemoteTrack
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.domain.util.TrackMatchKeys
 
@@ -65,14 +65,14 @@ class FetchAndMatchCfRecommendationsUseCase(
         library: List<Song>
     ): MatchedCfRecommendations {
         val libraryIndex = TrackMatchKeys.buildLibraryIndex(library)
-        val matches = ArrayList<MatchedCfTrack>(payload.recordings.size)
+        val matches = ArrayList<MatchedRemoteTrack>(payload.recordings.size)
         for (rec in payload.recordings) {
             val meta = metaByMbid[rec.recordingMbid] ?: continue
             val title = meta.title.takeIf { it.isNotBlank() } ?: continue
             val artist = meta.artist.takeIf { it.isNotBlank() } ?: continue
             val key = TrackMatchKeys.matchKey(artist, title)
             matches.add(
-                MatchedCfTrack(
+                MatchedRemoteTrack(
                     identity = meta.identity,
                     recordingMbid = rec.recordingMbid,
                     score = rec.score,

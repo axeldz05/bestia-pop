@@ -251,10 +251,8 @@ fun AddMusicDialog(
                             activeCandidates = activeTrackCandidates,
                             isLoadingCollection = isLoadingCollection,
                             catalogDownloads = activeDownloads.filter {
-                                (it.source == ActiveDownloadSource.CATALOG ||
-                                    it.source == ActiveDownloadSource.BATCH) &&
-                                    (it.state == CandidateDownloadState.DOWNLOADING ||
-                                        it.state == CandidateDownloadState.ERROR)
+                                it.source == ActiveDownloadSource.CATALOG ||
+                                    it.source == ActiveDownloadSource.BATCH
                             },
                             catalogPreviewKey = catalogPreviewKey,
                             previewItem = (currentItem as? PlayableItem.Remote)?.takeIf { catalogPreviewKey != null },
@@ -440,8 +438,9 @@ private fun ActiveDownloadsSummaryBanner(
     if (downloads.isEmpty()) return
     val downloading = downloads.filter { it.state == CandidateDownloadState.DOWNLOADING }
     val failed = downloads.filter { it.state == CandidateDownloadState.ERROR }
+    if (downloading.isEmpty() && failed.isEmpty()) return
 
-    AnimatedVisibility(visible = downloads.isNotEmpty()) {
+    AnimatedVisibility(visible = true) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             if (downloading.isNotEmpty()) {
                 val latest = downloading.first()
@@ -842,6 +841,7 @@ private fun CollectionTrackInspectionView(
                     )
                     CandidateTrackCard(
                         item = item,
+                        trackedDownload = batchDownloads.findByTrack(item.artist, item.title),
                         isPreviewing = flags.isThisPreview,
                         isPlaying = flags.isPlaying,
                         isResolving = flags.isResolving,
@@ -970,6 +970,7 @@ private fun CatalogPreviewableRow(
 @Composable
 private fun CandidateTrackCard(
     item: com.bestiapop.android.data.model.CatalogTrackCandidate,
+    trackedDownload: ActiveDownload?,
     isPreviewing: Boolean,
     isPlaying: Boolean,
     isResolving: Boolean,
@@ -982,15 +983,18 @@ private fun CandidateTrackCard(
     val currentYt = item.currentTrack
     val durationMs = currentYt?.durationMs ?: 0L
     val progressFraction = previewProgressFraction(progressMs, durationMs)
+    val downloadState = trackedDownload?.state ?: CandidateDownloadState.IDLE
+    val downloadPercent = trackedDownload?.progressPercent ?: 0
+    val downloadError = trackedDownload?.errorMessage
     val statusSubtext = when {
         isResolving -> "${item.artist} • Resolviendo stream…"
         isPreviewing && isPlaying -> "${item.artist} • Reproduciendo preview"
         isPreviewing -> "${item.artist} • Preview en pausa"
-        item.downloadState == CandidateDownloadState.IDLE ->
+        downloadState == CandidateDownloadState.IDLE ->
             "${item.artist} • YouTube: ${currentYt?.title ?: "No encontrado"}"
         else -> {
             val status = downloadStateStatusLabel(
-                state = item.downloadState,
+                state = downloadState,
                 successLabel = DownloadMessages.savedInLibrary,
                 queuedLabel = DownloadMessages.queuedEllipsis,
                 downloadingFallback = "Descargando audio...",
@@ -1008,7 +1012,7 @@ private fun CandidateTrackCard(
         selected = item.isSelected,
         progressFraction = progressFraction,
         isResolving = isResolving,
-        subtitleColor = if (item.downloadState == CandidateDownloadState.ERROR) {
+        subtitleColor = if (downloadState == CandidateDownloadState.ERROR) {
             MaterialTheme.colorScheme.error
         } else {
             MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
@@ -1021,12 +1025,12 @@ private fun CandidateTrackCard(
             Spacer(modifier = Modifier.width(6.dp))
         },
         extraBelowTitle = {
-            if (item.downloadState == CandidateDownloadState.ERROR &&
-                !item.errorMessage.isNullOrEmpty()
+            if (downloadState == CandidateDownloadState.ERROR &&
+                !downloadError.isNullOrEmpty()
             ) {
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
-                    text = item.errorMessage,
+                    text = downloadError,
                     style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
                     color = MaterialTheme.colorScheme.error,
                     maxLines = 2,
@@ -1035,8 +1039,8 @@ private fun CandidateTrackCard(
             }
         }
     ) {
-        if (item.downloadState == CandidateDownloadState.IDLE ||
-            item.downloadState == CandidateDownloadState.ERROR
+        if (downloadState == CandidateDownloadState.IDLE ||
+            downloadState == CandidateDownloadState.ERROR
         ) {
             PreviewPlayPauseButton(
                 isResolving = isResolving,
@@ -1046,8 +1050,8 @@ private fun CandidateTrackCard(
             )
         }
         DownloadStateTrailing(
-            state = item.downloadState,
-            percent = item.downloadProgressPercent,
+            state = downloadState,
+            percent = downloadPercent,
             onRetry = onRetryDownload,
             onCycle = onCycleCandidate,
             successContent = { DownloadSuccessReadyLabel() },

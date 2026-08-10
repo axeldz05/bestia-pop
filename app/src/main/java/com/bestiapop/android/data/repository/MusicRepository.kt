@@ -26,6 +26,7 @@ import com.bestiapop.android.data.model.PlaylistPendingTrack
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.data.model.TrackIdentity
 import com.bestiapop.android.data.model.mergePreferring
+import com.bestiapop.android.data.model.toIdentity
 import com.bestiapop.android.data.model.withIdentity
 import com.bestiapop.android.data.network.MetadataFetcher
 import com.bestiapop.android.data.stream.StreamResolver
@@ -634,24 +635,18 @@ class MusicRepository(private val context: Context) : IMusicRepository {
         candidate: IdentifyCandidate
     ): IdentifyResult = withContext(Dispatchers.IO) {
         val entity = musicDao.getSongById(songId) ?: return@withContext IdentifyResult.NoMatch
-        val newArtist = candidate.artist.takeIf { it.isNotBlank() } ?: entity.artist
-        val newAlbum = candidate.album.takeIf { it.isNotBlank() && !IdentifyRanking.isGenericAlbum(it) }
-            ?: IdentifyRanking.fallbackAlbum(newArtist, entity.album)
-        val rawTitle = candidate.title.takeIf { it.isNotBlank() } ?: entity.title
-        val newTitle = IdentifyRanking.cleanIdentityTitle(rawTitle).ifBlank { rawTitle }
-        val newArt = candidate.artworkUri?.takeIf { it.isNotBlank() } ?: entity.artworkUri
-        val newDuration = if (candidate.durationMs > 0) candidate.durationMs else entity.durationMs
-
-        musicDao.updateSong(
-            entity.copy(
-                title = newTitle,
-                artist = newArtist,
-                album = newAlbum,
-                artworkUri = newArt,
-                durationMs = newDuration,
-                trackNumber = if (candidate.trackNumber > 0) candidate.trackNumber else entity.trackNumber
-            )
+        // Prefer candidate over Room; strip generic album before merge so entity can fill.
+        val preferred = candidate.track.identity.copy(
+            album = candidate.album
+                .takeIf { it.isNotBlank() && !IdentifyRanking.isGenericAlbum(it) }
+                .orEmpty()
         )
+        val merged = preferred.mergePreferring(entity.toIdentity())
+        val cleaned = merged.copy(
+            title = IdentifyRanking.cleanIdentityTitle(merged.title).ifBlank { merged.title },
+            album = IdentifyRanking.fallbackAlbum(merged.artist, merged.album)
+        )
+        musicDao.updateSong(entity.withIdentity(cleaned))
         IdentifyResult.Updated(songId = songId)
     }
 
@@ -1156,16 +1151,19 @@ class MusicRepository(private val context: Context) : IMusicRepository {
         onProgress?.invoke(DownloadPhase.Saving)
 
         if (overwriteTarget != null) {
-            val updated = overwriteTarget.copy(
+            val updated = overwriteTarget.withIdentity(
+                TrackIdentity(
+                    title = finalTitle,
+                    artist = finalArtist.ifBlank { overwriteTarget.artist },
+                    album = finalAlbum,
+                    artworkUri = finalArtwork ?: overwriteTarget.artworkUri,
+                    durationMs = if (finalDurationMs > 0) finalDurationMs else overwriteTarget.durationMs,
+                    trackNumber = if (finalTrackNumber > 0) finalTrackNumber else overwriteTarget.trackNumber
+                )
+            ).copy(
                 uriString = savedRef.uriString,
-                title = finalTitle,
-                artist = finalArtist.ifBlank { overwriteTarget.artist },
-                album = finalAlbum,
-                durationMs = if (finalDurationMs > 0) finalDurationMs else overwriteTarget.durationMs,
-                artworkUri = finalArtwork ?: overwriteTarget.artworkUri,
                 lyrics = lyrics ?: overwriteTarget.lyrics,
-                folderPath = savedRef.folderPath,
-                trackNumber = if (finalTrackNumber > 0) finalTrackNumber else overwriteTarget.trackNumber
+                folderPath = savedRef.folderPath
             )
             musicDao.updateSong(updated)
             onProgress?.invoke(DownloadPhase.Overwritten)

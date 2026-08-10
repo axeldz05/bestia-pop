@@ -66,4 +66,72 @@ class TrackIdentityTest {
         assertEquals(2003, identity.trackNumber)
         assertNull(identity.artworkUri?.takeIf { it.isBlank() })
     }
+
+    @Test
+    fun songWithIdentity_updatesSharedFieldsOnly() {
+        val song = Song(
+            id = 3L,
+            uriString = "file:///x.m4a",
+            title = "Old",
+            artist = "Old Artist",
+            album = "Old Album",
+            genre = "Rock",
+            durationMs = 1L,
+            year = 1999,
+            trackNumber = 1,
+            artworkUri = null,
+            lyrics = "keep",
+            folderPath = "/kept",
+            dateAdded = 9L
+        )
+        val updated = song.withIdentity(
+            TrackIdentity(
+                title = "New",
+                artist = "New Artist",
+                album = "New Album",
+                artworkUri = "file:///art.jpg",
+                durationMs = 120_000L,
+                trackNumber = 5
+            )
+        )
+        assertEquals("New", updated.title)
+        assertEquals("New Artist", updated.artist)
+        assertEquals("New Album", updated.album)
+        assertEquals("file:///art.jpg", updated.artworkUri)
+        assertEquals(120_000L, updated.durationMs)
+        assertEquals(5, updated.trackNumber)
+        assertEquals("Rock", updated.genre)
+        assertEquals(1999, updated.year)
+        assertEquals("keep", updated.lyrics)
+        assertEquals("/kept", updated.folderPath)
+        assertEquals("file:///x.m4a", updated.uriString)
+        assertEquals(3L, updated.id)
+    }
+
+    @Test
+    fun mergePreferring_candidateOverEntity_fillsGapsFromSong() {
+        val candidate = TrackIdentity(
+            title = "Creep",
+            artist = "Radiohead",
+            album = "",
+            artworkUri = "https://art.example/c.jpg",
+            durationMs = 238_000L,
+            trackNumber = 0
+        )
+        val entity = TrackIdentity(
+            title = "File Name",
+            artist = "Unknown",
+            album = "Pablo Honey",
+            artworkUri = null,
+            durationMs = 0L,
+            trackNumber = 2
+        )
+        val merged = candidate.mergePreferring(entity)
+        assertEquals("Creep", merged.title)
+        assertEquals("Radiohead", merged.artist)
+        assertEquals("Pablo Honey", merged.album)
+        assertEquals("https://art.example/c.jpg", merged.artworkUri)
+        assertEquals(238_000L, merged.durationMs)
+        assertEquals(2, merged.trackNumber)
+    }
 }

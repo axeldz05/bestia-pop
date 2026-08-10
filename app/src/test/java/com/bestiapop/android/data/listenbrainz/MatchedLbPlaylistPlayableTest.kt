@@ -26,21 +26,24 @@ class MatchedLbPlaylistPlayableTest {
                 tracks = emptyList()
             ),
             matches = listOf(
-                MatchedLbTrack(
-                    track = LbPlaylistTrack("Local Hit", "Artist A", recordingMbid = "r1"),
+                MatchedRemoteTrack(
+                    identity = LbPlaylistTrack("Local Hit", "Artist A", recordingMbid = "r1").identity,
+                    recordingMbid = "r1",
                     localSong = local
                 ),
-                MatchedLbTrack(
-                    track = LbPlaylistTrack(
+                MatchedRemoteTrack(
+                    identity = LbPlaylistTrack(
                         title = "Remote Jam",
                         artist = "Artist B",
                         recordingMbid = "r2",
                         album = "EP"
-                    ),
+                    ).identity,
+                    recordingMbid = "r2",
                     localSong = null
                 ),
-                MatchedLbTrack(
-                    track = LbPlaylistTrack("Another Local", "Artist C"),
+                MatchedRemoteTrack(
+                    identity = LbPlaylistTrack("Another Local", "Artist C").identity,
+                    recordingMbid = null,
                     localSong = song(2, "Another Local", "Artist C")
                 )
             )

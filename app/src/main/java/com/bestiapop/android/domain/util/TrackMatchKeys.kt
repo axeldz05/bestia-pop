@@ -25,6 +25,12 @@ object TrackMatchKeys {
     /** L2: stable [ActiveDownload] / queue id from artist+title (empty if either blank). */
     fun downloadIdFor(artist: String, title: String): String = matchKey(artist, title)
 
+    /** Batch catalog job id; pairs with [downloadIdFor] for [findByTrack] lookup. */
+    fun batchDownloadIdFor(artist: String, title: String): String {
+        val key = downloadIdFor(artist, title)
+        return if (key.isEmpty()) "" else "batch:$key"
+    }
+
     fun buildLibraryIndex(library: List<Song>): Map<String, Song> {
         val map = HashMap<String, Song>(library.size)
         for (song in library) {

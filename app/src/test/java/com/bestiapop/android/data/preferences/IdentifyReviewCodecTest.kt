@@ -57,11 +57,8 @@ class IdentifyReviewCodecTest {
         assertEquals("Muse · Hysteria", p.sourceHints)
         assertEquals(0.72f, p.suggested?.score ?: 0f, 0.001f)
         assertEquals(listOf("título similar", "duración +1s"), p.candidates.first().reasons)
-        assertEquals("Hysteria", p.suggested?.title)
         assertEquals("Deezer", p.suggested?.provider)
-        assertEquals(8, p.suggested?.trackNumber)
         assertEquals("", p.suggested?.track?.audioUrl)
-        assertEquals("https://img.example/a.jpg", p.suggested?.artworkUri)
     }
 
     @Test

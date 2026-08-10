@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Pause
@@ -26,6 +27,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.bestiapop.android.data.model.ActiveDownload
 import com.bestiapop.android.data.model.CandidateDownloadState
+import com.bestiapop.android.data.model.DownloadMessages
 import com.bestiapop.android.domain.util.TrackMatchKeys
 
 /** L1: circular progress + percent label. */
@@ -50,10 +52,29 @@ fun DownloadProgressPercent(percent: Int) {
 @Composable
 fun DownloadQueuedLabel() {
     Text(
-        text = "En cola",
+        text = DownloadMessages.queued,
         style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f)
     )
+}
+
+/** L1: success check + short label (catalog "Listo"). */
+@Composable
+fun DownloadSuccessReadyLabel(label: String = "Listo") {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(
+            imageVector = Icons.Default.CheckCircle,
+            contentDescription = "Descargado",
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(22.dp)
+        )
+        Spacer(modifier = Modifier.width(4.dp))
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+            color = MaterialTheme.colorScheme.primary
+        )
+    }
 }
 
 /** L1: outlined button with Refresh icon + label. */
@@ -152,7 +173,28 @@ fun List<ActiveDownload>.findByTrack(artist: String, title: String): ActiveDownl
     return find { it.id == key }
 }
 
-/** L2: trailing chrome for queued / progress / retry / download. NP omits cycle; catalog omits dismiss. */
+/**
+ * L1: status fragment for subtitles (queued / downloading / success / error).
+ * Callers prepend artist / source as needed.
+ */
+fun downloadStateStatusLabel(
+    state: CandidateDownloadState,
+    progressMessage: String? = null,
+    errorMessage: String? = null,
+    successLabel: String = DownloadMessages.downloadedShort,
+    queuedLabel: String = DownloadMessages.queued,
+    downloadingFallback: String = "Descargando…",
+    idleLabel: String? = null
+): String? = when (state) {
+    CandidateDownloadState.QUEUED -> queuedLabel
+    CandidateDownloadState.DOWNLOADING ->
+        progressMessage?.takeIf { it.isNotBlank() } ?: downloadingFallback
+    CandidateDownloadState.SUCCESS -> successLabel
+    CandidateDownloadState.ERROR -> errorMessage?.takeIf { it.isNotBlank() }
+    CandidateDownloadState.IDLE -> idleLabel
+}
+
+/** L2: trailing chrome for queued / progress / retry / download / success. */
 @Composable
 fun DownloadStateTrailing(
     state: CandidateDownloadState?,
@@ -160,7 +202,11 @@ fun DownloadStateTrailing(
     onRetry: (() -> Unit)? = null,
     onCycle: (() -> Unit)? = null,
     onDismiss: (() -> Unit)? = null,
-    onDownload: (() -> Unit)? = null
+    onDownload: (() -> Unit)? = null,
+    onSuccessPlay: (() -> Unit)? = null,
+    successLabel: String? = null,
+    successContent: (@Composable () -> Unit)? = null,
+    idleContent: (@Composable () -> Unit)? = null
 ) {
     when (state) {
         CandidateDownloadState.QUEUED -> DownloadQueuedLabel()
@@ -176,9 +222,43 @@ fun DownloadStateTrailing(
                 onClick = onRetry
             )
         }
-        CandidateDownloadState.SUCCESS,
+        CandidateDownloadState.SUCCESS -> when {
+            successContent != null -> successContent()
+            onSuccessPlay != null -> Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onSuccessPlay) {
+                    Icon(
+                        imageVector = Icons.Default.PlayArrow,
+                        contentDescription = "Reproducir",
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
+                if (onDismiss != null) {
+                    IconButton(onClick = onDismiss) {
+                        Icon(
+                            Icons.Default.Close,
+                            contentDescription = "Limpiar",
+                            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                        )
+                    }
+                }
+            }
+            successLabel != null -> Text(
+                text = successLabel,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary
+            )
+            onDownload != null -> IconButton(onClick = onDownload) {
+                Icon(
+                    imageVector = Icons.Default.Download,
+                    contentDescription = "Descargar",
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            }
+        }
         CandidateDownloadState.IDLE, null -> {
-            if (onDownload != null) {
+            if (idleContent != null) {
+                idleContent()
+            } else if (onDownload != null) {
                 IconButton(onClick = onDownload) {
                     Icon(
                         imageVector = Icons.Default.Download,

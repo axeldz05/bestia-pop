@@ -7,6 +7,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import com.bestiapop.android.data.model.ActiveDownload
 import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.data.model.Song
+import com.bestiapop.android.data.model.TrackIdentity
+import com.bestiapop.android.data.model.TrackMeta
 import com.bestiapop.android.data.model.matchesItem
 import com.bestiapop.android.data.model.matchesSong
 import com.bestiapop.android.domain.util.TrackMatchKeys
@@ -55,12 +57,12 @@ fun isCurrentPlaying(
 /**
  * L2: local → [SongListItem], remote → [RemoteTrackPlaceholderRow].
  * Keep [RemoteTrackPlaceholderRow] / [SongListItem] public for one-off layouts.
+ * Flat [title]/[artist] overload stays as L1 step-down.
  */
 @Composable
 fun MatchedTrackRow(
     localSong: Song?,
-    title: String,
-    artist: String,
+    meta: TrackMeta,
     remoteBadge: String,
     isCurrentPlaying: Boolean,
     remote: PlayableItem.Remote?,
@@ -91,8 +93,8 @@ fun MatchedTrackRow(
         )
     } else if (remote != null) {
         RemoteTrackPlaceholderRow(
-            title = title,
-            artist = artist,
+            title = meta.title,
+            artist = meta.artist,
             badge = remoteBadge,
             leadingIcon = leadingIcon,
             highlighted = isCurrentPlaying,
@@ -103,3 +105,40 @@ fun MatchedTrackRow(
         )
     }
 }
+
+/** L1: flat title/artist when a call site lacks a [TrackMeta] wrapper. */
+@Composable
+fun MatchedTrackRow(
+    localSong: Song?,
+    title: String,
+    artist: String,
+    remoteBadge: String,
+    isCurrentPlaying: Boolean,
+    remote: PlayableItem.Remote?,
+    download: ActiveDownload? = null,
+    onPlayAt: () -> Unit,
+    onDownloadRemote: (PlayableItem.Remote) -> Unit,
+    onRetryDownload: ((String) -> Unit)? = null,
+    queueActions: SongQueueActions,
+    leadingIcon: ImageVector = Icons.Default.PlayArrow,
+    onAddToPlaylist: ((Song) -> Unit)? = null,
+    onEditMetadata: ((Song) -> Unit)? = null,
+    onIdentify: ((Song) -> Unit)? = null,
+    onDelete: ((Song) -> Unit)? = null
+) = MatchedTrackRow(
+    localSong = localSong,
+    meta = TrackIdentity(title = title, artist = artist),
+    remoteBadge = remoteBadge,
+    isCurrentPlaying = isCurrentPlaying,
+    remote = remote,
+    download = download,
+    onPlayAt = onPlayAt,
+    onDownloadRemote = onDownloadRemote,
+    onRetryDownload = onRetryDownload,
+    queueActions = queueActions,
+    leadingIcon = leadingIcon,
+    onAddToPlaylist = onAddToPlaylist,
+    onEditMetadata = onEditMetadata,
+    onIdentify = onIdentify,
+    onDelete = onDelete
+)

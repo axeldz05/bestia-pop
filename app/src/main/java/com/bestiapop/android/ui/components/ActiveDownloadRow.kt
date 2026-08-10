@@ -1,22 +1,15 @@
 package com.bestiapop.android.ui.components
 
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -25,6 +18,7 @@ import androidx.compose.ui.unit.dp
 import com.bestiapop.android.data.model.ActiveDownload
 import com.bestiapop.android.data.model.ActiveDownloadSource
 import com.bestiapop.android.data.model.CandidateDownloadState
+import com.bestiapop.android.data.model.DownloadMessages
 
 @Composable
 fun ActiveDownloadRow(
@@ -77,35 +71,14 @@ fun ActiveDownloadRow(
 
             Spacer(modifier = Modifier.width(4.dp))
 
-            when (download.state) {
-                CandidateDownloadState.QUEUED -> DownloadQueuedLabel()
-                CandidateDownloadState.DOWNLOADING -> DownloadProgressPercent(download.progressPercent)
-                CandidateDownloadState.SUCCESS -> {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        IconButton(onClick = onPlay) {
-                            Icon(
-                                imageVector = Icons.Default.PlayArrow,
-                                contentDescription = "Reproducir",
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                        IconButton(onClick = onDismiss) {
-                            Icon(
-                                Icons.Default.Close,
-                                contentDescription = "Limpiar",
-                                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                            )
-                        }
-                    }
-                }
-                CandidateDownloadState.ERROR -> {
-                    RetryCycleDismissActions(
-                        onRetry = onRetry,
-                        onCycle = onCycle,
-                        onDismiss = onDismiss
-                    )
-                }
-                CandidateDownloadState.IDLE -> {
+            DownloadStateTrailing(
+                state = download.state,
+                percent = download.progressPercent,
+                onRetry = onRetry,
+                onCycle = onCycle,
+                onDismiss = onDismiss,
+                onSuccessPlay = onPlay,
+                idleContent = {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.End
@@ -123,7 +96,7 @@ fun ActiveDownloadRow(
                         )
                     }
                 }
-            }
+            )
         }
     }
 }
@@ -138,17 +111,15 @@ private fun buildSubtitle(download: ActiveDownload): String {
         ActiveDownloadSource.LB_IMPORT -> "Import Para Ti"
         ActiveDownloadSource.DISCOVER -> "Para Ti"
     }
+    val status = downloadStateStatusLabel(
+        state = download.state,
+        progressMessage = download.progressMessage,
+        errorMessage = download.errorMessage,
+        successLabel = DownloadMessages.downloadedShort
+    )
     return when (download.state) {
-        CandidateDownloadState.QUEUED -> joinMeta(artist, sourceLabel, "En cola", sep = " · ")
-        CandidateDownloadState.DOWNLOADING -> {
-            val msg = download.progressMessage?.takeIf { it.isNotBlank() } ?: "Descargando…"
-            joinMeta(artist, sourceLabel, msg, sep = " · ")
-        }
-        CandidateDownloadState.SUCCESS -> joinMeta(artist, sourceLabel, "Descargada", sep = " · ")
-        CandidateDownloadState.ERROR -> {
-            download.errorMessage?.takeIf { it.isNotBlank() }
-                ?: joinMeta(artist, sourceLabel, "Error", sep = " · ")
-        }
-        CandidateDownloadState.IDLE -> joinMeta(artist, sourceLabel, sep = " · ")
+        CandidateDownloadState.ERROR ->
+            status ?: joinMeta(artist, sourceLabel, "Error", sep = " · ")
+        else -> joinMeta(artist, sourceLabel, status, sep = " · ")
     }
 }

@@ -22,12 +22,18 @@ object GitHubReleaseParser {
             versionCode = versionCode,
             versionName = versionName,
             apkUrl = apkUrl,
-            changelog = releaseBody.ifBlank { null }
+            changelog = stripVersionCodeLine(releaseBody).ifBlank { null }
         )
     }
 
     fun parseVersionCode(releaseBody: String): Int? =
         VERSION_CODE_LINE.find(releaseBody)?.groupValues?.get(1)?.toIntOrNull()
+
+    /** Drop machine `versionCode: N` lines before showing changelog to users. */
+    fun stripVersionCodeLine(releaseBody: String): String =
+        VERSION_CODE_LINE.replace(releaseBody, "")
+            .replace(Regex("""\n{3,}"""), "\n\n")
+            .trim()
 
     private fun versionNameFrom(obj: JSONObject): String? {
         val tag = obj.optNullableString("tag_name")

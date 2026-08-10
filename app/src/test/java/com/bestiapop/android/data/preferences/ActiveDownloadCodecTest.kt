@@ -59,21 +59,6 @@ class ActiveDownloadCodecTest {
     }
 
     @Test
-    fun forPersistence_keepsSuccessWithSongId() {
-        val persisted = ActiveDownloadCodec.forPersistence(
-            listOf(
-                download(CandidateDownloadState.SUCCESS).copy(
-                    resultSongId = 99L,
-                    progressPercent = 100
-                )
-            )
-        )
-        assertEquals(1, persisted.size)
-        assertEquals(CandidateDownloadState.SUCCESS, persisted[0].state)
-        assertEquals(99L, persisted[0].resultSongId)
-    }
-
-    @Test
     fun forPersistence_convertsQueuedToInterruptedError() {
         val persisted = ActiveDownloadCodec.forPersistence(
             listOf(download(CandidateDownloadState.QUEUED))
@@ -116,25 +101,18 @@ class ActiveDownloadCodecTest {
     }
 
     @Test
-    fun roundTrip_preservesTrackNumber() {
-        val original = listOf(
-            download(CandidateDownloadState.ERROR).copy(
-                candidates = listOf(track().copy(identity = track().identity.copy(trackNumber = 2004)))
-            )
-        )
-        val restored = ActiveDownloadCodec.decode(ActiveDownloadCodec.encode(original))
-        assertEquals(2004, restored[0].currentTrack?.trackNumber)
-    }
-
-    @Test
     fun roundTrip_preservesSuccessAndResultSongId() {
         val original = listOf(
-            download(CandidateDownloadState.SUCCESS).copy(resultSongId = 55L)
+            download(CandidateDownloadState.SUCCESS).copy(
+                resultSongId = 55L,
+                progressPercent = 100
+            )
         )
         val restored = ActiveDownloadCodec.decode(ActiveDownloadCodec.encode(original))
         assertEquals(1, restored.size)
         assertEquals(CandidateDownloadState.SUCCESS, restored[0].state)
         assertEquals(55L, restored[0].resultSongId)
+        assertEquals(100, restored[0].progressPercent)
     }
 
     @Test

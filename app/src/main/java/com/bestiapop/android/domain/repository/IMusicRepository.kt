@@ -105,7 +105,7 @@ interface IMusicRepository {
 
     suspend fun downloadAndSaveOnlineTrack(
         track: OnlineCatalogTrack,
-        onProgress: ((String) -> Unit)? = null,
+        onProgress: ((com.bestiapop.android.data.model.DownloadPhase) -> Unit)? = null,
         conflictPolicy: com.bestiapop.android.data.model.DownloadConflictPolicy? = null
     ): Song
 }

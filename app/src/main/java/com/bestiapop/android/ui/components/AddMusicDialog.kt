@@ -21,10 +21,10 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Album
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.Error
@@ -34,7 +34,6 @@ import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Public
-import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Stop
@@ -81,6 +80,7 @@ import coil.compose.AsyncImage
 import com.bestiapop.android.data.model.ActiveDownload
 import com.bestiapop.android.data.model.ActiveDownloadSource
 import com.bestiapop.android.data.model.CandidateDownloadState
+import com.bestiapop.android.data.model.DownloadMessages
 import com.bestiapop.android.data.model.OnlineCatalogTrack
 import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.ui.MusicPlayerViewModel
@@ -986,15 +986,18 @@ private fun CandidateTrackCard(
         isResolving -> "${item.artist} • Resolviendo stream…"
         isPreviewing && isPlaying -> "${item.artist} • Reproduciendo preview"
         isPreviewing -> "${item.artist} • Preview en pausa"
-        item.downloadState == com.bestiapop.android.data.model.CandidateDownloadState.IDLE ->
+        item.downloadState == CandidateDownloadState.IDLE ->
             "${item.artist} • YouTube: ${currentYt?.title ?: "No encontrado"}"
-        item.downloadState == com.bestiapop.android.data.model.CandidateDownloadState.QUEUED ->
-            "${item.artist} • En cola…"
-        item.downloadState == com.bestiapop.android.data.model.CandidateDownloadState.DOWNLOADING ->
-            "${item.artist} • Descargando audio..."
-        item.downloadState == com.bestiapop.android.data.model.CandidateDownloadState.SUCCESS ->
-            "${item.artist} • ¡Guardado en biblioteca!"
-        else -> "${item.artist} • Error"
+        else -> {
+            val status = downloadStateStatusLabel(
+                state = item.downloadState,
+                successLabel = DownloadMessages.savedInLibrary,
+                queuedLabel = DownloadMessages.queuedEllipsis,
+                downloadingFallback = "Descargando audio...",
+                errorMessage = "Error"
+            ) ?: "Error"
+            "${item.artist} • $status"
+        }
     }
 
     CatalogPreviewableRow(
@@ -1005,7 +1008,7 @@ private fun CandidateTrackCard(
         selected = item.isSelected,
         progressFraction = progressFraction,
         isResolving = isResolving,
-        subtitleColor = if (item.downloadState == com.bestiapop.android.data.model.CandidateDownloadState.ERROR) {
+        subtitleColor = if (item.downloadState == CandidateDownloadState.ERROR) {
             MaterialTheme.colorScheme.error
         } else {
             MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
@@ -1018,7 +1021,7 @@ private fun CandidateTrackCard(
             Spacer(modifier = Modifier.width(6.dp))
         },
         extraBelowTitle = {
-            if (item.downloadState == com.bestiapop.android.data.model.CandidateDownloadState.ERROR &&
+            if (item.downloadState == CandidateDownloadState.ERROR &&
                 !item.errorMessage.isNullOrEmpty()
             ) {
                 Spacer(modifier = Modifier.height(2.dp))
@@ -1032,8 +1035,8 @@ private fun CandidateTrackCard(
             }
         }
     ) {
-        if (item.downloadState == com.bestiapop.android.data.model.CandidateDownloadState.IDLE ||
-            item.downloadState == com.bestiapop.android.data.model.CandidateDownloadState.ERROR
+        if (item.downloadState == CandidateDownloadState.IDLE ||
+            item.downloadState == CandidateDownloadState.ERROR
         ) {
             PreviewPlayPauseButton(
                 isResolving = isResolving,
@@ -1042,8 +1045,13 @@ private fun CandidateTrackCard(
                 enabled = currentYt != null
             )
         }
-        when (item.downloadState) {
-            com.bestiapop.android.data.model.CandidateDownloadState.IDLE -> {
+        DownloadStateTrailing(
+            state = item.downloadState,
+            percent = item.downloadProgressPercent,
+            onRetry = onRetryDownload,
+            onCycle = onCycleCandidate,
+            successContent = { DownloadSuccessReadyLabel() },
+            idleContent = {
                 DownloadOutlinedActionButton(
                     label = "Buscar otro",
                     onClick = onCycleCandidate,
@@ -1051,33 +1059,7 @@ private fun CandidateTrackCard(
                     horizontalPadding = 10
                 )
             }
-            com.bestiapop.android.data.model.CandidateDownloadState.QUEUED -> DownloadQueuedLabel()
-            com.bestiapop.android.data.model.CandidateDownloadState.DOWNLOADING -> {
-                DownloadProgressPercent(item.downloadProgressPercent)
-            }
-            com.bestiapop.android.data.model.CandidateDownloadState.SUCCESS -> {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.CheckCircle,
-                        contentDescription = "Descargado",
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(22.dp)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        text = "Listo",
-                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                }
-            }
-            com.bestiapop.android.data.model.CandidateDownloadState.ERROR -> {
-                RetryCycleDismissActions(
-                    onRetry = onRetryDownload,
-                    onCycle = onCycleCandidate
-                )
-            }
-        }
+        )
     }
 }
 

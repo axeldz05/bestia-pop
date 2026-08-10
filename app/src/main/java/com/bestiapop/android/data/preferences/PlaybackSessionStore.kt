@@ -16,6 +16,7 @@ import com.bestiapop.android.data.model.toPlayable
 import com.bestiapop.android.data.playback.PlaybackQueueOrder
 import com.bestiapop.android.data.util.AudioPersistRef
 import com.bestiapop.android.data.util.SongPathNormalizer
+import com.bestiapop.android.data.util.TrackIdentityJson
 import com.bestiapop.android.data.util.optNullableString
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -73,11 +74,7 @@ object LastPlayedCodec {
             put("songId", snapshot.songId)
             put("uriString", snapshot.uriString)
             put("positionMs", snapshot.positionMs)
-            put("title", snapshot.title)
-            put("artist", snapshot.artist)
-            put("album", snapshot.album)
-            put("artworkUri", snapshot.artworkUri ?: JSONObject.NULL)
-            put("durationMs", snapshot.durationMs)
+            TrackIdentityJson.putInto(this, snapshot.identity)
         }.toString()
 
     fun decode(json: String): LastPlayedSnapshot? {
@@ -90,13 +87,7 @@ object LastPlayedCodec {
                 songId = obj.optLong("songId", 0L),
                 uriString = uri,
                 positionMs = obj.optLong("positionMs", 0L).coerceAtLeast(0L),
-                identity = TrackIdentity(
-                    title = obj.optString("title", ""),
-                    artist = obj.optString("artist", ""),
-                    album = obj.optString("album", ""),
-                    artworkUri = obj.optNullableString("artworkUri"),
-                    durationMs = obj.optLong("durationMs", 0L).coerceAtLeast(0L)
-                )
+                identity = TrackIdentityJson.decode(obj)
             )
         } catch (_: Exception) {
             null
@@ -187,21 +178,11 @@ object QueueSnapshotCodec {
             put("kind", "local")
             put("songId", item.songId)
             put("uriString", item.uriString)
-            put("title", item.title)
-            put("artist", item.artist)
-            put("album", item.album)
-            put("artworkUri", item.artworkUri ?: JSONObject.NULL)
-            put("durationMs", item.durationMs)
-            put("trackNumber", item.trackNumber)
+            TrackIdentityJson.putInto(this, item.identity)
         }
         is PersistedQueueItem.Remote -> JSONObject().apply {
             put("kind", "remote")
-            put("title", item.identity.title)
-            put("artist", item.identity.artist)
-            put("album", item.identity.album)
-            put("artworkUri", item.identity.artworkUri ?: JSONObject.NULL)
-            put("durationMs", item.identity.durationMs)
-            put("trackNumber", item.identity.trackNumber)
+            TrackIdentityJson.putInto(this, item.identity)
             put("recordingMbid", item.recordingMbid ?: JSONObject.NULL)
             put("youtubeQueryOrId", item.youtubeQueryOrId ?: JSONObject.NULL)
             put("videoId", item.videoId ?: JSONObject.NULL)
@@ -217,33 +198,20 @@ object QueueSnapshotCodec {
                     PersistedQueueItem.Local(
                         songId = obj.optLong("songId", 0L),
                         uriString = uri,
-                        identity = TrackIdentity(
-                            title = obj.optString("title", ""),
-                            artist = obj.optString("artist", ""),
-                            album = obj.optString("album", ""),
-                            artworkUri = obj.optNullableString("artworkUri"),
-                            durationMs = obj.optLong("durationMs", 0L).coerceAtLeast(0L),
-                            trackNumber = obj.optInt("trackNumber", 0).coerceAtLeast(0)
-                        )
+                        identity = TrackIdentityJson.decode(obj)
                     )
                 }
                 "remote" -> {
-                    val title = obj.optString("title", "")
-                    val artist = obj.optString("artist", "")
+                    val identity = TrackIdentityJson.decode(obj)
                     val query = obj.optNullableString("youtubeQueryOrId")
                     val videoId = obj.optNullableString("videoId")
-                    if (title.isBlank() && artist.isBlank() && query.isNullOrBlank() && videoId.isNullOrBlank()) {
+                    if (identity.title.isBlank() && identity.artist.isBlank() &&
+                        query.isNullOrBlank() && videoId.isNullOrBlank()
+                    ) {
                         return null
                     }
                     PersistedQueueItem.Remote(
-                        identity = TrackIdentity(
-                            title = title,
-                            artist = artist,
-                            album = obj.optString("album", ""),
-                            artworkUri = obj.optNullableString("artworkUri"),
-                            durationMs = obj.optLong("durationMs", 0L).coerceAtLeast(0L),
-                            trackNumber = obj.optInt("trackNumber", 0).coerceAtLeast(0)
-                        ),
+                        identity = identity,
                         recordingMbid = obj.optNullableString("recordingMbid"),
                         youtubeQueryOrId = query,
                         videoId = videoId

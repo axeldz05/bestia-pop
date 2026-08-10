@@ -8,11 +8,11 @@ import androidx.compose.ui.Modifier
 import com.bestiapop.android.data.model.ActiveDownload
 import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.data.model.Song
+import com.bestiapop.android.data.model.TrackMeta
 
 data class MatchedTrackListItem(
     val localSong: Song?,
-    val title: String,
-    val artist: String,
+    val meta: TrackMeta,
     val remote: PlayableItem.Remote?,
     val key: String
 )
@@ -40,17 +40,16 @@ fun MatchedTrackLazyColumn(
         ) { index, match ->
             MatchedTrackRow(
                 localSong = match.localSong,
-                title = match.title,
-                artist = match.artist,
+                meta = match.meta,
                 remoteBadge = remoteBadge,
                 isCurrentPlaying = isCurrentPlaying(
                     currentItem,
                     match.localSong,
-                    match.artist,
-                    match.title
+                    match.meta.artist,
+                    match.meta.title
                 ),
                 remote = match.remote,
-                download = activeDownloads.findByTrack(match.artist, match.title),
+                download = activeDownloads.findByTrack(match.meta.artist, match.meta.title),
                 onPlayAt = { onPlayAt(index) },
                 onDownloadRemote = onDownloadRemote,
                 onRetryDownload = onRetryDownload,

@@ -102,7 +102,7 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.bestiapop.android.data.model.ActiveDownload
 import com.bestiapop.android.data.model.Album
-import com.bestiapop.android.data.model.CandidateDownloadState
+import com.bestiapop.android.data.model.DownloadMessages
 import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.data.model.Playlist
 import com.bestiapop.android.data.model.RepeatMode
@@ -811,29 +811,23 @@ private fun NowPlayingRemoteDownloadAction(
     onRetry: (String) -> Unit
 ) {
     Spacer(modifier = Modifier.height(8.dp))
-    when (download?.state) {
-        CandidateDownloadState.SUCCESS -> Text(
-            text = "En biblioteca",
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.primary
-        )
-        CandidateDownloadState.QUEUED,
-        CandidateDownloadState.DOWNLOADING,
-        CandidateDownloadState.ERROR -> DownloadStateTrailing(
-            state = download.state,
-            percent = download.progressPercent,
-            onRetry = { onRetry(download.id) }
-        )
-        CandidateDownloadState.IDLE, null -> Button(onClick = onDownload) {
-            Icon(
-                imageVector = Icons.Default.Download,
-                contentDescription = null,
-                modifier = Modifier.size(18.dp)
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Text("Descargar ahora")
+    DownloadStateTrailing(
+        state = download?.state,
+        percent = download?.progressPercent ?: 0,
+        onRetry = download?.let { d -> { onRetry(d.id) } },
+        successLabel = DownloadMessages.inLibrary,
+        idleContent = {
+            Button(onClick = onDownload) {
+                Icon(
+                    imageVector = Icons.Default.Download,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Descargar ahora")
+            }
         }
-    }
+    )
 }
 
 @Composable

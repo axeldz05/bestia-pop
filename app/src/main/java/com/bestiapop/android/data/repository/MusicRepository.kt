@@ -14,6 +14,7 @@ import com.bestiapop.android.data.model.Album
 import com.bestiapop.android.data.model.AlbumOverride
 import com.bestiapop.android.data.model.Artist
 import com.bestiapop.android.data.model.DownloadConflictPolicy
+import com.bestiapop.android.data.model.DownloadPhase
 import com.bestiapop.android.data.model.DuplicateSongException
 import com.bestiapop.android.data.model.IdentifyCandidate
 import com.bestiapop.android.data.model.IdentifyConfidence
@@ -992,10 +993,10 @@ class MusicRepository(private val context: Context) : IMusicRepository {
 
     override suspend fun downloadAndSaveOnlineTrack(
         track: OnlineCatalogTrack,
-        onProgress: ((String) -> Unit)?,
+        onProgress: ((DownloadPhase) -> Unit)?,
         conflictPolicy: DownloadConflictPolicy?
     ): Song = withContext(Dispatchers.IO) {
-        onProgress?.invoke("Buscando audio de alta calidad en YouTube...")
+        onProgress?.invoke(DownloadPhase.Searching)
 
         val queryOrId = com.bestiapop.android.data.network.YouTubeExtractor.resolveYouTubeQueryOrId(track)
         val ytStream = streamResolver.resolveQuery(queryOrId, forceRefresh = true).getOrElse { e ->
@@ -1056,7 +1057,7 @@ class MusicRepository(private val context: Context) : IMusicRepository {
             file.delete()
         }
 
-        onProgress?.invoke("Descargando audio (${finalTitle})...")
+        onProgress?.invoke(DownloadPhase.Downloading(finalTitle))
 
         var downloadedBytes = 0L
         var maxResumes = 5
@@ -1115,7 +1116,7 @@ class MusicRepository(private val context: Context) : IMusicRepository {
 
         val savedRef = audioStore.canonicalize(pendingWrite.publish())
 
-        onProgress?.invoke("Obteniendo información del álbum y portada...")
+        onProgress?.invoke(DownloadPhase.FetchingMetadata)
 
         var finalAlbum = track.album
         val hasUsefulAlbum = !IdentifyRanking.isGenericAlbum(finalAlbum)
@@ -1152,7 +1153,7 @@ class MusicRepository(private val context: Context) : IMusicRepository {
 
         val lyrics = MetadataFetcher.fetchLyrics(finalArtist, finalTitle)
 
-        onProgress?.invoke("Guardando en la biblioteca...")
+        onProgress?.invoke(DownloadPhase.Saving)
 
         if (overwriteTarget != null) {
             val updated = overwriteTarget.copy(
@@ -1167,7 +1168,7 @@ class MusicRepository(private val context: Context) : IMusicRepository {
                 trackNumber = if (finalTrackNumber > 0) finalTrackNumber else overwriteTarget.trackNumber
             )
             musicDao.updateSong(updated)
-            onProgress?.invoke("¡Canción sobrescrita con éxito!")
+            onProgress?.invoke(DownloadPhase.Overwritten)
             return@withContext updated
         }
 
@@ -1189,7 +1190,7 @@ class MusicRepository(private val context: Context) : IMusicRepository {
         val insertedId = musicDao.insertSong(song)
         val savedSong = song.copy(id = insertedId)
 
-        onProgress?.invoke("¡Canción agregada con éxito!")
+        onProgress?.invoke(DownloadPhase.Completed)
         return@withContext savedSong
     }
 

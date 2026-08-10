@@ -224,7 +224,7 @@ class ImportListenBrainzPlaylistUseCaseTest {
 
         override suspend fun downloadAndSaveOnlineTrack(
             track: OnlineCatalogTrack,
-            onProgress: ((String) -> Unit)?,
+            onProgress: ((com.bestiapop.android.data.model.DownloadPhase) -> Unit)?,
             conflictPolicy: com.bestiapop.android.data.model.DownloadConflictPolicy?
         ): Song = error("not used")
     }

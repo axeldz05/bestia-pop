@@ -678,8 +678,7 @@ private fun CfRecommendationsDetailScreen(
                 matches = matched.matches.mapIndexed { index, match ->
                     MatchedTrackListItem(
                         localSong = match.localSong,
-                        title = match.title,
-                        artist = match.artist,
+                        meta = match,
                         remote = unmatchedRemote(match.localSong, match.toPlayableItem()),
                         key = "${index}|${match.recordingMbid}|${match.title}|${match.artist}|${match.localSong?.id}"
                     )
@@ -860,8 +859,7 @@ private fun LbPlaylistDetailScreen(
                 matches = matched.matches.mapIndexed { index, match ->
                     MatchedTrackListItem(
                         localSong = match.localSong,
-                        title = match.track.title,
-                        artist = match.track.artist,
+                        meta = match.track,
                         remote = unmatchedRemote(match.localSong, match.toPlayableItem()),
                         key = "${index}|${match.track.recordingMbid ?: match.track.title}|${match.track.artist}|${match.localSong?.id}"
                     )

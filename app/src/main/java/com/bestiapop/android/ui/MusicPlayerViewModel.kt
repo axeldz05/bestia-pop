@@ -3716,9 +3716,9 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     private fun toastSongInLibrary(title: String, kind: LibraryToastKind) {
         val message = when (kind) {
-            LibraryToastKind.SAVED -> "«$title» guardada en biblioteca"
-            LibraryToastKind.ADDED -> "¡$title agregada a la biblioteca!"
-            LibraryToastKind.ALREADY -> "«$title» ya está en la biblioteca"
+            LibraryToastKind.SAVED -> DownloadMessages.songSaved(title)
+            LibraryToastKind.ADDED -> DownloadMessages.songAdded(title)
+            LibraryToastKind.ALREADY -> DownloadMessages.songAlready(title)
         }
         toast(message)
     }
@@ -3816,7 +3816,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             }.awaitAll()
         }
 
-        toast("¡${successCount.get()} de ${items.size} canciones procesadas!")
+        toast(DownloadMessages.batchProcessed(successCount.get(), items.size))
     }
 
     private suspend fun enqueuePendingDownloads(
@@ -4051,7 +4051,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     private suspend fun downloadTrack(
         track: OnlineCatalogTrack,
-        onProgress: ((String) -> Unit)? = null,
+        onProgress: ((DownloadPhase) -> Unit)? = null,
         conflictPolicy: DownloadConflictPolicy? = null
     ): Result<Song> = downloadAudioTrackUseCase.execute(track, onProgress, conflictPolicy)
 
@@ -4347,21 +4347,15 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
         val result = downloadTrack(
             track = trackForDownload,
-            onProgress = { progressMsg ->
-                val percent = when {
-                    progressMsg.contains("Descargando audio", ignoreCase = true) -> 75
-                    progressMsg.contains("Guardando", ignoreCase = true) -> 90
-                    progressMsg.contains("Buscando", ignoreCase = true) -> 40
-                    else -> 50
-                }
+            onProgress = { phase ->
                 updateActiveDownload(downloadId) {
                     it.copy(
                         state = CandidateDownloadState.DOWNLOADING,
-                        progressMessage = progressMsg,
-                        progressPercent = percent
+                        progressMessage = phase.userMessage,
+                        progressPercent = phase.percent
                     )
                 }
-                if (mirrorCandidateTitle != null && percent >= 75) {
+                if (mirrorCandidateTitle != null && phase.percent >= 75) {
                     updateCandidateState(mirrorCandidateTitle, CandidateDownloadState.DOWNLOADING, percent = 75)
                 }
             },

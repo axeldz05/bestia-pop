@@ -33,6 +33,7 @@ class GitHubReleaseParserTest {
         assertEquals(6, parsed.versionCode)
         assertEquals("1.0-beta.5", parsed.versionName)
         assertEquals("https://example.com/BestiaPop-1.0-beta.5.apk", parsed.apkUrl)
+        assertEquals("BestiaPop 1.0-beta.5\n\nFixes", parsed.changelog)
     }
 
     @Test
@@ -54,6 +55,7 @@ class GitHubReleaseParserTest {
         assertEquals("https://example.com/app-release.apk", parsed.apkUrl)
         assertEquals(10, parsed.versionCode)
         assertEquals("2.0", parsed.versionName)
+        assertNull(parsed.changelog)
     }
 
     @Test
@@ -89,5 +91,14 @@ class GitHubReleaseParserTest {
     fun parseVersionCode_readsLine() {
         assertEquals(6, GitHubReleaseParser.parseVersionCode("BestiaPop\n\nversionCode: 6\n"))
         assertNull(GitHubReleaseParser.parseVersionCode("no code here"))
+    }
+
+    @Test
+    fun stripVersionCodeLine_removesMachineLine() {
+        assertEquals(
+            "BestiaPop 1.0\n\nFixes",
+            GitHubReleaseParser.stripVersionCodeLine("BestiaPop 1.0\n\nversionCode: 6\n\nFixes")
+        )
+        assertEquals("", GitHubReleaseParser.stripVersionCodeLine("versionCode: 10"))
     }
 }

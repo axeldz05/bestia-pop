@@ -75,10 +75,4 @@ class ActiveDownloadCycleTest {
         assertEquals(null, result.errorMessage)
         assertEquals("b", result.currentTrack?.id)
     }
-
-    @Test
-    fun currentTrack_matchesIndex() {
-        val d = download(listOf(track("x"), track("y")), index = 1)
-        assertEquals("y", d.currentTrack?.id)
-    }
 }

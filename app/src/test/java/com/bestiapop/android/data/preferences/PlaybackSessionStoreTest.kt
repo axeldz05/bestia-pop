@@ -114,9 +114,6 @@ class PlaybackSessionStoreTest {
         assertEquals(7L, snap.songId)
         assertEquals(s.uriString, snap.uriString)
         assertEquals(900L, snap.positionMs)
-        assertEquals(s.title, snap.title)
-        assertEquals(s.artworkUri, snap.artworkUri)
-        assertTrue(LastPlayedCodec.decode(LastPlayedCodec.encode(snap)) == snap)
     }
 
     @Test

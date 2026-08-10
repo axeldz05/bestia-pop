@@ -157,30 +157,6 @@ Los instrumentados van en `app/src/androidTest`.
 
 ---
 
-## Publicar para amigos (GitHub Releases)
-
-1. Completá `github-release.properties`:
-
-```properties
-GITHUB_REPOSITORY=owner/repo
-```
-
-2. Keystore de release (el mismo siempre; si cambia, Android no deja actualizar encima):
-
-```bash
-cp keystore.properties.example keystore.properties
-keytool -genkeypair -v -keystore bestiapop-release.jks \
-  -keyalg RSA -keysize 2048 -validity 10000 -alias bestiapop
-```
-
-3. `gh auth login` y `app/google-services.json` real si querés Crashlytics.
-
-4. Publicar:
-
-```bash
-./release.sh
-```
-
 Eso incrementa `version.properties`, arma el APK firmado + `latest.json`, crea el tag `v{VERSION_NAME}` y sube la release.
 
 Opciones útiles: `--no-bump`, `--version-name X`, `--notes "…"`, `--no-upload`, `--dry-run`.

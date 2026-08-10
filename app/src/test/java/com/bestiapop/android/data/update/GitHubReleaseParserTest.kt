@@ -7,11 +7,11 @@ import org.junit.Test
 class GitHubReleaseParserTest {
 
     @Test
-    fun parseReleaseApi_picksBestiaPopApkAndLatestJson() {
+    fun parseReleaseApi_readsVersionFromBodyAndPreferredApk() {
         val body = """
             {
               "tag_name": "v1.0-beta.5",
-              "body": "versionCode: 6\n\nFixes",
+              "body": "BestiaPop 1.0-beta.5\n\nversionCode: 6\n\nFixes",
               "assets": [
                 {
                   "name": "notes.txt",
@@ -24,33 +24,27 @@ class GitHubReleaseParserTest {
                 {
                   "name": "BestiaPop-1.0-beta.5.apk",
                   "browser_download_url": "https://example.com/BestiaPop-1.0-beta.5.apk"
-                },
-                {
-                  "name": "latest.json",
-                  "browser_download_url": "https://example.com/latest.json"
                 }
               ]
             }
         """.trimIndent()
 
         val parsed = GitHubReleaseParser.parseReleaseApi(body)!!
+        assertEquals(6, parsed.versionCode)
+        assertEquals("1.0-beta.5", parsed.versionName)
         assertEquals("https://example.com/BestiaPop-1.0-beta.5.apk", parsed.apkUrl)
-        assertEquals("https://example.com/latest.json", parsed.latestJsonUrl)
-        assertEquals("versionCode: 6\n\nFixes", parsed.changelog)
     }
 
     @Test
     fun parseReleaseApi_fallsBackToAnyApk() {
         val body = """
             {
+              "tag_name": "v2.0",
+              "body": "versionCode: 10",
               "assets": [
                 {
                   "name": "app-release.apk",
                   "browser_download_url": "https://example.com/app-release.apk"
-                },
-                {
-                  "name": "latest.json",
-                  "browser_download_url": "https://example.com/latest.json"
                 }
               ]
             }
@@ -58,12 +52,16 @@ class GitHubReleaseParserTest {
 
         val parsed = GitHubReleaseParser.parseReleaseApi(body)!!
         assertEquals("https://example.com/app-release.apk", parsed.apkUrl)
+        assertEquals(10, parsed.versionCode)
+        assertEquals("2.0", parsed.versionName)
     }
 
     @Test
-    fun parseReleaseApi_returnsNullWithoutLatestJson() {
+    fun parseReleaseApi_returnsNullWithoutVersionCode() {
         val body = """
             {
+              "tag_name": "v1.0",
+              "body": "solo changelog",
               "assets": [
                 {
                   "name": "BestiaPop-1.0.apk",
@@ -76,16 +74,20 @@ class GitHubReleaseParserTest {
     }
 
     @Test
-    fun parseLatestJson_readsVersion() {
-        val parsed = GitHubReleaseParser.parseLatestJson(
-            """{"versionCode":6,"versionName":"1.0-beta.5"}"""
-        )!!
-        assertEquals(6, parsed.versionCode)
-        assertEquals("1.0-beta.5", parsed.versionName)
+    fun parseReleaseApi_returnsNullWithoutApk() {
+        val body = """
+            {
+              "tag_name": "v1.0",
+              "body": "versionCode: 1",
+              "assets": []
+            }
+        """.trimIndent()
+        assertNull(GitHubReleaseParser.parseReleaseApi(body))
     }
 
     @Test
-    fun parseLatestJson_rejectsMissingCode() {
-        assertNull(GitHubReleaseParser.parseLatestJson("""{"versionName":"1.0"}"""))
+    fun parseVersionCode_readsLine() {
+        assertEquals(6, GitHubReleaseParser.parseVersionCode("BestiaPop\n\nversionCode: 6\n"))
+        assertNull(GitHubReleaseParser.parseVersionCode("no code here"))
     }
 }

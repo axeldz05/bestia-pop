@@ -17,21 +17,12 @@ class GitHubUpdateClient(
             return@withContext Result.failure(IllegalStateException("GITHUB_REPOSITORY vacío"))
         }
         try {
-            val releaseBody = get(GitHubReleaseUrls.apiLatestUrl(repository), githubApi = true)
-            val assets = GitHubReleaseParser.parseReleaseApi(releaseBody)
+            val releaseBody = get(GitHubReleaseUrls.apiLatestUrl(repository))
+            val info = GitHubReleaseParser.parseReleaseApi(releaseBody)
                 ?: return@withContext Result.failure(
-                    IllegalStateException("El release no tiene APK y latest.json")
+                    IllegalStateException("El release no tiene APK o falta versionCode en las notas")
                 )
-            val version = GitHubReleaseParser.parseLatestJson(get(assets.latestJsonUrl))
-                ?: return@withContext Result.failure(IllegalStateException("latest.json inválido"))
-            Result.success(
-                AppUpdateInfo(
-                    versionCode = version.versionCode,
-                    versionName = version.versionName,
-                    apkUrl = assets.apkUrl,
-                    changelog = assets.changelog
-                )
-            )
+            Result.success(info)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -39,13 +30,11 @@ class GitHubUpdateClient(
         }
     }
 
-    private fun get(url: String, githubApi: Boolean = false): String {
+    private fun get(url: String): String {
         val request = Request.Builder()
             .url(url)
             .header("User-Agent", userAgent)
-            .apply {
-                if (githubApi) header("Accept", "application/vnd.github+json")
-            }
+            .header("Accept", "application/vnd.github+json")
             .get()
             .build()
         http.newCall(request).execute().use { response ->

@@ -24,7 +24,7 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 | Versión release | `version.properties` (`VERSION_CODE` / `VERSION_NAME`; bump en `release.sh` vía `scripts/version.sh`) |
 | Repo GitHub Releases | `github-release.properties` (`GITHUB_REPOSITORY` → `BuildConfig.GITHUB_REPOSITORY`) |
 | Deploy dispositivo | `install.sh` (`--debug` default, `--release`; `adb install -r -d`, fallback `cmd package uninstall -k`; `appops RUN_ANY_IN_BACKGROUND allow`) |
-| Deploy GitHub Releases | `release.sh` (bump, `assembleRelease`, `dist/BestiaPop-*.apk` + `latest.json`, `gh release create`) |
+| Deploy GitHub Releases | `release.sh` (bump, `assembleRelease`, `dist/BestiaPop-*.apk`, `gh release create` con `versionCode` en notes) |
 | Deploy Play Console | `deploy-play.sh` (legacy; track default `alpha`, bump vía `scripts/version.sh`, ícono `play/icon.png` → mipmap, `bundleRelease`, `dist/*.aab`, `--upload --rollout`) |
 | Ícono launcher / Play hi-res | `play/icon.png` (PNG 512×512; placeholder; `AndroidManifest` `@mipmap/ic_launcher`) |
 | Play feature graphic | `play/feature-graphic.png` (1024×500 RGB, ficha Console; no va en el AAB) |
@@ -134,7 +134,7 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 | ListenBrainz API | `data/network/ListenBrainzClient.kt` (`submitListens`, createdfor, playlist, `lookupRecordingMetadata`, `fetchLbRadioArtist`, `fetchRecordingMetadata`, `fetchCfRecordingRecommendations`, `parseCfRecommendations`) |
 | LB models + sync | `data/listenbrainz/LbPlaylistModels.kt` (`LbPlaylistTrack(identity, mbid)` + invoke plano, `MatchedLbTrack.toPlayableItem` → `fromLibraryOrRemote(identity)`, `MatchedLbPlaylist.toPlayableItems`, `streamCount`), `LbRadioModels.kt` (`LbRecordingMetadata(identity, mbid)` + invoke plano), `CfRecommendationModels.kt` (`MatchedCfTrack(identity, mbid, score, localSong)`, `MatchedCfRecommendations`), `ListenTracker.kt`, `ListenSyncCoordinator.kt` |
 | Connectivity | `data/network/ConnectivityObserver.kt` |
-| GitHub Releases update | `data/update/GitHubReleaseParser.kt` (`parseReleaseApi` / `parseLatestJson`); `GitHubUpdateClient.fetchLatest`; `ApkUpdateInstaller` (download + FileProvider install); `AppUpdateCheckStore`; `GitHubReleaseUrls`; `AppUpdateInfo` |
+| GitHub Releases update | `data/update/GitHubReleaseParser.kt` (`parseReleaseApi` / `parseVersionCode` desde body); `GitHubUpdateClient.fetchLatest`; `ApkUpdateInstaller` (download + FileProvider → instalador del sistema); `AppUpdateCheckStore`; `GitHubReleaseUrls`; `AppUpdateInfo` |
 | Pending listens Room | `data/db/PendingListenEntity.kt`, `PendingListenDao.kt` |
 | Storage helpers | `data/util/MusicFileStore.kt` (`canonicalize`, `playableUri`, `openRead`, `applyDataSource`, `prepareWrite`, `delete`, `listManaged`), `data/util/AudioPersistRef.kt` (`canonicalize`), `data/util/StorageUtils.kt` (`getPublicMusicDirectory`, `prepareWrite`, `listAudioFileNames`, `listManagedAudioFiles`, `deleteManagedAudio`), `data/util/SongPathNormalizer.kt` (`toAbsolutePath`, `safTreeDocumentToAbsolutePath`, `fileName`, `hasUsableArtwork`, path normalize / app-owned checks), `data/util/JsonExt.kt` (`optNullableString`), `data/util/AudioFileMetadata.kt` (`identity` + genre, `fromPath` / `applyFilenameHints` / `toSong` / `withIdentity`, `parseFilenameMetadataHints`, `looksLikeStoragePath`) |
 | Download conflict models | `data/model/Models.kt` (`DownloadConflictPolicy`, `DuplicateSongException`, `DownloadConflict`) |

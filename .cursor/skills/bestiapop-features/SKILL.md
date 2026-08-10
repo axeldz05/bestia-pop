@@ -329,7 +329,7 @@ Manifest: `android:enableOnBackInvokedCallback="true"` en `MainActivity`.
 | Config Firebase | `app/google-services.json` (gitignored) |
 | Firma release | `keystore.properties` + `.jks` (gitignored; plantilla `keystore.properties.example`) |
 | Versión | `version.properties` (`VERSION_CODE` / `VERSION_NAME`; bump en `./release.sh`) |
-| GitHub Releases | `./release.sh` → APK `BestiaPop-{VERSION_NAME}.apk` + `latest.json` (`versionCode`/`versionName`); tag `v{VERSION_NAME}`; repo `github-release.properties` `GITHUB_REPOSITORY` → `BuildConfig.GITHUB_REPOSITORY` |
+| GitHub Releases | `./release.sh` → APK `BestiaPop-{VERSION_NAME}.apk`; tag `v{VERSION_NAME}`; notas con `versionCode: N` (el update in-app lo lee del body); repo `github-release.properties` `GITHUB_REPOSITORY` → `BuildConfig.GITHUB_REPOSITORY` |
 | Invitar amigos | Ajustes → Invitar amigos: `ACTION_SEND` con `https://github.com/{repo}/releases/latest` (`GitHubReleaseUrls.latestPageUrl`) |
 | Update in-app | Al abrir (release, máx. 1/12h) + Ajustes → Buscar actualización: `GitHubUpdateClient.fetchLatest` vs `VERSION_CODE`; descarga APK + `FileProvider` + `REQUEST_INSTALL_PACKAGES`. UI `AppUpdateViewModel` / `AppUpdateDialogs` (no `MusicPlayerViewModel`) |
 | Play Console AAB | `./deploy-play.sh --upload --rollout` path legacy (no distribución de producto) |

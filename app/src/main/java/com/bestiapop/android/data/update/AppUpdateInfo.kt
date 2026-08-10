@@ -7,17 +7,6 @@ data class AppUpdateInfo(
     val changelog: String? = null
 )
 
-data class GitHubReleaseAssets(
-    val apkUrl: String,
-    val latestJsonUrl: String,
-    val changelog: String? = null
-)
-
-data class AppUpdateVersion(
-    val versionCode: Int,
-    val versionName: String
-)
-
 object GitHubReleaseUrls {
     fun latestPageUrl(repository: String): String =
         "https://github.com/${repository.trim()}/releases/latest"

@@ -157,7 +157,7 @@ Los instrumentados van en `app/src/androidTest`.
 
 ---
 
-Eso incrementa `version.properties`, arma el APK firmado + `latest.json`, crea el tag `v{VERSION_NAME}` y sube la release.
+Eso incrementa `version.properties`, arma el APK firmado, crea el tag `v{VERSION_NAME}` y sube la release (las notas incluyen `versionCode: N` para el update in-app).
 
 Opciones útiles: `--no-bump`, `--version-name X`, `--notes "…"`, `--no-upload`, `--dry-run`.
 

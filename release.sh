@@ -28,7 +28,7 @@ USAGE="Usage: $0 [options]
   --version-name X   fijar VERSION_NAME (igual incrementa VERSION_CODE salvo --no-bump)
   --notes TEXT  cuerpo del release (default: nombre + versionCode)
   --notes-file FILE  notas desde archivo
-  --no-upload   buildear APK + latest.json en dist/; no crear release
+  --no-upload   buildear APK en dist/; no crear release
   --dry-run     chequear requisitos y mostrar próxima versión; no escribe ni buildea
   -h, --help
 
@@ -172,17 +172,8 @@ fi
 
 mkdir -p "$DIST_DIR"
 APK_DIST="${DIST_DIR}/BestiaPop-${NEXT_NAME}.apk"
-JSON_DIST="${DIST_DIR}/latest.json"
 cp "$APK_GRADLE_OUT" "$APK_DIST"
-python3 - "$JSON_DIST" "$NEXT_CODE" "$NEXT_NAME" <<'PY'
-import json, sys
-path, code, name = sys.argv[1], int(sys.argv[2]), sys.argv[3]
-with open(path, "w", encoding="utf-8") as f:
-    json.dump({"versionCode": code, "versionName": name}, f, separators=(",", ":"))
-    f.write("\n")
-PY
 echo -e "${GREEN}APK:${NC} ${APK_DIST}"
-echo -e "${GREEN}JSON:${NC} ${JSON_DIST}"
 
 if [[ "$DO_UPLOAD" -eq 0 ]]; then
     echo -e "\n${YELLOW}--no-upload: release no creado.${NC}"
@@ -197,11 +188,24 @@ cleanup_notes() {
 }
 trap cleanup_notes EXIT
 
+# El update in-app lee `versionCode: N` del body del release (no hace falta latest.json).
+ensure_version_code_in_notes() {
+    local path="$1"
+    if grep -Eiq '^[[:space:]]*versionCode[[:space:]]*:[[:space:]]*[0-9]+[[:space:]]*$' "$path"; then
+        return 0
+    fi
+    printf '\nversionCode: %s\n' "$NEXT_CODE" >> "$path"
+}
+
 if [[ -n "$NOTES_FILE" ]]; then
-    RELEASE_NOTES_PATH="$NOTES_FILE"
+    NOTES_TMP="$(mktemp)"
+    cat "$NOTES_FILE" > "$NOTES_TMP"
+    ensure_version_code_in_notes "$NOTES_TMP"
+    RELEASE_NOTES_PATH="$NOTES_TMP"
 elif [[ -n "$NOTES_TEXT" ]]; then
     NOTES_TMP="$(mktemp)"
     printf '%s\n' "$NOTES_TEXT" > "$NOTES_TMP"
+    ensure_version_code_in_notes "$NOTES_TMP"
     RELEASE_NOTES_PATH="$NOTES_TMP"
 else
     NOTES_TMP="$(mktemp)"
@@ -218,8 +222,6 @@ gh release create "$TAG" \
     --repo "$GITHUB_REPOSITORY" \
     --title "BestiaPop ${NEXT_NAME}" \
     --notes-file "$RELEASE_NOTES_PATH" \
-    "$APK_DIST" \
-    "$JSON_DIST"
+    "$APK_DIST"
 
 echo -e "\n${GREEN}Release publicado.${NC}"
-echo -e "${CYAN}Compartí con amigos:${NC} ${LATEST_URL}"

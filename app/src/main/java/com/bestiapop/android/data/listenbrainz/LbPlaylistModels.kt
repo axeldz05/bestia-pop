@@ -45,9 +45,9 @@ data class MatchedLbPlaylist(
     val detail: LbPlaylistDetail,
     val matches: List<MatchedRemoteTrack>
 ) {
-    val matchedCount: Int get() = matches.count { it.localSong != null }
+    val matchedCount: Int get() = matches.matchedCount()
     val totalCount: Int get() = matches.size
-    val streamCount: Int get() = totalCount - matchedCount
+    val streamCount: Int get() = matches.streamCount()
     val matchedSongs: List<Song> get() = matches.mapNotNull { it.localSong }
 
     fun toPlayableItems(): List<PlayableItem> = matches.toPlayableItems()

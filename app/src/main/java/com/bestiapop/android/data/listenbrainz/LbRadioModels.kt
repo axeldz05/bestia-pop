@@ -1,5 +1,6 @@
 package com.bestiapop.android.data.listenbrainz
 
+import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.data.model.TrackIdentity
 import com.bestiapop.android.data.model.TrackMeta
 
@@ -33,4 +34,12 @@ data class LbRecordingMetadata(
             recordingMbid = recordingMbid
         )
     }
+
+    fun toMatchedRemote(localSong: Song?, score: Double? = null): MatchedRemoteTrack =
+        MatchedRemoteTrack(
+            identity = identity,
+            recordingMbid = recordingMbid,
+            localSong = localSong,
+            score = score
+        )
 }

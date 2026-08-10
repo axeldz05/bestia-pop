@@ -10,9 +10,7 @@ class MatchListenBrainzTracksUseCase {
     fun execute(detail: LbPlaylistDetail, library: List<Song>): MatchedLbPlaylist {
         val index = TrackMatchKeys.buildLibraryIndex(library)
         val matches = detail.tracks.map { track ->
-            track.toMatchedRemote(
-                localSong = index[TrackMatchKeys.matchKey(track.artist, track.title)]
-            )
+            track.toMatchedRemote(localSong = TrackMatchKeys.lookupLocalSong(index, track))
         }
         return MatchedLbPlaylist(detail = detail, matches = matches)
     }

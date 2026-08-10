@@ -123,11 +123,7 @@ data class PlaylistPendingTrack(
     val position: Int = 0
 ) : TrackMeta by identity {
     fun toOnlineCatalogTrack(): OnlineCatalogTrack =
-        OnlineCatalogTrack(
-            identity = identity,
-            id = recordingMbid?.takeIf { it.isNotBlank() } ?: "$artist $title".trim(),
-            provider = "ListenBrainz"
-        )
+        identity.toListenBrainzCatalogTrack(recordingMbid)
 }
 
 data class ColorSchemeData(

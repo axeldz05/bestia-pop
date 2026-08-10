@@ -1,6 +1,7 @@
 package com.bestiapop.android.domain.usecase
 
 import com.bestiapop.android.data.listenbrainz.MatchedLbPlaylist
+import com.bestiapop.android.data.listenbrainz.unmatchedCatalogTracks
 import com.bestiapop.android.data.model.OnlineCatalogTrack
 import com.bestiapop.android.data.model.PlaylistPendingTrack
 import com.bestiapop.android.domain.repository.IMusicRepository
@@ -54,14 +55,5 @@ class ImportListenBrainzPlaylistUseCase(
     }
 
     fun unmatchedCatalogTracks(matched: MatchedLbPlaylist): List<OnlineCatalogTrack> =
-        matched.matches
-            .filter { it.localSong == null }
-            .map { row ->
-                OnlineCatalogTrack(
-                    identity = row.identity,
-                    id = row.recordingMbid?.takeIf { it.isNotBlank() }
-                        ?: "${row.artist} ${row.title}".trim(),
-                    provider = "ListenBrainz"
-                )
-            }
+        matched.matches.unmatchedCatalogTracks()
 }

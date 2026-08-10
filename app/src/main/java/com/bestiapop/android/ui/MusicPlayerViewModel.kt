@@ -28,6 +28,7 @@ import com.bestiapop.android.data.listenbrainz.ListenSyncCoordinator
 import com.bestiapop.android.data.listenbrainz.ListenTracker
 import com.bestiapop.android.data.listenbrainz.MatchedCfRecommendations
 import com.bestiapop.android.data.listenbrainz.MatchedLbPlaylist
+import com.bestiapop.android.data.listenbrainz.rematchLocals
 import com.bestiapop.android.data.model.*
 import com.bestiapop.android.data.network.ConnectivityObserver
 import com.bestiapop.android.data.network.ListenBrainzClient
@@ -3540,26 +3541,20 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         return true
     }
 
-    fun playCfRecommendations() {
-        playMatchedCollection(
-            _cfRecommendations.value?.toPlayableItems().orEmpty(),
-            origin = DiscoverPlaybackOrigin.CfRecommendations
-        )
+    /** Play discover-matched tracks (CF / LB) with session origin. */
+    fun playMatchedTracks(
+        items: List<PlayableItem>,
+        origin: DiscoverPlaybackOrigin,
+        startIndex: Int = 0
+    ) {
+        playMatchedCollection(items, startIndex = startIndex, origin = origin)
     }
 
-    fun shuffleCfRecommendations() {
-        shufflePlayableCollection(
-            _cfRecommendations.value?.toPlayableItems().orEmpty(),
-            origin = DiscoverPlaybackOrigin.CfRecommendations
-        )
-    }
-
-    fun playCfAt(index: Int) {
-        playMatchedCollection(
-            _cfRecommendations.value?.toPlayableItems().orEmpty(),
-            startIndex = index,
-            origin = DiscoverPlaybackOrigin.CfRecommendations
-        )
+    fun shuffleMatchedTracks(
+        items: List<PlayableItem>,
+        origin: DiscoverPlaybackOrigin
+    ) {
+        shufflePlayableCollection(items, origin = origin)
     }
 
     fun openListenBrainzPlaylist(mbid: String) {
@@ -3605,31 +3600,6 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         _selectedLbPlaylist.value = null
         _lbPlaylistDetailState.value = LbPlaylistDetailUiState.Idle
     }
-
-    fun playListenBrainzPlaylist() {
-        val matched = _selectedLbPlaylist.value ?: return
-        playMatchedCollection(matched.toPlayableItems(), origin = matched.toDiscoverOrigin())
-    }
-
-    fun shuffleListenBrainzPlaylist() {
-        val matched = _selectedLbPlaylist.value ?: return
-        shufflePlayableCollection(matched.toPlayableItems(), origin = matched.toDiscoverOrigin())
-    }
-
-    fun playListenBrainzPlaylistAt(index: Int) {
-        val matched = _selectedLbPlaylist.value ?: return
-        playMatchedCollection(
-            matched.toPlayableItems(),
-            startIndex = index,
-            origin = matched.toDiscoverOrigin()
-        )
-    }
-
-    private fun MatchedLbPlaylist.toDiscoverOrigin(): DiscoverPlaybackOrigin =
-        DiscoverPlaybackOrigin.ListenBrainz(
-            mbid = detail.summary.mbid,
-            title = detail.summary.title
-        )
 
     private fun clearDiscoverPlaybackOrigin() {
         if (_discoverPlaybackOrigin.value != DiscoverPlaybackOrigin.None) {
@@ -3713,9 +3683,9 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     private fun toastDownloadsQueued(count: Int? = null, alreadyQueued: Boolean = false) {
         val message = when {
-            alreadyQueued -> "Ya está en cola — ver Descargas"
-            count != null -> "$count descargas en cola — ver Descargas"
-            else -> "Descarga en cola — ver Descargas"
+            alreadyQueued -> DownloadMessages.alreadyQueued
+            count != null -> DownloadMessages.downloadsQueued(count)
+            else -> DownloadMessages.downloadQueued
         }
         toast(message)
     }
@@ -4013,36 +3983,39 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     ): Result<Song> = downloadAudioTrackUseCase.execute(track, onProgress, conflictPolicy)
 
     fun resolveDownloadConflictOverwrite(applyToRemainingBatch: Boolean = false) {
-        val conflict = _downloadConflict.value ?: return
-        val applyAll = applyToRemainingBatch || conflict.applyToRemainingBatch
-        _downloadConflict.value = null
-        val policy = DownloadConflictPolicy.Overwrite(conflict.existing.id)
-        if (applyAll) {
-            batchConflictPolicy = DownloadConflictPolicy.Overwrite(conflict.existing.id)
-        }
-        viewModelScope.launch {
-            runTrackedDownload(
-                downloadId = conflict.downloadId,
-                source = conflict.source,
-                track = conflict.track,
-                existingCandidates = conflict.candidates,
-                currentCandidateIndex = conflict.currentCandidateIndex,
-                targetPlaylistId = conflict.targetPlaylistId,
-                conflictPolicy = policy,
-                lookupIdentity = conflict.lookupIdentity
-            )
-        }
+        resumeConflictDownload(
+            policy = { DownloadConflictPolicy.Overwrite(it.existing.id) },
+            applyToRemainingBatch = applyToRemainingBatch
+        )
     }
 
     fun resolveDownloadConflictSaveAs(newTitle: String, applyToRemainingBatch: Boolean = false) {
         val conflict = _downloadConflict.value ?: return
         val title = newTitle.trim().ifBlank { "${conflict.existing.title} (2)" }
+        resumeConflictDownload(
+            policy = { DownloadConflictPolicy.SaveAs(title) },
+            applyToRemainingBatch = applyToRemainingBatch,
+            titleOverride = title,
+            onApplyAll = {
+                batchConflictPolicy = DownloadConflictPolicy.SaveAs(title)
+                batchSaveAsCounter = 2
+            }
+        )
+    }
+
+    private fun resumeConflictDownload(
+        policy: (DownloadConflict) -> DownloadConflictPolicy,
+        applyToRemainingBatch: Boolean = false,
+        titleOverride: String? = null,
+        onApplyAll: (() -> Unit)? = null
+    ) {
+        val conflict = _downloadConflict.value ?: return
         val applyAll = applyToRemainingBatch || conflict.applyToRemainingBatch
         _downloadConflict.value = null
-        val policy = DownloadConflictPolicy.SaveAs(title)
+        val resolved = policy(conflict)
         if (applyAll) {
-            batchConflictPolicy = DownloadConflictPolicy.SaveAs(title)
-            batchSaveAsCounter = 2
+            if (onApplyAll != null) onApplyAll()
+            else batchConflictPolicy = resolved
         }
         viewModelScope.launch {
             runTrackedDownload(
@@ -4052,9 +4025,9 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 existingCandidates = conflict.candidates,
                 currentCandidateIndex = conflict.currentCandidateIndex,
                 targetPlaylistId = conflict.targetPlaylistId,
-                conflictPolicy = policy,
+                conflictPolicy = resolved,
                 lookupIdentity = conflict.lookupIdentity,
-                titleOverride = title
+                titleOverride = titleOverride
             )
         }
     }
@@ -4387,15 +4360,8 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     private suspend fun rematchCfRecommendations(extraSong: Song? = null) {
         val current = _cfRecommendations.value ?: return
-        val index = TrackMatchKeys.buildLibraryIndex(libraryWithExtra(extraSong))
         _cfRecommendations.value = current.copy(
-            matches = current.matches.map { match ->
-                if (match.localSong != null) match
-                else {
-                    val key = TrackMatchKeys.matchKey(match.artist, match.title)
-                    match.copy(localSong = if (key.isNotEmpty()) index[key] else null)
-                }
-            }
+            matches = current.matches.rematchLocals(libraryWithExtra(extraSong))
         )
     }
 

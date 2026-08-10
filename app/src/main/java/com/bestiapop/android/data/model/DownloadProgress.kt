@@ -58,4 +58,8 @@ object DownloadMessages {
     fun songAdded(title: String) = "¡$title agregada a la biblioteca!"
     fun songAlready(title: String) = "«$title» ya está en la biblioteca"
     fun batchProcessed(done: Int, total: Int) = "¡$done de $total canciones procesadas!"
+
+    const val alreadyQueued = "Ya está en cola — ver Descargas"
+    const val downloadQueued = "Descarga en cola — ver Descargas"
+    fun downloadsQueued(count: Int) = "$count descargas en cola — ver Descargas"
 }

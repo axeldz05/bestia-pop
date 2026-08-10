@@ -68,16 +68,12 @@ class FetchAndMatchCfRecommendationsUseCase(
         val matches = ArrayList<MatchedRemoteTrack>(payload.recordings.size)
         for (rec in payload.recordings) {
             val meta = metaByMbid[rec.recordingMbid] ?: continue
-            val title = meta.title.takeIf { it.isNotBlank() } ?: continue
-            val artist = meta.artist.takeIf { it.isNotBlank() } ?: continue
-            val key = TrackMatchKeys.matchKey(artist, title)
+            if (meta.title.isBlank() || meta.artist.isBlank()) continue
             matches.add(
-                MatchedRemoteTrack(
-                    identity = meta.identity,
-                    recordingMbid = rec.recordingMbid,
-                    score = rec.score,
-                    localSong = if (key.isNotEmpty()) libraryIndex[key] else null
-                )
+                meta.toMatchedRemote(
+                    localSong = TrackMatchKeys.lookupLocalSong(libraryIndex, meta),
+                    score = rec.score
+                ).copy(recordingMbid = rec.recordingMbid)
             )
         }
         return MatchedCfRecommendations(payload = payload, matches = matches)

@@ -134,4 +134,17 @@ class TrackIdentityTest {
         assertEquals(238_000L, merged.durationMs)
         assertEquals(2, merged.trackNumber)
     }
+
+    @Test
+    fun toListenBrainzCatalogTrack_prefersMbidElseArtistTitle() {
+        val identity = TrackIdentity(title = "Missing", artist = "Other", album = "Rel")
+        val withMbid = identity.toListenBrainzCatalogTrack("mbid-xyz")
+        assertEquals("mbid-xyz", withMbid.id)
+        assertEquals("ListenBrainz", withMbid.provider)
+        assertEquals("Missing", withMbid.title)
+
+        val without = identity.toListenBrainzCatalogTrack(null)
+        assertEquals("Other Missing", without.id)
+        assertEquals("ListenBrainz", without.provider)
+    }
 }

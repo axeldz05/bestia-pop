@@ -19,9 +19,9 @@ data class MatchedCfRecommendations(
     val payload: CfRecommendationsPayload,
     val matches: List<MatchedRemoteTrack>
 ) {
-    val matchedCount: Int get() = matches.count { it.localSong != null }
+    val matchedCount: Int get() = matches.matchedCount()
     val totalCount: Int get() = matches.size
-    val streamCount: Int get() = totalCount - matchedCount
+    val streamCount: Int get() = matches.streamCount()
 
     fun toPlayableItems(): List<PlayableItem> = matches.toPlayableItems()
 }

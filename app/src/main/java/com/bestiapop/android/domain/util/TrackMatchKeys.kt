@@ -56,6 +56,15 @@ object TrackMatchKeys {
         }
         return map
     }
+
+    /** Resolve a library song from a pre-built [buildLibraryIndex] map. */
+    fun lookupLocalSong(index: Map<String, Song>, meta: TrackMeta): Song? {
+        val key = meta.matchKey()
+        return if (key.isEmpty()) null else index[key]
+    }
+
+    fun lookupLocalSong(library: List<Song>, meta: TrackMeta): Song? =
+        lookupLocalSong(buildLibraryIndex(library), meta)
 }
 
 fun TrackMeta.matchKey(): String = TrackMatchKeys.matchKey(artist, title)

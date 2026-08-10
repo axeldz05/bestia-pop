@@ -1,9 +1,12 @@
 package com.bestiapop.android.data.listenbrainz
 
+import com.bestiapop.android.data.model.OnlineCatalogTrack
 import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.data.model.TrackIdentity
 import com.bestiapop.android.data.model.TrackMeta
+import com.bestiapop.android.data.model.toListenBrainzCatalogTrack
+import com.bestiapop.android.domain.util.TrackMatchKeys
 
 /**
  * Library-matched remote recording (CF recommendations or LB playlist row).
@@ -20,7 +23,26 @@ data class MatchedRemoteTrack(
         identity = identity,
         recordingMbid = recordingMbid
     )
+
+    fun toOnlineCatalogTrack(): OnlineCatalogTrack =
+        identity.toListenBrainzCatalogTrack(recordingMbid)
 }
 
 fun List<MatchedRemoteTrack>.toPlayableItems(): List<PlayableItem> =
     map { it.toPlayableItem() }
+
+fun List<MatchedRemoteTrack>.matchedCount(): Int = count { it.localSong != null }
+
+fun List<MatchedRemoteTrack>.streamCount(): Int = size - matchedCount()
+
+/** Re-bind unmatched rows against [library]; keep already-matched locals. */
+fun List<MatchedRemoteTrack>.rematchLocals(library: List<Song>): List<MatchedRemoteTrack> {
+    val index = TrackMatchKeys.buildLibraryIndex(library)
+    return map { match ->
+        if (match.localSong != null) match
+        else match.copy(localSong = TrackMatchKeys.lookupLocalSong(index, match))
+    }
+}
+
+fun List<MatchedRemoteTrack>.unmatchedCatalogTracks(): List<OnlineCatalogTrack> =
+    filter { it.localSong == null }.map { it.toOnlineCatalogTrack() }

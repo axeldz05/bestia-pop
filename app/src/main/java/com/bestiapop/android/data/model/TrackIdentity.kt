@@ -54,3 +54,11 @@ fun Song.withIdentity(identity: TrackIdentity): Song = copy(
 fun OnlineCatalogTrack.withIdentity(
     transform: TrackIdentity.() -> TrackIdentity
 ): OnlineCatalogTrack = copy(identity = identity.transform())
+
+/** Catalog download input for ListenBrainz rows (pending / unmatched discover). */
+fun TrackIdentity.toListenBrainzCatalogTrack(mbid: String?): OnlineCatalogTrack =
+    OnlineCatalogTrack(
+        identity = this,
+        id = mbid?.takeIf { it.isNotBlank() } ?: "$artist $title".trim(),
+        provider = "ListenBrainz"
+    )

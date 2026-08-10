@@ -6,9 +6,10 @@ import com.bestiapop.android.data.listenbrainz.LbRadioRecording
 import com.bestiapop.android.data.listenbrainz.LbRecordingMetadata
 import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.data.model.Song
+import com.bestiapop.android.domain.util.TrackMatchKeys
+import com.bestiapop.android.domain.util.matchKey
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import com.bestiapop.android.domain.util.TrackMatchKeys
 
 /**
  * Fetches ListenBrainz lb-radio suggestions and maps them to Local or Remote playables.
@@ -71,20 +72,20 @@ class ListenBrainzRadio(
         for (rec in recordings) {
             if (results.size >= limit) break
             val meta = metaByMbid[rec.recordingMbid] ?: continue
-            val title = meta.title.takeIf { it.isNotBlank() } ?: continue
+            if (meta.title.isBlank()) continue
             val artist = meta.artist.takeIf { it.isNotBlank() }
                 ?: artistFallback[rec.recordingMbid]
                 ?: continue
 
-            val key = TrackMatchKeys.matchKey(artist, title)
+            val identity = if (artist == meta.artist) meta.identity
+            else meta.identity.copy(artist = artist)
+            val key = identity.matchKey()
             if (key.isEmpty() || key in localSeen) continue
             localSeen.add(key)
 
-            val identity = if (artist == meta.artist) meta.identity
-            else meta.identity.copy(artist = artist)
             results.add(
                 PlayableItem.fromLibraryOrRemote(
-                    local = libraryIndex[key],
+                    local = TrackMatchKeys.lookupLocalSong(libraryIndex, identity),
                     identity = identity,
                     recordingMbid = rec.recordingMbid
                 )

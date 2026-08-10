@@ -215,11 +215,11 @@ Centro de descargas online → sección 2 (`DownloadsScreen`, tab Descargas).
 | List Discover | `ListenBrainzClient.fetchCreatedForPlaylists` → `MusicPlayerViewModel.refreshListenBrainzDiscoverPlaylists` |
 | Abrir playlist | `openListenBrainzPlaylist` + `MatchListenBrainzTracksUseCase` |
 | Map a cola | `MatchedLbPlaylist.toPlayableItems` / `MatchedRemoteTrack.toPlayableItem` |
-| Play / shuffle / índice | `playListenBrainzPlaylist*` / `playCf*` → `playMatchedCollection` / `shufflePlayableCollection` con `DiscoverPlaybackOrigin` |
+| Play / shuffle / índice | `playMatchedTracks` / `shuffleMatchedTracks` → `playMatchedCollection` / `shufflePlayableCollection` con `DiscoverPlaybackOrigin` (`MatchedLbPlaylist.toDiscoverOrigin`) |
 | Import locales + pendientes | `saveListenBrainzPlaylistAsLocal` → `ImportListenBrainzPlaylistUseCase.createLocalFromMatched` (`PlaylistPendingTrack(identity = track.identity)`; unmatched → `OnlineCatalogTrack(identity, provider = ListenBrainz)`) |
 | Import + descarga ya | `importListenBrainzPlaylistWithDownloads` / `downloadPlaylistPendingTracks` → `runTrackedDownload` (`LB_IMPORT`) |
 | Descarga manual Remote | `downloadRemoteItem` → `runTrackedDownload` (`DISCOVER`); UI `RemoteTrackPlaceholderRow.onDownload` en detalle LB/CF; NP `NowPlayingRemoteDownloadAction` |
-| CF Recomendados | `ListenBrainzClient.fetchCfRecordingRecommendations` → `FetchAndMatchCfRecommendationsUseCase` → `refreshCfRecommendations` / `openCfRecommendations` / `playCfRecommendations` / `shuffleCfRecommendations` / `playCfAt` |
+| CF Recomendados | `ListenBrainzClient.fetchCfRecordingRecommendations` → `FetchAndMatchCfRecommendationsUseCase` → `refreshCfRecommendations` / `openCfRecommendations` / `playMatchedTracks` / `shuffleMatchedTracks` |
 | UI sección | `PlaylistsScreen` — "Para Ti" + "Recomendados"; Guardar / Descargar faltantes / descarga por track; detalle local muestra pendientes |
 | Restore sesión | `playlistDetail` `ListenBrainz` / `CfRecommendations` + `selectedNavIndex`; fetch al hidratar/abrir tab Playlists; fallo (sin red, Discover off, API) → lista general + toast (`restoreDiscoverDetailOrFallback`) |
 

@@ -69,6 +69,7 @@ import coil.compose.AsyncImage
 import com.bestiapop.android.data.listenbrainz.LbPlaylistSummary
 import com.bestiapop.android.data.listenbrainz.MatchedCfRecommendations
 import com.bestiapop.android.data.listenbrainz.MatchedLbPlaylist
+import com.bestiapop.android.data.listenbrainz.toPlayableItems
 import com.bestiapop.android.data.model.ActiveDownload
 import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.data.model.Playlist
@@ -79,7 +80,9 @@ import com.bestiapop.android.ui.CfRecommendationsUiState
 import com.bestiapop.android.ui.LbDiscoverListUiState
 import com.bestiapop.android.ui.LbPlaylistDetailUiState
 import com.bestiapop.android.ui.MusicPlayerViewModel
+import com.bestiapop.android.ui.state.DiscoverPlaybackOrigin
 import com.bestiapop.android.ui.state.PlaylistDetailNav
+import com.bestiapop.android.ui.state.toDiscoverOrigin
 import com.bestiapop.android.ui.components.ArtworkHero
 import com.bestiapop.android.ui.components.ArtworkPickerBlock
 import com.bestiapop.android.ui.components.ArtworkThumbnail
@@ -90,7 +93,6 @@ import com.bestiapop.android.ui.components.RemoteTrackPlaceholderRow
 import com.bestiapop.android.ui.components.ScreenBackHeader
 import com.bestiapop.android.ui.components.SongListItem
 import com.bestiapop.android.ui.components.SongQueueActions
-import com.bestiapop.android.ui.components.findByTrack
 import com.bestiapop.android.ui.components.isCurrentPlaying
 import com.bestiapop.android.ui.components.rememberImagePicker
 import com.bestiapop.android.ui.components.rememberSongQueueActions
@@ -416,9 +418,22 @@ fun PlaylistsScreen(
                 detailState = lbPlaylistDetailState,
                 matchedPlaylist = selectedLbPlaylist,
                 onBack = { viewModel.closePlaylistDetail() },
-                onPlay = { viewModel.playListenBrainzPlaylist() },
-                onShuffle = { viewModel.shuffleListenBrainzPlaylist() },
-                onPlayAt = { index -> viewModel.playListenBrainzPlaylistAt(index) },
+                onPlay = {
+                    val matched = selectedLbPlaylist ?: return@LbPlaylistDetailScreen
+                    viewModel.playMatchedTracks(matched.toPlayableItems(), matched.toDiscoverOrigin())
+                },
+                onShuffle = {
+                    val matched = selectedLbPlaylist ?: return@LbPlaylistDetailScreen
+                    viewModel.shuffleMatchedTracks(matched.toPlayableItems(), matched.toDiscoverOrigin())
+                },
+                onPlayAt = { index ->
+                    val matched = selectedLbPlaylist ?: return@LbPlaylistDetailScreen
+                    viewModel.playMatchedTracks(
+                        matched.toPlayableItems(),
+                        matched.toDiscoverOrigin(),
+                        startIndex = index
+                    )
+                },
                 onSaveAsLocal = {
                     viewModel.saveListenBrainzPlaylistAsLocal { newId ->
                         viewModel.openLocalPlaylist(newId)
@@ -443,9 +458,28 @@ fun PlaylistsScreen(
                 detailState = cfDetailState,
                 matched = cfRecommendations,
                 onBack = { viewModel.closePlaylistDetail() },
-                onPlay = { viewModel.playCfRecommendations() },
-                onShuffle = { viewModel.shuffleCfRecommendations() },
-                onPlayAt = { index -> viewModel.playCfAt(index) },
+                onPlay = {
+                    val matched = cfRecommendations ?: return@CfRecommendationsDetailScreen
+                    viewModel.playMatchedTracks(
+                        matched.toPlayableItems(),
+                        DiscoverPlaybackOrigin.CfRecommendations
+                    )
+                },
+                onShuffle = {
+                    val matched = cfRecommendations ?: return@CfRecommendationsDetailScreen
+                    viewModel.shuffleMatchedTracks(
+                        matched.toPlayableItems(),
+                        DiscoverPlaybackOrigin.CfRecommendations
+                    )
+                },
+                onPlayAt = { index ->
+                    val matched = cfRecommendations ?: return@CfRecommendationsDetailScreen
+                    viewModel.playMatchedTracks(
+                        matched.toPlayableItems(),
+                        DiscoverPlaybackOrigin.CfRecommendations,
+                        startIndex = index
+                    )
+                },
                 currentItem = currentItem,
                 activeDownloads = activeDownloads,
                 onDownloadRemote = { viewModel.downloadRemoteItem(it) },

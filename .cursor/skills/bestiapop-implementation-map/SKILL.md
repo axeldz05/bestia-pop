@@ -90,7 +90,7 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 | `GetLibrarySongsUseCase` | `domain/usecase/GetLibrarySongsUseCase.kt` | filter, sort, album groups (`compareSongsWithinAlbum` / `sortSongsWithinAlbum` / `songsFromListItems`), extract albums/artists |
 | `DownloadAudioTrackUseCase` | `domain/usecase/DownloadAudioTrackUseCase.kt` | wrap download Result |
 | `MatchListenBrainzTracksUseCase` | `domain/usecase/MatchListenBrainzTracksUseCase.kt` | match LB tracks → local `Song` (delega a `TrackMatchKeys`) |
-| `TrackMatchKeys` | `domain/util/TrackMatchKeys.kt` | `normalize` / `matchKey` / `downloadIdFor` / `batchDownloadIdFor` / `buildLibraryIndex` / `buildIndex` / `lookupLocalSong`; `List<MatchedRemoteTrack>.rematchLocals` en `MatchedRemoteTrack.kt` |
+| `TrackMatchKeys` | `domain/util/TrackMatchKeys.kt` | `normalize` / `matchKey` / `downloadIdFor` / `batchDownloadIdFor` / `buildLibraryIndex` (= `buildIndex`) / `buildIndex` / `lookupLocalSong` / `matchAgainstLibrary` / `matchMetasAgainstLibrary`; `List<MatchedRemoteTrack>.rematchLocals` en `MatchedRemoteTrack.kt` |
 | Album name normalize | `domain/util/AlbumNames.kt` | `normalizeAlbumName` / `albumNamesMatch` (merge conflict + saves) |
 | Album track encode | `data/util/AlbumTrackNumbers.kt` | `encodeAlbumTrack` / `albumTrackDisplayNumber` / `albumDiscNumber` / `albumTrackSortKey` / `parseCdTrackNumber` |
 | Identify ranking | `domain/util/IdentifyRanking.kt` | `score` / `rank` / `confidence` / `hasSevereConflict` / `stripTitleNoise` / `isGenericAlbum` / `isPlaceholderArtist` / `cleanIdentityTitle` / `strongVersionMarkers`; `Query.sourceArtist`/`sourceTitle`/`sourceAlbum` |
@@ -111,7 +111,7 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 | Concern | Archivo |
 |---------|---------|
 | Repo impl | `data/repository/MusicRepository.kt` (`scanMediaStore`, `resyncAppManagedMusic`, `scanFolderUri`, `proposeSongIdentity`, `applySongIdentity`, `identifySongMetadata`, `migrateCanonicalAudioUris`) |
-| Identidad de track | `data/model/TrackIdentity.kt` (`TrackMeta`, `TrackIdentity`, `mergePreferring`, `toListenBrainzCatalogTrack`, `Song.toIdentity`, `Song.withIdentity`, `OnlineCatalogTrack.withIdentity`, `DEFAULT_CATALOG_USER_AGENT`); JSON shared `data/util/TrackIdentityJson.kt` (`putInto` / `decode`, compat `artworkUrl`→`artworkUri`) |
+| Identidad de track | `data/model/TrackIdentity.kt` (`TrackMeta`, `TrackIdentity`, `mergePreferring`, `youtubeSearchQuery`, `toCatalogTrack`, `toListenBrainzCatalogTrack`, `preferMetaFrom`, `Song.toIdentity`, `Song.withIdentity`, `OnlineCatalogTrack.withIdentity`, `DEFAULT_CATALOG_USER_AGENT`); JSON shared `data/util/TrackIdentityJson.kt` (`putInto` / `decode`, compat `artworkUrl`→`artworkUri`) |
 | Modelos dominio UI | `data/model/Song.kt` (`Song` : `TrackMeta` plano + `@Entity songs`), `data/model/AlbumOverride.kt` (`@Entity album_overrides`), `data/model/Models.kt` (`OnlineCatalogTrack` (`identity` + id/provider/audioUrl + invoke plano), `CatalogTrackCandidate` (`identity` catálogo + `candidates` YT; `TrackMeta by identity`), `DownloadStatus`, `ActiveDownload` (`TrackMeta` vía `currentTrack`; `displayLabel` / `titleOverride`), `DownloadConflict.lookupIdentity`, `TrackedBatchItem.lookupIdentity`, `ActiveDownloadSource` incl. `LB_IMPORT` / `DISCOVER`, `CandidateDownloadState` incl. `QUEUED`, `PlaylistPendingTrack(identity, id, playlistId, mbid, position)` + `toOnlineCatalogTrack` → `TrackIdentity.toListenBrainzCatalogTrack`, `WifiTransferItem` / `WifiTransferState`, `Album.displayName`, `LibraryJobProgress` / `LibraryJobKind`, `IdentifyResult.Updated(songId)`, `IdentifyCandidate(track, score, reasons)`, `IdentifyConfidence`, `IdentifyProposal`) |
 | Cola Local/Remote | `data/model/PlayableItem.kt` (`PlayableItem` : `TrackMeta`, `matchesSong` / `matchesItem`, `Remote(identity, mbid, youtubeQuery, resolved)`, `ResolvedStream`, `Song.toPlayable`, `remoteFrom` identity + args, `fromLibraryOrRemote(identity)` / args, `Remote.toOnlineCatalogTrack` / `withIdentity`) |
 | Room DB | `data/db/AppDatabase.kt` (v6) |
@@ -133,7 +133,7 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 | Wrap / trim / shuffle índices | `data/playback/PlaybackQueueOrder.kt` (`rotateToStart`, `trimHistory`, `shufflePlayOrder`, `reshufflePlayOrder`, `insertAfterCurrent`, `appendToPlayOrder`, `removeFromPlayOrder`, `moveInPlayOrder`, `remapPlayOrder`, `MAX_QUEUE_HISTORY`) |
 | ListenBrainz prefs | `data/preferences/ListenBrainzPreferencesRepository.kt` |
 | ListenBrainz API | `data/network/ListenBrainzClient.kt` (`submitListens`, createdfor, playlist, `lookupRecordingMetadata`, `fetchLbRadioArtist`, `fetchRecordingMetadata`, `fetchCfRecordingRecommendations`, `parseCfRecommendations`) |
-| LB models + sync | `data/listenbrainz/LbPlaylistModels.kt` (`LbPlaylistTrack(identity, mbid)` + invoke plano + `toMatchedRemote`, `MatchedLbPlaylist.toPlayableItems`, `streamCount`), `MatchedRemoteTrack.kt` (`toPlayableItem` / `toOnlineCatalogTrack` / `List.toPlayableItems` / `matchedCount` / `streamCount` / `rematchLocals` / `unmatchedCatalogTracks`; CF `score` opcional), `LbRadioModels.kt` (`LbRecordingMetadata(identity, mbid)` + invoke plano + `toMatchedRemote`), `CfRecommendationModels.kt` (`MatchedCfRecommendations`), `ListenTracker.kt`, `ListenSyncCoordinator.kt` |
+| LB models + sync | `data/listenbrainz/LbPlaylistModels.kt` (`LbPlaylistTrack(identity, mbid)` + invoke plano, `MatchedLbPlaylist.toPlayableItems`, `streamCount`), `MatchedRemoteTrack.kt` (`TrackIdentity.toMatchedRemote`, `toPlayableItem` / `toOnlineCatalogTrack` / `List.toPlayableItems` / `matchedCount` / `streamCount` / `rematchLocals` / `unmatchedCatalogTracks`; CF `score` opcional), `LbRadioModels.kt` (`LbRecordingMetadata(identity, mbid)` + invoke plano), `CfRecommendationModels.kt` (`MatchedCfRecommendations`), `ListenTracker.kt`, `ListenSyncCoordinator.kt` |
 | Connectivity | `data/network/ConnectivityObserver.kt` |
 | GitHub Releases update | `data/update/GitHubReleaseParser.kt` (`parseReleaseApi` / `parseVersionCode` / `stripVersionCodeLine` desde body); `GitHubUpdateClient.fetchLatest`; `ApkUpdateInstaller` (download + FileProvider → instalador del sistema); `AppUpdateCheckStore`; `GitHubReleaseUrls`; `AppUpdateInfo` |
 | Pending listens Room | `data/db/PendingListenEntity.kt`, `PendingListenDao.kt` |
@@ -181,7 +181,7 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 | Identify review codec / hydrate | `app/src/test/.../IdentifyReviewCodecTest.kt` |
 | GitHub release parser | `app/src/test/.../GitHubReleaseParserTest.kt` |
 | TrackIdentity JSON | `app/src/test/.../TrackIdentityJsonTest.kt` |
-| TrackIdentity merge / toIdentity | `app/src/test/.../TrackIdentityTest.kt` |
+| TrackIdentity merge / toIdentity / youtubeSearchQuery / preferMetaFrom | `app/src/test/.../TrackIdentityTest.kt` |
 | Pending mapper album↔releaseName | `app/src/test/.../PlaylistPendingTrackMapperTest.kt` |
 | UI functional library | `app/src/androidTest/.../LibraryScreenFunctionalTest.kt` |
 

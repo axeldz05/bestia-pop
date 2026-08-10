@@ -28,6 +28,18 @@ data class MatchedRemoteTrack(
         identity.toListenBrainzCatalogTrack(recordingMbid)
 }
 
+/** L2: wrap identity + optional local match into a discover/CF/LB matched row. */
+fun TrackIdentity.toMatchedRemote(
+    localSong: Song?,
+    recordingMbid: String? = null,
+    score: Double? = null
+): MatchedRemoteTrack = MatchedRemoteTrack(
+    identity = this,
+    recordingMbid = recordingMbid,
+    localSong = localSong,
+    score = score
+)
+
 fun List<MatchedRemoteTrack>.toPlayableItems(): List<PlayableItem> =
     map { it.toPlayableItem() }
 
@@ -36,13 +48,11 @@ fun List<MatchedRemoteTrack>.matchedCount(): Int = count { it.localSong != null 
 fun List<MatchedRemoteTrack>.streamCount(): Int = size - matchedCount()
 
 /** Re-bind unmatched rows against [library]; keep already-matched locals. */
-fun List<MatchedRemoteTrack>.rematchLocals(library: List<Song>): List<MatchedRemoteTrack> {
-    val index = TrackMatchKeys.buildLibraryIndex(library)
-    return map { match ->
+fun List<MatchedRemoteTrack>.rematchLocals(library: List<Song>): List<MatchedRemoteTrack> =
+    TrackMatchKeys.matchMetasAgainstLibrary(this, library) { match, local ->
         if (match.localSong != null) match
-        else match.copy(localSong = TrackMatchKeys.lookupLocalSong(index, match))
+        else match.copy(localSong = local)
     }
-}
 
 fun List<MatchedRemoteTrack>.unmatchedCatalogTracks(): List<OnlineCatalogTrack> =
     filter { it.localSong == null }.map { it.toOnlineCatalogTrack() }

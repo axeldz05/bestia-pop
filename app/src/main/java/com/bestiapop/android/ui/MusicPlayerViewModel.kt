@@ -1094,7 +1094,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                     album = album,
                     artworkUri = artwork,
                     durationMs = durationMs,
-                    youtubeQueryOrId = "$artist $title".trim().ifBlank { remoteKey }
+                    youtubeQueryOrId = youtubeSearchQuery(artist, title).ifBlank { remoteKey }
                 )
             }
         }
@@ -3101,7 +3101,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             !looksLikeStoragePath(artist)
         val hints = item.proposal.sourceHints?.replace(" · ", " ")?.trim().orEmpty()
         return when {
-            artistOk && title.isNotBlank() -> "$artist $title"
+            artistOk && title.isNotBlank() -> youtubeSearchQuery(artist, title)
             title.isNotBlank() -> title
             hints.isNotBlank() && !looksLikeStoragePath(hints) -> hints
             else -> item.proposal.queryTitle.trim().takeUnless { looksLikeStoragePath(it) }.orEmpty()
@@ -3889,21 +3889,14 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         if (index !in list.indices) return
         val item = list[index]
         launchCycleYouTubeMatch(
-            query = "${item.artist} ${item.title}".trim(),
+            query = item.youtubeSearchQuery(),
             current = item.candidates,
             wasPreviewing = isPreviewingCandidate(item)
         ) { candidatesList ->
             val nextIndex = (item.currentCandidateIndex + 1) % candidatesList.size
             val merged = candidatesList.mapIndexed { i, t ->
                 if (i != nextIndex) t
-                else t.withIdentity {
-                    copy(
-                        album = item.album.takeIf { !IdentifyRanking.isGenericAlbum(it) } ?: album,
-                        artworkUri = artworkUri ?: item.artworkUri,
-                        title = title.ifBlank { item.title },
-                        artist = artist.ifBlank { item.artist }
-                    )
-                }
+                else t.preferMetaFrom(item)
             }
             val updated = item.copy(candidates = merged, currentCandidateIndex = nextIndex)
             list[index] = updated
@@ -3919,7 +3912,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         val current = list[index]
         val wasPreviewing = _catalogPreviewKey.value == catalogPreviewKeyFor(current)
         launchCycleYouTubeMatch(
-            query = "${current.artist} ${current.title}".trim().ifBlank { current.title },
+            query = current.youtubeSearchQuery().ifBlank { current.title },
             current = listOf(current),
             wasPreviewing = wasPreviewing
         ) { searchResults ->
@@ -3928,13 +3921,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             val currentIdx = searchResults.indexOfFirst { it.id == current.id }
             val next = searchResults[(currentIdx + 1).coerceAtLeast(0) % searchResults.size]
             // Keep catalog album metadata when YouTube only says "YouTube"
-            list[index] = next.withIdentity {
-                copy(
-                    album = current.album.takeIf { !IdentifyRanking.isGenericAlbum(it) }
-                        ?: album,
-                    artworkUri = artworkUri ?: current.artworkUri
-                )
-            }
+            list[index] = next.preferMetaFrom(current)
             _catalogSearchResults.value = list
             list[index]
         }
@@ -4354,8 +4341,9 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     private suspend fun rematchSelectedLbPlaylist(extraSong: Song? = null) {
         val current = _selectedLbPlaylist.value ?: return
-        val library = libraryWithExtra(extraSong)
-        _selectedLbPlaylist.value = matchListenBrainzTracksUseCase.execute(current.detail, library)
+        _selectedLbPlaylist.value = current.copy(
+            matches = current.matches.rematchLocals(libraryWithExtra(extraSong))
+        )
     }
 
     private suspend fun rematchCfRecommendations(extraSong: Song? = null) {
@@ -4440,7 +4428,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         val current = download.currentTrack ?: return
         val wasPreviewing = _catalogPreviewKey.value == catalogPreviewKeyFor(current) ||
             download.candidates.any { catalogPreviewKeyFor(it) == _catalogPreviewKey.value }
-        val query = "${download.artist} ${download.title}".trim()
+        val query = download.youtubeSearchQuery()
             .ifBlank { current.title.trim() }
             .ifBlank { current.id.ifBlank { current.audioUrl } }
         if (query.isBlank()) return

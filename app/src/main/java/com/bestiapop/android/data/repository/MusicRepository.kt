@@ -28,6 +28,7 @@ import com.bestiapop.android.data.model.TrackIdentity
 import com.bestiapop.android.data.model.mergePreferring
 import com.bestiapop.android.data.model.toIdentity
 import com.bestiapop.android.data.model.withIdentity
+import com.bestiapop.android.data.model.youtubeSearchQuery
 import com.bestiapop.android.data.network.MetadataFetcher
 import com.bestiapop.android.data.stream.StreamResolver
 import com.bestiapop.android.data.util.AudioFileMetadata
@@ -677,7 +678,7 @@ class MusicRepository(private val context: Context) : IMusicRepository {
             addAll(listOf(meta.toIdentifyCatalogTrack()))
         }
 
-        val primaryQuery = if (artistPlaceholder) title else "$artist $title"
+        val primaryQuery = if (artistPlaceholder) title else youtubeSearchQuery(artist, title)
         addAll(MetadataFetcher.searchOnlineCatalog(primaryQuery.trim()))
 
         if (!artistPlaceholder) {

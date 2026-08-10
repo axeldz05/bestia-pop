@@ -28,12 +28,6 @@ data class LbPlaylistTrack(
             recordingMbid = recordingMbid
         )
     }
-
-    fun toMatchedRemote(localSong: Song?): MatchedRemoteTrack = MatchedRemoteTrack(
-        identity = identity,
-        recordingMbid = recordingMbid,
-        localSong = localSong
-    )
 }
 
 data class LbPlaylistDetail(

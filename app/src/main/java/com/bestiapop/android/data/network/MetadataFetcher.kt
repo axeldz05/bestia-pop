@@ -6,6 +6,7 @@ import com.bestiapop.android.data.model.CatalogTrackCandidate
 import com.bestiapop.android.data.model.OnlineCatalogTrack
 import com.bestiapop.android.data.model.TrackIdentity
 import com.bestiapop.android.data.model.mergePreferring
+import com.bestiapop.android.data.model.youtubeSearchQuery
 import com.bestiapop.android.data.util.encodeAlbumTrack
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -147,8 +148,8 @@ object MetadataFetcher {
             tracks.add(
                 OnlineCatalogTrack(
                     identity = identity,
-                    id = obj.optString("id").ifBlank { "${identity.artist} ${identity.title}#$i" },
-                    audioUrl = "${identity.artist} ${identity.title}",
+                    id = obj.optString("id").ifBlank { "${identity.youtubeSearchQuery()}#$i" },
+                    audioUrl = identity.youtubeSearchQuery(),
                     provider = provider
                 )
             )
@@ -174,9 +175,9 @@ object MetadataFetcher {
                 OnlineCatalogTrack(
                     identity = identity,
                     id = obj.optString("trackId").ifBlank {
-                        "${identity.artist} ${identity.title}#${obj.optString("collectionId", "$i")}"
+                        "${identity.youtubeSearchQuery()}#${obj.optString("collectionId", "$i")}"
                     },
-                    audioUrl = "${identity.artist} ${identity.title}",
+                    audioUrl = identity.youtubeSearchQuery(),
                     provider = provider
                 )
             )
@@ -546,8 +547,8 @@ object MetadataFetcher {
                         toCatalogCandidate(
                             track.copy(
                                 identity = track.identity.copy(artworkUri = cover),
-                                id = "${track.artist} ${track.title}",
-                                audioUrl = "${track.artist} ${track.title}",
+                                id = track.youtubeSearchQuery(),
+                                audioUrl = track.youtubeSearchQuery(),
                                 provider = "YouTube"
                             )
                         )
@@ -592,8 +593,8 @@ object MetadataFetcher {
                                     durationMs = obj.optLong("duration", 180L) * 1000L,
                                     trackNumber = deezerAlbumTrackNumber(obj)
                                 ),
-                                id = "$trackArtist $trackTitle",
-                                audioUrl = "$trackArtist $trackTitle",
+                                id = youtubeSearchQuery(trackArtist, trackTitle),
+                                audioUrl = youtubeSearchQuery(trackArtist, trackTitle),
                                 provider = "YouTube"
                             )
                         )

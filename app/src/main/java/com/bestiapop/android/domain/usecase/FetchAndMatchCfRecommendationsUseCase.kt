@@ -4,7 +4,7 @@ import com.bestiapop.android.data.listenbrainz.CfRecommendationsPayload
 import com.bestiapop.android.data.listenbrainz.LbApiResult
 import com.bestiapop.android.data.listenbrainz.LbRecordingMetadata
 import com.bestiapop.android.data.listenbrainz.MatchedCfRecommendations
-import com.bestiapop.android.data.listenbrainz.MatchedRemoteTrack
+import com.bestiapop.android.data.listenbrainz.toMatchedRemote
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.domain.util.TrackMatchKeys
 
@@ -64,16 +64,20 @@ class FetchAndMatchCfRecommendationsUseCase(
         metaByMbid: Map<String, LbRecordingMetadata>,
         library: List<Song>
     ): MatchedCfRecommendations {
-        val libraryIndex = TrackMatchKeys.buildLibraryIndex(library)
-        val matches = ArrayList<MatchedRemoteTrack>(payload.recordings.size)
-        for (rec in payload.recordings) {
-            val meta = metaByMbid[rec.recordingMbid] ?: continue
-            if (meta.title.isBlank() || meta.artist.isBlank()) continue
-            matches.add(
-                meta.toMatchedRemote(
-                    localSong = TrackMatchKeys.lookupLocalSong(libraryIndex, meta),
-                    score = rec.score
-                ).copy(recordingMbid = rec.recordingMbid)
+        val scored = payload.recordings.mapNotNull { rec ->
+            val meta = metaByMbid[rec.recordingMbid] ?: return@mapNotNull null
+            meta to rec.score
+        }
+        val matches = TrackMatchKeys.matchAgainstLibrary(
+            items = scored,
+            library = library,
+            metaOf = { it.first },
+            skipBlank = true
+        ) { (meta, score), local ->
+            meta.identity.toMatchedRemote(
+                localSong = local,
+                recordingMbid = meta.recordingMbid,
+                score = score
             )
         }
         return MatchedCfRecommendations(payload = payload, matches = matches)

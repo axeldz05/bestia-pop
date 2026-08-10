@@ -3,6 +3,7 @@ package com.bestiapop.android.data.stream
 import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.data.model.ResolvedStream
 import com.bestiapop.android.data.model.TrackIdentity
+import com.bestiapop.android.data.model.youtubeSearchQuery
 import com.bestiapop.android.data.network.YouTubeExtractResult
 import com.bestiapop.android.data.network.YouTubeExtractor
 import com.bestiapop.android.data.network.YouTubeStreamResult
@@ -59,7 +60,7 @@ class StreamResolver(
         }
 
         val query = item.youtubeQueryOrId?.takeIf { it.isNotBlank() }
-            ?: "${item.artist} ${item.title}".trim()
+            ?: item.youtubeSearchQuery()
         if (query.isBlank()) {
             return Result.failure(IllegalArgumentException("Missing YouTube query for remote item"))
         }
@@ -117,7 +118,7 @@ class StreamResolver(
     private fun cacheKey(item: PlayableItem.Remote): String {
         item.resolved?.videoId?.takeIf { it.isNotBlank() }?.let { return "id:$it" }
         val query = item.youtubeQueryOrId?.takeIf { it.isNotBlank() }
-            ?: "${item.artist} ${item.title}".trim().lowercase()
+            ?: item.youtubeSearchQuery().lowercase()
         return queryCacheKey(query)
     }
 

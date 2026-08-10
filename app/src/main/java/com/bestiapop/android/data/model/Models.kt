@@ -443,21 +443,10 @@ data class ActiveDownload(
             } else {
                 (download.currentCandidateIndex + 1) % newCandidates.size
             }
-            val preservedAlbum = download.currentTrack?.album
-                ?.takeIf { it.isNotBlank() && !it.equals("YouTube", ignoreCase = true) }
             val stillFailed = download.state == CandidateDownloadState.ERROR
             return download.copy(
                 candidates = newCandidates.mapIndexed { i, t ->
-                    if (i == nextIndex) {
-                        t.withIdentity {
-                            copy(
-                                album = preservedAlbum ?: album,
-                                artworkUri = artworkUri ?: download.artworkUri,
-                                title = title.ifBlank { download.title },
-                                artist = artist.ifBlank { download.artist }
-                            )
-                        }
-                    } else t
+                    if (i == nextIndex) t.preferMetaFrom(download) else t
                 },
                 currentCandidateIndex = nextIndex,
                 state = if (stillFailed) CandidateDownloadState.ERROR else CandidateDownloadState.IDLE,

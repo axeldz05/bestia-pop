@@ -201,7 +201,7 @@ Centro de descargas online → sección 2 (`DownloadsScreen`, tab Descargas).
 - Sección **Para Ti** / **Recomendados** en Playlists solo si `showDiscoverPlaylists` (`enabled && discoverEnabled && username`).
 - Playlists Discover = `GET /1/user/{user}/playlists/createdfor`; detalle = `GET /1/playlist/{mbid}`.
 - CF Recomendados = `GET /1/cf/recommendation/user/{user}/recording` + metadata → match Local|Remote.
-- Match local por artist+title normalizado; faltantes = `PlayableItem.Remote`.
+- Match local por artist+title normalizado (`TrackMatchKeys.matchMetasAgainstLibrary` / `matchAgainstLibrary`; L1 `buildLibraryIndex` + `lookupLocalSong` para radio); faltantes = `PlayableItem.Remote`. Rematch LB/CF tras descarga = `List.rematchLocals`. Query YT / id catálogo = `TrackMeta.youtubeSearchQuery` / `TrackIdentity.toCatalogTrack`.
 - Reproducción: cola mixta `Local|Remote` vía `playPlayableCollection` (prefetch / 403 retry de stream).
 - **Descarga manual** de un Remote en detalle Para Ti / Recomendados o Now Playing: icono Descargar en `RemoteTrackPlaceholderRow` / CTA `NowPlayingRemoteDownloadAction` → `downloadRemoteItem` (`ActiveDownloadSource.DISCOVER`); progreso en Descargas (+ estados en NP); al éxito rematch LB + CF.
 - **Guardar al escuchar** (`saveWhileListening` + `saveWhileListeningPercent`): al alcanzar ≥N% de la duración (o fin) de un Remote, encola en `activeDownloads` vía `runTrackedDownload` (sin reemplazar el MediaItem). Fallo → `ERROR` en el centro + Toast; quita la key de `saveWhileListeningAttempted` para permitir reintento manual/auto.

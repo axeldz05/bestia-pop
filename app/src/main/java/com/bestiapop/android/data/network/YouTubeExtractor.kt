@@ -13,6 +13,7 @@ import java.util.regex.Pattern
 import com.bestiapop.android.data.model.OnlineCatalogTrack
 import com.bestiapop.android.data.model.TrackIdentity
 import com.bestiapop.android.data.model.TrackMeta
+import com.bestiapop.android.data.model.youtubeSearchQuery
 import com.bestiapop.android.domain.util.IdentifyRanking
 import com.bestiapop.android.data.util.CrashReporter
 
@@ -219,7 +220,7 @@ object YouTubeExtractor {
         ) {
             return audioHint
         }
-        return "${track.artist} ${track.title}".trim().ifBlank { track.id }
+        return track.youtubeSearchQuery().ifBlank { track.id }
     }
 
     internal fun parseSearchContents(contents: JSONArray): List<OnlineCatalogTrack> {

@@ -27,13 +27,11 @@ sealed class PlayableItem : TrackMeta {
             }
 
         /** L2: map ephemeral remote to catalog download input (no CDN URL persisted). */
-        fun toOnlineCatalogTrack(provider: String = "YouTube"): OnlineCatalogTrack = OnlineCatalogTrack(
-            identity = identity,
-            id = youtubeQueryOrId?.takeIf { it.isNotBlank() }
-                ?: "$artist $title".trim(),
-            audioUrl = "",
-            provider = provider
-        )
+        fun toOnlineCatalogTrack(provider: String = "YouTube"): OnlineCatalogTrack =
+            identity.toCatalogTrack(
+                id = youtubeQueryOrId?.takeIf { it.isNotBlank() },
+                provider = provider
+            )
 
         fun withIdentity(transform: TrackIdentity.() -> TrackIdentity): Remote =
             copy(identity = identity.transform())
@@ -47,7 +45,7 @@ sealed class PlayableItem : TrackMeta {
             youtubeQueryOrId: String? = null,
             resolved: ResolvedStream? = null
         ): Remote {
-            val defaultQuery = "${identity.artist} ${identity.title}".trim().takeIf { it.isNotBlank() }
+            val defaultQuery = identity.youtubeSearchQuery().takeIf { it.isNotBlank() }
             return Remote(
                 identity = identity,
                 recordingMbid = recordingMbid,

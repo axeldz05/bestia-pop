@@ -1,5 +1,7 @@
 package com.bestiapop.android.data.model
 
+import com.bestiapop.android.domain.util.IdentifyRanking
+
 /** Shared catalog/library identity fields. Persistable library rows stay flat on [Song]. */
 interface TrackMeta {
     val title: String
@@ -55,10 +57,41 @@ fun OnlineCatalogTrack.withIdentity(
     transform: TrackIdentity.() -> TrackIdentity
 ): OnlineCatalogTrack = copy(identity = identity.transform())
 
+/**
+ * When cycling YouTube matches ("Buscar otro"), keep useful album/art/title/artist from [previous].
+ */
+fun OnlineCatalogTrack.preferMetaFrom(previous: TrackMeta): OnlineCatalogTrack = withIdentity {
+    copy(
+        album = previous.album.takeIf { it.isNotBlank() && !IdentifyRanking.isGenericAlbum(it) } ?: album,
+        artworkUri = artworkUri ?: previous.artworkUri,
+        title = title.ifBlank { previous.title },
+        artist = artist.ifBlank { previous.artist }
+    )
+}
+
+/** Default YouTube / catalog search string from artist + title. */
+fun youtubeSearchQuery(artist: String, title: String): String = "$artist $title".trim()
+
+fun TrackMeta.youtubeSearchQuery(): String = youtubeSearchQuery(artist, title)
+
+/**
+ * L2: catalog download input from identity.
+ * [id] defaults to [youtubeSearchQuery] when null/blank.
+ */
+fun TrackIdentity.toCatalogTrack(
+    id: String? = null,
+    provider: String,
+    audioUrl: String = ""
+): OnlineCatalogTrack = OnlineCatalogTrack(
+    identity = this,
+    id = id?.takeIf { it.isNotBlank() } ?: youtubeSearchQuery(),
+    audioUrl = audioUrl,
+    provider = provider
+)
+
 /** Catalog download input for ListenBrainz rows (pending / unmatched discover). */
 fun TrackIdentity.toListenBrainzCatalogTrack(mbid: String?): OnlineCatalogTrack =
-    OnlineCatalogTrack(
-        identity = this,
-        id = mbid?.takeIf { it.isNotBlank() } ?: "$artist $title".trim(),
+    toCatalogTrack(
+        id = mbid?.takeIf { it.isNotBlank() },
         provider = "ListenBrainz"
     )

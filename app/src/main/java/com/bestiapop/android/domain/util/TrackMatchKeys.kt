@@ -31,16 +31,8 @@ object TrackMatchKeys {
         return if (key.isEmpty()) "" else "batch:$key"
     }
 
-    fun buildLibraryIndex(library: List<Song>): Map<String, Song> {
-        val map = HashMap<String, Song>(library.size)
-        for (song in library) {
-            val key = matchKey(song.artist, song.title)
-            if (key.isNotEmpty() && !map.containsKey(key)) {
-                map[key] = song
-            }
-        }
-        return map
-    }
+    fun buildLibraryIndex(library: List<Song>): Map<String, Song> =
+        buildIndex(library, artistOf = { it.artist }, titleOf = { it.title })
 
     fun <T> buildIndex(
         items: List<T>,
@@ -65,6 +57,43 @@ object TrackMatchKeys {
 
     fun lookupLocalSong(library: List<Song>, meta: TrackMeta): Song? =
         lookupLocalSong(buildLibraryIndex(library), meta)
+
+    /**
+     * L2: build a library index once and map each item (via [metaOf]) to a result.
+     * When [skipBlank] is true, rows with blank title or artist are omitted.
+     * Level 1 ([buildLibraryIndex], [lookupLocalSong]) stays public for radio/dedupe paths.
+     */
+    fun <T, R> matchAgainstLibrary(
+        items: List<T>,
+        library: List<Song>,
+        metaOf: (T) -> TrackMeta,
+        skipBlank: Boolean = false,
+        transform: (T, Song?) -> R?
+    ): List<R> {
+        val index = buildLibraryIndex(library)
+        val out = ArrayList<R>(items.size)
+        for (item in items) {
+            val meta = metaOf(item)
+            if (skipBlank && (meta.title.isBlank() || meta.artist.isBlank())) continue
+            val result = transform(item, lookupLocalSong(index, meta)) ?: continue
+            out.add(result)
+        }
+        return out
+    }
+
+    /** L2 convenience when items themselves are [TrackMeta]. */
+    fun <T : TrackMeta, R> matchMetasAgainstLibrary(
+        items: List<T>,
+        library: List<Song>,
+        skipBlank: Boolean = false,
+        transform: (T, Song?) -> R?
+    ): List<R> = matchAgainstLibrary(
+        items = items,
+        library = library,
+        metaOf = { it },
+        skipBlank = skipBlank,
+        transform = transform
+    )
 }
 
 fun TrackMeta.matchKey(): String = TrackMatchKeys.matchKey(artist, title)

@@ -147,4 +147,45 @@ class TrackIdentityTest {
         assertEquals("Other Missing", without.id)
         assertEquals("ListenBrainz", without.provider)
     }
+
+    @Test
+    fun youtubeSearchQuery_trimsArtistTitle() {
+        assertEquals("Radiohead Creep", youtubeSearchQuery("Radiohead", "Creep"))
+        assertEquals(
+            "Radiohead Creep",
+            TrackIdentity(title = "Creep", artist = "Radiohead").youtubeSearchQuery()
+        )
+    }
+
+    @Test
+    fun toCatalogTrack_usesExplicitIdOrSearchQuery() {
+        val identity = TrackIdentity(title = "Creep", artist = "Radiohead")
+        val withId = identity.toCatalogTrack(id = "vid", provider = "YouTube", audioUrl = "q")
+        assertEquals("vid", withId.id)
+        assertEquals("YouTube", withId.provider)
+        assertEquals("q", withId.audioUrl)
+
+        val fallback = identity.toCatalogTrack(provider = "Deezer")
+        assertEquals("Radiohead Creep", fallback.id)
+        assertEquals("Deezer", fallback.provider)
+    }
+
+    @Test
+    fun preferMetaFrom_keepsUsefulAlbumArtAndFillsBlanks() {
+        val previous = TrackIdentity(
+            title = "Old",
+            artist = "Band",
+            album = "Pablo Honey",
+            artworkUri = "file:///art.jpg"
+        )
+        val next = OnlineCatalogTrack(
+            identity = TrackIdentity(title = "", artist = "", album = "YouTube"),
+            id = "yt1"
+        )
+        val preferred = next.preferMetaFrom(previous)
+        assertEquals("Old", preferred.title)
+        assertEquals("Band", preferred.artist)
+        assertEquals("Pablo Honey", preferred.album)
+        assertEquals("file:///art.jpg", preferred.artworkUri)
+    }
 }

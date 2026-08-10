@@ -6,6 +6,7 @@ import com.bestiapop.android.data.model.CatalogTrackCandidate
 import com.bestiapop.android.data.model.OnlineCatalogTrack
 import com.bestiapop.android.data.model.TrackIdentity
 import com.bestiapop.android.data.model.mergePreferring
+import com.bestiapop.android.data.model.toCatalogTrack
 import com.bestiapop.android.data.model.youtubeSearchQuery
 import com.bestiapop.android.data.util.encodeAlbumTrack
 import kotlinx.coroutines.Dispatchers
@@ -502,23 +503,18 @@ object MetadataFetcher {
             if (data != null && data.length() > 0) {
                 for (i in 0 until data.length()) {
                     val obj = data.getJSONObject(i)
-                    val trackTitle = obj.optString("title", "Pista ${i + 1}")
-                    val trackArtistObj = obj.optJSONObject("artist")
-                    val trackArtist = trackArtistObj?.optString("name", artistName) ?: artistName
+                    val identity = obj.toDeezerTrackIdentity(
+                        defaultTitle = "Pista ${i + 1}",
+                        defaultArtist = artistName,
+                        defaultAlbum = albumTitle
+                    )?.let { base ->
+                        base.copy(artworkUri = albumCoverUrl ?: base.artworkUri)
+                    } ?: continue
                     resultCandidates.add(
                         toCatalogCandidate(
-                            OnlineCatalogTrack(
-                                identity = TrackIdentity(
-                                    title = trackTitle,
-                                    artist = trackArtist,
-                                    album = albumTitle,
-                                    artworkUri = albumCoverUrl,
-                                    durationMs = obj.optLong("duration", 180L) * 1000L,
-                                    trackNumber = deezerAlbumTrackNumber(obj)
-                                ),
-                                id = "$trackArtist $trackTitle",
-                                audioUrl = "$trackArtist $trackTitle",
-                                provider = "YouTube"
+                            identity.toCatalogTrack(
+                                provider = "YouTube",
+                                audioUrl = identity.youtubeSearchQuery()
                             )
                         )
                     )
@@ -573,29 +569,15 @@ object MetadataFetcher {
             if (data != null) {
                 for (i in 0 until data.length()) {
                     val obj = data.getJSONObject(i)
-                    val trackTitle = obj.optString("title", "Pista ${i + 1}")
-                    val trackArtistObj = obj.optJSONObject("artist")
-                    val trackArtist = trackArtistObj?.optString("name", "Artista") ?: "Artista"
-                    val albumObj = obj.optJSONObject("album")
-                    val albumName = albumObj?.optString("title", playlistTitle) ?: playlistTitle
-                    val cover = pickCoverUrl(
-                        albumObj?.optString("cover_xl"),
-                        albumObj?.optString("cover_big")
-                    )
+                    val identity = obj.toDeezerTrackIdentity(
+                        defaultTitle = "Pista ${i + 1}",
+                        defaultAlbum = playlistTitle
+                    ) ?: continue
                     resultCandidates.add(
                         toCatalogCandidate(
-                            OnlineCatalogTrack(
-                                identity = TrackIdentity(
-                                    title = trackTitle,
-                                    artist = trackArtist,
-                                    album = albumName,
-                                    artworkUri = cover,
-                                    durationMs = obj.optLong("duration", 180L) * 1000L,
-                                    trackNumber = deezerAlbumTrackNumber(obj)
-                                ),
-                                id = youtubeSearchQuery(trackArtist, trackTitle),
-                                audioUrl = youtubeSearchQuery(trackArtist, trackTitle),
-                                provider = "YouTube"
+                            identity.toCatalogTrack(
+                                provider = "YouTube",
+                                audioUrl = identity.youtubeSearchQuery()
                             )
                         )
                     )

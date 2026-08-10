@@ -3833,25 +3833,37 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     fun selectAlbumForInspection(album: CatalogAlbum) {
-        viewModelScope.launch {
-            _isLoadingCollection.value = true
-            _selectedCollectionTitle.value = album.title
-            selectedCollectionKind = CatalogCollectionKind.ALBUM
-            selectedCollectionCoverUrl = album.coverUrl
-            val candidates = MetadataFetcher.fetchAlbumTrackCandidates(album.id, album.title, album.artist, album.coverUrl)
-            _activeTrackCandidates.value = candidates
-            _isLoadingCollection.value = false
+        selectCollectionForInspection(
+            title = album.title,
+            kind = CatalogCollectionKind.ALBUM,
+            coverUrl = album.coverUrl
+        ) {
+            MetadataFetcher.fetchAlbumTrackCandidates(album.id, album.title, album.artist, album.coverUrl)
         }
     }
 
     fun selectPlaylistForInspection(playlist: CatalogPlaylist) {
+        selectCollectionForInspection(
+            title = playlist.title,
+            kind = CatalogCollectionKind.PLAYLIST,
+            coverUrl = playlist.coverUrl
+        ) {
+            MetadataFetcher.fetchPlaylistTrackCandidates(playlist.id, playlist.title)
+        }
+    }
+
+    private fun selectCollectionForInspection(
+        title: String,
+        kind: CatalogCollectionKind,
+        coverUrl: String?,
+        fetch: suspend () -> List<CatalogTrackCandidate>
+    ) {
         viewModelScope.launch {
             _isLoadingCollection.value = true
-            _selectedCollectionTitle.value = playlist.title
-            selectedCollectionKind = CatalogCollectionKind.PLAYLIST
-            selectedCollectionCoverUrl = playlist.coverUrl
-            val candidates = MetadataFetcher.fetchPlaylistTrackCandidates(playlist.id, playlist.title)
-            _activeTrackCandidates.value = candidates
+            _selectedCollectionTitle.value = title
+            selectedCollectionKind = kind
+            selectedCollectionCoverUrl = coverUrl
+            _activeTrackCandidates.value = fetch()
             _isLoadingCollection.value = false
         }
     }
@@ -4091,6 +4103,39 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         )
     }
 
+    private fun markDownloadConflict(
+        downloadId: String,
+        source: ActiveDownloadSource,
+        activeTrack: OnlineCatalogTrack,
+        existing: Song,
+        candidates: List<OnlineCatalogTrack>,
+        safeIndex: Int,
+        targetPlaylistId: Long?,
+        lookupIdentity: TrackIdentity?,
+        titleOverride: String?
+    ) {
+        emitDownloadConflict(
+            downloadId = downloadId,
+            source = source,
+            activeTrack = activeTrack,
+            existing = existing,
+            candidates = candidates,
+            safeIndex = safeIndex,
+            targetPlaylistId = targetPlaylistId,
+            lookupIdentity = lookupIdentity
+        )
+        upsertActiveDownload(
+            ActiveDownload.conflict(
+                id = downloadId,
+                source = source,
+                candidates = candidates,
+                currentCandidateIndex = safeIndex,
+                targetPlaylistId = targetPlaylistId,
+                titleOverride = titleOverride
+            )
+        )
+    }
+
     private fun upsertActiveDownload(download: ActiveDownload) {
         val list = _activeDownloads.value.toMutableList()
         val index = list.indexOfFirst { it.id == download.id }
@@ -4202,7 +4247,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         if (resolvedPolicy == null) {
             val existing = resolveExistingSong(activeTrack, lookupIdentity)
             if (existing != null) {
-                emitDownloadConflict(
+                markDownloadConflict(
                     downloadId = downloadId,
                     source = source,
                     activeTrack = activeTrack,
@@ -4210,17 +4255,8 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                     candidates = candidates,
                     safeIndex = safeIndex,
                     targetPlaylistId = targetPlaylistId,
-                    lookupIdentity = lookupIdentity
-                )
-                upsertActiveDownload(
-                    ActiveDownload.conflict(
-                        id = downloadId,
-                        source = source,
-                        candidates = candidates,
-                        currentCandidateIndex = safeIndex,
-                        targetPlaylistId = targetPlaylistId,
-                        titleOverride = displayOverride
-                    )
+                    lookupIdentity = lookupIdentity,
+                    titleOverride = displayOverride
                 )
                 return Result.failure(
                     DuplicateSongException(existing, activeTrack)
@@ -4260,7 +4296,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         // Late conflict after YouTube metadata resolve (e.g. blank title on LINK)
         val duplicate = result.exceptionOrNull() as? DuplicateSongException
         if (duplicate != null && resolvedPolicy == null) {
-            emitDownloadConflict(
+            markDownloadConflict(
                 downloadId = downloadId,
                 source = source,
                 activeTrack = duplicate.track,
@@ -4268,17 +4304,8 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 candidates = candidates,
                 safeIndex = safeIndex,
                 targetPlaylistId = targetPlaylistId,
-                lookupIdentity = lookupIdentity
-            )
-            upsertActiveDownload(
-                ActiveDownload.conflict(
-                    id = downloadId,
-                    source = source,
-                    candidates = candidates,
-                    currentCandidateIndex = safeIndex,
-                    targetPlaylistId = targetPlaylistId,
-                    titleOverride = displayOverride
-                )
+                lookupIdentity = lookupIdentity,
+                titleOverride = displayOverride
             )
             return result
         }
@@ -4303,8 +4330,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                         activeTrack.title
                     )
                 }
-                rematchSelectedLbPlaylist(extraSong = song)
-                rematchCfRecommendations(extraSong = song)
+                rematchDiscoverAfterLibraryChange(extraSong = song)
                 if (source == ActiveDownloadSource.CATALOG ||
                     source == ActiveDownloadSource.LINK ||
                     source == ActiveDownloadSource.DISCOVER
@@ -4339,18 +4365,14 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         return result
     }
 
-    private suspend fun rematchSelectedLbPlaylist(extraSong: Song? = null) {
-        val current = _selectedLbPlaylist.value ?: return
-        _selectedLbPlaylist.value = current.copy(
-            matches = current.matches.rematchLocals(libraryWithExtra(extraSong))
-        )
-    }
-
-    private suspend fun rematchCfRecommendations(extraSong: Song? = null) {
-        val current = _cfRecommendations.value ?: return
-        _cfRecommendations.value = current.copy(
-            matches = current.matches.rematchLocals(libraryWithExtra(extraSong))
-        )
+    private suspend fun rematchDiscoverAfterLibraryChange(extraSong: Song? = null) {
+        val library = libraryWithExtra(extraSong)
+        _selectedLbPlaylist.value?.let { current ->
+            _selectedLbPlaylist.value = current.copy(matches = current.matches.rematchLocals(library))
+        }
+        _cfRecommendations.value?.let { current ->
+            _cfRecommendations.value = current.copy(matches = current.matches.rematchLocals(library))
+        }
     }
 
     private suspend fun libraryWithExtra(extraSong: Song?): List<Song> =
@@ -4379,8 +4401,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             CandidateDownloadState.SUCCESS -> {
                 toastSongInLibrary(remote.title, LibraryToastKind.ALREADY)
                 viewModelScope.launch {
-                    rematchSelectedLbPlaylist()
-                    rematchCfRecommendations()
+                    rematchDiscoverAfterLibraryChange()
                 }
                 return
             }

@@ -57,7 +57,9 @@ data class IdentifyProposal(
     val candidates: List<IdentifyCandidate> = emptyList(),
     val confidence: IdentifyConfidence = IdentifyConfidence.NONE,
     val suggested: IdentifyCandidate? = null,
-    val alreadyIdentified: Boolean = false
+    val alreadyIdentified: Boolean = false,
+    /** True when ListenBrainz lookup ran and contributed a catalog track for this proposal. */
+    val usedListenBrainz: Boolean = false
 )
 
 data class Album(

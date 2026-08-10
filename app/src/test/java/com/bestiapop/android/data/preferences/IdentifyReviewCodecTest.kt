@@ -38,7 +38,8 @@ class IdentifyReviewCodecTest {
             sourceHints = "Muse · Hysteria",
             candidates = listOf(candidate),
             confidence = IdentifyConfidence.MEDIUM,
-            suggested = candidate
+            suggested = candidate,
+            usedListenBrainz = true
         )
     }
 
@@ -59,6 +60,7 @@ class IdentifyReviewCodecTest {
         assertEquals(listOf("título similar", "duración +1s"), p.candidates.first().reasons)
         assertEquals("Deezer", p.suggested?.provider)
         assertEquals("", p.suggested?.track?.audioUrl)
+        assertTrue(p.usedListenBrainz)
     }
 
     @Test

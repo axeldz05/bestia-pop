@@ -146,7 +146,8 @@ class ImportListenBrainzPlaylistUseCaseTest {
         override suspend fun proposeSongIdentity(
             song: Song,
             customQuery: String?,
-            force: Boolean
+            force: Boolean,
+            listenBrainzToken: String?
         ) =
             com.bestiapop.android.data.model.IdentifyProposal(
                 songId = song.id,

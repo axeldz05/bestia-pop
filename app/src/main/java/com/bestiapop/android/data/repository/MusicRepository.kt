@@ -25,13 +25,17 @@ import com.bestiapop.android.data.model.Playlist
 import com.bestiapop.android.data.model.PlaylistPendingTrack
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.data.model.TrackIdentity
+import com.bestiapop.android.data.listenbrainz.LbApiResult
 import com.bestiapop.android.data.model.mergePreferring
 import com.bestiapop.android.data.model.toIdentity
+import com.bestiapop.android.data.model.toListenBrainzCatalogTrack
 import com.bestiapop.android.data.model.withIdentity
 import com.bestiapop.android.data.model.youtubeSearchQuery
+import com.bestiapop.android.data.network.ListenBrainzClient
 import com.bestiapop.android.data.network.MetadataFetcher
 import com.bestiapop.android.data.stream.StreamResolver
 import com.bestiapop.android.data.util.AudioFileMetadata
+import com.bestiapop.android.data.util.CrashReporter
 import com.bestiapop.android.data.util.FilenameMetadataHints
 import com.bestiapop.android.data.util.MusicFileStore
 import com.bestiapop.android.data.util.SongPathNormalizer
@@ -557,7 +561,8 @@ class MusicRepository(private val context: Context) : IMusicRepository {
     override suspend fun proposeSongIdentity(
         song: Song,
         customQuery: String?,
-        force: Boolean
+        force: Boolean,
+        listenBrainzToken: String?
     ): IdentifyProposal = withContext(Dispatchers.IO) {
         if (!force && !needsMetadataIdentify(song.artist, song.album)) {
             return@withContext IdentifyProposal(
@@ -602,7 +607,7 @@ class MusicRepository(private val context: Context) : IMusicRepository {
 
         val trimmedCustom = customQuery?.trim().orEmpty()
         val artistPlaceholder = IdentifyRanking.isPlaceholderArtist(queryArtist)
-        val tracks = if (trimmedCustom.isNotEmpty()) {
+        var tracks = if (trimmedCustom.isNotEmpty()) {
             MetadataFetcher.searchOnlineCatalog(trimmedCustom)
         } else {
             fetchIdentifyCatalogTracks(queryArtist, queryTitle, artistPlaceholder)
@@ -618,8 +623,31 @@ class MusicRepository(private val context: Context) : IMusicRepository {
             sourceTitle = song.title.takeUnless { it.isBlank() || looksLikeStoragePath(it) },
             sourceAlbum = song.album.takeUnless { IdentifyRanking.isGenericAlbum(it) }
         )
-        val ranked = IdentifyRanking.rank(rankingQuery, tracks)
-        val confidence = IdentifyRanking.confidence(ranked)
+        var ranked = IdentifyRanking.rank(rankingQuery, tracks)
+        var confidence = IdentifyRanking.confidence(ranked)
+        var usedListenBrainz = false
+
+        val token = listenBrainzToken?.trim().orEmpty()
+        val canEnrichLb = trimmedCustom.isEmpty() &&
+            token.isNotEmpty() &&
+            !artistPlaceholder &&
+            confidence != IdentifyConfidence.HIGH
+        if (canEnrichLb) {
+            val releaseHint = song.album.takeUnless { IdentifyRanking.isGenericAlbum(it) }
+            val lbTrack = fetchListenBrainzIdentifyTrack(
+                artist = queryArtist,
+                title = queryTitle,
+                releaseName = releaseHint,
+                token = token
+            )
+            if (lbTrack != null) {
+                usedListenBrainz = true
+                tracks = mergeIdentifyCatalogTracks(tracks, listOf(lbTrack))
+                ranked = IdentifyRanking.rank(rankingQuery, tracks)
+                confidence = IdentifyRanking.confidence(ranked)
+            }
+        }
+
         IdentifyProposal(
             songId = song.id,
             queryArtist = queryArtist,
@@ -627,7 +655,8 @@ class MusicRepository(private val context: Context) : IMusicRepository {
             sourceHints = sourceHints,
             candidates = ranked,
             confidence = confidence,
-            suggested = ranked.firstOrNull()
+            suggested = ranked.firstOrNull(),
+            usedListenBrainz = usedListenBrainz
         )
     }
 
@@ -666,28 +695,73 @@ class MusicRepository(private val context: Context) : IMusicRepository {
         title: String,
         artistPlaceholder: Boolean
     ): List<OnlineCatalogTrack> {
-        val merged = LinkedHashMap<String, OnlineCatalogTrack>()
-        fun addAll(tracks: List<OnlineCatalogTrack>) {
-            for (track in tracks) {
-                val key = IdentifyRanking.dedupeKey(track.artist, track.title, track.album)
-                if (key !in merged) merged[key] = track
-            }
-        }
-
+        val tracks = ArrayList<OnlineCatalogTrack>()
         MetadataFetcher.fetchFullTrackMetadata(artist, title)?.let { meta ->
-            addAll(listOf(meta.toIdentifyCatalogTrack()))
+            tracks.add(meta.toIdentifyCatalogTrack())
         }
-
         val primaryQuery = if (artistPlaceholder) title else youtubeSearchQuery(artist, title)
-        addAll(MetadataFetcher.searchOnlineCatalog(primaryQuery.trim()))
-
+        tracks.addAll(MetadataFetcher.searchOnlineCatalog(primaryQuery.trim()))
         if (!artistPlaceholder) {
             val titleOnly = title.trim()
             if (titleOnly.isNotEmpty() && !titleOnly.equals(primaryQuery.trim(), ignoreCase = true)) {
-                addAll(MetadataFetcher.searchOnlineCatalog(titleOnly))
+                tracks.addAll(MetadataFetcher.searchOnlineCatalog(titleOnly))
             }
         }
+        return mergeIdentifyCatalogTracks(emptyList(), tracks)
+    }
 
+    /**
+     * Edge-case enrich: MusicBrainz lookup via ListenBrainz when catalog confidence is not HIGH.
+     * Failures are swallowed so identify never blocks on LB.
+     */
+    private suspend fun fetchListenBrainzIdentifyTrack(
+        artist: String,
+        title: String,
+        releaseName: String?,
+        token: String
+    ): OnlineCatalogTrack? {
+        val lookup = when (
+            val result = ListenBrainzClient.lookupRecordingMetadata(
+                artistName = artist,
+                recordingName = title,
+                token = token,
+                releaseName = releaseName
+            )
+        ) {
+            is LbApiResult.Success -> result.data
+            is LbApiResult.Failure -> {
+                if (result.isNetworkError) {
+                    CrashReporter.log("identify_phase=lb_lookup network_error")
+                }
+                return null
+            }
+        }
+        val mbid = lookup.recordingMbid?.trim().orEmpty()
+        if (mbid.isEmpty()) return null
+        val metaByMbid = when (
+            val result = ListenBrainzClient.fetchRecordingMetadata(listOf(mbid), token)
+        ) {
+            is LbApiResult.Success -> result.data
+            is LbApiResult.Failure -> {
+                if (result.isNetworkError) {
+                    CrashReporter.log("identify_phase=lb_metadata network_error")
+                }
+                return null
+            }
+        }
+        val recording = metaByMbid[mbid] ?: metaByMbid.values.firstOrNull() ?: return null
+        return recording.identity.toListenBrainzCatalogTrack(recording.recordingMbid)
+    }
+
+    private fun mergeIdentifyCatalogTracks(
+        existing: List<OnlineCatalogTrack>,
+        extra: List<OnlineCatalogTrack>
+    ): List<OnlineCatalogTrack> {
+        val merged = LinkedHashMap<String, OnlineCatalogTrack>()
+        for (track in existing + extra) {
+            val key = IdentifyRanking.dedupeKey(track.artist, track.title, track.album)
+            if (key !in merged) merged[key] = track
+        }
         return merged.values.toList()
     }
 

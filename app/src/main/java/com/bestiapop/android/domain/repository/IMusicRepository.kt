@@ -38,11 +38,13 @@ interface IMusicRepository {
      * Songs that already have usable artist+album return [IdentifyProposal.alreadyIdentified]
      * unless [force] is true (WiFi import always forces to detect catalog conflicts).
      * Song tags are predominant ranking source; [customQuery] replaces the default search.
+     * When [listenBrainzToken] is set and catalog confidence is not HIGH, may enrich via ListenBrainz.
      */
     suspend fun proposeSongIdentity(
         song: Song,
         customQuery: String? = null,
-        force: Boolean = false
+        force: Boolean = false,
+        listenBrainzToken: String? = null
     ): IdentifyProposal
 
     /** Persist one identify candidate onto [songId]. */

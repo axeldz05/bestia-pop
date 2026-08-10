@@ -68,6 +68,7 @@ object IdentifyReviewCodec {
             put("queryTitle", proposal.queryTitle)
             put("sourceHints", proposal.sourceHints ?: JSONObject.NULL)
             put("confidence", proposal.confidence.name)
+            put("usedListenBrainz", proposal.usedListenBrainz)
             val candidates = JSONArray()
             for (candidate in proposal.candidates) {
                 candidates.put(encodeCandidate(candidate))
@@ -105,7 +106,8 @@ object IdentifyReviewCodec {
                 sourceHints = obj.optNullableString("sourceHints"),
                 candidates = candidates,
                 confidence = confidence,
-                suggested = candidates.firstOrNull()
+                suggested = candidates.firstOrNull(),
+                usedListenBrainz = obj.optBoolean("usedListenBrainz", false)
             )
         } catch (_: Exception) {
             null

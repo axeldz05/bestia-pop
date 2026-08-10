@@ -38,3 +38,7 @@ google-services.json
 # Android Profiling
 *.hprof
 .android-user/*
+
+# Changelog local (user-facing pending → release notes; ver skill bestiapop-release-changelog)
+CHANGELOG.pending.md
+CHANGELOG.release-notes.md

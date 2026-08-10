@@ -12,6 +12,7 @@ Leer y seguir estos skills del repo **antes** de diseñar o implementar cambios 
 | **Features** | `.cursor/skills/bestiapop-features/SKILL.md` | Comportamiento esencial e invariantes + entry points |
 | **Implementation map** | `.cursor/skills/bestiapop-implementation-map/SKILL.md` | Localizar archivos/clases/funciones concretas |
 | **Living docs** | `.cursor/skills/bestiapop-living-docs/SKILL.md` | Protocolo para actualizar los skills anteriores |
+| **Release changelog** | `.cursor/skills/bestiapop-release-changelog/SKILL.md` | Anotar cambios user-facing y armar notas del APK |
 
 Resumen histórico de principios (mantener alineado con features): `.agents/AGENTS.md`
 
@@ -36,11 +37,13 @@ Si solo hay un bugfix local sin cambio de diseño, no hace falta tocar skills.
 - Preferir patrones y nombres ya usados en `MusicPlayerViewModel`, `MusicRepository`, use cases existentes
 - Metadatos de canción compartidos → `TrackIdentity` / `TrackMeta` (`data/model/TrackIdentity.kt`). No clonar DTO satélite (title/artist/álbum/art/duration/trackNumber) por sistema. Wrappers solo para extras: score (`IdentifyCandidate` / `MatchedRemoteTrack.score`), mbid/stream (`PlayableItem.Remote`, `LbPlaylistTrack` / `LbRecordingMetadata`), genre de archivo (`AudioFileMetadata`), pending (`PlaylistPendingTrack`), columnas Room (`Song` plano = fila `songs`; `PlaylistPendingTrackEntity.releaseName` ↔ `identity.album`). Si un campo nuevo habría que pegarlo en >2 data classes de track, el modelo está mal.
 - No crear markdown de docs extras salvo que el usuario lo pida; los skills anteriores son el lugar para documentar arquitectura/features
+- Changelog user-facing → `CHANGELOG.pending.md` (gitignored). Tras features/fixes visibles, anotar ahí (skill `bestiapop-release-changelog`). No anotar refactors ni detalle interno
 
 ## Build / deploy
 
 - Compilar/instalar en dispositivo: `./install.sh` (debug, iteración diaria) o `./install.sh --release` (APK firmado beta-like)
 - Publicar para amigos: `./release.sh` (bump `version.properties`, APK firmado → GitHub Releases; `versionCode` en las notas del release). Repo en `github-release.properties` (`GITHUB_REPOSITORY=owner/repo`)
+- Antes de `./release.sh`: leer skill `bestiapop-release-changelog`, resumir `CHANGELOG.pending.md` en notas **para el usuario** (sin refactors), escribir `CHANGELOG.release-notes.md` y pasar `--notes-file` (o dejar que el script lo tome si existe)
 - AAB Google Play (legacy): `./deploy-play.sh --upload --rollout` — no es el path de distribución
 - Firebase: `app/google-services.json` (plantilla `.example`); crashes → Crashlytics en builds release
 - Firma release: `keystore.properties` + `.jks` (plantillas `.example`)

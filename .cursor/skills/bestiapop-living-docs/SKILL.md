@@ -18,6 +18,7 @@ Los skills del proyecto son la **fuente de verdad viva** para el agente. El cód
 | `bestiapop-features` | `.cursor/skills/bestiapop-features/SKILL.md` | Features + entry points |
 | `bestiapop-implementation-map` | `.cursor/skills/bestiapop-implementation-map/SKILL.md` | Archivos/clases/funciones |
 | `bestiapop-living-docs` | este archivo | Este protocolo |
+| `bestiapop-release-changelog` | `.cursor/skills/bestiapop-release-changelog/SKILL.md` | Changelog local user-facing → notas de APK |
 
 También alinear `.agents/AGENTS.md` si cambian los 4 principios históricos (colecciones, download YouTube, filtro biblioteca, portadas).
 

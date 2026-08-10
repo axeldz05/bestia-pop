@@ -2800,15 +2800,27 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             }
             return
         }
+        val lbToken = listenBrainzSettings.value
+            .takeIf { it.enabled && it.userToken.isNotBlank() }
+            ?.userToken
         val total = toProcess.size
         var updated = 0
         var skipped = 0
+        var medium = 0
+        var low = 0
+        var none = 0
+        var lbHits = 0
         val reviewItems = ArrayList<IdentifyReviewItem>()
         toProcess.forEachIndexed { index, song ->
             reportLibraryProgress(LibraryJobKind.IDENTIFY, index, total, song.title)
             val proposal = withContext(Dispatchers.IO) {
-                repository.proposeSongIdentity(song, force = force)
+                repository.proposeSongIdentity(
+                    song,
+                    force = force,
+                    listenBrainzToken = lbToken
+                )
             }
+            if (proposal.usedListenBrainz) lbHits++
             when {
                 proposal.alreadyIdentified -> skipped++
                 proposal.confidence == IdentifyConfidence.HIGH && proposal.suggested != null -> {
@@ -2818,13 +2830,31 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                         }
                     ) {
                         is IdentifyResult.Updated -> updated++
-                        else -> reviewItems.add(IdentifyReviewItem(song, proposal))
+                        else -> {
+                            reviewItems.add(IdentifyReviewItem(song, proposal))
+                            medium++
+                        }
                     }
                 }
-                else -> reviewItems.add(IdentifyReviewItem(song, proposal))
+                else -> {
+                    reviewItems.add(IdentifyReviewItem(song, proposal))
+                    when (proposal.confidence) {
+                        IdentifyConfidence.MEDIUM -> medium++
+                        IdentifyConfidence.LOW -> low++
+                        else -> none++
+                    }
+                }
             }
         }
         clearLibraryProgress()
+        reportIdentifyBatchTelemetry(
+            high = updated,
+            medium = medium,
+            low = low,
+            none = none,
+            skipped = skipped,
+            lbHits = lbHits
+        )
         if (reviewItems.isNotEmpty()) {
             enqueueIdentifyReview(reviewItems, showReview)
         } else if (alreadyQueued > 0 && showReview) {
@@ -2848,6 +2878,25 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 if (skipped == 1) append(", 1 omitida")
                 else if (skipped > 1) append(", $skipped omitidas")
             }
+        )
+    }
+
+    private fun reportIdentifyBatchTelemetry(
+        high: Int,
+        medium: Int,
+        low: Int,
+        none: Int,
+        skipped: Int,
+        lbHits: Int
+    ) {
+        CrashReporter.setKey("identify_high", "$high")
+        CrashReporter.setKey("identify_medium", "$medium")
+        CrashReporter.setKey("identify_low", "$low")
+        CrashReporter.setKey("identify_none", "$none")
+        CrashReporter.setKey("identify_skipped", "$skipped")
+        CrashReporter.setKey("identify_lb_hits", "$lbHits")
+        CrashReporter.log(
+            "identify_batch high=$high medium=$medium low=$low none=$none skipped=$skipped lb_hits=$lbHits"
         )
     }
 

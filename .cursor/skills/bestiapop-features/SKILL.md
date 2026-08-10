@@ -97,7 +97,7 @@ UI: `PlaylistsScreen`. Detalle abierto = `PlaylistDetailNav` persistido (`openLo
 - Descarga con conflicto → `DuplicateSongException` / `DownloadConflict` → diálogo Sobrescribir | Crear nueva | Cancelar (`DownloadConflictPolicy`).
 - One-shot migrator histórico: branch `archive/library-dedup-v1-migrator` (no compila en LB).
 - Tags Unknown en reimport: `AudioFileMetadata.applyFilenameHints` / `parseFilenameMetadataHints` recuperan artist/title de `Artist_Title` (sin inventar álbum).
-- Identificar online (manual, multi-select, ⋮ o WiFi): Fase 1 lookup + score (`IdentifyRanking`); tags actuales de la canción son **fuente predominante** (`sourceArtist`/`sourceTitle`/`sourceAlbum`); auto-aplica solo **HIGH**; conflicto grave (artista/álbum/título distinto, versión, YouTube) → nunca HIGH. MEDIUM/LOW/NONE van a cola persistida `IdentifyReviewStore` (DataStore; cold start hidrata, **no** abre overlay). UI `IdentifyReviewScreen`: overview por álbum sugerido (`clusterIdentifyAlbumGroups`, solo MEDIUM + álbum no genérico, size ≥ 2) o cola canción a canción (Usar / Omitir / Buscar otro / Aplicar automático a restantes = solo MEDIUM con suggested / Omitir todas / Aplicar grupo). Cerrar oculta overlay y **conserva** la cola (`pendingCount`); banner biblioteca + botón WiFi retoman. Re-identificar lote/WiFi **omite** songIds ya pendientes (cero red); ⋮ sobre pending abre ese ítem. Progreso en `libraryJobProgress` + toast resumen.
+- Identificar online (manual, multi-select, ⋮ o WiFi): Fase 1 lookup + score (`IdentifyRanking`); tags actuales de la canción son **fuente predominante** (`sourceArtist`/`sourceTitle`/`sourceAlbum`); auto-aplica solo **HIGH**; conflicto grave (artista/álbum/título distinto, versión, YouTube) → nunca HIGH. Si LB `enabled` + token y confianza ≠ HIGH (sin `customQuery`), enriquece con `lookupRecordingMetadata` → `fetchRecordingMetadata` → `toListenBrainzCatalogTrack` y re-rank (`IdentifyProposal.usedListenBrainz`). MEDIUM/LOW/NONE van a cola persistida `IdentifyReviewStore` (DataStore; cold start hidrata, **no** abre overlay). UI `IdentifyReviewScreen`: overview por álbum sugerido (`clusterIdentifyAlbumGroups`, solo MEDIUM + álbum no genérico, size ≥ 2) o cola canción a canción (Usar / Omitir / Buscar otro / Aplicar automático a restantes = solo MEDIUM con suggested / Omitir todas / Aplicar grupo). Cerrar oculta overlay y **conserva** la cola (`pendingCount`); banner biblioteca + botón WiFi retoman. Re-identificar lote/WiFi **omite** songIds ya pendientes (cero red); ⋮ sobre pending abre ese ítem. Progreso en `libraryJobProgress` + toast resumen. Telemetría lote (sin PII): `CrashReporter.setKey`/`log` keys `identify_high`/`identify_medium`/`identify_low`/`identify_none`/`identify_skipped`/`identify_lb_hits`.
 - Álbum genérico (`IdentifyRanking.isGenericAlbum`: `YouTube`, `YouTube Music`, `Unknown Album`, `Single`, `Álbum`/`Album`) **sí** entra a identify; no se omite como ya identificado. Provider YouTube y versiones extra (live / letra / remix / cover…) nunca son HIGH → review. `cleanIdentityTitle` no persiste `+ letra` / `(Original Mix)`.
 - Descarga online: álbum genérico dispara `fetchFullTrackMetadata` → `TrackIdentity?`; no se guarda `"YouTube"` — fallback `"$artist - Single"`.
 - Import/resync/identify reportan progreso vía `LibraryScanProgress` / `LibraryJobProgress` (banner en biblioteca).
@@ -115,14 +115,14 @@ UI: `PlaylistsScreen`. Detalle abierto = `PlaylistDetailNav` persistido (`openLo
 | Conflicto UI | `downloadConflict` / `resolveDownloadConflictOverwrite` / `resolveDownloadConflictSaveAs` / `cancelDownloadConflict` + `DownloadConflictDialog` |
 | Borrar app / dispositivo | `deleteSongsFromApp` / `deleteSongsFromDevice` |
 | Enriquecer meta/letras | `enhanceSongMetadataAndLyrics` (portada/letras/duración; **no** artist/álbum) |
-| Proponer identidad | `proposeSongIdentity(song, customQuery?, force?)` → `IdentifyProposal` |
+| Proponer identidad | `proposeSongIdentity(song, customQuery?, force?, listenBrainzToken?)` → `IdentifyProposal` (`usedListenBrainz`) |
 | Aplicar candidato | `applySongIdentity` → `candidate.identity.mergePreferring(entity)` (+ clean title / fallback album) → `Song.withIdentity` → `IdentifyResult` |
 | Identificar lote | VM `identifySongs(songs, force, showReview)` → auto HIGH + cola review; skip `pendingSongIds` |
 | Identificar una | VM `identifySongForReview` (menú ⋮; si pending → abre ítem, si no `force=true`); UI `IdentifyReviewScreen` |
 | Review preview | Local `previewIdentifyLocalSong`; candidato stream `previewIdentifyCandidate` → `candidate.track` → `playOnlineCatalogTrackAsStream` (`PreviewPlayPauseButton`) |
 | Review acciones | `applySelectedIdentifyCandidate` / `skipIdentifyReviewItem` / `searchIdentifyCandidates` / `dismissIdentifyReview` (oculta) / `showIdentifyReview` / `applyRemainingIdentifySuggestions` (MEDIUM) / `skipAllIdentifyReview` / `applyIdentifyAlbumGroup` / `startIdentifyItemReview` / `returnIdentifyReviewOverview`; “Buscar otro” arriba de candidatos, draft = artista+título (no path SAF) |
 | Review persist | `IdentifyReviewStore` + `IdentifyReviewCodec` (sin `audioUrl` CDN); hydrate `identifyReviewFromPersisted` (huérfanos fuera); prune al borrar canciones |
-| Ranking | `IdentifyRanking.score` / `rank` / `confidence` / `hasSevereConflict` / `isGenericAlbum` / `isPlaceholderArtist` / `cleanIdentityTitle`; `Query.sourceArtist`/`sourceTitle`/`sourceAlbum`; grupos `clusterIdentifyAlbumGroups` |
+| Ranking | `IdentifyRanking.score` / `rank` / `confidence` / `hasSevereConflict` / `isGenericAlbum` / `isPlaceholderArtist` / `isPreferredProvider` (Deezer/iTunes/Catalog/ListenBrainz) / `cleanIdentityTitle`; `Query.sourceArtist`/`sourceTitle`/`sourceAlbum`; grupos `clusterIdentifyAlbumGroups` |
 | Progreso biblioteca | `libraryJobProgress` (`LibraryJobKind.IMPORT` \| `IDENTIFY`) + `LibraryProgressBanner`; pending `IdentifyPendingBanner` |
 
 ## 7. Temas
@@ -325,7 +325,7 @@ Manifest: `android:enableOnBackInvokedCallback="true"` en `MainActivity`.
 |--------|-------------|
 | Init | `BestiaPopApplication.onCreate` |
 | Non-fatal + keys | `CrashReporter.recordNonFatal` / `setKey` / `log` |
-| Call sites | `YouTubeExtractor.extractAudioStreamDetailed`, `MusicService` `onPlayerError`, `WebServerService` start/transfer, `MusicPlayerViewModel.runTrackedDownloadLocked` onFailure |
+| Call sites | `YouTubeExtractor.extractAudioStreamDetailed`, `MusicService` `onPlayerError`, `WebServerService` start/transfer, `MusicPlayerViewModel.runTrackedDownloadLocked` onFailure; identify batch `reportIdentifyBatchTelemetry` (`setKey`/`log`, no PII) |
 | Config Firebase | `app/google-services.json` (gitignored) |
 | Firma release | `keystore.properties` + `.jks` (gitignored; plantilla `keystore.properties.example`) |
 | Versión | `version.properties` (`VERSION_CODE` / `VERSION_NAME`; bump en `./release.sh`) |

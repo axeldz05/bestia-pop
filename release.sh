@@ -26,15 +26,19 @@ USAGE="Usage: $0 [options]
   (default)     bump VERSION_CODE + último dígito de VERSION_NAME, assembleRelease, gh release create
   --no-bump     no tocar version.properties
   --version-name X   fijar VERSION_NAME (igual incrementa VERSION_CODE salvo --no-bump)
-  --notes TEXT  cuerpo del release (default: nombre + versionCode)
+  --notes TEXT  cuerpo del release
   --notes-file FILE  notas desde archivo
   --no-upload   buildear APK en dist/; no crear release
   --dry-run     chequear requisitos y mostrar próxima versión; no escribe ni buildea
   -h, --help
 
-Habitual: $0
+Notas (prioridad): --notes-file → --notes → CHANGELOG.release-notes.md (si existe) → plantilla mínima.
+Changelog local user-facing: CHANGELOG.pending.md (gitignored; skill bestiapop-release-changelog).
+Habitual: preparar CHANGELOG.release-notes.md y correr $0
 Después: compartí https://github.com/OWNER/REPO/releases/latest
 Requiere: keystore.properties, gh auth login, GITHUB_REPOSITORY en ${GITHUB_PROPS}"
+
+PENDING_RELEASE_NOTES="CHANGELOG.release-notes.md"
 
 DO_BUMP=1
 DO_UPLOAD=1
@@ -207,6 +211,12 @@ elif [[ -n "$NOTES_TEXT" ]]; then
     printf '%s\n' "$NOTES_TEXT" > "$NOTES_TMP"
     ensure_version_code_in_notes "$NOTES_TMP"
     RELEASE_NOTES_PATH="$NOTES_TMP"
+elif [[ -f "$PENDING_RELEASE_NOTES" ]]; then
+    NOTES_TMP="$(mktemp)"
+    cat "$PENDING_RELEASE_NOTES" > "$NOTES_TMP"
+    ensure_version_code_in_notes "$NOTES_TMP"
+    RELEASE_NOTES_PATH="$NOTES_TMP"
+    echo -e "${GREEN}Notas:${NC} ${PENDING_RELEASE_NOTES}"
 else
     NOTES_TMP="$(mktemp)"
     cat > "$NOTES_TMP" <<EOF
@@ -215,6 +225,7 @@ BestiaPop ${NEXT_NAME}
 versionCode: ${NEXT_CODE}
 EOF
     RELEASE_NOTES_PATH="$NOTES_TMP"
+    echo -e "${YELLOW}Sin ${PENDING_RELEASE_NOTES} ni --notes: plantilla mínima. Preferí el skill bestiapop-release-changelog.${NC}"
 fi
 
 echo -e "\n${YELLOW}Creando GitHub Release ${TAG}…${NC}"

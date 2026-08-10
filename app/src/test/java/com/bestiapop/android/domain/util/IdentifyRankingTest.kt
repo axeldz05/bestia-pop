@@ -129,6 +129,38 @@ class IdentifyRankingTest {
     }
 
     @Test
+    fun listenBrainz_isPreferredProvider() {
+        assertTrue(IdentifyRanking.isPreferredProvider("ListenBrainz"))
+        assertTrue(IdentifyRanking.isPreferredProvider("listenbrainz"))
+    }
+
+    @Test
+    fun listenBrainz_beatsYouTube_onEqualIdentity() {
+        val query = IdentifyRanking.Query(
+            artist = "Radiohead",
+            title = "Creep",
+            durationMs = 238_000L
+        )
+        val yt = IdentifyRanking.score(
+            query,
+            track("Creep", "Radiohead", album = "Pablo Honey", durationMs = 238_000L, provider = "YouTube")
+        )
+        val lb = IdentifyRanking.score(
+            query,
+            track("Creep", "Radiohead", album = "Pablo Honey", durationMs = 238_000L, provider = "ListenBrainz")
+        )
+        assertTrue("LB score=${lb.first} should beat YT score=${yt.first}", lb.first > yt.first)
+        val ranked = IdentifyRanking.rank(
+            query,
+            listOf(
+                track("Creep", "Radiohead", album = "Pablo Honey", durationMs = 238_000L, provider = "YouTube"),
+                track("Creep", "Radiohead", album = "Pablo Honey", durationMs = 238_000L, provider = "ListenBrainz")
+            )
+        )
+        assertEquals("ListenBrainz", ranked.first().provider)
+    }
+
+    @Test
     fun emptyPool_isNone() {
         assertEquals(
             IdentifyConfidence.NONE,

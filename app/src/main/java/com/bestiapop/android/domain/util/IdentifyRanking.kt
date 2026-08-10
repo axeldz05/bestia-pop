@@ -98,6 +98,7 @@ object IdentifyRanking {
         return p.contains("deezer") ||
             p.contains("itunes") ||
             p.contains("apple") ||
+            p.contains("listenbrainz") ||
             p == "catalog"
     }
 

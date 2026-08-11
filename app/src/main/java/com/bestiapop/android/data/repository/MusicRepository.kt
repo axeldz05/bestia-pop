@@ -20,6 +20,7 @@ import com.bestiapop.android.data.model.IdentifyCandidate
 import com.bestiapop.android.data.model.IdentifyConfidence
 import com.bestiapop.android.data.model.IdentifyProposal
 import com.bestiapop.android.data.model.IdentifyResult
+import com.bestiapop.android.data.model.IdentifySearchFilters
 import com.bestiapop.android.data.model.OnlineCatalogTrack
 import com.bestiapop.android.data.model.Playlist
 import com.bestiapop.android.data.model.PlaylistPendingTrack
@@ -33,15 +34,20 @@ import com.bestiapop.android.data.model.withIdentity
 import com.bestiapop.android.data.model.youtubeSearchQuery
 import com.bestiapop.android.data.network.ListenBrainzClient
 import com.bestiapop.android.data.network.MetadataFetcher
+import com.bestiapop.android.data.preferences.LibraryTagWritePreferencesRepository
 import com.bestiapop.android.data.stream.StreamResolver
 import com.bestiapop.android.data.util.AudioFileMetadata
+import com.bestiapop.android.data.util.AudioTagWriter
 import com.bestiapop.android.data.util.CrashReporter
 import com.bestiapop.android.data.util.MusicFileStore
 import com.bestiapop.android.data.util.SongPathNormalizer
+import com.bestiapop.android.data.util.TagSyncSummary
+import com.bestiapop.android.data.util.TagWriteResult
 import com.bestiapop.android.data.util.looksLikeStoragePath
 import com.bestiapop.android.domain.repository.IMusicRepository
 import com.bestiapop.android.domain.repository.LibraryScanProgress
 import com.bestiapop.android.domain.util.FilenameMetadataHints
+import com.bestiapop.android.domain.util.IdentifyCatalogQuery
 import com.bestiapop.android.domain.util.IdentifyRanking
 import com.bestiapop.android.domain.util.TrackMatchKeys
 import com.bestiapop.android.domain.util.mergeIdentityHints
@@ -96,6 +102,7 @@ class MusicRepository(private val context: Context) : IMusicRepository {
     private val musicDao = db.musicDao()
     val streamResolver = StreamResolver()
     private val audioStore = MusicFileStore(context)
+    private val tagWritePreferences = LibraryTagWritePreferencesRepository(context)
 
     private val sharedDownloadClient = okhttp3.OkHttpClient.Builder()
         .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
@@ -544,6 +551,9 @@ class MusicRepository(private val context: Context) : IMusicRepository {
 
         if (artUrl != song.artworkUri || lyricsStr != song.lyrics) {
             musicDao.updateMetadataAndLyrics(song.id, artUrl, lyricsStr)
+            if (artUrl != song.artworkUri) {
+                maybeWriteTags(song.copy(artworkUri = artUrl, lyrics = lyricsStr))
+            }
         }
 
         if (!artUrl.isNullOrEmpty() && (existingAlbumArt.isNullOrEmpty() || existingAlbumArt != artUrl)) {
@@ -566,9 +576,14 @@ class MusicRepository(private val context: Context) : IMusicRepository {
         song: Song,
         customQuery: String?,
         force: Boolean,
-        listenBrainzToken: String?
+        listenBrainzToken: String?,
+        filters: IdentifySearchFilters,
+        catalogIndex: Int,
+        existingCandidates: List<IdentifyCandidate>
     ): IdentifyProposal = withContext(Dispatchers.IO) {
-        if (!force && !needsMetadataIdentify(song.artist, song.album)) {
+        val normalizedFilters = filters.normalized()
+        val isExpand = catalogIndex > 0 || existingCandidates.isNotEmpty()
+        if (!force && !isExpand && !needsMetadataIdentify(song.artist, song.album)) {
             return@withContext IdentifyProposal(
                 songId = song.id,
                 queryArtist = song.artist,
@@ -592,7 +607,7 @@ class MusicRepository(private val context: Context) : IMusicRepository {
             resolveWeakIdentityHints(song.artist, song.title),
             fileHints
         )
-        val working = persistWeakIdentityCleanup(song, hints)
+        val working = if (isExpand) song else persistWeakIdentityCleanup(song, hints)
         val filenameArtist = hints.artist?.takeUnless { looksLikeStoragePath(it) }
         val filenameTitle = hints.title?.takeUnless { looksLikeStoragePath(it) }
 
@@ -623,28 +638,79 @@ class MusicRepository(private val context: Context) : IMusicRepository {
         val trimmedCustom = customQuery?.trim().orEmpty()
         val artistPlaceholder = queryArtist.isBlank() ||
             IdentifyRanking.isPlaceholderArtist(queryArtist)
-        var tracks = if (trimmedCustom.isNotEmpty()) {
-            MetadataFetcher.searchOnlineCatalog(trimmedCustom)
+        val filterArtist = normalizedFilters.artist.takeUnless {
+            it.isBlank() || IdentifyRanking.isPlaceholderArtist(it)
+        }
+        val filterAlbum = normalizedFilters.album.takeUnless {
+            it.isBlank() || IdentifyRanking.isGenericAlbum(it)
+        }
+        val preferYear = when {
+            normalizedFilters.year in 1000..9999 -> normalizedFilters.year
+            working.year in 1000..9999 -> working.year
+            else -> 0
+        }
+
+        val refineSearch = trimmedCustom.isNotEmpty() || normalizedFilters.hasAny || isExpand
+        val catalogFreeText: String? = when {
+            trimmedCustom.isNotEmpty() -> trimmedCustom
+            // Expand / load-more without refine fields: same default artist+title query.
+            isExpand && !normalizedFilters.hasAny ->
+                if (artistPlaceholder) queryTitle else youtubeSearchQuery(queryArtist, queryTitle)
+            else -> null
+        }
+        val catalogQuery = if (refineSearch) {
+            IdentifyCatalogQuery.build(catalogFreeText, normalizedFilters).ifBlank {
+                if (artistPlaceholder) queryTitle else youtubeSearchQuery(queryArtist, queryTitle)
+            }
+        } else {
+            ""
+        }
+
+        val pageIndex = catalogIndex.coerceAtLeast(0)
+        var fetchedCount = 0
+        var tracks = if (refineSearch) {
+            val page = MetadataFetcher.searchOnlineCatalog(
+                query = catalogQuery,
+                limit = IdentifyRanking.CATALOG_PAGE,
+                index = pageIndex
+            )
+            fetchedCount = page.size
+            page
         } else {
             fetchIdentifyCatalogTracks(queryArtist, queryTitle, artistPlaceholder)
         }
+
         val rankingQuery = IdentifyRanking.Query(
-            artist = queryArtist,
+            artist = filterArtist ?: queryArtist,
             title = if (trimmedCustom.isNotEmpty()) trimmedCustom else queryTitle,
             durationMs = working.durationMs,
             filenameArtist = filenameArtist,
             filenameTitle = filenameTitle,
-            artistIsPlaceholder = artistPlaceholder && trimmedCustom.isEmpty(),
-            sourceArtist = working.artist.takeUnless { IdentifyRanking.isPlaceholderArtist(it) },
+            artistIsPlaceholder = filterArtist == null && artistPlaceholder && trimmedCustom.isEmpty(),
+            sourceArtist = filterArtist
+                ?: working.artist.takeUnless { IdentifyRanking.isPlaceholderArtist(it) },
             sourceTitle = working.title.takeUnless { it.isBlank() || looksLikeStoragePath(it) },
-            sourceAlbum = working.album.takeUnless { IdentifyRanking.isGenericAlbum(it) }
+            sourceAlbum = filterAlbum
+                ?: working.album.takeUnless { IdentifyRanking.isGenericAlbum(it) },
+            preferYear = preferYear
         )
-        var ranked = IdentifyRanking.rank(rankingQuery, tracks)
+
+        val rankLimit = if (isExpand || refineSearch) {
+            IdentifyRanking.CATALOG_PAGE
+        } else {
+            IdentifyRanking.TOP_N
+        }
+        var ranked = IdentifyRanking.rank(rankingQuery, tracks, limit = rankLimit)
+        if (existingCandidates.isNotEmpty()) {
+            ranked = IdentifyRanking.appendCandidates(existingCandidates, ranked)
+        }
         var confidence = IdentifyRanking.confidence(ranked)
         var usedListenBrainz = false
 
         val token = listenBrainzToken?.trim().orEmpty()
-        val canEnrichLb = trimmedCustom.isEmpty() &&
+        val canEnrichLb = !isExpand &&
+            trimmedCustom.isEmpty() &&
+            !normalizedFilters.hasAny &&
             token.isNotEmpty() &&
             !artistPlaceholder &&
             confidence != IdentifyConfidence.HIGH
@@ -659,9 +725,20 @@ class MusicRepository(private val context: Context) : IMusicRepository {
             if (lbTrack != null) {
                 usedListenBrainz = true
                 tracks = mergeIdentifyCatalogTracks(tracks, listOf(lbTrack))
-                ranked = IdentifyRanking.rank(rankingQuery, tracks)
+                ranked = IdentifyRanking.rank(rankingQuery, tracks, limit = rankLimit)
                 confidence = IdentifyRanking.confidence(ranked)
             }
+        }
+
+        val nextIndex = if (refineSearch) {
+            pageIndex + fetchedCount
+        } else {
+            0
+        }
+        val mayHaveMore = when {
+            refineSearch -> fetchedCount >= IdentifyRanking.CATALOG_PAGE
+            ranked.isNotEmpty() -> true
+            else -> false
         }
 
         IdentifyProposal(
@@ -672,7 +749,9 @@ class MusicRepository(private val context: Context) : IMusicRepository {
             candidates = ranked,
             confidence = confidence,
             suggested = ranked.firstOrNull(),
-            usedListenBrainz = usedListenBrainz
+            usedListenBrainz = usedListenBrainz,
+            nextCatalogIndex = nextIndex,
+            catalogMayHaveMore = mayHaveMore
         )
     }
 
@@ -693,6 +772,8 @@ class MusicRepository(private val context: Context) : IMusicRepository {
             album = IdentifyRanking.fallbackAlbum(merged.artist, merged.album)
         )
         musicDao.updateSong(entity.withIdentity(cleaned))
+        val updated = entity.withIdentity(cleaned)
+        maybeWriteTags(updated)
         IdentifyResult.Updated(songId = songId)
     }
 
@@ -917,6 +998,8 @@ class MusicRepository(private val context: Context) : IMusicRepository {
         musicDao.updateSongMetadata(
             songId, safeTitle, safeArtist, safeAlbum, safeGenre, safeYear, safeTrack
         )
+        val updated = musicDao.getSongById(songId)
+        if (updated != null) maybeWriteTags(updated)
     }
 
     override suspend fun getAlbumOverride(albumKey: String): AlbumOverride? =
@@ -949,6 +1032,7 @@ class MusicRepository(private val context: Context) : IMusicRepository {
             year = safeYear,
             artworkUri = savedArt
         )
+        maybeWriteTagsForAlbum(newName)
 
         if (oldKey != newName) {
             musicDao.deleteAlbumOverride(oldKey)
@@ -1014,6 +1098,8 @@ class MusicRepository(private val context: Context) : IMusicRepository {
             targetName = canonicalTarget,
             excludeKey = canonicalTarget
         ).forEach { rewriteAlbumKey(it) }
+
+        maybeWriteTagsForAlbum(canonicalTarget)
     }
 
     private fun persistOverride(
@@ -1319,6 +1405,7 @@ class MusicRepository(private val context: Context) : IMusicRepository {
                 folderPath = savedRef.folderPath
             )
             musicDao.updateSong(updated)
+            maybeWriteTags(updated)
             onProgress?.invoke(DownloadPhase.Overwritten)
             return@withContext updated
         }
@@ -1340,9 +1427,48 @@ class MusicRepository(private val context: Context) : IMusicRepository {
 
         val insertedId = musicDao.insertSong(song)
         val savedSong = song.copy(id = insertedId)
+        maybeWriteTags(savedSong)
 
         onProgress?.invoke(DownloadPhase.Completed)
         return@withContext savedSong
+    }
+
+    override suspend fun syncTagsToFiles(onProgress: LibraryScanProgress?): TagSyncSummary =
+        withContext(Dispatchers.IO) {
+            val songs = musicDao.getAllSongs()
+            var updated = 0
+            var skipped = 0
+            var errors = 0
+            val total = songs.size
+            songs.forEachIndexed { index, song ->
+                onProgress?.invoke(index, total, song.title)
+                when (writeTagsToFile(song)) {
+                    TagWriteResult.Success -> updated++
+                    TagWriteResult.Unsupported, TagWriteResult.NotWritable -> skipped++
+                    is TagWriteResult.IoError -> errors++
+                }
+            }
+            onProgress?.invoke(total, total, "")
+            TagSyncSummary(updated = updated, skipped = skipped, errors = errors)
+        }
+
+    /** Best-effort tag write when auto-write is enabled in Ajustes → Archivos. */
+    private suspend fun maybeWriteTags(song: Song) {
+        val enabled = tagWritePreferences.settingsFlow.first().autoWriteTagsEnabled
+        if (!enabled) return
+        writeTagsToFile(song)
+    }
+
+    private suspend fun maybeWriteTagsForAlbum(album: String) {
+        val enabled = tagWritePreferences.settingsFlow.first().autoWriteTagsEnabled
+        if (!enabled) return
+        musicDao.getSongsForAlbum(album).forEach { writeTagsToFile(it) }
+    }
+
+    private fun writeTagsToFile(song: Song): TagWriteResult {
+        val file = audioStore.writableFile(song.uriString, song.folderPath)
+            ?: return TagWriteResult.NotWritable
+        return AudioTagWriter.write(song, file)
     }
 
     private suspend fun lookupSongByArtistTitle(artist: String, title: String): Song? {

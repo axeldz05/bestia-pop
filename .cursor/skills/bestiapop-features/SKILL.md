@@ -104,7 +104,7 @@ UI: `PlaylistsScreen`. Detalle abierto = `PlaylistDetailNav` persistido (`openLo
 - Descarga con conflicto → `DuplicateSongException` / `DownloadConflict` → diálogo Sobrescribir | Crear nueva | Cancelar (`DownloadConflictPolicy`).
 - One-shot migrator histórico: branch `archive/library-dedup-v1-migrator` (no compila en LB).
 - Tags Unknown / rip numérico: `AudioFileMetadata.applyFilenameHints` + `parseFilenameMetadataHints` / `resolveWeakIdentityHints`; al `proposeSongIdentity` persiste limpieza soft (`01`→Unknown Artist, `- Title`→Title, trackNumber) antes de buscar.
-- Identificar online (manual, multi-select, ⋮ o WiFi): Fase 1 lookup + score (`IdentifyRanking`); tags actuales de la canción son **fuente predominante** (`sourceArtist`/`sourceTitle`/`sourceAlbum`); auto-aplica solo **HIGH**; conflicto grave (artista/álbum/título distinto, versión, YouTube) → nunca HIGH. Si LB `enabled` + token y confianza ≠ HIGH (sin `customQuery`), enriquece con `lookupRecordingMetadata` → `fetchRecordingMetadata` → `toListenBrainzCatalogTrack` y re-rank (`IdentifyProposal.usedListenBrainz`). MEDIUM/LOW/NONE van a cola persistida `IdentifyReviewStore` (DataStore; cold start hidrata, **no** abre overlay). UI `IdentifyReviewScreen`: overview por álbum sugerido (`clusterIdentifyAlbumGroups`, solo MEDIUM + álbum no genérico, size ≥ 2) o cola canción a canción (Usar / Omitir / Buscar otro / Aplicar automático a restantes = solo MEDIUM con suggested / Omitir todas / Aplicar grupo). Cerrar oculta overlay y **conserva** la cola (`pendingCount`); banner biblioteca + botón WiFi retoman. Re-identificar lote/WiFi **omite** songIds ya pendientes (cero red); ⋮ sobre pending abre ese ítem. Progreso en `libraryJobProgress` + toast resumen. Telemetría lote (sin PII): `CrashReporter.setKey`/`log` keys `identify_high`/`identify_medium`/`identify_low`/`identify_none`/`identify_skipped`/`identify_lb_hits`.
+- Identificar online (manual, multi-select, ⋮ o WiFi): Fase 1 lookup + score (`IdentifyRanking`); tags actuales de la canción son **fuente predominante** (`sourceArtist`/`sourceTitle`/`sourceAlbum`); auto-aplica solo **HIGH**; conflicto grave (artista/álbum/título distinto, versión, YouTube) → nunca HIGH. Si LB `enabled` + token y confianza ≠ HIGH (sin `customQuery`/filtros), enriquece con `lookupRecordingMetadata` → `fetchRecordingMetadata` → `toListenBrainzCatalogTrack` y re-rank (`IdentifyProposal.usedListenBrainz`). MEDIUM/LOW/NONE van a cola persistida `IdentifyReviewStore` (DataStore; cold start hidrata, **no** abre overlay). UI `IdentifyReviewScreen`: overview por álbum sugerido (`clusterIdentifyAlbumGroups`, solo MEDIUM + álbum no genérico, size ≥ 2) o cola canción a canción (Usar / Omitir / Buscar otro + filtros artista·álbum·año / Mostrar más candidatos / Aplicar automático a restantes = solo MEDIUM con suggested / Omitir todas / Aplicar grupo). Cerrar oculta overlay y **conserva** la cola (`pendingCount`); banner biblioteca + botón WiFi retoman. Re-identificar lote/WiFi **omite** songIds ya pendientes (cero red); ⋮ sobre pending abre ese ítem. Progreso en `libraryJobProgress` + toast resumen. Telemetría lote (sin PII): `CrashReporter.setKey`/`log` keys `identify_high`/`identify_medium`/`identify_low`/`identify_none`/`identify_skipped`/`identify_lb_hits`.
 - Álbum genérico (`IdentifyRanking.isGenericAlbum`: `YouTube`, `YouTube Music`, `Unknown Album`, `Single`, `Álbum`/`Album`) **sí** entra a identify; no se omite como ya identificado. Provider YouTube y versiones extra (live / letra / remix / cover…) nunca son HIGH → review. `cleanIdentityTitle` no persiste `+ letra` / `(Original Mix)`.
 - Descarga online: álbum genérico dispara `fetchFullTrackMetadata` → `TrackIdentity?`; no se guarda `"YouTube"` — fallback `"$artist - Single"`.
 - Import/resync/identify reportan progreso vía `LibraryScanProgress` / `LibraryJobProgress` (banner en biblioteca).
@@ -122,15 +122,27 @@ UI: `PlaylistsScreen`. Detalle abierto = `PlaylistDetailNav` persistido (`openLo
 | Conflicto UI | `downloadConflict` / `resolveDownloadConflictOverwrite` / `resolveDownloadConflictSaveAs` / `cancelDownloadConflict` + `DownloadConflictDialog` |
 | Borrar app / dispositivo | `deleteSongsFromApp` / `deleteSongsFromDevice` |
 | Enriquecer meta/letras | `enhanceSongMetadataAndLyrics` (portada/letras/duración; **no** artist/álbum) |
-| Proponer identidad | `proposeSongIdentity(song, customQuery?, force?, listenBrainzToken?)` → `IdentifyProposal` (`usedListenBrainz`) |
+| Proponer identidad | `proposeSongIdentity(song, customQuery?, force?, listenBrainzToken?, filters?, catalogIndex?, existingCandidates?)` → `IdentifyProposal` (`usedListenBrainz`, `nextCatalogIndex`, `catalogMayHaveMore`) |
 | Aplicar candidato | `applySongIdentity` → `candidate.identity.mergePreferring(entity)` (+ clean title / fallback album) → `Song.withIdentity` → `IdentifyResult` |
 | Identificar lote | VM `identifySongs(songs, force, showReview)` → auto HIGH + cola review; skip `pendingSongIds` |
 | Identificar una | VM `identifySongForReview` (menú ⋮; si pending → abre ítem, si no `force=true`); UI `IdentifyReviewScreen` |
 | Review preview | Local `previewIdentifyLocalSong`; candidato stream `previewIdentifyCandidate` → `candidate.track` → `playOnlineCatalogTrackAsStream` (`PreviewPlayPauseButton`) |
-| Review acciones | `applySelectedIdentifyCandidate` / `skipIdentifyReviewItem` / `searchIdentifyCandidates` / `dismissIdentifyReview` (oculta) / `showIdentifyReview` / `applyRemainingIdentifySuggestions` (MEDIUM) / `skipAllIdentifyReview` / `applyIdentifyAlbumGroup` / `startIdentifyItemReview` / `returnIdentifyReviewOverview`; “Buscar otro” arriba de candidatos, draft = artista+título (no path SAF) |
+| Review acciones | `applySelectedIdentifyCandidate` / `skipIdentifyReviewItem` / `searchIdentifyCandidates` / `loadMoreIdentifyCandidates` / `dismissIdentifyReview` (oculta) / `showIdentifyReview` / `applyRemainingIdentifySuggestions` (MEDIUM) / `skipAllIdentifyReview` / `applyIdentifyAlbumGroup` / `startIdentifyItemReview` / `returnIdentifyReviewOverview`; “Buscar otro” + filtros artista/álbum/año (`IdentifySearchFilters` / `IdentifyCatalogQuery`); “Mostrar más” revela pool local o pagina catálogo (`appendCandidates`, sin reordenar visibles) |
 | Review persist | `IdentifyReviewStore` + `IdentifyReviewCodec` (sin `audioUrl` CDN); hydrate `identifyReviewFromPersisted` (huérfanos fuera); prune al borrar canciones |
-| Ranking | `IdentifyRanking.score` / `rank` / `confidence` / `hasSevereConflict` / `isGenericAlbum` / `isPlaceholderArtist` (única fuente de artista débil; usada por filename hints + `AudioFileMetadata`) / `isPreferredProvider` (Deezer/iTunes/Catalog/ListenBrainz) / `cleanIdentityTitle`; `Query.sourceArtist`/`sourceTitle`/`sourceAlbum`; grupos `clusterIdentifyAlbumGroups` |
-| Progreso biblioteca | `libraryJobProgress` (`LibraryJobKind.IMPORT` \| `IDENTIFY`) + `LibraryProgressBanner`; pending `IdentifyPendingBanner` |
+| Ranking | `IdentifyRanking.score` / `rank` / `appendCandidates` / `confidence` / `hasSevereConflict` / `isGenericAlbum` / `isPlaceholderArtist` (única fuente de artista débil; usada por filename hints + `AudioFileMetadata`) / `isPreferredProvider` (Deezer/iTunes/Catalog/ListenBrainz) / `cleanIdentityTitle`; `Query.sourceArtist`/`sourceTitle`/`sourceAlbum`/`preferYear`; query refine `IdentifyCatalogQuery`; grupos `clusterIdentifyAlbumGroups` |
+| Progreso biblioteca | `libraryJobProgress` (`LibraryJobKind.IMPORT` \| `IDENTIFY` \| `TAG_WRITE`) + `LibraryProgressBanner`; pending `IdentifyPendingBanner` |
+
+## 6b. Escribir tags a archivos locales
+
+**Invariante:** Room es la fuente de verdad en app. Escribir al disco es **opt-in** (off por defecto). Solo paths absolutos writable (típicamente `Music/BestiaPop`); `content://media` se omite. Formatos: mp3 / m4a / flac / ogg.
+
+| Capacidad | Entry point |
+|-----------|-------------|
+| Prefs | `LibraryTagWritePreferencesRepository` / `LibraryTagWriteSettings` (`autoWriteTagsEnabled`) |
+| Settings UI | `LibraryTagWriteSettingsScreen` vía `SettingsScreen` sección Archivos |
+| Writer | `AudioTagWriter.write` + `MusicFileStore.writableFile` |
+| Auto al guardar | `MusicRepository.maybeWriteTags` tras `applySongIdentity` / `updateSongMetadata` / album propagate+merge / download / enhance (si cambia artwork) |
+| Batch | VM `syncLibraryTagsToFiles` → `syncTagsToFiles` + toast resumen; progreso `LibraryJobKind.TAG_WRITE` |
 
 ## 7. Temas
 
@@ -325,7 +337,7 @@ Origen Discover: se setea en `playPlayableCollection(..., origin)` (wrappers CF/
 | Now Playing | `dismissFullPlayer` | `NowPlayingScreen` `BackHandler` |
 | Library nested | multi-select → cancel addition → álbum (`closeLibraryAlbum`, conserva artista\|género) → artista\|género → clear search | `LibraryScreen` `BackHandler` / `popLibraryNested` |
 | Playlists nested | un detalle a la vez (local / LB / CF) → lista | `PlaylistsScreen` `BackHandler` → `closePlaylistDetail` |
-| Settings nested | Temas / LB / Reproducción / Sonido / Descargas → home | `SettingsScreen` `BackHandler` |
+| Settings nested | Temas / LB / Reproducción / Sonido / Descargas / Archivos → home | `SettingsScreen` `BackHandler` |
 | Raíz de tab | Doble atrás (~2s) + snackbar “Pulsa otra vez para salir” | `MainScreen` `BackHandler` + `SnackbarHost` |
 
 Manifest: `android:enableOnBackInvokedCallback="true"` en `MainActivity`.

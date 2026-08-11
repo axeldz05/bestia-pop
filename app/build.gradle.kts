@@ -166,6 +166,9 @@ dependencies {
     implementation(libs.okhttp)
     implementation(libs.kotlinx.coroutines.android)
 
+    // Audio file tag write (mp3 / m4a / flac / ogg) — minSdk 26 OK with official JAR
+    implementation("net.jthink:jaudiotagger:3.0.1")
+
     // Functional & Integration UI Testing
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")

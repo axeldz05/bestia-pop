@@ -5,10 +5,12 @@ import com.bestiapop.android.data.model.AlbumOverride
 import com.bestiapop.android.data.model.IdentifyCandidate
 import com.bestiapop.android.data.model.IdentifyProposal
 import com.bestiapop.android.data.model.IdentifyResult
+import com.bestiapop.android.data.model.IdentifySearchFilters
 import com.bestiapop.android.data.model.OnlineCatalogTrack
 import com.bestiapop.android.data.model.Playlist
 import com.bestiapop.android.data.model.PlaylistPendingTrack
 import com.bestiapop.android.data.model.Song
+import com.bestiapop.android.data.util.TagSyncSummary
 import kotlinx.coroutines.flow.Flow
 
 /** Scan/import progress: done, total, current file label. */
@@ -38,14 +40,19 @@ interface IMusicRepository {
      * May persist a soft cleanup of rip-style tags (`01` / `- Title`) before searching.
      * Songs that already have usable artist+album return [IdentifyProposal.alreadyIdentified]
      * unless [force] is true (WiFi import always forces to detect catalog conflicts).
-     * Song tags are predominant ranking source; [customQuery] replaces the default search.
+     * Song tags are predominant ranking source; [customQuery] replaces the default search text.
+     * [filters] refine artist/album/year (Deezer advanced query + ranking boosts).
+     * [catalogIndex] + [existingCandidates] page/append for “mostrar más” without reshuffling shown rows.
      * When [listenBrainzToken] is set and catalog confidence is not HIGH, may enrich via ListenBrainz.
      */
     suspend fun proposeSongIdentity(
         song: Song,
         customQuery: String? = null,
         force: Boolean = false,
-        listenBrainzToken: String? = null
+        listenBrainzToken: String? = null,
+        filters: IdentifySearchFilters = IdentifySearchFilters(),
+        catalogIndex: Int = 0,
+        existingCandidates: List<IdentifyCandidate> = emptyList()
     ): IdentifyProposal
 
     /** Persist one identify candidate onto [songId]. */
@@ -112,4 +119,10 @@ interface IMusicRepository {
         onProgress: ((com.bestiapop.android.data.model.DownloadPhase) -> Unit)? = null,
         conflictPolicy: com.bestiapop.android.data.model.DownloadConflictPolicy? = null
     ): Song
+
+    /**
+     * Write Room metadata into local writable audio files (BestiaPop path).
+     * Skips content:// and unsupported formats. [onProgress] is (done, total, fileLabel).
+     */
+    suspend fun syncTagsToFiles(onProgress: LibraryScanProgress? = null): TagSyncSummary
 }

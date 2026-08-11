@@ -17,6 +17,10 @@ object IdentifyRanking {
     const val HIGH_GAP = 0.12f
     const val MEDIUM_SCORE = 0.55f
     const val TOP_N = 5
+    /** Page size for “mostrar más” in identify review. */
+    const val PAGE_SIZE = 5
+    /** Catalog fetch page (Deezer/iTunes limit). */
+    const val CATALOG_PAGE = 25
     /** Drop trailing candidates whose score is this far below the top. */
     const val TAIL_RELATIVE_CUTOFF = 0.4f
     const val CONTAINMENT_BOOST = 0.60f
@@ -24,6 +28,8 @@ object IdentifyRanking {
     private const val SOURCE_AGREE_SIM = 0.85f
     private const val SOURCE_CONFLICT_SIM = 0.55f
     private const val SOURCE_ALBUM_AGREE_BOOST = 0.08f
+    private const val YEAR_EXACT_BOOST = 0.06f
+    private const val YEAR_NEAR_BOOST = 0.03f
 
     data class Query(
         val artist: String,
@@ -35,7 +41,9 @@ object IdentifyRanking {
         /** Predominant tags (WiFi ID3 / library). Used to boost agreement and block HIGH on severe conflict. */
         val sourceArtist: String? = null,
         val sourceTitle: String? = null,
-        val sourceAlbum: String? = null
+        val sourceAlbum: String? = null,
+        /** Optional refine year from identify filters / song tag. */
+        val preferYear: Int = 0
     )
 
     fun stripTitleNoise(raw: String): String {
@@ -210,6 +218,18 @@ object IdentifyRanking {
             if ("archivo" !in reasons) reasons.add("archivo")
         }
 
+        val preferYear = query.preferYear
+        if (preferYear in 1000..9999 && track.year in 1000..9999) {
+            val delta = abs(track.year - preferYear)
+            when {
+                delta == 0 -> {
+                    total += YEAR_EXACT_BOOST
+                    reasons.add("año coincidente")
+                }
+                delta <= 1 -> total += YEAR_NEAR_BOOST
+            }
+        }
+
         val queryMarkers = strongVersionMarkers(query.title) +
             strongVersionMarkers(query.filenameTitle.orEmpty())
         val extraMarkers = strongVersionMarkers(track.title) - queryMarkers
@@ -236,11 +256,16 @@ object IdentifyRanking {
     }
 
     /**
-     * Dedupe by normalized (artist, title, album), keep best score, sort desc, trim top-N
+     * Dedupe by normalized (artist, title, album), keep best score, sort desc, trim to [limit]
      * and drop weak tail relative to #1. Prefer catalog providers over YouTube when both exist.
+     * Pass [limit] = [Int.MAX_VALUE] (or a large page) when expanding “mostrar más”.
      */
-    fun rank(query: Query, tracks: List<OnlineCatalogTrack>): List<IdentifyCandidate> {
-        if (tracks.isEmpty()) return emptyList()
+    fun rank(
+        query: Query,
+        tracks: List<OnlineCatalogTrack>,
+        limit: Int = TOP_N
+    ): List<IdentifyCandidate> {
+        if (tracks.isEmpty() || limit <= 0) return emptyList()
 
         val preferred = tracks.filter { !isYouTubeProvider(it.provider) }
         val pool = preferred.ifEmpty { tracks }
@@ -265,10 +290,32 @@ object IdentifyRanking {
         if (ranked.isEmpty()) return emptyList()
 
         val topScore = ranked.first().score
-        val trimmed = ranked.take(TOP_N).filterIndexed { index, c ->
+        val capped = if (limit == Int.MAX_VALUE) ranked else ranked.take(limit)
+        val trimmed = capped.filterIndexed { index, c ->
             index < 3 || c.score >= topScore - TAIL_RELATIVE_CUTOFF
         }
         return trimmed
+    }
+
+    /**
+     * Keep [existing] order (already shown), append new ranked hits not already present.
+     * Avoids reshuffling the visible list when loading more pages.
+     */
+    fun appendCandidates(
+        existing: List<IdentifyCandidate>,
+        newcomers: List<IdentifyCandidate>
+    ): List<IdentifyCandidate> {
+        if (newcomers.isEmpty()) return existing
+        if (existing.isEmpty()) return newcomers
+        val seen = existing.map { dedupeKey(it.artist, it.title, it.album) }.toHashSet()
+        val out = existing.toMutableList()
+        for (c in newcomers.sortedByDescending { it.score }) {
+            val key = dedupeKey(c.artist, c.title, c.album)
+            if (key in seen) continue
+            seen.add(key)
+            out.add(c)
+        }
+        return out
     }
 
     fun confidence(ranked: List<IdentifyCandidate>): IdentifyConfidence {

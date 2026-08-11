@@ -152,7 +152,8 @@ object MetadataFetcher {
                     identity = identity,
                     id = obj.optString("id").ifBlank { "${identity.youtubeSearchQuery()}#$i" },
                     audioUrl = identity.youtubeSearchQuery(),
-                    provider = provider
+                    provider = provider,
+                    year = parseReleaseYear(obj.optJSONObject("album")?.optString("release_date"))
                 )
             )
         }
@@ -180,7 +181,8 @@ object MetadataFetcher {
                         "${identity.youtubeSearchQuery()}#${obj.optString("collectionId", "$i")}"
                     },
                     audioUrl = identity.youtubeSearchQuery(),
-                    provider = provider
+                    provider = provider,
+                    year = parseReleaseYear(obj.optString("releaseDate"))
                 )
             )
         }
@@ -324,22 +326,30 @@ object MetadataFetcher {
         }
     }
 
-    suspend fun searchOnlineCatalog(query: String): List<OnlineCatalogTrack> = withContext(Dispatchers.IO) {
+    suspend fun searchOnlineCatalog(
+        query: String,
+        limit: Int = 25,
+        index: Int = 0
+    ): List<OnlineCatalogTrack> = withContext(Dispatchers.IO) {
         val cleanQ = query.trim()
         if (cleanQ.isEmpty()) {
-            return@withContext getFeaturedDemoCatalog()
+            return@withContext if (index > 0) emptyList() else getFeaturedDemoCatalog()
         }
+        val pageLimit = limit.coerceIn(1, 100)
+        val pageIndex = index.coerceAtLeast(0)
 
         // 1. Deezer Song Search API
-        val deezerUrl = "https://api.deezer.com/search?q=${encodeQuery(cleanQ)}&limit=25"
+        val deezerUrl =
+            "https://api.deezer.com/search?q=${encodeQuery(cleanQ)}&limit=$pageLimit&index=$pageIndex"
         val deezerTracks = parseDeezerSearchTracks(
             getJson(deezerUrl, userAgent = "Mozilla/5.0")?.optJSONArray("data")
         )
         if (deezerTracks.isNotEmpty()) return@withContext deezerTracks
 
-        // 2. Fallback to iTunes Song Search API
+        // 2. Fallback to iTunes Song Search API (no offset; skip on subsequent pages)
+        if (pageIndex > 0) return@withContext emptyList()
         val itunesUrl =
-            "https://itunes.apple.com/search?term=${encodeQuery(cleanQ)}&entity=song&limit=25"
+            "https://itunes.apple.com/search?term=${encodeQuery(cleanQ)}&entity=song&limit=$pageLimit"
         val itunesTracks = parseItunesSongResults(
             getJson(itunesUrl, userAgent = "Mozilla/5.0")?.optJSONArray("results")
         )
@@ -347,6 +357,14 @@ object MetadataFetcher {
 
         // 3. Fallback to YouTube Search API
         return@withContext YouTubeExtractor.searchYouTube(cleanQ)
+    }
+
+    /** First 4-digit year from ISO-ish release strings (`2012-03-01`, `2012`). */
+    fun parseReleaseYear(raw: String?): Int {
+        val s = raw?.trim().orEmpty()
+        if (s.length < 4) return 0
+        val y = s.take(4).toIntOrNull() ?: return 0
+        return if (y in 1000..9999) y else 0
     }
 
     suspend fun fetchArtistPhotoUrl(artist: String): String? = withContext(Dispatchers.IO) {

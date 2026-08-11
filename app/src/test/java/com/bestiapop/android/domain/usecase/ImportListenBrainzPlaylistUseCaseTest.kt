@@ -147,7 +147,10 @@ class ImportListenBrainzPlaylistUseCaseTest {
             song: Song,
             customQuery: String?,
             force: Boolean,
-            listenBrainzToken: String?
+            listenBrainzToken: String?,
+            filters: com.bestiapop.android.data.model.IdentifySearchFilters,
+            catalogIndex: Int,
+            existingCandidates: List<com.bestiapop.android.data.model.IdentifyCandidate>
         ) =
             com.bestiapop.android.data.model.IdentifyProposal(
                 songId = song.id,
@@ -227,5 +230,9 @@ class ImportListenBrainzPlaylistUseCaseTest {
             onProgress: ((com.bestiapop.android.data.model.DownloadPhase) -> Unit)?,
             conflictPolicy: com.bestiapop.android.data.model.DownloadConflictPolicy?
         ): Song = error("not used")
+
+        override suspend fun syncTagsToFiles(
+            onProgress: com.bestiapop.android.domain.repository.LibraryScanProgress?
+        ) = com.bestiapop.android.data.util.TagSyncSummary()
     }
 }

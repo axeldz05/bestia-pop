@@ -12,6 +12,7 @@ object CatalogTrackJson {
             TrackIdentityJson.putInto(this, track.identity)
             put("audioUrl", if (includeAudioUrl) track.audioUrl else "")
             put("provider", track.provider)
+            if (track.year > 0) put("year", track.year)
         }
 
     fun decode(obj: JSONObject): OnlineCatalogTrack =
@@ -19,6 +20,7 @@ object CatalogTrackJson {
             identity = TrackIdentityJson.decode(obj),
             id = obj.optString("id", ""),
             audioUrl = obj.optString("audioUrl", ""),
-            provider = obj.optString("provider", "YouTube")
+            provider = obj.optString("provider", "YouTube"),
+            year = obj.optInt("year", 0)
         )
 }

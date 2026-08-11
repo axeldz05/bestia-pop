@@ -86,6 +86,19 @@ class MusicFileStore(private val context: Context) {
     fun listManagedNames(): Set<String> = StorageUtils.listAudioFileNames(context)
 
     /**
+     * Filesystem [File] safe for direct I/O (tag write). Null for MediaStore content://
+     * or missing/non-writable paths.
+     */
+    fun writableFile(ref: AudioPersistRef): File? {
+        val abs = directFilePath(ref) ?: return null
+        val file = File(abs)
+        return file.takeIf { it.isFile && it.canWrite() }
+    }
+
+    fun writableFile(uriString: String, folderPath: String = ""): File? =
+        writableFile(canonicalize(uriString, folderPath))
+
+    /**
      * Filesystem path safe for direct File I/O. Never returns MediaStore DATA for
      * content://media (Android 15 scoped storage).
      */

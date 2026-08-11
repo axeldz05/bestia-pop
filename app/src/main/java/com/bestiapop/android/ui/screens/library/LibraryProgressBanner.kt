@@ -27,6 +27,7 @@ fun LibraryProgressBanner(
     val verb = when (progress.kind) {
         LibraryJobKind.IMPORT -> "Importando"
         LibraryJobKind.IDENTIFY -> "Identificando"
+        LibraryJobKind.TAG_WRITE -> "Escribiendo tags"
     }
     val countLabel = if (progress.total > 0) {
         "$verb ${progress.done}/${progress.total}"

@@ -19,6 +19,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.material.icons.filled.AudioFile
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Headset
 import androidx.compose.material.icons.filled.Palette
@@ -56,7 +57,8 @@ private enum class SettingsSection {
     ListenBrainz,
     Playback,
     Sound,
-    Downloads
+    Downloads,
+    LibraryTags
 }
 
 @Composable
@@ -84,7 +86,8 @@ fun SettingsScreen(viewModel: MusicPlayerViewModel, appUpdateViewModel: AppUpdat
             onOpenListenBrainz = { section = SettingsSection.ListenBrainz },
             onOpenPlayback = { section = SettingsSection.Playback },
             onOpenSound = { section = SettingsSection.Sound },
-            onOpenDownloads = { section = SettingsSection.Downloads }
+            onOpenDownloads = { section = SettingsSection.Downloads },
+            onOpenLibraryTags = { section = SettingsSection.LibraryTags }
         )
         SettingsSection.Themes -> SettingsSectionPage("Temas", onBack = { section = null }) {
             ThemeSettingsScreen(viewModel = viewModel, showTitle = false)
@@ -100,6 +103,9 @@ fun SettingsScreen(viewModel: MusicPlayerViewModel, appUpdateViewModel: AppUpdat
         }
         SettingsSection.Downloads -> SettingsSectionPage("Descargas", onBack = { section = null }) {
             DownloadSettingsScreen(viewModel = viewModel)
+        }
+        SettingsSection.LibraryTags -> SettingsSectionPage("Archivos", onBack = { section = null }) {
+            LibraryTagWriteSettingsScreen(viewModel = viewModel)
         }
     }
 }
@@ -127,7 +133,8 @@ private fun SettingsHome(
     onOpenListenBrainz: () -> Unit,
     onOpenPlayback: () -> Unit,
     onOpenSound: () -> Unit,
-    onOpenDownloads: () -> Unit
+    onOpenDownloads: () -> Unit,
+    onOpenLibraryTags: () -> Unit
 ) {
     val context = LocalContext.current
     val updateState by appUpdateViewModel.state.collectAsState()
@@ -210,6 +217,12 @@ private fun SettingsHome(
                 "Datos móviles y carpeta de guardado",
                 Icons.Default.Download,
                 onOpenDownloads
+            ),
+            SettingsHomeEntry(
+                "Archivos",
+                "Escribir metadata de la app a los archivos",
+                Icons.Default.AudioFile,
+                onOpenLibraryTags
             ),
             SettingsHomeEntry(
                 "Buscar actualización",

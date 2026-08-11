@@ -1,9 +1,12 @@
 package com.bestiapop.android.ui.state
 
+import com.bestiapop.android.data.model.IdentifyCandidate
 import com.bestiapop.android.data.model.IdentifyConfidence
 import com.bestiapop.android.data.model.IdentifyProposal
+import com.bestiapop.android.data.model.IdentifySearchFilters
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.domain.util.IdentifyAlbumGroup
+import com.bestiapop.android.domain.util.IdentifyRanking
 import com.bestiapop.android.domain.util.clusterIdentifyAlbumGroups
 
 enum class IdentifyReviewPhase {
@@ -26,8 +29,16 @@ data class IdentifyReviewState(
     val currentIndex: Int = 0,
     val selectedCandidateIndex: Int = 0,
     val isSearching: Boolean = false,
+    val isLoadingMore: Boolean = false,
     val searchQueryDraft: String = "",
+    val searchFilterArtist: String = "",
+    val searchFilterAlbum: String = "",
+    val searchFilterYear: String = "",
     val showSearchField: Boolean = false,
+    /** Extra refine fields (artist/album/year); only when user opens “Filtros”. */
+    val showSearchFilters: Boolean = false,
+    /** How many of [IdentifyProposal.candidates] are shown (prefix); grows via “mostrar más”. */
+    val visibleCandidateCount: Int = IdentifyRanking.TOP_N,
     val sessionApplied: Int = 0,
     val sessionSkipped: Int = 0,
     val isVisible: Boolean = false,
@@ -74,6 +85,26 @@ data class IdentifyReviewState(
 
     val pendingSongIds: Set<Long>
         get() = remaining.map { it.song.id }.toSet()
+
+    val searchFilters: IdentifySearchFilters
+        get() = IdentifySearchFilters(
+            artist = searchFilterArtist,
+            album = searchFilterAlbum,
+            year = searchFilterYear.toIntOrNull() ?: 0
+        )
+
+    val visibleCandidates: List<IdentifyCandidate>
+        get() {
+            val all = current?.proposal?.candidates.orEmpty()
+            return all.take(visibleCandidateCount.coerceIn(0, all.size))
+        }
+
+    val canShowMoreCandidates: Boolean
+        get() {
+            val proposal = current?.proposal ?: return false
+            val all = proposal.candidates
+            return visibleCandidateCount < all.size || proposal.catalogMayHaveMore
+        }
 }
 
 val IdentifyProposal.hasMediumSuggestion: Boolean

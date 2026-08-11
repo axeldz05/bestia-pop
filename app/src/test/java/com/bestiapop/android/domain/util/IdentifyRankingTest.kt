@@ -365,4 +365,65 @@ class IdentifyRankingTest {
         assertEquals(2, candidate.trackNumber)
         assertEquals(2, candidate.track.trackNumber)
     }
+
+    @Test
+    fun preferYear_boostsExactMatch() {
+        val query = IdentifyRanking.Query(
+            artist = "Radiohead",
+            title = "Creep",
+            durationMs = 238_000L,
+            preferYear = 1992
+        )
+        val exact = IdentifyRanking.score(
+            query,
+            track("Creep", "Radiohead", durationMs = 238_000L).copy(year = 1992)
+        )
+        val other = IdentifyRanking.score(
+            query,
+            track("Creep", "Radiohead", durationMs = 238_000L).copy(year = 2008)
+        )
+        assertTrue(exact.first > other.first)
+        assertTrue(exact.second.any { it.contains("año") })
+    }
+
+    @Test
+    fun rank_respectsHigherLimit() {
+        val query = IdentifyRanking.Query(artist = "A", title = "Song")
+        val tracks = (1..12).map { i ->
+            track("Song $i", "A", album = "Alb $i", durationMs = 200_000L + i)
+        }
+        val top = IdentifyRanking.rank(query, tracks, limit = IdentifyRanking.TOP_N)
+        val page = IdentifyRanking.rank(query, tracks, limit = IdentifyRanking.CATALOG_PAGE)
+        assertTrue(top.size <= IdentifyRanking.TOP_N)
+        assertTrue(page.size >= top.size)
+    }
+
+    @Test
+    fun appendCandidates_keepsExistingOrder() {
+        val first = IdentifyRanking.toCandidate(
+            track("One", "A", album = "X"),
+            score = 0.9f,
+            reasons = emptyList()
+        )
+        val second = IdentifyRanking.toCandidate(
+            track("Two", "A", album = "Y"),
+            score = 0.8f,
+            reasons = emptyList()
+        )
+        val newerBetter = IdentifyRanking.toCandidate(
+            track("Three", "A", album = "Z"),
+            score = 0.95f,
+            reasons = emptyList()
+        )
+        val dup = IdentifyRanking.toCandidate(
+            track("One", "A", album = "X"),
+            score = 0.99f,
+            reasons = emptyList()
+        )
+        val merged = IdentifyRanking.appendCandidates(
+            listOf(first, second),
+            listOf(newerBetter, dup)
+        )
+        assertEquals(listOf("One", "Two", "Three"), merged.map { it.title })
+    }
 }

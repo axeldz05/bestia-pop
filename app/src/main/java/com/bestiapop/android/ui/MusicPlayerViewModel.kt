@@ -40,6 +40,8 @@ import com.bestiapop.android.data.preferences.DownloadSettings
 import com.bestiapop.android.data.preferences.IdentifyReviewStore
 import com.bestiapop.android.data.preferences.PersistedIdentifyReviewQueue
 import com.bestiapop.android.data.preferences.LibraryPreferencesRepository
+import com.bestiapop.android.data.preferences.LibraryTagWritePreferencesRepository
+import com.bestiapop.android.data.preferences.LibraryTagWriteSettings
 import com.bestiapop.android.data.preferences.LibraryUiPreferencesCodec
 import com.bestiapop.android.data.preferences.NAV_DOWNLOADS
 import com.bestiapop.android.data.preferences.NAV_PLAYLISTS
@@ -193,6 +195,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private val listenBrainzPreferences = ListenBrainzPreferencesRepository(application)
     private val playbackPreferences = PlaybackPreferencesRepository(application)
     private val downloadPreferences = DownloadPreferencesRepository(application)
+    private val libraryTagWritePreferences = LibraryTagWritePreferencesRepository(application)
     private val libraryPreferences = LibraryPreferencesRepository(application)
     private val activeDownloadsStore = ActiveDownloadsStore(application)
     private val identifyReviewStore = IdentifyReviewStore(application)
@@ -234,6 +237,10 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     val downloadSettings: StateFlow<DownloadSettings> =
         downloadPreferences.settingsFlow
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), DownloadSettings())
+
+    val libraryTagWriteSettings: StateFlow<LibraryTagWriteSettings> =
+        libraryTagWritePreferences.settingsFlow
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), LibraryTagWriteSettings())
 
     val downloadOnMeteredNetwork: StateFlow<Boolean> =
         downloadSettings
@@ -694,6 +701,47 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     fun setDownloadOnMeteredNetwork(enabled: Boolean) {
         viewModelScope.launch {
             downloadPreferences.setDownloadOnMeteredNetwork(enabled)
+        }
+    }
+
+    fun setAutoWriteTagsEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            libraryTagWritePreferences.setAutoWriteTagsEnabled(enabled)
+        }
+    }
+
+    fun syncLibraryTagsToFiles() {
+        if (_libraryJobProgress.value != null) {
+            toast("Ya hay una tarea de biblioteca en curso")
+            return
+        }
+        viewModelScope.launch {
+            val summary = withContext(Dispatchers.IO) {
+                repository.syncTagsToFiles { done, total, fileName ->
+                    reportLibraryProgress(LibraryJobKind.TAG_WRITE, done, total, fileName)
+                }
+            }
+            clearLibraryProgress()
+            toast(
+                buildString {
+                    append(
+                        if (summary.updated == 1) "1 archivo actualizado"
+                        else "${summary.updated} archivos actualizados"
+                    )
+                    if (summary.skipped > 0) {
+                        append(
+                            if (summary.skipped == 1) ", 1 omitido"
+                            else ", ${summary.skipped} omitidos"
+                        )
+                    }
+                    if (summary.errors > 0) {
+                        append(
+                            if (summary.errors == 1) ", 1 error"
+                            else ", ${summary.errors} errores"
+                        )
+                    }
+                }
+            )
         }
     }
 
@@ -3388,12 +3436,8 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 phase = IdentifyReviewPhase.Item,
                 openedFromOverview = state.phase == IdentifyReviewPhase.Overview ||
                     state.openedFromOverview,
-                isVisible = true,
-                selectedCandidateIndex = 0,
-                searchQueryDraft = defaultSearchDraft(item),
-                showSearchField = item.proposal.candidates.isEmpty(),
-                isSearching = false
-            )
+                isVisible = true
+            ).withItemSearchChrome(item)
             return
         }
         identifySongs(listOf(song), force = true, showReview = true)
@@ -3569,23 +3613,22 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         }
         val phase = reviewPhaseFor(items)
         val first = items.first()
+        val showSearch = phase == IdentifyReviewPhase.Item && first.proposal.candidates.isEmpty()
         _identifyReview.value = IdentifyReviewState(
             items = items,
             currentIndex = 0,
-            selectedCandidateIndex = 0,
             sessionApplied = sessionApplied,
             sessionSkipped = sessionSkipped,
             isVisible = showReview,
             phase = phase,
-            openedFromOverview = openedFromOverview && phase == IdentifyReviewPhase.Item,
-            searchQueryDraft = if (phase == IdentifyReviewPhase.Item) {
-                defaultSearchDraft(first)
+            openedFromOverview = openedFromOverview && phase == IdentifyReviewPhase.Item
+        ).let { base ->
+            if (phase == IdentifyReviewPhase.Item) {
+                base.withItemSearchChrome(first, forceShowSearch = showSearch)
             } else {
-                ""
-            },
-            showSearchField = phase == IdentifyReviewPhase.Item &&
-                first.proposal.candidates.isEmpty()
-        )
+                base
+            }
+        }
     }
 
     fun showIdentifyReview() {
@@ -3623,12 +3666,8 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             currentIndex = 0,
             phase = IdentifyReviewPhase.Item,
             openedFromOverview = true,
-            isVisible = true,
-            selectedCandidateIndex = 0,
-            searchQueryDraft = defaultSearchDraft(first),
-            showSearchField = first.proposal.candidates.isEmpty(),
-            isSearching = false
-        )
+            isVisible = true
+        ).withItemSearchChrome(first)
     }
 
     fun returnIdentifyReviewOverview() {
@@ -3797,9 +3836,44 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
+    private fun defaultFilterArtist(item: IdentifyReviewItem): String =
+        item.proposal.queryArtist.trim().takeUnless {
+            it.isBlank() || IdentifyRanking.isPlaceholderArtist(it) || looksLikeStoragePath(it)
+        } ?: item.song.artist.trim().takeUnless {
+            IdentifyRanking.isPlaceholderArtist(it) || looksLikeStoragePath(it)
+        }.orEmpty()
+
+    private fun defaultFilterAlbum(item: IdentifyReviewItem): String =
+        item.song.album.trim().takeUnless {
+            it.isBlank() || IdentifyRanking.isGenericAlbum(it)
+        }.orEmpty()
+
+    private fun defaultFilterYear(item: IdentifyReviewItem): String =
+        item.song.year.takeIf { it in 1000..9999 }?.toString().orEmpty()
+
+    /** Search draft; filters stay collapsed until [toggleIdentifySearchFilters]. */
+    private fun IdentifyReviewState.withItemSearchChrome(
+        item: IdentifyReviewItem,
+        forceShowSearch: Boolean? = null
+    ): IdentifyReviewState {
+        val showSearch = forceShowSearch ?: item.proposal.candidates.isEmpty()
+        return copy(
+            searchQueryDraft = defaultSearchDraft(item),
+            showSearchField = showSearch,
+            showSearchFilters = false,
+            isSearching = false,
+            isLoadingMore = false,
+            visibleCandidateCount = IdentifyRanking.TOP_N,
+            selectedCandidateIndex = 0,
+            searchFilterArtist = "",
+            searchFilterAlbum = "",
+            searchFilterYear = ""
+        )
+    }
+
     fun selectIdentifyCandidate(index: Int) {
         val state = _identifyReview.value
-        val candidates = state.current?.proposal?.candidates.orEmpty()
+        val candidates = state.visibleCandidates
         if (index !in candidates.indices) return
         _identifyReview.value = state.copy(selectedCandidateIndex = index)
     }
@@ -3808,18 +3882,55 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         _identifyReview.value = _identifyReview.value.copy(searchQueryDraft = query)
     }
 
+    fun setIdentifySearchFilterArtist(value: String) {
+        _identifyReview.value = _identifyReview.value.copy(searchFilterArtist = value)
+    }
+
+    fun setIdentifySearchFilterAlbum(value: String) {
+        _identifyReview.value = _identifyReview.value.copy(searchFilterAlbum = value)
+    }
+
+    fun setIdentifySearchFilterYear(value: String) {
+        _identifyReview.value = _identifyReview.value.copy(
+            searchFilterYear = value.filter { it.isDigit() }.take(4)
+        )
+    }
+
     fun toggleIdentifySearchField(show: Boolean? = null) {
         val state = _identifyReview.value
         val next = show ?: !state.showSearchField
         val draft = state.searchQueryDraft
         val shouldSeed = next && (draft.isBlank() || looksLikeStoragePath(draft))
+        val item = state.current
         _identifyReview.value = state.copy(
             showSearchField = next,
+            showSearchFilters = if (next) state.showSearchFilters else false,
             searchQueryDraft = if (shouldSeed) {
-                state.current?.let { defaultSearchDraft(it) }.orEmpty()
+                item?.let { defaultSearchDraft(it) }.orEmpty()
             } else {
                 draft
             }
+        )
+    }
+
+    fun toggleIdentifySearchFilters(show: Boolean? = null) {
+        val state = _identifyReview.value
+        if (!state.showSearchField && show != false) {
+            // Opening filters implies search chrome is visible.
+            toggleIdentifySearchField(show = true)
+        }
+        val latest = _identifyReview.value
+        val next = show ?: !latest.showSearchFilters
+        val item = latest.current
+        val seed = next && item != null &&
+            latest.searchFilterArtist.isBlank() &&
+            latest.searchFilterAlbum.isBlank() &&
+            latest.searchFilterYear.isBlank()
+        _identifyReview.value = latest.copy(
+            showSearchFilters = next,
+            searchFilterArtist = if (seed) defaultFilterArtist(item!!) else latest.searchFilterArtist,
+            searchFilterAlbum = if (seed) defaultFilterAlbum(item!!) else latest.searchFilterAlbum,
+            searchFilterYear = if (seed) defaultFilterYear(item!!) else latest.searchFilterYear
         )
     }
 
@@ -3827,14 +3938,20 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         val state = _identifyReview.value
         val item = state.current ?: return
         val query = state.searchQueryDraft.trim()
-        if (query.isEmpty()) {
-            toast("Escribí una búsqueda")
+        val filters = state.searchFilters.normalized()
+        if (query.isEmpty() && !filters.hasAny) {
+            toast("Escribí una búsqueda o un filtro")
             return
         }
         viewModelScope.launch {
-            _identifyReview.value = _identifyReview.value.copy(isSearching = true)
+            _identifyReview.value = _identifyReview.value.copy(isSearching = true, isLoadingMore = false)
             val proposal = withContext(Dispatchers.IO) {
-                repository.proposeSongIdentity(item.song, customQuery = query, force = true)
+                repository.proposeSongIdentity(
+                    song = item.song,
+                    customQuery = query.ifBlank { null },
+                    force = true,
+                    filters = filters
+                )
             }
             val latest = _identifyReview.value
             if (latest.current?.song?.id != item.song.id) {
@@ -3847,10 +3964,66 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 items = items,
                 selectedCandidateIndex = 0,
                 isSearching = false,
-                showSearchField = latest.showSearchField || proposal.candidates.isEmpty()
+                showSearchField = latest.showSearchField || proposal.candidates.isEmpty(),
+                visibleCandidateCount = minOf(IdentifyRanking.TOP_N, proposal.candidates.size)
             )
             if (proposal.candidates.isEmpty()) {
-                toast("Sin resultados para \"$query\"")
+                val label = query.ifBlank { "esos filtros" }
+                toast("Sin resultados para \"$label\"")
+            }
+        }
+    }
+
+    fun loadMoreIdentifyCandidates() {
+        val state = _identifyReview.value
+        val item = state.current ?: return
+        if (state.isSearching || state.isLoadingMore) return
+        val all = item.proposal.candidates
+        val visible = state.visibleCandidateCount
+        if (visible < all.size) {
+            _identifyReview.value = state.copy(
+                visibleCandidateCount = (visible + IdentifyRanking.PAGE_SIZE)
+                    .coerceAtMost(all.size)
+            )
+            return
+        }
+        if (!item.proposal.catalogMayHaveMore) {
+            toast("No hay más candidatos")
+            return
+        }
+        val query = state.searchQueryDraft.trim()
+        val filters = state.searchFilters.normalized()
+        viewModelScope.launch {
+            _identifyReview.value = _identifyReview.value.copy(isLoadingMore = true)
+            val proposal = withContext(Dispatchers.IO) {
+                repository.proposeSongIdentity(
+                    song = item.song,
+                    customQuery = query.ifBlank { null },
+                    force = true,
+                    filters = filters,
+                    catalogIndex = item.proposal.nextCatalogIndex,
+                    existingCandidates = all
+                )
+            }
+            val latest = _identifyReview.value
+            if (latest.current?.song?.id != item.song.id) {
+                _identifyReview.value = latest.copy(isLoadingMore = false)
+                return@launch
+            }
+            val items = latest.items.toMutableList()
+            items[latest.currentIndex] = item.copy(proposal = proposal)
+            val grew = proposal.candidates.size > all.size
+            _identifyReview.value = latest.copy(
+                items = items,
+                isLoadingMore = false,
+                visibleCandidateCount = if (grew) {
+                    (visible + IdentifyRanking.PAGE_SIZE).coerceAtMost(proposal.candidates.size)
+                } else {
+                    proposal.candidates.size
+                }
+            )
+            if (!grew) {
+                toast("No hay más candidatos")
             }
         }
     }
@@ -3858,7 +4031,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     fun applySelectedIdentifyCandidate() {
         val state = _identifyReview.value
         val item = state.current ?: return
-        val candidate = item.proposal.candidates.getOrNull(state.selectedCandidateIndex)
+        val candidate = state.visibleCandidates.getOrNull(state.selectedCandidateIndex)
             ?: item.proposal.suggested
         if (candidate == null) {
             toast("Elegí un candidato o buscá otro")
@@ -3957,13 +4130,9 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         val nextItem = state.items[nextIndex]
         _identifyReview.value = state.copy(
             currentIndex = nextIndex,
-            selectedCandidateIndex = 0,
             sessionApplied = nextApplied,
-            sessionSkipped = nextSkipped,
-            searchQueryDraft = defaultSearchDraft(nextItem),
-            showSearchField = nextItem.proposal.candidates.isEmpty(),
-            isSearching = false
-        )
+            sessionSkipped = nextSkipped
+        ).withItemSearchChrome(nextItem)
     }
 
     // Playlists

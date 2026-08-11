@@ -8,7 +8,8 @@ enum class RepeatMode {
 
 enum class LibraryJobKind {
     IMPORT,
-    IDENTIFY
+    IDENTIFY,
+    TAG_WRITE
 }
 
 /** In-progress library job (folder import / disk resync / batch identify). */
@@ -36,6 +37,7 @@ data class IdentifyCandidate(
     val reasons: List<String> = emptyList()
 ) : TrackMeta by track {
     val provider: String get() = track.provider
+    val year: Int get() = track.year
 }
 
 enum class IdentifyConfidence {
@@ -46,8 +48,31 @@ enum class IdentifyConfidence {
 }
 
 /**
+ * Optional refine fields for identify review search (alongside free-text query).
+ * Blank / year≤0 = unset. Used for Deezer advanced query + ranking boosts.
+ */
+data class IdentifySearchFilters(
+    val artist: String = "",
+    val album: String = "",
+    val year: Int = 0
+) {
+    fun normalized(): IdentifySearchFilters = copy(
+        artist = artist.trim(),
+        album = album.trim(),
+        year = year.coerceIn(0, 9999)
+    )
+
+    val hasAny: Boolean
+        get() {
+            val n = normalized()
+            return n.artist.isNotEmpty() || n.album.isNotEmpty() || n.year > 0
+        }
+}
+
+/**
  * Lookup result for one library song before apply / review.
  * [alreadyIdentified] = song did not need identify (artist+album usable).
+ * [nextCatalogIndex] / [catalogMayHaveMore] support “mostrar más” pagination.
  */
 data class IdentifyProposal(
     val songId: Long,
@@ -59,7 +84,11 @@ data class IdentifyProposal(
     val suggested: IdentifyCandidate? = null,
     val alreadyIdentified: Boolean = false,
     /** True when ListenBrainz lookup ran and contributed a catalog track for this proposal. */
-    val usedListenBrainz: Boolean = false
+    val usedListenBrainz: Boolean = false,
+    /** Deezer/iTunes `index` for the next catalog page (0 = first page). */
+    val nextCatalogIndex: Int = 0,
+    /** False when the last catalog page returned fewer than a full page. */
+    val catalogMayHaveMore: Boolean = false
 )
 
 data class Album(
@@ -158,7 +187,9 @@ data class OnlineCatalogTrack(
     val id: String,
     val audioUrl: String = "",
     val provider: String = "YouTube",
-    val userAgent: String = DEFAULT_CATALOG_USER_AGENT
+    val userAgent: String = DEFAULT_CATALOG_USER_AGENT,
+    /** Catalog-only release year (Deezer/iTunes); not part of [TrackMeta] / Room identity. */
+    val year: Int = 0
 ) : TrackMeta by identity {
     companion object {
         /** L2: flat catalog construction (identity is Level 1). */
@@ -172,7 +203,8 @@ data class OnlineCatalogTrack(
             audioUrl: String = "",
             provider: String = "YouTube",
             userAgent: String = DEFAULT_CATALOG_USER_AGENT,
-            trackNumber: Int = 0
+            trackNumber: Int = 0,
+            year: Int = 0
         ): OnlineCatalogTrack = OnlineCatalogTrack(
             identity = TrackIdentity(
                 title = title,
@@ -185,7 +217,8 @@ data class OnlineCatalogTrack(
             id = id,
             audioUrl = audioUrl,
             provider = provider,
-            userAgent = userAgent
+            userAgent = userAgent,
+            year = year
         )
     }
 }

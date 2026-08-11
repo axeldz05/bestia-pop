@@ -167,9 +167,16 @@ fun IdentifyReviewScreen(
                         Spacer(Modifier.height(12.dp))
                         IdentifySearchBlock(
                             query = state.searchQueryDraft,
+                            filterArtist = state.searchFilterArtist,
+                            filterAlbum = state.searchFilterAlbum,
+                            filterYear = state.searchFilterYear,
+                            showFilters = state.showSearchFilters,
                             placeholder = searchPlaceholder,
                             isSearching = state.isSearching,
                             onQueryChange = viewModel::setIdentifySearchDraft,
+                            onFilterArtistChange = viewModel::setIdentifySearchFilterArtist,
+                            onFilterAlbumChange = viewModel::setIdentifySearchFilterAlbum,
+                            onFilterYearChange = viewModel::setIdentifySearchFilterYear,
                             onSearch = viewModel::searchIdentifyCandidates
                         )
                     }
@@ -194,8 +201,10 @@ fun IdentifyReviewScreen(
                     }
 
                     itemsIndexed(
-                        items = item.proposal.candidates,
-                        key = { index, c -> "${c.provider}|${c.artist}|${c.title}|${c.album}|$index" }
+                        items = state.visibleCandidates,
+                        key = { index, c ->
+                            "${c.provider}|${c.track.id.ifBlank { "${c.artist}|${c.title}|${c.album}" }}|$index"
+                        }
                     ) { index, candidate ->
                         val track = candidate.track
                         val flags = previewFlags(
@@ -214,15 +223,27 @@ fun IdentifyReviewScreen(
                             onPreview = { viewModel.previewIdentifyCandidate(candidate) }
                         )
                     }
+
+                    if (state.canShowMoreCandidates) {
+                        item(key = "load_more") {
+                            IdentifyLoadMoreButton(
+                                isLoading = state.isLoadingMore,
+                                enabled = !state.isSearching,
+                                onClick = viewModel::loadMoreIdentifyCandidates
+                            )
+                        }
+                    }
                 }
 
                 IdentifyReviewFooter(
-                    hasCandidates = item.proposal.candidates.isNotEmpty(),
+                    hasCandidates = state.visibleCandidates.isNotEmpty(),
                     showSearchField = state.showSearchField,
-                    isSearching = state.isSearching,
+                    showSearchFilters = state.showSearchFilters,
+                    isSearching = state.isSearching || state.isLoadingMore,
                     onUse = viewModel::applySelectedIdentifyCandidate,
                     onSkip = viewModel::skipIdentifyReviewItem,
-                    onToggleSearch = { viewModel.toggleIdentifySearchField() }
+                    onToggleSearch = { viewModel.toggleIdentifySearchField() },
+                    onToggleFilters = { viewModel.toggleIdentifySearchFilters() }
                 )
             }
         }
@@ -504,6 +525,7 @@ fun IdentifyCandidateRow(
                     "Single / sin álbum"
                 else -> candidate.album
             }
+            val yearPart = candidate.year.takeIf { it in 1000..9999 }?.toString()
             val durationPart = when {
                 candidate.durationMs > 0 && fileDurationMs > 0 ->
                     "${formatDuration(candidate.durationMs)} (archivo ${formatDuration(fileDurationMs)})"
@@ -511,7 +533,7 @@ fun IdentifyCandidateRow(
                 else -> null
             }
             Text(
-                text = joinMeta(albumLabel, durationPart, sep = " · "),
+                text = joinMeta(albumLabel, yearPart, durationPart, sep = " · "),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
                 maxLines = 1,
@@ -564,11 +586,23 @@ private fun ConfidenceChip(score: Float) {
 @Composable
 private fun IdentifySearchBlock(
     query: String,
+    filterArtist: String,
+    filterAlbum: String,
+    filterYear: String,
+    showFilters: Boolean,
     placeholder: String,
     isSearching: Boolean,
     onQueryChange: (String) -> Unit,
+    onFilterArtistChange: (String) -> Unit,
+    onFilterAlbumChange: (String) -> Unit,
+    onFilterYearChange: (String) -> Unit,
     onSearch: () -> Unit
 ) {
+    val searchActions = KeyboardActions(
+        onSearch = { onSearch() },
+        onDone = { onSearch() },
+        onGo = { onSearch() }
+    )
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         OutlinedTextField(
             value = query,
@@ -585,7 +619,13 @@ private fun IdentifySearchBlock(
             },
             trailingIcon = {
                 if (isSearching) {
-                    CircularProgressIndicator(modifier = Modifier.padding(12.dp), strokeWidth = 2.dp)
+                    CircularProgressIndicator(
+                        modifier = Modifier
+                            .padding(12.dp)
+                            .height(24.dp)
+                            .width(24.dp),
+                        strokeWidth = 2.dp
+                    )
                 } else {
                     IconButton(onClick = onSearch) {
                         Icon(Icons.Default.Search, contentDescription = "Buscar")
@@ -593,9 +633,65 @@ private fun IdentifySearchBlock(
                 }
             },
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-            keyboardActions = KeyboardActions(onSearch = { onSearch() }),
+            keyboardActions = searchActions,
             enabled = !isSearching
         )
+        if (showFilters) {
+            OutlinedTextField(
+                value = filterArtist,
+                onValueChange = onFilterArtistChange,
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                label = { Text("Artista") },
+                enabled = !isSearching,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                keyboardActions = searchActions
+            )
+            OutlinedTextField(
+                value = filterAlbum,
+                onValueChange = onFilterAlbumChange,
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                label = { Text("Álbum") },
+                enabled = !isSearching,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                keyboardActions = searchActions
+            )
+            OutlinedTextField(
+                value = filterYear,
+                onValueChange = onFilterYearChange,
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                label = { Text("Año") },
+                enabled = !isSearching,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                keyboardActions = searchActions
+            )
+        }
+    }
+}
+
+@Composable
+private fun IdentifyLoadMoreButton(
+    isLoading: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit
+) {
+    OutlinedButton(
+        onClick = onClick,
+        enabled = enabled && !isLoading,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        if (isLoading) {
+            CircularProgressIndicator(
+                modifier = Modifier
+                    .padding(end = 8.dp)
+                    .height(18.dp)
+                    .width(18.dp),
+                strokeWidth = 2.dp
+            )
+        }
+        Text(if (isLoading) "Cargando…" else "Mostrar más candidatos")
     }
 }
 
@@ -603,10 +699,12 @@ private fun IdentifySearchBlock(
 private fun IdentifyReviewFooter(
     hasCandidates: Boolean,
     showSearchField: Boolean,
+    showSearchFilters: Boolean,
     isSearching: Boolean,
     onUse: () -> Unit,
     onSkip: () -> Unit,
-    onToggleSearch: () -> Unit
+    onToggleSearch: () -> Unit,
+    onToggleFilters: () -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -638,6 +736,15 @@ private fun IdentifyReviewFooter(
                 modifier = Modifier.weight(1f)
             ) {
                 Text(if (showSearchField) "Ocultar búsqueda" else "Buscar otro…")
+            }
+        }
+        if (showSearchField) {
+            TextButton(
+                onClick = onToggleFilters,
+                enabled = !isSearching,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(if (showSearchFilters) "Ocultar filtros" else "Filtros adicionales…")
             }
         }
     }

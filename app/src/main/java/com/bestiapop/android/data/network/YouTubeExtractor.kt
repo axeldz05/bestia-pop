@@ -3,7 +3,6 @@ package com.bestiapop.android.data.network
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
@@ -54,8 +53,7 @@ sealed class YouTubeExtractResult {
 
 object YouTubeExtractor {
 
-    private val client = OkHttpClient.Builder()
-        .connectTimeout(10, TimeUnit.SECONDS)
+    private val client = HttpClients.api.newBuilder()
         .readTimeout(10, TimeUnit.SECONDS)
         .build()
 

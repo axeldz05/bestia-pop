@@ -6,12 +6,12 @@ import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import androidx.core.content.FileProvider
+import com.bestiapop.android.data.network.HttpClients
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
-import java.util.concurrent.TimeUnit
 import kotlin.coroutines.cancellation.CancellationException
 
 object ApkUpdateInstaller {
@@ -20,13 +20,7 @@ object ApkUpdateInstaller {
     private const val RELATIVE_DIR = "updates"
     private const val APK_NAME = "BestiaPop-update.apk"
 
-    private val downloadClient: OkHttpClient = OkHttpClient.Builder()
-        .connectTimeout(20, TimeUnit.SECONDS)
-        .readTimeout(5, TimeUnit.MINUTES)
-        .writeTimeout(20, TimeUnit.SECONDS)
-        .followRedirects(true)
-        .followSslRedirects(true)
-        .build()
+    private val downloadClient: OkHttpClient = HttpClients.transfer
 
     fun updateFile(context: Context): File =
         File(File(context.cacheDir, RELATIVE_DIR), APK_NAME)

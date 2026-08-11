@@ -120,6 +120,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -486,12 +487,35 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private val _resolvingRemote = MutableStateFlow(false)
     val resolvingRemote = _resolvingRemote.asStateFlow()
 
+    /**
+     * Ref-counted instead of a plain flag: four coroutines drive the resolve spinner, and when one is
+     * cancelled its `finally` used to clear the flag while a newer resolve was still running, so the
+     * UI looked frozen mid-resolve.
+     */
+    private val resolvingRemoteCount = AtomicInteger(0)
+
+    private fun beginResolvingRemote() {
+        resolvingRemoteCount.incrementAndGet()
+        _resolvingRemote.value = true
+    }
+
+    private fun endResolvingRemote() {
+        if (resolvingRemoteCount.decrementAndGet() <= 0) {
+            resolvingRemoteCount.set(0)
+            _resolvingRemote.value = false
+        }
+    }
+
     /** Keys already attempted for "Guardar al escuchar" in this process (in-flight + done). */
     private val saveWhileListeningAttempted = mutableSetOf<String>()
     /** Last auto-save failure per download id, so a retry waits instead of firing on every tick. */
     private val saveWhileListeningFailures = mutableMapOf<String, Long>()
     /** In-flight download coroutine per id, so dismissing a row stops the transfer. */
     private val downloadJobs = mutableMapOf<String, Job>()
+    /** Artists already looked up this session (hit or miss) — a miss must not be retried forever. */
+    private val artistPhotoAttempted = mutableSetOf<String>()
+    /** Song ids already passed to the background metadata/lyrics pass this session. */
+    private val metadataEnhanceAttempted = mutableSetOf<Long>()
 
     private val _radioActive = MutableStateFlow(false)
     val radioActive = _radioActive.asStateFlow()
@@ -1065,7 +1089,12 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
         viewModelScope.launch(Dispatchers.IO) {
             repository.migrateCanonicalAudioUris()
-            repository.migrateLegacyYouTubeMusicSongs()
+            // One-shot: the migration leaves the album untouched below HIGH confidence, so without a
+            // flag every cold start re-queried the same 'YouTube Music' rows over the network forever.
+            if (!libraryPreferences.isLegacyYouTubeMusicMigrated()) {
+                repository.migrateLegacyYouTubeMusicSongs()
+                libraryPreferences.setLegacyYouTubeMusicMigrated()
+            }
         }
 
         viewModelScope.launch {
@@ -1157,15 +1186,20 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             }
         }
 
+        // rawSongs, not songsState: the latter also re-emits on every search keystroke and sort
+        // change, which restarted these network passes over the whole library each time.
         viewModelScope.launch(Dispatchers.IO) {
-            songsState.collect { songs ->
-                val artists = songs.map { it.artist }.distinct().filter { it.isNotBlank() && !it.equals("Unknown Artist", ignoreCase = true) }
+            rawSongs.collect { songs ->
+                val artists = songs.map { it.artist }.distinct().filter {
+                    it.isNotBlank() && !it.equals("Unknown Artist", ignoreCase = true)
+                }
                 for (artist in artists) {
-                    if (!_artistPhotos.value.containsKey(artist)) {
-                        val photoUrl = MetadataFetcher.fetchArtistPhotoUrl(artist)
-                        if (!photoUrl.isNullOrEmpty()) {
-                            _artistPhotos.value = _artistPhotos.value + (artist to photoUrl)
-                        }
+                    // Keyed on "attempted", not on a stored photo: an artist Deezer has no picture
+                    // for never entered the map and was re-queried on every emission, forever.
+                    if (!artistPhotoAttempted.add(artist)) continue
+                    val photoUrl = MetadataFetcher.fetchArtistPhotoUrl(artist)
+                    if (!photoUrl.isNullOrEmpty()) {
+                        _artistPhotos.update { it + (artist to photoUrl) }
                     }
                 }
             }
@@ -1195,11 +1229,15 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         }
 
         viewModelScope.launch(Dispatchers.IO) {
-            songsState.collect { songs ->
+            rawSongs.collect { songs ->
                 val unenhanced = songs.filter {
-                    !SongPathNormalizer.hasUsableArtwork(it.artworkUri)
+                    !SongPathNormalizer.hasUsableArtwork(it.artworkUri) &&
+                        it.id !in metadataEnhanceAttempted
                 }
-                for (song in unenhanced.take(20)) {
+                // enhanceSongMetadataAndLyrics only writes to Room when it found something, so a song
+                // with no cover online stayed in this filter and was re-fetched on every emission.
+                for (song in unenhanced.take(METADATA_ENHANCE_BATCH)) {
+                    metadataEnhanceAttempted.add(song.id)
                     repository.enhanceSongMetadataAndLyrics(song)
                 }
             }
@@ -1730,6 +1768,22 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         return item.copy(resolved = resolved)
     }
 
+    /**
+     * Writes a freshly resolved remote into the queue and the player timeline, locating the slot by
+     * mediaId. The index captured before the network call can point at a different track by the time
+     * the resolve returns (removal, radio refill, reshuffle), and writing it blindly overwrote that
+     * other song. Returns the slot used, or -1 when the item is no longer queued.
+     */
+    private fun applyResolvedRemote(resolved: PlayableItem.Remote): Int {
+        val index = _queue.value.indexOfFirst { it.mediaId == resolved.mediaId }
+        if (index < 0) return -1
+        updateQueueItem(index, resolved)
+        if (index < (mediaController?.mediaItemCount ?: 0)) {
+            mediaController?.replaceMediaItem(index, playableToMediaItem(resolved))
+        }
+        return index
+    }
+
     private fun updateQueueItem(index: Int, item: PlayableItem) {
         val list = _queue.value.toMutableList()
         if (index !in list.indices) return
@@ -1747,7 +1801,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         if (!remoteNeedsResolve(item)) return
         resolvingTransitionJob?.cancel()
         resolvingTransitionJob = viewModelScope.launch {
-            _resolvingRemote.value = true
+            beginResolvingRemote()
             try {
                 val resolvedItem = resolveRemote(item)
                 if (resolvedItem == null) {
@@ -1757,14 +1811,13 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                     return@launch
                 }
                 consecutiveUnplayableSkips = 0
-                updateQueueItem(index, resolvedItem)
-                mediaController?.replaceMediaItem(index, playableToMediaItem(resolvedItem))
+                if (applyResolvedRemote(resolvedItem) < 0) return@launch
                 mediaController?.prepare()
                 if (startPlaying) {
                     mediaController?.play()
                 }
             } finally {
-                _resolvingRemote.value = false
+                endResolvingRemote()
             }
         }
     }
@@ -1805,14 +1858,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
             for (remote in targets) {
                 val resolved = resolveRemote(remote) ?: continue
-                val qi = _queue.value.indexOfFirst { it.mediaId == remote.mediaId }
-                if (qi >= 0) {
-                    updateQueueItem(qi, resolved)
-                    // Keep player timeline in sync if this slot already exists
-                    if (qi < (mediaController?.mediaItemCount ?: 0)) {
-                        mediaController?.replaceMediaItem(qi, playableToMediaItem(resolved))
-                    }
-                }
+                applyResolvedRemote(resolved)
             }
         }
     }
@@ -1848,7 +1894,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
         remoteErrorRetryUsed = true
         viewModelScope.launch {
-            _resolvingRemote.value = true
+            beginResolvingRemote()
             try {
                 streamResolver.invalidate(item)
                 val refreshed = resolveRemote(item.copy(resolved = null))
@@ -1857,12 +1903,11 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                     return@launch
                 }
                 consecutiveUnplayableSkips = 0
-                updateQueueItem(index, refreshed)
-                mediaController?.replaceMediaItem(index, playableToMediaItem(refreshed))
+                if (applyResolvedRemote(refreshed) < 0) return@launch
                 mediaController?.prepare()
                 mediaController?.play()
             } finally {
-                _resolvingRemote.value = false
+                endResolvingRemote()
             }
         }
     }
@@ -2055,7 +2100,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             var working = ordered.toMutableList()
             val startItem = working[startAt]
             if (startItem is PlayableItem.Remote && remoteNeedsResolve(startItem)) {
-                _resolvingRemote.value = true
+                beginResolvingRemote()
                 try {
                     val resolved = resolveRemote(startItem)
                     if (resolved == null) {
@@ -2082,7 +2127,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                     }
                     working[startAt] = resolved
                 } finally {
-                    _resolvingRemote.value = false
+                    endResolvingRemote()
                 }
             }
             finishPlayPlayableCollection(
@@ -3034,21 +3079,29 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             val item = _queue.value[timelineIndex]
             if (item is PlayableItem.Remote && remoteNeedsResolve(item)) {
                 viewModelScope.launch {
-                    _resolvingRemote.value = true
+                    beginResolvingRemote()
                     try {
                         val resolved = resolveRemote(item)
                         if (resolved == null) {
-                            mediaController?.seekToNextMediaItem()
+                            // Relative to the tapped slot, not to the controller's current index:
+                            // seekToNextMediaItem advanced from whatever was already playing, so a
+                            // failed tap on item 10 jumped from 2 to 3 with no message.
+                            val next = timelineIndex + 1
+                            if (next in _queue.value.indices) {
+                                mediaController?.seekTo(next, 0L)
+                                mediaController?.play()
+                            }
+                            toast("No se pudo resolver el audio online")
                             return@launch
                         }
-                        updateQueueItem(timelineIndex, resolved)
-                        mediaController?.replaceMediaItem(timelineIndex, playableToMediaItem(resolved))
-                        mediaController?.seekTo(timelineIndex, 0L)
+                        val slot = applyResolvedRemote(resolved)
+                        if (slot < 0) return@launch
+                        mediaController?.seekTo(slot, 0L)
                         mediaController?.prepare()
                         mediaController?.play()
-                        prefetchAround(timelineIndex)
+                        prefetchAround(slot)
                     } finally {
-                        _resolvingRemote.value = false
+                        endResolvingRemote()
                     }
                 }
             } else {
@@ -5038,26 +5091,30 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         )
     }
 
+    // All three go through StateFlow.update: onProgress runs on Dispatchers.IO and up to 3 downloads
+    // report concurrently, so a read-modify-write on `.value` lost updates (a row frozen on an old
+    // percent, a SUCCESS reverted to DOWNLOADING, a dismissed row reappearing).
     private fun upsertActiveDownload(download: ActiveDownload) {
-        val list = _activeDownloads.value.toMutableList()
-        val index = list.indexOfFirst { it.id == download.id }
-        if (index >= 0) list[index] = download else list.add(0, download)
-        _activeDownloads.value = list
+        _activeDownloads.update { list ->
+            val index = list.indexOfFirst { it.id == download.id }
+            if (index >= 0) list.toMutableList().apply { set(index, download) }
+            else listOf(download) + list
+        }
     }
 
     private fun updateActiveDownload(
         id: String,
         transform: (ActiveDownload) -> ActiveDownload
     ) {
-        val list = _activeDownloads.value.toMutableList()
-        val index = list.indexOfFirst { it.id == id }
-        if (index < 0) return
-        list[index] = transform(list[index])
-        _activeDownloads.value = list
+        _activeDownloads.update { list ->
+            val index = list.indexOfFirst { it.id == id }
+            if (index < 0) list
+            else list.toMutableList().apply { set(index, transform(get(index))) }
+        }
     }
 
     private fun removeActiveDownload(id: String) {
-        _activeDownloads.value = _activeDownloads.value.filterNot { it.id == id }
+        _activeDownloads.update { list -> list.filterNot { it.id == id } }
     }
 
     /**
@@ -5118,6 +5175,11 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         // Registered so dismissing the row can actually stop the transfer instead of leaving it
         // burning data with a terminal update that resurrects or silently drops the row.
         currentCoroutineContext()[Job]?.let { downloadJobs[downloadId] = it }
+
+        // Waited before taking a permit: doing it inside one meant three downloads hitting the
+        // dialog at once consumed all three permits and froze the queue for 30s with no bytes moving.
+        if (conflictPolicy == null) awaitConflictDialogFree()
+
         return try {
             downloadSemaphore.withPermit {
                 // Checked here, not before the permit: a batch that cleared the gate on Wi-Fi could
@@ -5153,6 +5215,18 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
+    /** Blocks while another download owns the conflict dialog, so batches ask one question at a time. */
+    private suspend fun awaitConflictDialogFree() {
+        var waited = 0
+        while (_downloadConflict.value != null &&
+            batchConflictPolicy == null &&
+            waited < CONFLICT_WAIT_TICKS
+        ) {
+            delay(CONFLICT_WAIT_TICK_MS)
+            waited++
+        }
+    }
+
     /** Null if download may proceed; otherwise Spanish error for ActiveDownload ERROR. */
     private suspend fun ensureDownloadNetworkAllowed(): String? {
         if (!connectivityObserver.isMetered()) return null
@@ -5174,19 +5248,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     ): Result<Song> {
         val activeTrack = candidates.getOrNull(safeIndex) ?: track
 
-        var resolvedPolicy = conflictPolicy ?: applyBatchPolicy(activeTrack, lookupIdentity)
-
-        // Wait if another download is already showing the conflict dialog (batch).
-        if (resolvedPolicy == null) {
-            var waited = 0
-            while (_downloadConflict.value != null && batchConflictPolicy == null && waited < 120) {
-                delay(250)
-                waited++
-                if (batchConflictPolicy != null) {
-                    resolvedPolicy = applyBatchPolicy(activeTrack, lookupIdentity)
-                }
-            }
-        }
+        val resolvedPolicy = conflictPolicy ?: applyBatchPolicy(activeTrack, lookupIdentity)
 
         val displayOverride = titleOverride
             ?: (resolvedPolicy as? DownloadConflictPolicy.SaveAs)?.newTitle
@@ -5578,6 +5640,9 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         private const val MAX_CONSECUTIVE_UNPLAYABLE_SKIPS = 5
         /** Auto-save backoff after a failure; long enough to outlast the current track. */
         private const val SAVE_WHILE_LISTENING_RETRY_COOLDOWN_MS = 10 * 60 * 1000L
+        private const val METADATA_ENHANCE_BATCH = 20
+        private const val CONFLICT_WAIT_TICK_MS = 250L
+        private const val CONFLICT_WAIT_TICKS = 120
     }
 }
 

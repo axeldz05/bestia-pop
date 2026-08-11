@@ -1,10 +1,10 @@
 package com.bestiapop.android.data.update
 
+import com.bestiapop.android.data.network.HttpClients
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import java.util.concurrent.TimeUnit
 import kotlin.coroutines.cancellation.CancellationException
 
 class GitHubUpdateClient(
@@ -42,10 +42,6 @@ class GitHubUpdateClient(
     }
 
     companion object {
-        private val defaultClient: OkHttpClient = OkHttpClient.Builder()
-            .connectTimeout(15, TimeUnit.SECONDS)
-            .readTimeout(30, TimeUnit.SECONDS)
-            .writeTimeout(15, TimeUnit.SECONDS)
-            .build()
+        private val defaultClient: OkHttpClient = HttpClients.api
     }
 }

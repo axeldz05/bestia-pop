@@ -3,6 +3,12 @@ package com.bestiapop.android.domain.radio
 import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.domain.util.TrackMatchKeys
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.withTimeoutOrNull
 
 data class RadioSuggestResult(
     val items: List<PlayableItem>,
@@ -129,20 +135,32 @@ class RadioEngine(
         val baseExclude = excludeKeys + seedKeys
         val limitPerSeed = (limit + validSeeds.size - 1) / validSeeds.size
 
-        val perSeed = validSeeds.map { seed ->
-            suggest(
-                seed = seed,
-                library = library,
-                mode = mode,
-                excludeKeys = baseExclude,
-                limit = limitPerSeed,
-                lbToken = lbToken,
-                lbAvailable = lbAvailable,
-                lbUsername = lbUsername,
-                networkAvailable = networkAvailable,
-                coPlaylistSongIds = coPlaylistSongIds
-            )
-        }
+        // Bounded fan-out with a deadline: sequentially each seed can cost an mbid lookup, an lb-radio
+        // call, CF and several Deezer/iTunes round trips, so 10 seeds left the preview spinner up for
+        // minutes with nothing but OkHttp timeouts bounding the total.
+        val perSeed = withTimeoutOrNull(SEEDS_TIMEOUT_MS) {
+            val gate = Semaphore(MAX_SEED_CONCURRENCY)
+            coroutineScope {
+                validSeeds.map { seed ->
+                    async {
+                        gate.withPermit {
+                            suggest(
+                                seed = seed,
+                                library = library,
+                                mode = mode,
+                                excludeKeys = baseExclude,
+                                limit = limitPerSeed,
+                                lbToken = lbToken,
+                                lbAvailable = lbAvailable,
+                                lbUsername = lbUsername,
+                                networkAvailable = networkAvailable,
+                                coPlaylistSongIds = coPlaylistSongIds
+                            )
+                        }
+                    }
+                }.awaitAll()
+            }
+        } ?: emptyList()
 
         val merged = roundRobinMerge(
             lists = perSeed.map { it.items },
@@ -367,6 +385,9 @@ class RadioEngine(
         const val DEFAULT_LIMIT = 30
         const val PREVIEW_DEFAULT_LIMIT = 40
         const val MAX_SEEDS = 10
+        /** Seeds run in parallel but capped, so 10 seeds do not open 10 provider fan-outs at once. */
+        private const val MAX_SEED_CONCURRENCY = 3
+        private const val SEEDS_TIMEOUT_MS = 25_000L
 
         /**
          * Take one item from each seed list per round; skip already-seen matchKey/mediaId.

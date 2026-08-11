@@ -105,13 +105,7 @@ class MusicRepository(private val context: Context) : IMusicRepository {
     private val audioStore = MusicFileStore(context)
     private val tagWritePreferences = LibraryTagWritePreferencesRepository(context)
 
-    private val sharedDownloadClient = okhttp3.OkHttpClient.Builder()
-        .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
-        .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
-        .connectionPool(okhttp3.ConnectionPool(10, 5, java.util.concurrent.TimeUnit.MINUTES))
-        .followRedirects(true)
-        .followSslRedirects(true)
-        .build()
+    private val sharedDownloadClient = com.bestiapop.android.data.network.HttpClients.transfer
 
     override val allSongsFlow: Flow<List<Song>> = musicDao.getAllSongsFlow()
 

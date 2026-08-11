@@ -21,6 +21,8 @@ class StreamResolver(
 ) {
     private val mutex = Mutex()
     private val cache = mutableMapOf<String, ResolvedStream>()
+    /** One lock per query so playback, prefetch and the 403 retry cannot extract the same video at once. */
+    private val keyLocks = mutableMapOf<String, Mutex>()
 
     /**
      * L2: resolve by query or video id. Updates the same TTL cache used by [resolve].
@@ -35,22 +37,40 @@ class StreamResolver(
 
         val qKey = queryCacheKey(query)
         if (!forceRefresh) {
-            mutex.withLock {
-                freshCached(qKey)?.let { return Result.success(it.toStreamResultStub()) }
-                if (looksLikeVideoId(query)) {
-                    freshCached("id:$query")?.let { return Result.success(it.toStreamResultStub()) }
-                }
-            }
+            cachedStream(qKey, query)?.let { return Result.success(it) }
         }
 
-        return when (val result = extract(query)) {
-            is YouTubeExtractResult.Success -> {
-                val stream = result.result
-                putResolved(qKey, stream)
-                Result.success(stream)
+        // Serialized per key: without it, ensureRemoteReadyAt + prefetch + retry each ran a full
+        // extraction (several HTTP round trips) for the same video and the last writer won.
+        return lockFor(qKey).withLock {
+            if (!forceRefresh) {
+                cachedStream(qKey, query)?.let { return@withLock Result.success(it) }
             }
-            is YouTubeExtractResult.Error -> Result.failure(IllegalStateException(result.message))
+            when (val result = extract(query)) {
+                is YouTubeExtractResult.Success -> {
+                    val stream = result.result
+                    putResolved(qKey, stream)
+                    Result.success(stream)
+                }
+                is YouTubeExtractResult.Error -> Result.failure(IllegalStateException(result.message))
+            }
         }
+    }
+
+    private suspend fun cachedStream(qKey: String, query: String): YouTubeStreamResult? =
+        mutex.withLock {
+            freshCached(qKey)?.let { return@withLock it.toStreamResultStub() }
+            if (looksLikeVideoId(query)) {
+                freshCached("id:$query")?.let { return@withLock it.toStreamResultStub() }
+            }
+            null
+        }
+
+    private suspend fun lockFor(key: String): Mutex = mutex.withLock {
+        if (keyLocks.size > MAX_CACHE_ENTRIES) {
+            keyLocks.entries.removeAll { !it.value.isLocked }
+        }
+        keyLocks.getOrPut(key) { Mutex() }
     }
 
     suspend fun resolve(item: PlayableItem.Remote): Result<ResolvedStream> {
@@ -123,6 +143,17 @@ class StreamResolver(
             if (stream.videoId.isNotBlank()) {
                 cache["id:${stream.videoId}"] = resolved
             }
+            pruneLocked()
+        }
+    }
+
+    /** Entries were only dropped when read after expiry, so a long browsing session grew the map. */
+    private fun pruneLocked() {
+        if (cache.size <= MAX_CACHE_ENTRIES) return
+        cache.entries.removeAll { !isFresh(it.value) }
+        while (cache.size > MAX_CACHE_ENTRIES) {
+            val oldest = cache.minByOrNull { it.value.resolvedAtEpochMs }?.key ?: break
+            cache.remove(oldest)
         }
     }
 
@@ -149,5 +180,7 @@ class StreamResolver(
 
     companion object {
         const val DEFAULT_TTL_MS = 4 * 60 * 1000L
+        /** Two keys per resolution (`q:` + `id:`), so this holds a few hundred distinct tracks. */
+        private const val MAX_CACHE_ENTRIES = 256
     }
 }

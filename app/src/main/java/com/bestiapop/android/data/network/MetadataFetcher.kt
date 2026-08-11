@@ -12,7 +12,6 @@ import com.bestiapop.android.data.model.youtubeSearchQuery
 import com.bestiapop.android.data.util.encodeAlbumTrack
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONArray
 import org.json.JSONObject
@@ -27,7 +26,7 @@ data class DeezerArtistHit(
 
 object MetadataFetcher {
 
-    private val client = OkHttpClient.Builder()
+    private val client = HttpClients.api.newBuilder()
         .connectTimeout(8, TimeUnit.SECONDS)
         .readTimeout(8, TimeUnit.SECONDS)
         .build()

@@ -13,7 +13,6 @@ import com.bestiapop.android.data.model.TrackIdentity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
@@ -68,10 +67,8 @@ object ListenBrainzClient {
     private const val BASE_URL = "https://api.listenbrainz.org/1"
     private val JSON = "application/json; charset=utf-8".toMediaType()
 
-    private val client = OkHttpClient.Builder()
+    private val client = HttpClients.api.newBuilder()
         .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(20, TimeUnit.SECONDS)
-        .writeTimeout(20, TimeUnit.SECONDS)
         .build()
 
     suspend fun validateToken(token: String): TokenValidationResult = withContext(Dispatchers.IO) {

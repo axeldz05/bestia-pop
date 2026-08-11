@@ -62,6 +62,15 @@ class LibraryPreferencesRepository(private val context: Context) {
         context.libraryDataStore.put(Keys.INITIAL_SCAN_COMPLETED, completed)
     }
 
+    suspend fun isLegacyYouTubeMusicMigrated(): Boolean =
+        context.libraryDataStore.data.map { prefs ->
+            prefs[Keys.LEGACY_YTM_MIGRATED] ?: false
+        }.first()
+
+    suspend fun setLegacyYouTubeMusicMigrated() {
+        context.libraryDataStore.put(Keys.LEGACY_YTM_MIGRATED, true)
+    }
+
     suspend fun setSortOptionName(name: String) {
         val clean = LibraryUiPreferencesCodec.sanitizeSortOptionName(name)
         context.libraryDataStore.edit { prefs ->
@@ -118,6 +127,7 @@ class LibraryPreferencesRepository(private val context: Context) {
 
     private object Keys {
         val INITIAL_SCAN_COMPLETED = booleanPreferencesKey("initial_library_scan_completed")
+        val LEGACY_YTM_MIGRATED = booleanPreferencesKey("legacy_ytm_album_migrated")
         val SORT_OPTION = stringPreferencesKey("library_sort_option")
         val SORT_DIRECTION = stringPreferencesKey("library_sort_direction")
         val VIEW_MODE = stringPreferencesKey("library_view_mode")

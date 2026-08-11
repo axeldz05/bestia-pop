@@ -192,7 +192,6 @@ fun MainScreen(
                             clearPendingExit()
                         },
                         onSelectFolderClick = onSelectFolderClick,
-                        onSongSelect = { openFullPlayer() },
                         onOpenDownloads = {
                             viewModel.setSelectedNavIndex(2)
                             clearPendingExit()

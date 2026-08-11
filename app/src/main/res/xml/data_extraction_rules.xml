@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<data-extraction-rules>
+    <!--
+      Cloud backup does not carry the audio files in Music/BestiaPop, so restoring the library on a
+      fresh install would bring back song rows pointing at files that are not there. Worse, the
+      restored initial_library_scan_completed flag makes ensureInitialLibraryImport skip the rescan
+      that would rebuild them, leaving a library of unplayable entries with no way back.
+      The ListenBrainz token is a credential and never leaves the device this way.
+    -->
+    <cloud-backup>
+        <exclude domain="database" path="bestiapop_music_db" />
+        <exclude domain="database" path="bestiapop_music_db-shm" />
+        <exclude domain="database" path="bestiapop_music_db-wal" />
+        <exclude domain="file" path="datastore/library_settings.preferences_pb" />
+        <exclude domain="file" path="datastore/playback_session.preferences_pb" />
+        <exclude domain="file" path="datastore/active_downloads.preferences_pb" />
+        <exclude domain="file" path="datastore/identify_review.preferences_pb" />
+        <exclude domain="file" path="datastore/listenbrainz_settings.preferences_pb" />
+    </cloud-backup>
+
+    <!--
+      A device-to-device transfer moves shared storage too, so the library stays consistent and the
+      whole app payload can travel.
+    -->
+    <device-transfer>
+        <exclude domain="file" path="datastore/active_downloads.preferences_pb" />
+    </device-transfer>
+</data-extraction-rules>

@@ -29,10 +29,15 @@ interface MusicDao {
     @Query("SELECT * FROM songs WHERE id = :id")
     suspend fun getSongById(id: Long): Song?
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    /**
+     * IGNORE, not REPLACE: `songs.uriString` is unique, and REPLACE deletes the conflicting row and
+     * reinserts it with a fresh id, which orphans `playlist_song_cross_ref` (no FK/cascade) and
+     * drops lyrics, lastPlayedAt and dateAdded. Returns -1 when the row already exists.
+     */
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertSong(song: Song): Long
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertSongs(songs: List<Song>)
 
     @Update
@@ -132,6 +137,10 @@ interface MusicDao {
 
     @Query("DELETE FROM playlist_song_cross_ref WHERE songId = :songId AND playlistId IN (:playlistIds)")
     suspend fun deleteSongFromPlaylists(songId: Long, playlistIds: List<Long>)
+
+    /** No FK/cascade on the cross-ref table, so deleting songs has to clean up their rows. */
+    @Query("DELETE FROM playlist_song_cross_ref WHERE songId IN (:songIds)")
+    suspend fun deletePlaylistRefsForSongs(songIds: List<Long>)
 
     @Query("UPDATE playlist_song_cross_ref SET songId = :keepId WHERE songId = :dropId")
     suspend fun remapPlaylistSongId(dropId: Long, keepId: Long)

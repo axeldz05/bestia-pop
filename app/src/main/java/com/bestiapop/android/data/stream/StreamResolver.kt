@@ -86,10 +86,21 @@ class StreamResolver(
         return clockMs() - resolved.resolvedAtEpochMs < ttlMs
     }
 
-    fun invalidate(key: String) {
-        cache.remove(key)
-        cache.remove("id:$key")
-        cache.remove(queryCacheKey(key))
+    /**
+     * Drops every entry that could hand [item]'s dead URL back. Each resolution is cached under both
+     * `q:<query>` and `id:<videoId>`, so clearing only the id key left the query key serving the
+     * expired URL for the rest of the TTL and the post-403 retry re-prepared the same stream.
+     */
+    suspend fun invalidate(item: PlayableItem.Remote) {
+        val videoId = item.resolved?.videoId?.takeIf { it.isNotBlank() }
+        val query = item.youtubeQueryOrId?.takeIf { it.isNotBlank() } ?: item.youtubeSearchQuery()
+        mutex.withLock {
+            if (videoId != null) {
+                cache.remove("id:$videoId")
+                cache.values.removeAll { it.videoId == videoId }
+            }
+            if (query.isNotBlank()) cache.remove(queryCacheKey(query))
+        }
     }
 
     private fun freshCached(key: String): ResolvedStream? {

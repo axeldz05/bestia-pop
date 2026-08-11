@@ -49,7 +49,7 @@ service/     MusicService (playback), WebServerService (WiFi sync)
 2. ViewModel combina flows + search/sort → `songsState` / `albumsState` / `artistsState`
 3. Screens Compose observan StateFlows y llaman métodos del ViewModel
 4. Reproducción: ViewModel cola `List<PlayableItem>` (`Local` | `Remote`; tap de colección rota origen a índice 0) → `MediaController` → `MusicService` (ExoPlayer). Kill → `PlaybackSessionStore` (`queue_json` + last-played).
-5. Stream remoto: `StreamResolver.resolve` / `resolveQuery` → `YouTubeExtractor.extractAudioStreamDetailed` → MediaItem HTTPS + `StreamPlaybackTag` (UA) → ExoPlayer
+5. Stream remoto: `StreamResolver.resolve` / `resolveQuery` → `YouTubeExtractor.extractAudioStreamDetailed` → MediaItem HTTPS + `StreamPlaybackTag` (UA en `RequestMetadata.extras`, único campo que sobrevive el bundle de la sesión) → ExoPlayer
 6. Radio: `RadioEngine` (KNOWN / NEW / BOTH; fill LB→CF→Deezer; dedupe global `tryAddRemote`; multi-seed `suggestFromSeeds` → playlist preview sin mutar cola) → `playPlayableCollection` / refill de cola; remotos reusan stream
 7. Para Ti: `MatchListenBrainzTracksUseCase` → `MatchedLbPlaylist.toPlayableItems` → `playPlayableCollection`; CF: `FetchAndMatchCfRecommendationsUseCase` → `matchFromMetadata` → `MatchedCfRecommendations.toPlayableItems`; descarga manual `downloadRemoteItem` (`DISCOVER`); opcional `saveWhileListening` → download background; import Room vía `ImportListenBrainzPlaylistUseCase` + `LB_IMPORT`
 8. Descarga online: siempre vía `runTrackedDownload` → cola `activeDownloads` (tab Descargas) → `DownloadAudioTrackUseCase` → `MusicRepository.downloadAndSaveOnlineTrack` (re-extract vía `StreamResolver.resolveQuery(forceRefresh = true)`) → Room + storage

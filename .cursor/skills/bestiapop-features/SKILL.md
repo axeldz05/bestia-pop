@@ -30,6 +30,8 @@ Archivos: `ui/MusicPlayerViewModel.kt` (`playPlayableCollection` / `toggleShuffl
 
 **Invariante:** Catálogo/metadatos pueden venir de iTunes/Deezer; el stream se resuelve con YouTube. Re-extraer URL CDN antes de descargar (evitar HTTP 403).
 
+**Invariante bytes (`downloadAndSaveOnlineTrack`):** solo se publica el archivo si la descarga terminó completa. Se exige `downloadSuccess` **y** el total contra `Content-Length` (EOF corto = truncado, no éxito); se concatena solo con `206` (un `200` a un request con `Range` reenvía todo → se trunca y reescribe); el stream va en `use` (sin fugas de descriptor); ante `403`/`410` se re-extrae con `resolveQuery(forceRefresh = true)` y se reinicia de 0, con backoff entre intentos (`MAX_DOWNLOAD_ATTEMPTS` / `DOWNLOAD_RETRY_BACKOFF_MS`). Al fallar se borra el parcial (si no, `resyncAppManagedMusic` lo importaría como canción).
+
 | Paso | Dónde |
 |------|--------|
 | Search catálogo tracks | `MetadataFetcher.searchOnlineCatalog` / `YouTubeExtractor.searchYouTube` (`parseSearchContents` + `audioPreferenceScore` / `rankByAudioPreference`: prioriza Topic / Official Audio sobre music video) |
@@ -75,7 +77,7 @@ Estado: `ui/state/LibraryUiState.kt`, `LibraryBrowseFilter.kt`, `LibraryListItem
 | **Álbum (override)** | Tabla `album_overrides`; UI lee override si existe. **Guardar para álbum** = solo override; **Guardar para álbum y canciones** = override + bulk update de songs. Ambos pasan por `saveAlbumOverride(propagateToSongs)` | `requestSaveAlbumMetadata` → `saveAlbumOverride` → `upsertAlbumOverride` / `updateAlbumMetadataPropagateToSongs`; UI `EditAlbumMetadataDialog` |
 | **Álbum menú** | Header de grupos y browse (`TauonAlbumHeader` ⋮) → Editar / Cambiar portada vía `AlbumEditCoverMenuItems`; detalle de álbum también tiene IconButton Edit | `LibrarySongList` / `LibraryAlbumBrowseList` / `AlbumEditCoverMenuItems` / `LibraryScreen` |
 | **Álbum merge** | Renombrar a un álbum existente → `ConfirmMergeAlbumsDialog`; al confirmar, canciones de A adoptan metadata de B. Match con `normalizeAlbumName` (trim, `…`/`â€¦` → `...`, ignoreCase) vía Room en `requestSaveAlbumMetadata`. `mergeAlbumInto` también pliega otras keys equivalentes (mojibake) | `requestSaveAlbumMetadata` / `confirmPendingAlbumMerge` / `findAlbumMergeTarget` / `AlbumNames.kt` |
-| **Álbum portada** | `setAlbumArtwork` → `saveAlbumOverride(..., propagateToSongs = true)` | `MusicPlayerViewModel.setAlbumArtwork` |
+| **Álbum portada** | Solo portada: `IMusicRepository.setAlbumArtwork(albumKey, artworkUri)` = override + `MusicDao.setAlbumArtwork` (artwork de las canciones). **No** toca artist/genre/year (no es una edición de metadata) | `MusicPlayerViewModel.setAlbumArtwork` → `MusicRepository.setAlbumArtwork` |
 | **Playlist** | `Playlist.coverUri` / `PlaylistEntity.coverUri` es de la lista; **no** pisa artwork de canciones | `createPlaylist` / `updatePlaylist`, `savePlaylistCoverImage` |
 | **Canción** | Editar una canción **no** reescribe el álbum ni siblings | `updateSongMetadata` (incluye `year` + `trackNumber`); UI `EditSongMetadataDialog` (Nº de pista; encoding MediaStore `disc*1000+track` vía `encodeAlbumTrack`) |
 | **Persistencia local** | Copiar imagen a `context.filesDir` (`album_covers` / playlist covers); URI unificada `file.toURI()` vía `persistUserCover` | `saveAlbumCoverImage`, `savePlaylistCoverImage`, `extractAndSaveEmbeddedArtwork` |
@@ -95,6 +97,8 @@ UI: `PlaylistsScreen`. Detalle abierto = `PlaylistDetailNav` persistido (`openLo
 
 **Invariantes:**
 - Unicidad lógica por `matchKey(artist, title)` (además del índice Room `uriString`).
+- **Dedupe por path indexa las dos escrituras:** `libraryDedupSets` guarda el path absoluto resuelto **y** el `uriString` crudo, porque los scans consultan el `uriString` canónico (un `content://…/documents/…` en imports SAF) y `resolveFilePath` solo devuelve paths absolutos.
+- **Insertar no clobbea:** `MusicDao.insertSong` / `insertSongs` usan `OnConflictStrategy.IGNORE` (no `REPLACE`: borraba la fila y la reinsertaba con id nuevo, dejando huérfanas las filas de `playlist_song_cross_ref` — sin FK/cascade — y perdiendo `lyrics` / `lastPlayedAt` / `dateAdded`). Colisión de `uriString` en alta de una canción → `MusicRepository.insertOrUpdateByUri` conserva el id y actualiza en el lugar. Borrar canciones limpia sus cross-refs (`MusicDao.deletePlaylistRefsForSongs`).
 - `Music/BestiaPop` es app-managed: `scanMediaStore` **no** reinserta esos archivos (evita duplicar `file:`/path vs `content://`). Tras reinstall, `resyncAppManagedMusic()` reindexa esos archivos por path absoluto.
 - Import disco (MediaStore + BestiaPop) solo en **primer arranque** / post-uninstall (`LibraryPreferencesRepository.initial_library_scan_completed`); updates no re-escanean (Room migraciones sí).
 - Audio local: un solo API `MusicFileStore` + `AudioPersistRef.canonicalize` (escribir/abrir/borrar/playableUri). BestiaPop se persiste como **path absoluto** en `Music/BestiaPop`; música ajena de MediaStore queda `content://media`. Callers no ramifican por scheme. Arranque: `migrateCanonicalAudioUris` (SAF/cache → abs; colisión remapea playlists). WiFi `/existing-files` = union Room basename + `listManagedNames`.
@@ -209,7 +213,9 @@ Centro de descargas online → sección 2 (`DownloadsScreen`, tab Descargas).
 | UI cola | `DownloadsScreen` + `ActiveDownloadRow` (QUEUED / progreso / SUCCESS play+limpiar / ERROR retry·cycle·dismiss) |
 | Prefs descarga | `DownloadPreferencesRepository` / `DownloadSettings` (`download_settings`; `downloadOnMeteredNetwork` default **true**; `totalMeteredBytes` / `totalUnmeteredBytes` vía `addDownloadedBytes`) |
 | Settings UI | `DownloadSettingsScreen` vía `SettingsScreen` sección Descargas (path `Música/BestiaPop` + switch datos + totales bytes); deep-link `openDownloadSettings` / `pendingSettingsSection` / `consumePendingSettingsSection` |
-| Gate red | `ConnectivityObserver.isMetered` + `ensureDownloadNetworkAllowed` al inicio de `runTrackedDownload` → ERROR `DownloadMessages.blockedOnMetered`; al éxito `addDownloadedBytes` con `isMetered()` muestreado en completion (no al start) |
+| Gate red | `ConnectivityObserver.isMetered` + `ensureDownloadNetworkAllowed` **dentro** de `withPermit` en `runTrackedDownload` → ERROR `DownloadMessages.blockedOnMetered`. Antes del semáforo no sirve: un batch que pasó el chequeo en WiFi esperaba minutos en cola y bajaba por celular. Al éxito `addDownloadedBytes` con `isMetered()` muestreado en completion (no al start) |
+| Anti-duplicado | `TrackMatchKeys.downloadIdVariantsFor` (plano + `batch:`) es la única fuente de "¿ya está bajando este track?"; la usan `findByTrack` y el gate de `runTrackedDownload`, que **aborta** (`DownloadMessages.alreadyQueued`) si hay una en QUEUED/DOWNLOADING. Los dos ids resuelven al mismo `sanitizedName`, así que dos jobs escribían el mismo archivo |
+| Cancelar | `downloadJobs[downloadId]` guarda la corrutina; `dismissActiveDownload` / `dismissAllActiveDownloads` la cancelan. Sin eso la descarga seguía consumiendo datos y su update final resucitaba la fila (éxito, vía `upsert`) o desaparecía sin rastro (fallo, vía `update` no-op). `DownloadAudioTrackUseCase` re-lanza `CancellationException` para que cancelar no sea un ERROR ni un non-fatal |
 | Totales UI | Labels “Con límite de datos” / “Sin límite” en `DownloadsScreen` + `DownloadSettingsScreen` (`formatByteCount`) |
 | Persistencia cola | `ActiveDownloadsStore` + `ActiveDownloadCodec` (DataStore JSON; conserva SUCCESS + `resultSongId`) |
 | Notif progreso | `DownloadNotificationHelper` (canal `downloads_channel`; tap → tab Descargas) |
@@ -227,7 +233,7 @@ Centro de descargas online → sección 2 (`DownloadsScreen`, tab Descargas).
 - Match local por artist+title normalizado (`TrackMatchKeys.normalize` pliega case/puntuación/tildes; `matchMetasAgainstLibrary` / `matchAgainstLibrary`; L1 `buildLibraryIndex` + `lookupLocalSong` para radio); faltantes = `PlayableItem.Remote`. Rematch LB/CF tras descarga = `List.rematchLocals`. Query YT / id catálogo = `TrackMeta.youtubeSearchQuery` / `TrackIdentity.toCatalogTrack`.
 - Reproducción: cola mixta `Local|Remote` vía `playPlayableCollection` (prefetch / 403 retry de stream).
 - **Descarga manual** de un Remote en detalle Para Ti / Recomendados o Now Playing: icono Descargar en `RemoteTrackPlaceholderRow` / CTA `NowPlayingRemoteDownloadAction` → `downloadRemoteItem` (`ActiveDownloadSource.DISCOVER`); progreso en Descargas (+ estados en NP); al éxito rematch LB + CF.
-- **Guardar al escuchar** (`saveWhileListening` + `saveWhileListeningPercent`): al alcanzar ≥N% de la duración (o fin) de un Remote, encola en `activeDownloads` vía `runTrackedDownload` (sin reemplazar el MediaItem). Fallo → `ERROR` en el centro + Toast; quita la key de `saveWhileListeningAttempted` para permitir reintento manual/auto.
+- **Guardar al escuchar** (`saveWhileListening` + `saveWhileListeningPercent`): al alcanzar ≥N% de la duración (o fin) de un Remote, encola en `activeDownloads` vía `runTrackedDownload` (sin reemplazar el MediaItem). Fallo → `ERROR` en el centro + Toast + timestamp en `saveWhileListeningFailures`: el reintento automático espera `SAVE_WHILE_LISTENING_RETRY_COOLDOWN_MS` (10 min). **Sin el cooldown** el tracker de posición (cada 200 ms, umbral ya superado) re-encolaba 5 veces por segundo con un toast cada vez. El reintento manual y `dismissActiveDownload` limpian el cooldown.
 - **Import a Room:** “Guardar” crea playlist local con matched + metadata pendiente de faltantes (`playlist_pending_tracks`); “Descargar faltantes” / detalle local encola vía `runTrackedDownload` (`LB_IMPORT` + `targetPlaylistId`). Progreso en tab Descargas; nunca CDN en Room.
 
 | Capacidad | Entry point |
@@ -251,7 +257,8 @@ Centro de descargas online → sección 2 (`DownloadsScreen`, tab Descargas).
 **Invariantes:**
 - Cola unificada `List<PlayableItem>` (`Local` | `Remote`); APIs `Song` se adaptan con `Song.toPlayable()`.
 - Re-extraer stream YouTube just-in-time (`MusicRepository.streamResolver` → `YouTubeExtractor`); cache memoria TTL ~4 min para **playback**; download llama `resolveQuery(forceRefresh = true)` (no reusa CDN cacheado); **no** guardar `audioUrl` CDN en Room.
-- ExoPlayer usa UA del extract vía `StreamPlaybackTag` en `MusicService`.
+- ExoPlayer usa UA del extract vía `StreamPlaybackTag` en `MusicService`. El tag viaja en `MediaItem.RequestMetadata.extras` (`setStreamPlaybackTag` / `streamPlaybackTag()`), **no** en `localConfiguration.tag`: `LocalConfiguration.toBundle` no serializa `tag`, así que ahí se perdía al cruzar `MediaController` → `MediaSession` y el UA nunca se aplicaba.
+- **Pausar no depende del TTL:** `togglePlayPause` corta con `controller.pause()` antes de evaluar `remoteNeedsResolve`. Si no, pasado el TTL la pausa caía en `playPlayableCollection` y reiniciaba el tema en vez de pausarlo.
 - Prefetch índices N+1 / N+2; un reintento en 403/IO luego `seekToNext`.
 - Descarga explícita (“Agregar”) sigue download-then-play; stream no la reemplaza.
 
@@ -259,7 +266,8 @@ Centro de descargas online → sección 2 (`DownloadsScreen`, tab Descargas).
 |-----------|-------------|
 | Modelo | `PlayableItem` (`TrackMeta`; `Remote` guarda `identity` + mbid/stream), `ResolvedStream` en `data/model/PlayableItem.kt` |
 | Resolver | `MusicRepository.streamResolver` (`StreamResolver.resolve` / `prefetch` en `data/stream/StreamResolver.kt`) |
-| UA ExoPlayer | `StreamPlaybackTag` + `MusicService` `UserAgentMediaSourceFactory` |
+| UA ExoPlayer | `StreamPlaybackTag` + `setStreamPlaybackTag` / `streamPlaybackTag()` (`RequestMetadata.extras`) + `MusicService` `UserAgentMediaSourceFactory` |
+| Invalidar stream muerto | `StreamResolver.invalidate(item)` (suspend, bajo el mutex; borra la clave `id:` **y** la `q:` y toda entrada con ese `videoId`) |
 | FGS background | Canal `playback_channel` + `promotePlaybackForeground` (`Service.startForeground` tipo `mediaPlayback`; try/catch + Crashlytics). VM solo `controller.play()`. ExoPlayer `WAKE_MODE_NETWORK` + permiso `WAKE_LOCK`. FGS se mantiene con `playWhenReady` aunque el state sea IDLE breve (resolve Remote); se suelta en pause/`STATE_ENDED`. Play Store: FGS basta. Sideload OEM (Moto): `install.sh` alinea `adaptive_bucket` + `RUN_ANY_IN_BACKGROUND allow` vía adb — no viaja en el APK |
 | Cola / play | `playPlayableCollection`, `currentItem`, `resolvingRemote` en `MusicPlayerViewModel` |
 | Stream desde catálogo | `playOnlineCatalogTrackAsStream` + preview in-dialog (`CatalogTrackItem` / `CandidateTrackCard` + `CatalogPreviewBar`); `cycleSongCatalogResult` / `cycleTrackCandidate` (“Buscar otro”) |
@@ -304,7 +312,7 @@ Origen Discover: se setea en `playPlayableCollection(..., origin)` (wrappers CF/
 **Invariantes:**
 - Seed = canción elegida (`startRadio(seedSong)` o `currentItem`); entry en menú de canción (“Iniciar radio”) y `NowPlayingScreen`.
 - **Modos UI:** Solo conocidos (`KNOWN`) / Solo nuevos (`NEW`) / Ambos (`BOTH`); label `radioStatusLabel` (“Radio · Solo conocidos|Solo nuevos|Ambos”).
-- Long-press Radio en Now Playing: Solo conocidos / Solo nuevos / Ambos / Detener radio (`stopRadio` no vacía cola).
+- Long-press Radio en Now Playing: Solo conocidos / Solo nuevos / Ambos / Detener radio (`stopRadio` no vacía cola). `stopRadio` cancela `radioStartJob` **y** `radioRefillJob` y limpia `_radioLoading`; sin eso el fetch en vuelo (hasta ~45s en NEW) revivía la sesión al terminar y el botón quedaba inerte por el guard `if (_radioLoading.value) return`. Tras el fetch, `startRadio` chequea `isActive` antes de mutar estado.
 - **Auto:** al llegar a `STATE_ENDED` con `RepeatMode.OFF`, `startRadio(auto = true)` respeta preferred; default sin preferred = `BOTH` si hay red (Deezer usable sin token LB), si no `KNOWN`.
 - **Durante reproducción:** no saltea el tema actual; `replaceUpcomingWithRadio` + toast “Se agregaron canciones de la radio a la cola”.
 - **KNOWN:** solo biblioteca (`LocalMetadataRadio` + boost co-playlist). **NEW:** solo `PlayableItem.Remote` vía LB → CF → Deezer (+ iTunes fill); matches de biblioteca se omiten; reintenta con backoff hasta ~45s (`suggestRadioWithRetry`); toast “Radio online no disponible” solo si tras timeout no hay Remotes. **BOTH:** intercala Remote, Local… (`RadioEngine.interleaveEquitable`); sin red sigue con conocidos (sin toast).
@@ -322,7 +330,7 @@ Origen Discover: se setea en `playPlayableCollection(..., origin)` (wrappers CF/
 | LB | `ListenBrainzRadio.suggest` + LB client metadata/lb-radio |
 | CF fill | `CfRecommendationsRadio.suggest` (`artist_type=similar`, cache TTL) |
 | Deezer fill | `DeezerSimilarRadio.suggest` + `MetadataFetcher.resolveDeezerArtistId` / `fetchDeezerArtistRadio` / `fetchDeezerRelatedArtistIds` / `fetchDeezerArtistTop` / `fetchItunesArtistSongs` |
-| Sesión cola | `startRadio`, `stopRadio`, `setRadioPreferredMode`, `suggestRadioWithRetry`, `replaceUpcomingWithRadio`, refill/auto |
+| Sesión cola | `startRadio` (job en `radioStartJob`), `stopRadio`, `setRadioPreferredMode`, `suggestRadioWithRetry`, `replaceUpcomingWithRadio`, refill/auto |
 | UI | Now Playing (tap/long-press + ⋮ “Iniciar radio”); mini bar `statusLabel` (radio / resolving); menú canción biblioteca “Iniciar radio”; multi-select `MultiSelectActionBar` “Similares” + `SimilarPlaylistPreviewDialog` |
 
 ## 12. System back (jerarquía UI)

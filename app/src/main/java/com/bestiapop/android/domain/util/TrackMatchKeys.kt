@@ -47,6 +47,16 @@ object TrackMatchKeys {
         return if (key.isEmpty()) "" else "batch:$key"
     }
 
+    /**
+     * Every id a download of this track can carry (plain + `batch:`). They are distinct ids but they
+     * resolve to the same destination filename, so any check for "is this track already downloading"
+     * has to span the whole set — single source of truth for `findByTrack` and the enqueue gate.
+     */
+    fun downloadIdVariantsFor(artist: String, title: String): List<String> {
+        val key = downloadIdFor(artist, title)
+        return if (key.isEmpty()) emptyList() else listOf(key, "batch:$key")
+    }
+
     fun buildLibraryIndex(library: List<Song>): Map<String, Song> =
         buildIndex(library, artistOf = { it.artist }, titleOf = { it.title })
 

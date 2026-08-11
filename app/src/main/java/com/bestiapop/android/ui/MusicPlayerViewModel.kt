@@ -89,6 +89,7 @@ import com.bestiapop.android.service.DownloadNotificationHelper
 import com.bestiapop.android.service.MusicService
 import com.bestiapop.android.service.StreamPlaybackTag
 import com.bestiapop.android.service.WebServerService
+import com.bestiapop.android.service.setStreamPlaybackTag
 import com.bestiapop.android.ui.state.DiscoverPlaybackOrigin
 import com.bestiapop.android.ui.state.IdentifyReviewItem
 import com.bestiapop.android.ui.state.IdentifyReviewPhase
@@ -119,11 +120,13 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
@@ -485,6 +488,10 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     /** Keys already attempted for "Guardar al escuchar" in this process (in-flight + done). */
     private val saveWhileListeningAttempted = mutableSetOf<String>()
+    /** Last auto-save failure per download id, so a retry waits instead of firing on every tick. */
+    private val saveWhileListeningFailures = mutableMapOf<String, Long>()
+    /** In-flight download coroutine per id, so dismissing a row stops the transfer. */
+    private val downloadJobs = mutableMapOf<String, Job>()
 
     private val _radioActive = MutableStateFlow(false)
     val radioActive = _radioActive.asStateFlow()
@@ -506,6 +513,8 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private var remoteErrorRetryUsed = false
     private var resolvingTransitionJob: Job? = null
     private var radioRefillJob: Job? = null
+    /** Held so `stopRadio` can cancel an in-flight suggest (NEW mode retries for up to ~45s). */
+    private var radioStartJob: Job? = null
     /** Serializes play/shuffle collection so overlapping Mezclar cannot race setMediaItems vs shuffle order. */
     private var playCollectionJob: Job? = null
     /** Applies shuffle order only after player timeline size matches the queue. */
@@ -1702,7 +1711,9 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                             .build()
                     )
                 if (resolved != null) {
-                    builder.setTag(StreamPlaybackTag(resolved.userAgent, resolved.videoId))
+                    builder.setStreamPlaybackTag(
+                        StreamPlaybackTag(resolved.userAgent, resolved.videoId)
+                    )
                 }
                 builder.build()
             }
@@ -1839,7 +1850,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         viewModelScope.launch {
             _resolvingRemote.value = true
             try {
-                item.resolved?.videoId?.let { streamResolver.invalidate(it) }
+                streamResolver.invalidate(item)
                 val refreshed = resolveRemote(item.copy(resolved = null))
                 if (refreshed == null) {
                     recoverAfterUnplayable()
@@ -1926,8 +1937,16 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         }
         val key = TrackMatchKeys.downloadIdFor(remote.artist, remote.title)
         if (key.isEmpty() || key in saveWhileListeningAttempted) return
+        // The position tracker calls this every 200ms and the threshold stays met for the rest of the
+        // track, so a failure has to hold a cooldown: clearing the key alone re-enqueued five times
+        // per second (with a toast each) until the track ended.
+        val failedAtMs = saveWhileListeningFailures[key]
+        if (failedAtMs != null &&
+            System.currentTimeMillis() - failedAtMs < SAVE_WHILE_LISTENING_RETRY_COOLDOWN_MS
+        ) {
+            return
+        }
         // Block auto re-enqueue while downloading or already succeeded this session.
-        // ERROR clears the key so background can try again later; manual retry always works.
         val existing = _activeDownloads.value.find { it.id == key }
         if (existing != null && existing.state == CandidateDownloadState.DOWNLOADING) return
         saveWhileListeningAttempted.add(key)
@@ -1936,9 +1955,11 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             val result = enqueueRemoteDownload(remote, ActiveDownloadSource.SAVE_WHILE_LISTENING)
             result.fold(
                 onSuccess = { song ->
+                    saveWhileListeningFailures.remove(key)
                     toastSongInLibrary(song.title, LibraryToastKind.SAVED)
                 },
                 onFailure = { e ->
+                    saveWhileListeningFailures[key] = System.currentTimeMillis()
                     saveWhileListeningAttempted.remove(key)
                     toast("No se pudo guardar «${remote.title}»: ${e.localizedMessage ?: "error"}")
                 }
@@ -2183,18 +2204,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     fun setAlbumArtwork(albumName: String, artworkUri: String) {
         viewModelScope.launch(Dispatchers.IO) {
-            val existing = repository.getAlbumOverride(albumName)
-            saveAlbumOverride(
-                AlbumOverride(
-                    albumKey = albumName,
-                    displayName = existing?.displayName ?: albumName,
-                    artist = existing?.artist,
-                    genre = existing?.genre,
-                    year = existing?.year ?: 0,
-                    artworkUri = artworkUri
-                ),
-                propagateToSongs = true
-            )
+            repository.setAlbumArtwork(albumName, artworkUri)
         }
     }
 
@@ -2303,13 +2313,15 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         val controller = mediaController
         val current = _currentItem.value
         val queue = _queue.value
+        // Pausing never needs a live stream URL: gating it on the TTL turned pause into a restart
+        // once a Remote had been playing longer than StreamResolver.DEFAULT_TTL_MS.
+        if (controller != null && controller.isPlaying) {
+            controller.pause()
+            return
+        }
         val needsResolve = current is PlayableItem.Remote && remoteNeedsResolve(current)
         if (controller != null && controller.mediaItemCount > 0 && !needsResolve) {
-            if (controller.isPlaying) {
-                controller.pause()
-            } else {
-                playWithForegroundService(controller)
-            }
+            playWithForegroundService(controller)
             return
         }
 
@@ -2608,8 +2620,13 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     fun stopRadio() {
+        radioStartJob?.cancel()
+        radioStartJob = null
         radioRefillJob?.cancel()
         radioRefillJob = null
+        // Without this the in-flight fetch kept _radioLoading true, and startRadio's own
+        // `if (_radioLoading.value) return` left the Radio button inert until it timed out.
+        _radioLoading.value = false
         _radioActive.value = false
         playedInRadioSession.clear()
         _radioMode.value = RadioMode.KNOWN
@@ -2646,7 +2663,8 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         val keepCurrentPlaying = !auto && shouldKeepCurrentWhenStartingRadio()
         val toastMode = announceMode
 
-        viewModelScope.launch {
+        radioStartJob?.cancel()
+        radioStartJob = viewModelScope.launch {
             _radioLoading.value = true
             try {
                 val library = rawSongs.first()
@@ -2666,6 +2684,10 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                     settings = settings,
                     coPlaylistSongIds = coPlaylistIds
                 )
+
+                // Cancellation can only surface at a suspension point, so a "Detener radio" landing
+                // right after the fetch would otherwise still revive the session below.
+                if (!isActive) return@launch
 
                 val suggestions = batch.items
                 if (suggestions.isEmpty()) {
@@ -5064,20 +5086,17 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             ?: (conflictPolicy as? DownloadConflictPolicy.SaveAs)?.newTitle
             ?: existing?.titleOverride
 
-        val blockedMessage = ensureDownloadNetworkAllowed()
-        if (blockedMessage != null) {
-            upsertActiveDownload(
-                ActiveDownload.error(
-                    id = downloadId,
-                    source = source,
-                    candidates = candidates,
-                    errorMessage = blockedMessage,
-                    currentCandidateIndex = safeIndex,
-                    targetPlaylistId = targetPlaylistId,
-                    titleOverride = override
-                )
-            )
-            return Result.failure(IllegalStateException(blockedMessage))
+        // A track can be enqueued under two ids (plain and `batch:`) that resolve to the same
+        // destination filename, so letting a second job through means two writers on one file.
+        // Skipping only the QUEUED reset was not enough: the duplicate still took a permit and ran.
+        val inFlightIds = TrackMatchKeys.downloadIdVariantsFor(lookup.artist, lookup.title) + downloadId
+        val inFlight = _activeDownloads.value.firstOrNull { candidate ->
+            candidate.id in inFlightIds &&
+                (candidate.state == CandidateDownloadState.DOWNLOADING ||
+                    candidate.state == CandidateDownloadState.QUEUED)
+        }
+        if (inFlight != null) {
+            return Result.failure(IllegalStateException(DownloadMessages.alreadyQueued))
         }
 
         if (existing == null ||
@@ -5096,18 +5115,41 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             )
         }
 
-        return downloadSemaphore.withPermit {
-            runTrackedDownloadLocked(
-                downloadId = downloadId,
-                source = source,
-                track = track,
-                candidates = candidates,
-                safeIndex = safeIndex,
-                targetPlaylistId = targetPlaylistId,
-                conflictPolicy = conflictPolicy,
-                lookupIdentity = lookup,
-                titleOverride = override
-            )
+        // Registered so dismissing the row can actually stop the transfer instead of leaving it
+        // burning data with a terminal update that resurrects or silently drops the row.
+        currentCoroutineContext()[Job]?.let { downloadJobs[downloadId] = it }
+        return try {
+            downloadSemaphore.withPermit {
+                // Checked here, not before the permit: a batch that cleared the gate on Wi-Fi could
+                // sit queued for minutes and then download over cellular.
+                ensureDownloadNetworkAllowed()?.let { blockedMessage ->
+                    upsertActiveDownload(
+                        ActiveDownload.error(
+                            id = downloadId,
+                            source = source,
+                            candidates = candidates,
+                            errorMessage = blockedMessage,
+                            currentCandidateIndex = safeIndex,
+                            targetPlaylistId = targetPlaylistId,
+                            titleOverride = override
+                        )
+                    )
+                    return@withPermit Result.failure(IllegalStateException(blockedMessage))
+                }
+                runTrackedDownloadLocked(
+                    downloadId = downloadId,
+                    source = source,
+                    track = track,
+                    candidates = candidates,
+                    safeIndex = safeIndex,
+                    targetPlaylistId = targetPlaylistId,
+                    conflictPolicy = conflictPolicy,
+                    lookupIdentity = lookup,
+                    titleOverride = override
+                )
+            }
+        } finally {
+            downloadJobs.remove(downloadId)
         }
     }
 
@@ -5395,14 +5437,20 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     fun dismissActiveDownload(id: String) {
+        downloadJobs.remove(id)?.cancel()
         removeActiveDownload(id)
         saveWhileListeningAttempted.remove(id)
+        saveWhileListeningFailures.remove(id)
     }
 
     fun dismissAllActiveDownloads() {
         val ids = _activeDownloads.value.map { it.id }
         _activeDownloads.value = emptyList()
-        ids.forEach { saveWhileListeningAttempted.remove(it) }
+        ids.forEach {
+            downloadJobs.remove(it)?.cancel()
+            saveWhileListeningAttempted.remove(it)
+            saveWhileListeningFailures.remove(it)
+        }
     }
 
     fun downloadSingleCandidate(index: Int) {
@@ -5528,6 +5576,8 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         private const val RADIO_ONLINE_RETRY_MAX_BACKOFF_MS = 5_000L
         private const val LAST_PLAYED_POSITION_SAVE_INTERVAL_MS = 5_000L
         private const val MAX_CONSECUTIVE_UNPLAYABLE_SKIPS = 5
+        /** Auto-save backoff after a failure; long enough to outlast the current track. */
+        private const val SAVE_WHILE_LISTENING_RETRY_COOLDOWN_MS = 10 * 60 * 1000L
     }
 }
 

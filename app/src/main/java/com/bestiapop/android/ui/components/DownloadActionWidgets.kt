@@ -170,8 +170,8 @@ fun PreviewPlayPauseButton(
 fun List<ActiveDownload>.findByTrack(artist: String, title: String): ActiveDownload? {
     val key = TrackMatchKeys.downloadIdFor(artist, title)
     if (key.isEmpty()) return null
-    val batchKey = TrackMatchKeys.batchDownloadIdFor(artist, title)
-    find { it.id == key || it.id == batchKey }?.let { return it }
+    val variants = TrackMatchKeys.downloadIdVariantsFor(artist, title)
+    find { it.id in variants }?.let { return it }
     return find { download ->
         val displayTitle = download.titleOverride?.takeIf { it.isNotBlank() } ?: download.title
         TrackMatchKeys.downloadIdFor(download.artist, displayTitle) == key ||

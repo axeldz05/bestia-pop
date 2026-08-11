@@ -56,6 +56,7 @@ import com.bestiapop.android.domain.util.resolveWeakIdentityHints
 import com.bestiapop.android.domain.util.isTrackNumberLabel
 import com.bestiapop.android.domain.util.stripLeadingTitleJunk
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -286,8 +287,14 @@ class MusicRepository(private val context: Context) : IMusicRepository {
         existingKeys = existing.mapNotNull { song ->
             TrackMatchKeys.matchKey(song.artist, song.title).takeIf { it.isNotEmpty() }
         }.toHashSet(),
-        existingPaths = existing.mapNotNull { song ->
-            SongPathNormalizer.resolveFilePath(song.uriString, song.folderPath)
+        // Both spellings: scans probe the canonical uriString, which for a SAF folder import is a
+        // `content://…/documents/…` URI, while resolveFilePath only ever yields an absolute path —
+        // so indexing just the resolved path made path dedupe miss every SAF re-import.
+        existingPaths = existing.flatMap { song ->
+            listOfNotNull(
+                SongPathNormalizer.resolveFilePath(song.uriString, song.folderPath),
+                song.uriString.takeIf { it.isNotBlank() }
+            )
         }.map { it.lowercase() }.toHashSet()
     )
 
@@ -495,14 +502,39 @@ class MusicRepository(private val context: Context) : IMusicRepository {
                 return@withContext existing.id
             }
         }
-        musicDao.insertSong(normalized)
+        insertOrUpdateByUri(normalized)
+    }
+
+    /**
+     * Insert keeping the existing row id when `uriString` already exists, so playlist membership and
+     * app-side state (lyrics, lastPlayedAt, dateAdded) survive a re-import of the same file.
+     */
+    private suspend fun insertOrUpdateByUri(song: Song): Long {
+        val insertedId = musicDao.insertSong(song)
+        if (insertedId != -1L) return insertedId
+        val existing = musicDao.getSongByUri(song.uriString) ?: return -1L
+        musicDao.updateSong(
+            song.copy(
+                id = existing.id,
+                dateAdded = existing.dateAdded,
+                lastPlayedAt = existing.lastPlayedAt,
+                lyrics = song.lyrics ?: existing.lyrics,
+                artworkUri = song.artworkUri ?: existing.artworkUri
+            )
+        )
+        return existing.id
     }
 
     override suspend fun deleteSongsFromApp(songs: List<Song>) = withContext(Dispatchers.IO) {
+        deleteSongRows(songs)
+    }
+
+    /** Single exit for row removal so no caller can forget the cross-ref cleanup (no FK/cascade). */
+    private suspend fun deleteSongRows(songs: List<Song>) {
         val ids = songs.map { it.id }
-        if (ids.isNotEmpty()) {
-            musicDao.deleteSongsByIds(ids)
-        }
+        if (ids.isEmpty()) return
+        musicDao.deletePlaylistRefsForSongs(ids)
+        musicDao.deleteSongsByIds(ids)
     }
 
     override suspend fun deleteSongsFromDevice(songs: List<Song>) = withContext(Dispatchers.IO) {
@@ -513,10 +545,7 @@ class MusicRepository(private val context: Context) : IMusicRepository {
                 e.printStackTrace()
             }
         }
-        val ids = songs.map { it.id }
-        if (ids.isNotEmpty()) {
-            musicDao.deleteSongsByIds(ids)
-        }
+        deleteSongRows(songs)
     }
 
     private fun hasUsableArtwork(artworkUri: String?): Boolean =
@@ -1009,9 +1038,26 @@ class MusicRepository(private val context: Context) : IMusicRepository {
 
     override suspend fun upsertAlbumOverride(override: AlbumOverride) =
         withContext(Dispatchers.IO) {
-            val savedArt = saveAlbumCoverImage(override.artworkUri) ?: override.artworkUri
-            musicDao.upsertAlbumOverride(persistOverride(override, savedArt))
+            persistAlbumOverride(override)
+            Unit
         }
+
+    override suspend fun setAlbumArtwork(albumKey: String, artworkUri: String?) =
+        withContext(Dispatchers.IO) {
+            val existing = musicDao.getAlbumOverride(albumKey)
+            val override = existing?.copy(artworkUri = artworkUri)
+                ?: AlbumOverride(albumKey = albumKey, displayName = albumKey, artworkUri = artworkUri)
+            val savedArt = persistAlbumOverride(override)
+            musicDao.setAlbumArtwork(albumKey, savedArt)
+            maybeWriteTagsForAlbum(albumKey)
+        }
+
+    /** Copies the cover into filesDir, stores the override, and returns the persisted artwork path. */
+    private suspend fun persistAlbumOverride(override: AlbumOverride): String? {
+        val savedArt = saveAlbumCoverImage(override.artworkUri) ?: override.artworkUri
+        musicDao.upsertAlbumOverride(persistOverride(override, savedArt))
+        return savedArt
+    }
 
     override suspend fun updateAlbumMetadataPropagateToSongs(
         override: AlbumOverride
@@ -1293,17 +1339,20 @@ class MusicRepository(private val context: Context) : IMusicRepository {
 
         onProgress?.invoke(DownloadPhase.Downloading(finalTitle))
 
+        var currentUrl = downloadUrl
         var downloadedBytes = 0L
-        var maxResumes = 5
+        var expectedTotalBytes = -1L
         var attempts = 0
         var downloadSuccess = false
+        var lastResponseCode = 0
         var lastHttpError: String? = null
 
-        while (attempts < maxResumes && !downloadSuccess) {
+        while (attempts < MAX_DOWNLOAD_ATTEMPTS && !downloadSuccess) {
             attempts++
+            lastResponseCode = 0
             try {
                 val reqBuilder = okhttp3.Request.Builder()
-                    .url(downloadUrl)
+                    .url(currentUrl)
                     .header("Accept", "*/*")
                     .header("Accept-Encoding", "identity")
                     .header("User-Agent", userAgentToUse)
@@ -1313,35 +1362,65 @@ class MusicRepository(private val context: Context) : IMusicRepository {
                 }
 
                 sharedDownloadClient.newCall(reqBuilder.build()).execute().use { response ->
-                    if (response.isSuccessful || response.code == 206) {
-                        val body = response.body
-                        if (body != null) {
-                            val inputStream = body.byteStream()
-                            val fos = java.io.FileOutputStream(file, downloadedBytes > 0)
+                    lastResponseCode = response.code
+                    if (!response.isSuccessful) {
+                        lastHttpError = "HTTP ${response.code} (${response.message.ifBlank { "Error de servidor" }})"
+                        return@use
+                    }
+                    val body = response.body
+                    if (body == null) {
+                        lastHttpError = "Respuesta sin cuerpo"
+                        return@use
+                    }
+                    // 200 to a ranged request = the server ignored Range and is resending the whole
+                    // body; appending it after the partial bytes would corrupt the file.
+                    val resuming = response.code == 206 && downloadedBytes > 0
+                    if (!resuming) downloadedBytes = 0L
+                    val bodyLength = body.contentLength()
+                    expectedTotalBytes = if (bodyLength > 0) downloadedBytes + bodyLength else -1L
+
+                    body.byteStream().use { input ->
+                        java.io.FileOutputStream(file, resuming).use { output ->
                             val buffer = ByteArray(65536)
-                            var read: Int
-                            while (inputStream.read(buffer).also { read = it } != -1) {
-                                fos.write(buffer, 0, read)
+                            while (true) {
+                                val read = input.read(buffer)
+                                if (read < 0) break
+                                output.write(buffer, 0, read)
                                 downloadedBytes += read
                             }
-                            fos.flush()
-                            fos.close()
-                            downloadSuccess = true
+                            output.flush()
                         }
-                    } else {
-                        lastHttpError = "HTTP ${response.code} (${response.message.ifBlank { "Error de servidor" }})"
+                    }
+                    // A clean EOF short of Content-Length is a truncated body, not a finished file.
+                    downloadSuccess = expectedTotalBytes <= 0L || downloadedBytes >= expectedTotalBytes
+                    if (!downloadSuccess) {
+                        lastHttpError = "Descarga incompleta ($downloadedBytes/$expectedTotalBytes bytes)"
                     }
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
                 lastHttpError = e.localizedMessage ?: "Error de red"
-                if (file.exists() && file.length() > 0) {
-                    downloadedBytes = file.length()
+                downloadedBytes = if (file.exists()) file.length() else 0L
+            }
+
+            if (!downloadSuccess && attempts < MAX_DOWNLOAD_ATTEMPTS) {
+                // CDN URLs expire mid-download: without a fresh extract every retry hits the same
+                // dead URL and the whole budget is burnt for nothing.
+                if (lastResponseCode == 403 || lastResponseCode == 410) {
+                    streamResolver.resolveQuery(queryOrId, forceRefresh = true)
+                        .getOrNull()
+                        ?.let { refreshed ->
+                            currentUrl = refreshed.audioUrl
+                            downloadedBytes = 0L
+                            expectedTotalBytes = -1L
+                        }
                 }
+                delay(DOWNLOAD_RETRY_BACKOFF_MS * attempts)
             }
         }
 
-        if (!file.exists() || file.length() == 0L) {
+        if (!downloadSuccess) {
+            file.delete()
             val errorDetails = if (!lastHttpError.isNullOrBlank()) " ($lastHttpError)" else ""
             throw java.io.IOException(
                 "No se pudo descargar el archivo de audio de YouTube$errorDetails. Verifica tu conexión a internet o intenta con otra canción."
@@ -1425,7 +1504,7 @@ class MusicRepository(private val context: Context) : IMusicRepository {
             dateAdded = System.currentTimeMillis()
         )
 
-        val insertedId = musicDao.insertSong(song)
+        val insertedId = insertOrUpdateByUri(song)
         val savedSong = song.copy(id = insertedId)
         maybeWriteTags(savedSong)
 
@@ -1547,4 +1626,9 @@ class MusicRepository(private val context: Context) : IMusicRepository {
             title == "Canción desde Link" ||
             title == "Enlace YouTube" ||
             title == "Descarga"
+
+    private companion object {
+        const val MAX_DOWNLOAD_ATTEMPTS = 5
+        const val DOWNLOAD_RETRY_BACKOFF_MS = 750L
+    }
 }

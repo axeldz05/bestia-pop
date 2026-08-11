@@ -86,6 +86,12 @@ interface IMusicRepository {
     suspend fun updateAlbumMetadataPropagateToSongs(override: AlbumOverride)
 
     /**
+     * Cover-only change for [albumKey]: updates the override artwork and the songs' artwork,
+     * leaving artist/genre/year untouched (a cover change is not a metadata edit).
+     */
+    suspend fun setAlbumArtwork(albumKey: String, artworkUri: String?)
+
+    /**
      * Move all songs under [sourceAlbumKey] into [targetAlbumKey], rewriting their
      * album/artist/genre/year/artwork to match the effective metadata of the target album.
      * Deletes the source album override; leaves the target override untouched.

@@ -77,7 +77,6 @@ fun LibraryScreen(
     onCompletePlaylistAddition: () -> Unit = {},
     onCancelPlaylistAddition: () -> Unit = {},
     onSelectFolderClick: () -> Unit,
-    onSongSelect: (Song) -> Unit,
     onOpenDownloads: () -> Unit = {}
 ) {
     val songs by viewModel.songsState.collectAsState()

@@ -444,7 +444,7 @@ private class UserAgentMediaSourceFactory(
         intArrayOf(C.CONTENT_TYPE_OTHER, C.CONTENT_TYPE_HLS, C.CONTENT_TYPE_DASH)
 
     override fun createMediaSource(mediaItem: MediaItem): MediaSource {
-        val tag = mediaItem.localConfiguration?.tag as? StreamPlaybackTag
+        val tag = mediaItem.streamPlaybackTag()
         val httpFactory = DefaultHttpDataSource.Factory()
             .setAllowCrossProtocolRedirects(true)
         if (tag != null && tag.userAgent.isNotBlank()) {

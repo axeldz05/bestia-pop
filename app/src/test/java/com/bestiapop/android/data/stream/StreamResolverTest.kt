@@ -85,6 +85,41 @@ class StreamResolverTest {
         assertEquals("boom", result.exceptionOrNull()?.message)
     }
 
+    /** A 403 retry must not be handed the same expired URL back from the query-keyed entry. */
+    @Test
+    fun invalidate_dropsQueryKeyNotOnlyVideoId() = runBlocking {
+        var extractCalls = 0
+        val resolver = StreamResolver(
+            extract = {
+                extractCalls++
+                YouTubeExtractResult.Success(
+                    YouTubeStreamResult(
+                        videoId = "vid12345678",
+                        title = "Song",
+                        artist = "Artist",
+                        artworkUrl = null,
+                        durationMs = 180_000L,
+                        audioUrl = "https://googlevideo.example/audio-$extractCalls",
+                        userAgent = "TestUA"
+                    )
+                )
+            },
+            clockMs = { 1_000L },
+            ttlMs = 4 * 60 * 1000L
+        )
+
+        val item = PlayableItem.remoteFrom(title = "Song", artist = "Artist")
+        val first = resolver.resolve(item).getOrThrow()
+        assertEquals(1, extractCalls)
+
+        // Same shape as handlePlayerError: the item carries the resolved stream that just 403'd.
+        resolver.invalidate(item.copy(resolved = first))
+        val retried = resolver.resolve(item).getOrThrow()
+
+        assertEquals(2, extractCalls)
+        assertTrue(retried.audioUrl.endsWith("-2"))
+    }
+
     @Test
     fun resolveQuery_forceRefresh_bypassesPlaybackCache() = runBlocking {
         var extractCalls = 0

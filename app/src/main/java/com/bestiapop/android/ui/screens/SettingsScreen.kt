@@ -76,9 +76,14 @@ fun SettingsScreen(viewModel: MusicPlayerViewModel, appUpdateViewModel: AppUpdat
         }
     }
 
-    BackHandler(enabled = section != null) {
+    val closeSection = {
         section = null
+        // Returns the user to the tab a deep link pulled them out of (Descargas → Ajustes).
+        viewModel.returnFromTransientSettings()
+        Unit
     }
+
+    BackHandler(enabled = section != null) { closeSection() }
 
     when (section) {
         null -> SettingsHome(
@@ -91,25 +96,25 @@ fun SettingsScreen(viewModel: MusicPlayerViewModel, appUpdateViewModel: AppUpdat
             onOpenLibraryTags = { section = SettingsSection.LibraryTags },
             onOpenUpdate = { section = SettingsSection.Update }
         )
-        SettingsSection.Themes -> SettingsSectionPage("Temas", onBack = { section = null }) {
+        SettingsSection.Themes -> SettingsSectionPage("Temas", onBack = closeSection) {
             ThemeSettingsScreen(viewModel = viewModel, showTitle = false)
         }
-        SettingsSection.ListenBrainz -> SettingsSectionPage("ListenBrainz", onBack = { section = null }) {
+        SettingsSection.ListenBrainz -> SettingsSectionPage("ListenBrainz", onBack = closeSection) {
             ListenBrainzSettingsScreen(viewModel = viewModel)
         }
-        SettingsSection.Playback -> SettingsSectionPage("Reproducción", onBack = { section = null }) {
+        SettingsSection.Playback -> SettingsSectionPage("Reproducción", onBack = closeSection) {
             PlaybackSettingsScreen(viewModel = viewModel)
         }
-        SettingsSection.Sound -> SettingsSectionPage("Sonido", onBack = { section = null }) {
+        SettingsSection.Sound -> SettingsSectionPage("Sonido", onBack = closeSection) {
             VolumeBoostSettingsScreen(viewModel = viewModel)
         }
-        SettingsSection.Downloads -> SettingsSectionPage("Descargas", onBack = { section = null }) {
+        SettingsSection.Downloads -> SettingsSectionPage("Descargas", onBack = closeSection) {
             DownloadSettingsScreen(viewModel = viewModel)
         }
-        SettingsSection.LibraryTags -> SettingsSectionPage("Archivos", onBack = { section = null }) {
+        SettingsSection.LibraryTags -> SettingsSectionPage("Archivos", onBack = closeSection) {
             LibraryTagWriteSettingsScreen(viewModel = viewModel)
         }
-        SettingsSection.Update -> SettingsSectionPage("Actualización", onBack = { section = null }) {
+        SettingsSection.Update -> SettingsSectionPage("Actualización", onBack = closeSection) {
             AppUpdateScreen(viewModel = appUpdateViewModel)
         }
     }

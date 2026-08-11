@@ -47,7 +47,9 @@ fun AppUpdateDialogs(
             }
         )
         is AppUpdateUiState.Downloading -> AlertDialog(
-            onDismissRequest = onDismiss,
+            // Not onDismiss: a scrim tap or back cancelled the APK download with no confirmation and
+            // no feedback. Cancelling stays on the explicit button.
+            onDismissRequest = {},
             title = { Text("Descargando ${state.release.versionName}") },
             text = {
                 Column {

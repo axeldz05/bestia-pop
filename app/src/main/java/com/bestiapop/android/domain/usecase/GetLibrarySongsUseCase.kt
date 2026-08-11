@@ -6,6 +6,7 @@ import com.bestiapop.android.data.model.Artist
 import com.bestiapop.android.data.model.GenreGroup
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.data.util.albumTrackSortKey
+import com.bestiapop.android.domain.util.IdentifyRanking
 import com.bestiapop.android.domain.util.TrackMatchKeys
 import com.bestiapop.android.ui.SortDirection
 import com.bestiapop.android.ui.SortOption
@@ -21,12 +22,13 @@ class GetLibrarySongsUseCase {
         sortOption: SortOption,
         sortDirection: SortDirection = SortDirection.defaultFor(sortOption)
     ): List<Song> {
-        // Build map of album artwork for fallback inheritance
-        val albumArtMap = songs.groupBy { it.album }.mapValues { (_, albumSongs) ->
-            firstArtwork(albumSongs)
-        }
+        // Album artwork fallback, skipping generic albums: "Unknown Album" is the literal stored for
+        // every albumless song, so inheriting inside that bucket showed one cover on unrelated tracks.
+        val albumArtMap = songs.asSequence()
+            .filterNot { IdentifyRanking.isGenericAlbum(it.album) }
+            .groupBy { it.album }
+            .mapValues { (_, albumSongs) -> firstArtwork(albumSongs) }
 
-        // Inherit album artwork across songs belonging to the same album
         val unifiedList = songs.map { song ->
             val albumArt = song.artworkUri ?: albumArtMap[song.album]
             if (albumArt != song.artworkUri) song.copy(artworkUri = albumArt) else song
@@ -79,7 +81,8 @@ class GetLibrarySongsUseCase {
      */
     fun buildListItems(
         songs: List<Song>,
-        viewMode: LibraryViewMode
+        viewMode: LibraryViewMode,
+        overrides: Map<String, AlbumOverride> = emptyMap()
     ): List<LibraryListItem> {
         if (songs.isEmpty()) return emptyList()
 
@@ -93,10 +96,15 @@ class GetLibrarySongsUseCase {
                 var songIndex = 0
                 songs.groupBy { it.album }.forEach { (albumName, groupSongs) ->
                     val albumSongs = sortSongsWithinAlbum(groupSongs)
+                    val override = overrides[albumName]
                     items += LibraryListItem.AlbumHeader(
                         albumName = albumName,
-                        artistName = albumSongs.firstOrNull()?.artist ?: "Artista desconocido",
-                        artworkUri = firstArtwork(albumSongs),
+                        displayName = override?.displayName?.takeIf { it.isNotBlank() } ?: albumName,
+                        artistName = override?.artist?.takeIf { it.isNotBlank() }
+                            ?: albumSongs.firstOrNull()?.artist
+                            ?: "Artista desconocido",
+                        artworkUri = override?.artworkUri?.takeIf { it.isNotBlank() }
+                            ?: firstArtwork(albumSongs),
                         songCount = albumSongs.size,
                         albumSongs = albumSongs
                     )

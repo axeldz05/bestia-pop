@@ -94,6 +94,19 @@ fun MainScreen(
         lastExitBackAtMs = 0L
     }
 
+    // Any back consumed by a nested layer has to restart the 2s window; otherwise
+    // root-back (warning) → nested-back → root-back exited without a second warning, spending a
+    // prompt the user had already "used up" on an unrelated gesture.
+    LaunchedEffect(
+        selectedNavIndex,
+        showFullPlayer,
+        identifyReview.isVisible,
+        pendingAlbumMerge,
+        downloadConflict
+    ) {
+        clearPendingExit()
+    }
+
     LaunchedEffect(pendingOpenDownloads) {
         if (pendingOpenDownloads) {
             viewModel.openDownloadsTabTransient()

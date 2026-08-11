@@ -14,7 +14,14 @@ sealed interface LibraryListItem {
 
     @Immutable
     data class AlbumHeader(
+        /** Grouping key (`Song.album`); what album edits and menus address. */
         val albumName: String,
+        /**
+         * What to show: the [com.bestiapop.android.data.model.AlbumOverride] name when there is one.
+         * Without it, renaming an album without propagating showed the new name under the Álbumes chip
+         * and the old one in these headers.
+         */
+        val displayName: String,
         val artistName: String,
         val artworkUri: String?,
         val songCount: Int,

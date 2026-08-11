@@ -7,8 +7,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -95,6 +99,20 @@ fun ActiveDownloadRow(
                             contentDescription = "Buscar otro",
                             horizontalPadding = 10
                         )
+                        // A conflict row whose dialog was replaced by a later one is stranded in
+                        // IDLE; without these, "Limpiar todo" was the only way to get rid of it.
+                        DownloadOutlinedActionButton(
+                            label = "Reintentar",
+                            onClick = onRetry,
+                            contentDescription = "Reintentar",
+                            horizontalPadding = 10
+                        )
+                        IconButton(onClick = onDismiss) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Descartar"
+                            )
+                        }
                     }
                 }
             )

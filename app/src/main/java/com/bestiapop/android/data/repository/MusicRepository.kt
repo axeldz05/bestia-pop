@@ -579,7 +579,12 @@ class MusicRepository(private val context: Context) : IMusicRepository {
             }
         }
 
-        if (!artUrl.isNullOrEmpty() && (existingAlbumArt.isNullOrEmpty() || existingAlbumArt != artUrl)) {
+        // Never album-wide for a generic album: "Unknown Album" is the literal stored for every
+        // albumless song, so one fetched cover was stamped across all of them.
+        if (!artUrl.isNullOrEmpty() &&
+            !IdentifyRanking.isGenericAlbum(albumName) &&
+            (existingAlbumArt.isNullOrEmpty() || existingAlbumArt != artUrl)
+        ) {
             musicDao.setAlbumArtwork(albumName, artUrl)
         }
 
@@ -792,7 +797,11 @@ class MusicRepository(private val context: Context) : IMusicRepository {
         val merged = preferred.mergePreferring(entity.toIdentity())
         val cleaned = merged.copy(
             title = IdentifyRanking.cleanIdentityTitle(merged.title).ifBlank { merged.title },
-            album = IdentifyRanking.fallbackAlbum(merged.artist, merged.album)
+            album = IdentifyRanking.fallbackAlbum(merged.artist, merged.album),
+            // The local file's own length wins: mergePreferring keeps the receiver's positive
+            // durationMs, and the receiver is the catalog hit, so a remaster or radio edit (or the
+            // 180000ms iTunes default) rewrote the real duration and nothing repaired it afterwards.
+            durationMs = if (entity.durationMs > 0) entity.durationMs else merged.durationMs
         )
         musicDao.updateSong(entity.withIdentity(cleaned))
         val updated = entity.withIdentity(cleaned)

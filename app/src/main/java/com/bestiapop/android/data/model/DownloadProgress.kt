@@ -68,6 +68,7 @@ object DownloadMessages {
     fun downloadsFailed(count: Int) = "$count descargas fallaron"
     fun downloadFailed(detail: String) = "Falló la descarga: $detail"
 
+    const val conflictPending = "Ya existe en la biblioteca — decidí qué hacer"
     const val alreadyQueued = "Ya está en cola — ver Descargas"
     const val downloadQueued = "Descarga en cola — ver Descargas"
     fun downloadsQueued(count: Int) = "$count descargas en cola — ver Descargas"

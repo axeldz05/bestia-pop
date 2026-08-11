@@ -25,10 +25,12 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
@@ -112,18 +114,22 @@ fun QueueItemRow(
     onReorder: ((from: Int, to: Int) -> Unit)? = null
 ) {
     var dragOffsetY by remember { mutableFloatStateOf(0f) }
+    // Measured, not assumed: a hardcoded 56.dp matched neither layout (≈44dp compact in Now Playing,
+    // ≈60dp in the Cola tab), so multi-slot drags landed one or two rows off.
+    var rowHeightPx by remember { mutableIntStateOf(0) }
+    val measured = Modifier.onSizeChanged { rowHeightPx = it.height }
     val rowModifier = if (onReorder != null && reorderCount > 1) {
-        Modifier
+        measured
             .zIndex(if (dragOffsetY != 0f) 1f else 0f)
             .offset { IntOffset(0, dragOffsetY.roundToInt()) }
     } else {
-        Modifier
+        measured
     }
     val handleModifier = if (onReorder != null && reorderCount > 1) {
         Modifier.pointerInput(index, reorderCount) {
             detectVerticalDragGestures(
                 onDragEnd = {
-                    val rowPx = 56.dp.toPx()
+                    val rowPx = rowHeightPx.takeIf { it > 0 }?.toFloat() ?: 56.dp.toPx()
                     val deltaSlots = (dragOffsetY / rowPx).roundToInt()
                     val to = (index + deltaSlots).coerceIn(0, reorderCount - 1)
                     if (to != index) onReorder(index, to)

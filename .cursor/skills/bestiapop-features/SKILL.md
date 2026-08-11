@@ -22,7 +22,7 @@ Cada feature lista **invariantes** + **entry points**. Si el código diverge, ac
 | Shuffle | `shuffleCollection(songs)` / `shufflePlayableCollection(items, origin)` | `playPlayableCollection(..., startShuffled=true)` + permutación current-first |
 | Encolar | `enqueueCollection(songs)` | append a cola `PlayableItem` |
 | Una canción | `playSong(song, playlistOrQueue)` | (arma cola + MediaController) |
-| Tap en Cola / NP | `skipToQueueIndex(index)` | índice **display**; seek timeline; **no** rota ni apaga shuffle |
+| Tap en Cola / NP | `skipToQueueIndex(index)` | display == físico (`displayQueue` es `_queue`); seek timeline; **no** rota ni apaga shuffle. Si el remoto no resuelve, avanza al **slot tocado + 1**, no al siguiente del controller |
 
 Archivos: `ui/MusicPlayerViewModel.kt` (`playPlayableCollection` / `toggleShuffle` / `permuteQueueToPlayOrder` / `displayQueue` / `moveDisplayQueueItem` / `skipToQueueIndex`); `data/playback/PlaybackQueueOrder.kt` (`shufflePlayOrder`); `service/MusicService.kt` (`ACTION_SET_SHUFFLE_ORDER` legacy); `ui/components/PlayShuffleButtons.kt`.
 
@@ -62,6 +62,7 @@ Modelo clave: `TrackIdentity` / `TrackMeta`, `OnlineCatalogTrack` (`identity` + 
 | Filtrado/orden | `GetLibrarySongsUseCase.execute(songs, query, sortOption, sortDirection)` — query vía `TrackMatchKeys.containsNormalized` (case + tildes; blank needle = match all; punctuation-only → no match) |
 | Vista plana vs grupos álbum | `LibraryViewMode.FLAT` / `ALBUM_GROUPS` → `setLibraryViewMode` / `toggleLibraryViewMode`; solo UI cuando chip = `SONGS`; `buildLibraryListItems` / `buildListItems`; within-album `compareSongsWithinAlbum` / `sortSongsWithinAlbum` / `songsFromListItems` |
 | Browse chip + pila | `libraryBrowseFilter` / `setLibraryBrowseFilter` (`LibraryBrowseFilter`: SONGS, ALBUMS, ARTISTS, GENRES, RECENT); `openLibraryAlbum(fromNestedParent)`, `openLibraryArtist`, `openLibraryGenre`, `popLibraryNested` (álbum encima de artista\|género) |
+| Multi-select | Se limpia al cambiar búsqueda o chip (las acciones resuelven ids contra la lista filtrada) y la fila de chips se oculta mientras hay selección: con chips de agregados, «Seleccionar todo» tomaba toda la biblioteca |
 | Colapsar álbum / todos | `collapsedAlbumNames` + toggle por header (`onToggleCollapseAlbum`); expandir/colapsar todo en `LibraryScreen` (vista grupos; no persistido) |
 | Derivados | `extractAlbums` / `extractArtists` / `extractGenres` (`sortOption` + `sortDirection`) → `albumsState`, `artistsState`, `genresState`; play-all `songsForBrowseProjection` |
 | Énfasis agregados | Álbumes: `TauonAlbumHeader.sortHint` vía `formatSortRelevantInfo`; artistas/géneros: subtítulo con mismo helper |
@@ -82,7 +83,9 @@ Estado: `ui/state/LibraryUiState.kt`, `LibraryBrowseFilter.kt`, `LibraryListItem
 | **Canción** | Editar una canción **no** reescribe el álbum ni siblings | `updateSongMetadata` (incluye `year` + `trackNumber`); UI `EditSongMetadataDialog` (Nº de pista; encoding MediaStore `disc*1000+track` vía `encodeAlbumTrack`) |
 | **Persistencia local** | Copiar imagen a `context.filesDir` (`album_covers` / playlist covers); URI unificada `file.toURI()` vía `persistUserCover` | `saveAlbumCoverImage`, `savePlaylistCoverImage`, `extractAndSaveEmbeddedArtwork` |
 
-Herencia visual en lista: `GetLibrarySongsUseCase.execute` unifica artwork faltante desde otras canciones del mismo álbum; `extractAlbums(songs, overrides, sortOption, sortDirection)` aplica `AlbumOverride` y ordena agregados.
+Headers de grupo: `LibraryListItem.AlbumHeader` lleva `albumName` (clave) **y** `displayName` (override) — `TauonAlbumHeader(title = …)` muestra el segundo, así que Canciones y Álbumes no divergen tras renombrar sin propagar.
+
+Herencia visual en lista: `GetLibrarySongsUseCase.execute` unifica artwork faltante desde otras canciones del mismo álbum (**omite álbumes genéricos**: «Unknown Album» es el literal de todas las canciones sin álbum, así que heredar ahí estampaba una portada sobre temas no relacionados); `extractAlbums(songs, overrides, sortOption, sortDirection)` aplica `AlbumOverride` y ordena agregados.
 
 ## 5. Playlists locales
 
@@ -110,6 +113,8 @@ UI: `PlaylistsScreen`. Detalle abierto = `PlaylistDetailNav` persistido (`openLo
 - One-shot migrator histórico: branch `archive/library-dedup-v1-migrator` (no compila en LB).
 - Tags Unknown / rip numérico: `AudioFileMetadata.applyFilenameHints` + `parseFilenameMetadataHints` / `resolveWeakIdentityHints`; al `proposeSongIdentity` persiste limpieza soft (`01`→Unknown Artist, `- Title`→Title, trackNumber) antes de buscar.
 - Identificar online (manual, multi-select, ⋮ o WiFi): Fase 1 lookup + score (`IdentifyRanking`); tags actuales de la canción son **fuente predominante** (`sourceArtist`/`sourceTitle`/`sourceAlbum`); auto-aplica solo **HIGH**; conflicto grave (artista/álbum/título distinto, versión, YouTube) → nunca HIGH. Si LB `enabled` + token y confianza ≠ HIGH (sin `customQuery`/filtros), enriquece con `lookupRecordingMetadata` → `fetchRecordingMetadata` → `toListenBrainzCatalogTrack` y re-rank (`IdentifyProposal.usedListenBrainz`). MEDIUM/LOW/NONE van a cola persistida `IdentifyReviewStore` (DataStore; cold start hidrata, **no** abre overlay). UI `IdentifyReviewScreen`: overview por álbum sugerido (`clusterIdentifyAlbumGroups`, solo MEDIUM + álbum no genérico, size ≥ 2) o cola canción a canción (Usar / Omitir / Buscar otro + filtros artista·álbum·año / Mostrar más candidatos / Aplicar automático a restantes = solo MEDIUM con suggested / Omitir todas / Aplicar grupo). Cerrar oculta overlay y **conserva** la cola (`pendingCount`); banner biblioteca + botón WiFi retoman. Re-identificar lote/WiFi **omite** songIds ya pendientes (cero red); ⋮ sobre pending abre ese ítem. Progreso en `libraryJobProgress` + toast resumen. Telemetría lote (sin PII): `CrashReporter.setKey`/`log` keys `identify_high`/`identify_medium`/`identify_low`/`identify_none`/`identify_skipped`/`identify_lb_hits`.
+- «Título distinto» se mide contra el tag propio de la canción (`sourceTitle` vs candidato), no contra `titleSim` (que compara la *consulta*): si no, un query armado desde el nombre de archivo dejaba pasar a HIGH un candidato que contradecía el título real.
+- `applySongIdentity` **conserva la duración local** cuando es > 0: `mergePreferring` prioriza el receptor (el candidato del catálogo), así que una remasterización o el default de 180000ms de iTunes reescribían el largo real.
 - Álbum genérico (`IdentifyRanking.isGenericAlbum`: `YouTube`, `YouTube Music`, `Unknown Album`, `Single`, `Álbum`/`Album`) **sí** entra a identify; no se omite como ya identificado. Provider YouTube y versiones extra (live / letra / remix / cover…) nunca son HIGH → review. `cleanIdentityTitle` no persiste `+ letra` / `(Original Mix)`.
 - Descarga online: álbum genérico dispara `fetchFullTrackMetadata` → `TrackIdentity?`; no se guarda `"YouTube"` — fallback `"$artist - Single"`.
 - Import/resync/identify reportan progreso vía `LibraryScanProgress` / `LibraryJobProgress` (banner en biblioteca).
@@ -176,6 +181,10 @@ State: `currentThemeState`.
 
 **Invariantes:**
 - Último `_isShuffle` + `RepeatMode` se persisten siempre (`lastShuffleEnabled` / `lastRepeatMode`).
+- **Orden pre-shuffle = `preShuffleOrder` (lista de `mediaId`), no un snapshot de items.** Apagar aleatorio *reconcilia* contra la cola viva (`preShuffleQueueOrNull`: ids conocidos en su orden original, después lo agregado mientras estaba mezclado), así que encolar / quitar / refill de radio con shuffle on ya no se deshacen solos. `_shufflePlayOrder` se eliminó: era estado muerto (siempre null) y `displayQueue` es ahora `_queue`.
+- **Apagar aleatorio restaura el orden** vía `disableShuffleRestoringOrder` (L2); `setShuffleEnabled` (L1) solo cambia el flag. `applyResolvedModes` usa el L2, así que clear-on-skip / clear-on-play ya no dejan la cola mezclada para siempre.
+- **Persistir con shuffle recorta por posición de reproducción**, no por el índice en el orden original: `queueSnapshotForPersist` trima `queue` por `index` y después proyecta los sobrevivientes al orden original (`items` = original filtrado, `shufflePlayOrder` = físico→original, `currentIndex` en original).
+- **Restaurar shuffle es coherente con el toggle:** `applyHydratedQueue(hydrated, restoreShuffle)` recibe el mismo valor que calcula `PlaybackModeRestore.resolve`; si no se restaura shuffle, la cola vuelve en orden original.
 - Shuffle: al activar (toggle / Mezclar) se **reescribe** `_queue` + timeline; toggle en NP usa `rebuildPlayerQueueAroundCurrent` (cirugía remove/add alrededor del tema actual, sin `setMediaItems`/`prepare`) para no trabar la reproducción; fallback `reloadPlayerTimeline` si no hay controller. ExoPlayer queda lineal (`shuffleModeEnabled=false`). Backup `preShuffleQueueBackup` restaura al apagar shuffle. Persist (`queueSnapshotForPersist`): si shuffle on + backup mismo tamaño → items=backup, `shufflePlayOrder`=índices físicos→backup, `currentIndex` en backup; `applyHydratedQueue` pliega a cola física y restaura backup. `displayQueue` = cola (o remap legacy si hubiera `_shufflePlayOrder`). Play/Mezclar serializado (`playCollectionJob`). Drag en cola: `moveQueueItem` (cola física).
 - Arranque en frío (sin timeline): restaurar según `rememberShuffleOnLaunch` / `rememberRepeatOnLaunch` (on por defecto). Off → ese modo arranca apagado.
 - **Autoplay al abrir** (`autoplayOnLaunch`, off por defecto): mismo flag para Local y Remote. Off → mini player / cola hidratada sin `play()`. On → `maybeAutoplayAfterIdleSeed` → `togglePlayPause`. Sesión FGS viva que ya suena no se toca.
@@ -346,7 +355,7 @@ Origen Discover: se setea en `playPlayableCollection(..., origin)` (wrappers CF/
 | Identify review | ITEM+overview → vuelve overview (`returnIdentifyReviewOverview`); si no, oculta overlay y conserva cola (`dismissIdentifyReview`); `skipAllIdentifyReview` vacía | `IdentifyReviewScreen` `BackHandler` |
 | Add Music colección | `clearSelectedCollection` antes de cerrar | `AddMusicDialog` `BackHandler` + `onDismissRequest` |
 | Now Playing | `dismissFullPlayer` | `NowPlayingScreen` `BackHandler` |
-| Library nested | multi-select → cancel addition → álbum (`closeLibraryAlbum`, conserva artista\|género) → artista\|género → clear search | `LibraryScreen` `BackHandler` / `popLibraryNested` |
+| Library nested | cancel addition → multi-select → álbum (`closeLibraryAlbum`, conserva artista\|género) → artista\|género → clear search | `LibraryScreen` `BackHandler` / `popLibraryNested` |
 | Playlists nested | un detalle a la vez (local / LB / CF) → lista | `PlaylistsScreen` `BackHandler` → `closePlaylistDetail` |
 | Settings nested | Temas / LB / Reproducción / Sonido / Descargas / Archivos → home | `SettingsScreen` `BackHandler` |
 | Raíz de tab | Doble atrás (~2s) + snackbar “Pulsa otra vez para salir” | `MainScreen` `BackHandler` + `SnackbarHost` |

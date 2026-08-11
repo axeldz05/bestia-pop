@@ -331,16 +331,23 @@ object ListenBrainzClient {
         request: Request,
         parse: (code: Int, body: String) -> LbApiResult<T>
     ): LbApiResult<T> {
-        return try {
+        // Parsing happens outside the network try: with it inside, a schema change or an HTML error
+        // page surfaced as isNetworkError = true and was logged as a connectivity failure.
+        val response = try {
             client.newCall(request).execute().use { response ->
-                val body = response.body?.string().orEmpty()
-                parse(response.code, body)
+                response.code to response.body?.string().orEmpty()
             }
         } catch (e: Exception) {
-            LbApiResult.Failure(
+            return LbApiResult.Failure(
                 message = e.message ?: "Error de red",
                 isNetworkError = true
             )
+        }
+        val (code, body) = response
+        return try {
+            parse(code, body)
+        } catch (e: Exception) {
+            LbApiResult.Failure(message = e.message ?: "Respuesta inesperada de ListenBrainz")
         }
     }
 

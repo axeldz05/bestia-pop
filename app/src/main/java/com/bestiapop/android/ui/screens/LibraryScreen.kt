@@ -42,6 +42,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.bestiapop.android.data.model.Album
 import com.bestiapop.android.data.model.Playlist
@@ -119,7 +120,8 @@ fun LibraryScreen(
     } else {
         LibraryViewMode.FLAT
     }
-    val songListItems = remember(songs, songsViewMode) {
+    // `albums` is keyed in because headers now read album overrides: a rename has to refresh them.
+    val songListItems = remember(songs, songsViewMode, albums) {
         viewModel.buildLibraryListItems(songs, songsViewMode)
     }
     val recentSongs = remember(songs) {
@@ -153,6 +155,12 @@ fun LibraryScreen(
     // Multi-selection state
     var selectedSongIds by remember { mutableStateOf(setOf<Long>()) }
     val isMultiSelectMode = selectedSongIds.isNotEmpty()
+
+    // Every selection action resolves ids against the search-filtered list, so a query that hides the
+    // picked songs left the bar open over an empty selection ("0 seleccionados", silent no-ops).
+    LaunchedEffect(searchQuery, browseFilter) {
+        selectedSongIds = emptySet()
+    }
 
     // Add Music dialog state
     var showAddMusicDialog by remember { mutableStateOf(false) }
@@ -269,8 +277,10 @@ fun LibraryScreen(
 
     BackHandler(enabled = hasNestedBack) {
         when {
-            isMultiSelectMode -> clearSelection()
+            // Addition first: isMultiSelectMode is just "something is ticked", so back used to wipe
+            // the user's picks instead of cancelling, needing a second press to do what X does once.
             isPlaylistAdditionMode -> onCancelPlaylistAddition()
+            isMultiSelectMode -> clearSelection()
             hasNestedDetail -> viewModel.popLibraryNested()
             searchQuery.isNotEmpty() -> collapseSearch()
             searchExpanded -> collapseSearch()
@@ -380,6 +390,12 @@ fun LibraryScreen(
                 }
             }
 
+            // Nested album detail renders a FLAT list with no group header, so without this the user
+            // saw a bare song list with nothing naming the album they opened.
+            val nestedTitle = selectedAlbumName?.let { key ->
+                resolveAlbumByKey(key)?.displayName ?: key
+            } ?: selectedArtistName ?: selectedGenreName
+
             if (searchExpanded) {
                 OutlinedTextField(
                     value = searchQuery,
@@ -402,7 +418,18 @@ fun LibraryScreen(
                     shape = RoundedCornerShape(12.dp)
                 )
             } else {
-                Spacer(modifier = Modifier.weight(1f))
+                if (nestedTitle != null) {
+                    Text(
+                        text = nestedTitle,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f)
+                    )
+                } else {
+                    Spacer(modifier = Modifier.weight(1f))
+                }
                 IconButton(onClick = { searchExpanded = true }) {
                     Icon(Icons.Default.Search, contentDescription = "Buscar")
                 }
@@ -439,7 +466,10 @@ fun LibraryScreen(
             }
         }
 
-        if (!hasNestedDetail && !isPlaylistAdditionMode) {
+        // Hidden during multi-select: switching to Álbumes/Artistas/Géneros made "Seleccionar todo"
+        // resolve against songsForBrowseProjection, i.e. the whole library, over rows the user cannot
+        // see or untick.
+        if (!hasNestedDetail && !isPlaylistAdditionMode && !isMultiSelectMode) {
             LibraryFilterChipRow(
                 selected = browseFilter,
                 onSelect = { viewModel.setLibraryBrowseFilter(it) }
@@ -766,7 +796,9 @@ private fun NestedLibraryBrowse(
     actions: LibrarySongListActions,
     onToggleSelect: (Song) -> Unit
 ) {
-    val listItems = remember(browseSongs, viewMode) {
+    // Keyed on albums so an album rename refreshes the group headers, which read the override name.
+    val albums by viewModel.albumsState.collectAsState()
+    val listItems = remember(browseSongs, viewMode, albums) {
         viewModel.buildLibraryListItems(browseSongs, viewMode)
     }
     val playQueue = remember(listItems, viewMode, browseSongs) {

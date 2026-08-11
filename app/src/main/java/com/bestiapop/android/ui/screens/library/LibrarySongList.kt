@@ -155,7 +155,7 @@ fun LibrarySongList(
                         { onOpenAlbumState.value(item.albumName) }
                     }
                     TauonAlbumHeader(
-                        albumName = item.albumName,
+                        title = item.displayName,
                         artistName = item.artistName,
                         artworkUri = item.artworkUri,
                         songCount = item.songCount,
@@ -309,7 +309,8 @@ private fun LibrarySongRow(
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun TauonAlbumHeader(
-    albumName: String,
+    /** Display text only: pass the override display name, not the grouping key. */
+    title: String,
     artistName: String,
     artworkUri: String?,
     songCount: Int,
@@ -381,7 +382,7 @@ fun TauonAlbumHeader(
                 Spacer(modifier = Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = albumName,
+                        text = title,
                         style = ListDensity.titleStyle,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurfaceVariant

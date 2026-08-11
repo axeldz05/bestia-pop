@@ -202,8 +202,11 @@ object IdentifyRanking {
             }
         }
 
+        // Compared against the song's own tag, not against titleSim (which measures the *query*):
+        // when the query title came from a filename hint, a candidate contradicting the real tag
+        // title was never flagged and confidence() could still return HIGH, i.e. auto-apply.
         val srcTitle = query.sourceTitle?.let { stripTitleNoise(it) }.orEmpty()
-        if (srcTitle.isNotEmpty() && titleSim < SOURCE_CONFLICT_SIM) {
+        if (srcTitle.isNotEmpty() && similarity(srcTitle, cTitle) < SOURCE_CONFLICT_SIM) {
             reasons.add("título distinto")
         }
 

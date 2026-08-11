@@ -81,15 +81,19 @@ class ListenBrainzRadio(
             else meta.identity.copy(artist = artist)
             val key = identity.matchKey()
             if (key.isEmpty() || key in localSeen) continue
+            // excludeKeys was accepted and ignored, so this `limit` window filled up with tracks the
+            // engine then discarded (already played, or library matches in NEW mode) and the LB stage
+            // often contributed nothing even when the API answered.
+            if (key in excludeKeys) continue
             localSeen.add(key)
 
-            results.add(
-                PlayableItem.fromLibraryOrRemote(
-                    local = TrackMatchKeys.lookupLocalSong(libraryIndex, identity),
-                    identity = identity,
-                    recordingMbid = rec.recordingMbid
-                )
+            val item = PlayableItem.fromLibraryOrRemote(
+                local = TrackMatchKeys.lookupLocalSong(libraryIndex, identity),
+                identity = identity,
+                recordingMbid = rec.recordingMbid
             )
+            if (item.mediaId in excludeKeys) continue
+            results.add(item)
         }
         return results
     }

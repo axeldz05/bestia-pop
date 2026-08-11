@@ -124,6 +124,15 @@ class WebServerService : Service() {
         startForeground(2001, notification)
     }
 
+    /**
+     * Same transform the dashboard applies before checking `/existing-files`, and the one uploads are
+     * stored under. Also strips any path, so `name` cannot escape the music folder.
+     */
+    private fun sanitizeUploadName(rawName: String): String =
+        rawName.substringAfterLast("/")
+            .substringAfterLast("\\")
+            .replace(Regex("[^a-zA-Z0-9._-]"), "_")
+
     private fun startServer() {
         serviceScope.launch {
             try {
@@ -141,13 +150,17 @@ class WebServerService : Service() {
 
                         get("/existing-files") {
                             call.response.header("Cache-Control", "no-cache, no-store, must-revalidate")
-                            val fromFolder = audioStore.listManagedNames()
+                            // Sanitized on both sides: uploads are stored through sanitizeUploadName
+                            // and the dashboard compares against that form, so returning raw basenames
+                            // meant "01 - Canción.mp3" never matched "01_-_Canci_n.mp3" and the file
+                            // was re-uploaded as a second copy.
+                            val fromFolder = audioStore.listManagedNames().map { sanitizeUploadName(it) }
                             val fromRoom = repository.getAllSongsSync().mapNotNull { song ->
                                 SongPathNormalizer.fileName(song.uriString, song.folderPath)
-                                    .lowercase()
                                     .takeIf { it.isNotBlank() }
+                                    ?.let { sanitizeUploadName(it) }
                             }.toSet()
-                            val existingList = (fromFolder + fromRoom).distinct()
+                            val existingList = (fromFolder + fromRoom).map { it.lowercase() }.distinct()
                             val jsonArray = existingList.joinToString(prefix = "[", postfix = "]") {
                                 "\"${it.replace("\"", "\\\"")}\""
                             }
@@ -160,7 +173,7 @@ class WebServerService : Service() {
                             call.response.header("Cache-Control", "no-cache, no-store, must-revalidate")
 
                             val rawName = call.request.queryParameters["name"] ?: "audio_${System.currentTimeMillis()}.mp3"
-                            val safeName = rawName.substringAfterLast("/").substringAfterLast("\\").replace(Regex("[^a-zA-Z0-9._-]"), "_")
+                            val safeName = sanitizeUploadName(rawName)
                             val pendingWrite = audioStore.prepareWrite(safeName)
                             val destinationFile = pendingWrite.stagingFile
                             val transferId = UUID.randomUUID().toString()
@@ -252,6 +265,16 @@ class WebServerService : Service() {
                                             errorMessage = e.localizedMessage ?: "Error al guardar"
                                         )
                                     }
+                                    // The browser used to get {"status":"ok"} here, mark the file done
+                                    // and add it to its dedupe set, so a retry was skipped while the
+                                    // phone showed an error and the song was missing.
+                                    destinationFile.delete()
+                                    call.respondText(
+                                        """{"status":"error","message":"No se pudo guardar el archivo"}""",
+                                        ContentType.Application.Json,
+                                        HttpStatusCode.InternalServerError
+                                    )
+                                    return@post
                                 }
 
                                 call.respondText("""{"status":"ok","filename":"$safeName"}""", ContentType.Application.Json)

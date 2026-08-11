@@ -46,7 +46,7 @@ fun LibraryAlbumBrowseList(
                 )
             }
             TauonAlbumHeader(
-                albumName = album.displayName,
+                title = album.displayName,
                 artistName = album.artist,
                 artworkUri = album.artworkUri,
                 songCount = album.songCount,

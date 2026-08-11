@@ -9,6 +9,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.bestiapop.android.data.model.PlayableItem
@@ -39,13 +40,24 @@ fun QueueLazyList(
         )
         return
     }
+    // mediaId plus an occurrence number instead of the position: the same track can sit in the queue
+    // twice (hence the old `_$index`), but baking the index in changed the key of every row after an
+    // edit, so reordering disposed and rebuilt them and the drag offset / scroll anchor were lost.
+    val itemKeys = remember(items) {
+        val seen = HashMap<String, Int>(items.size)
+        items.map { item ->
+            val occurrence = seen.getOrDefault(item.mediaId, 0) + 1
+            seen[item.mediaId] = occurrence
+            if (occurrence == 1) item.mediaId else "${item.mediaId}#$occurrence"
+        }
+    }
     LazyColumn(
         state = listState,
         modifier = modifier.fillMaxSize()
     ) {
         itemsIndexed(
             items = items,
-            key = { index, item -> "${item.mediaId}_$index" },
+            key = { index, _ -> itemKeys.getOrElse(index) { index } },
             contentType = { _, _ -> "queue_row" }
         ) { index, item ->
             QueueItemRow(

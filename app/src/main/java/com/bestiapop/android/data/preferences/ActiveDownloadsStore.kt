@@ -68,9 +68,13 @@ object ActiveDownloadCodec {
                     progressMessage = null,
                     progressPercent = 100
                 )
-                CandidateDownloadState.ERROR,
-                CandidateDownloadState.IDLE -> download.copy(
+                CandidateDownloadState.ERROR -> download.copy(
                     progressMessage = null,
+                    progressPercent = 0
+                )
+                // IDLE means an unresolved conflict: keep a status line, or the row came back blank.
+                CandidateDownloadState.IDLE -> download.copy(
+                    progressMessage = download.progressMessage ?: DownloadMessages.conflictPending,
                     progressPercent = 0
                 )
             }

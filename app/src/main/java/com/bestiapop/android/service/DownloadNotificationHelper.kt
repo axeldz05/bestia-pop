@@ -64,7 +64,9 @@ class DownloadNotificationHelper(private val context: Context) {
             .setSmallIcon(android.R.drawable.stat_sys_download)
             .setContentTitle(title)
             .setContentText(text)
-            .setOngoing(true)
+            // Dismissible on purpose: no foreground service backs this, so an ongoing notification
+            // outlived a process kill and could not be swiped away until the app was reopened.
+            .setOngoing(false)
             .setOnlyAlertOnce(true)
             .setContentIntent(pending)
             .setProgress(100, latest.progressPercent.coerceIn(0, 100), latest.progressPercent <= 0)

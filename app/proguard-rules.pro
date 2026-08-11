@@ -18,6 +18,12 @@
 -dontwarn org.slf4j.**
 -dontwarn kotlinx.serialization.**
 
+# jaudiotagger (Ajustes → Archivos) is a desktop library: its artwork helpers reference java.awt /
+# javax.imageio, which do not exist on Android. R8 fails the release build over the missing classes.
+# AudioTagWriter never touches StandardArtwork.getImage(), so the references are unreachable.
+-dontwarn java.awt.**
+-dontwarn javax.imageio.**
+
 -keepclasseswithmembernames class * {
     native <methods>;
 }

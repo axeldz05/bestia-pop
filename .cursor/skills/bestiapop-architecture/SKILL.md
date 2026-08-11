@@ -20,7 +20,7 @@ Módulo único Gradle: `:app`. Nombre del proyecto: **BestiaPop**.
 | Estado UI | `MusicPlayerViewModel` (AndroidViewModel) + StateFlow |
 | Reproducción | Media3 ExoPlayer + `MediaLibraryService` (`MusicService`) |
 | Persistencia | Room (`bestiapop_music_db`, v3) |
-| Preferencias | DataStore (`ThemePreferencesRepository`, `ListenBrainzPreferencesRepository`, `PlaybackPreferencesRepository`, `LibraryPreferencesRepository` display+nav, `ActiveDownloadsStore`, `IdentifyReviewStore` cola identify, `PlaybackSessionStore` last-played + cola, `AppUpdateCheckStore` last GitHub check) |
+| Preferencias | DataStore (`ThemePreferencesRepository`, `ListenBrainzPreferencesRepository`, `PlaybackPreferencesRepository`, `DownloadPreferencesRepository` metered/path prefs, `LibraryPreferencesRepository` display+nav, `ActiveDownloadsStore`, `IdentifyReviewStore` cola identify, `PlaybackSessionStore` last-played + cola, `AppUpdateCheckStore` last GitHub check) |
 | Red / catálogo | OkHttp + `MetadataFetcher` (iTunes/Deezer) + `YouTubeExtractor` + `ListenBrainzClient` + `GitHubUpdateClient` (releases) |
 | Sync WiFi | Ktor CIO embebido (`WebServerService`) |
 | Imágenes | Coil |
@@ -61,7 +61,7 @@ service/     MusicService (playback), WebServerService (WiFi sync)
 1. Playlists (`PlaylistsScreen` + `PlaylistDetailNav`)
 2. Descargas (`DownloadsScreen`)
 3. WiFi Sync (`WebServerScreen`)
-4. Ajustes (`SettingsScreen` / temas / ListenBrainz / Reproducción / Sonido / update GitHub)
+4. Ajustes (`SettingsScreen` / temas / ListenBrainz / Reproducción / Sonido / Descargas / update GitHub)
 
 Overlay: `BottomPlayerBar` → `NowPlayingScreen` (⋮ canción/álbum; merge álbum en `MainScreen`); cola en `QueueScreen`.
 Mini player se rehidrata desde `MediaController` (sesión viva) o `PlaybackSessionStore` (cola persistida + last-played) / seed idle (ver features §10b).

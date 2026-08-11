@@ -19,6 +19,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Headset
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Repeat
@@ -53,7 +54,8 @@ private enum class SettingsSection {
     Themes,
     ListenBrainz,
     Playback,
-    Sound
+    Sound,
+    Downloads
 }
 
 @Composable
@@ -69,7 +71,8 @@ fun SettingsScreen(viewModel: MusicPlayerViewModel, appUpdateViewModel: AppUpdat
             onOpenThemes = { section = SettingsSection.Themes },
             onOpenListenBrainz = { section = SettingsSection.ListenBrainz },
             onOpenPlayback = { section = SettingsSection.Playback },
-            onOpenSound = { section = SettingsSection.Sound }
+            onOpenSound = { section = SettingsSection.Sound },
+            onOpenDownloads = { section = SettingsSection.Downloads }
         )
         SettingsSection.Themes -> SettingsSectionPage("Temas", onBack = { section = null }) {
             ThemeSettingsScreen(viewModel = viewModel, showTitle = false)
@@ -82,6 +85,9 @@ fun SettingsScreen(viewModel: MusicPlayerViewModel, appUpdateViewModel: AppUpdat
         }
         SettingsSection.Sound -> SettingsSectionPage("Sonido", onBack = { section = null }) {
             VolumeBoostSettingsScreen(viewModel = viewModel)
+        }
+        SettingsSection.Downloads -> SettingsSectionPage("Descargas", onBack = { section = null }) {
+            DownloadSettingsScreen(viewModel = viewModel)
         }
     }
 }
@@ -108,7 +114,8 @@ private fun SettingsHome(
     onOpenThemes: () -> Unit,
     onOpenListenBrainz: () -> Unit,
     onOpenPlayback: () -> Unit,
-    onOpenSound: () -> Unit
+    onOpenSound: () -> Unit,
+    onOpenDownloads: () -> Unit
 ) {
     val context = LocalContext.current
     val updateState by appUpdateViewModel.state.collectAsState()
@@ -185,6 +192,12 @@ private fun SettingsHome(
                 "Amplificar y balance estéreo",
                 Icons.AutoMirrored.Filled.VolumeUp,
                 onOpenSound
+            ),
+            SettingsHomeEntry(
+                "Descargas",
+                "Datos móviles y carpeta de guardado",
+                Icons.Default.Download,
+                onOpenDownloads
             ),
             SettingsHomeEntry(
                 "Buscar actualización",

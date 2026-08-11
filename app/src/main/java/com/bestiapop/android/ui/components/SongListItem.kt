@@ -30,6 +30,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import com.bestiapop.android.data.model.Song
+import com.bestiapop.android.ui.theme.ListDensity
 import java.util.Locale
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -61,8 +62,11 @@ fun SongListItem(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 8.dp, vertical = 4.dp)
-            .clip(RoundedCornerShape(12.dp))
+            .padding(
+                horizontal = ListDensity.rowHorizontalPadding,
+                vertical = ListDensity.rowVerticalPadding
+            )
+            .clip(RoundedCornerShape(ListDensity.corner))
             .background(colors.background)
             .combinedClickable(
                 onClick = {
@@ -74,7 +78,7 @@ fun SongListItem(
                 },
                 onLongClick = onLongClick
             )
-            .padding(12.dp),
+            .padding(ListDensity.rowInnerPadding),
         verticalAlignment = Alignment.CenterVertically
     ) {
         if (isSelectionMode) {
@@ -90,7 +94,7 @@ fun SongListItem(
 
         ArtworkThumbnail(
             artworkUri = song.artworkUri,
-            size = 48.dp,
+            size = ListDensity.artworkSong,
             contentDescription = song.title
         )
 

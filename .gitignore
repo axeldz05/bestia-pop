@@ -39,6 +39,9 @@ google-services.json
 *.hprof
 .android-user/*
 
+# Kotlin incremental / sessions (local tooling)
+.kotlin/
+
 # Changelog local (user-facing pending → release notes; ver skill bestiapop-release-changelog)
 CHANGELOG.pending.md
 CHANGELOG.release-notes.md

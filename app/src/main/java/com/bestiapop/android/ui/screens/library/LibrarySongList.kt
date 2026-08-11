@@ -47,6 +47,7 @@ import com.bestiapop.android.ui.components.PlayShuffleIconPair
 import com.bestiapop.android.ui.components.SongListItem
 import com.bestiapop.android.ui.components.formatSortRelevantInfo
 import com.bestiapop.android.ui.state.LibraryListItem
+import com.bestiapop.android.ui.theme.ListDensity
 
 @Composable
 fun LibrarySongList(
@@ -326,7 +327,10 @@ fun TauonAlbumHeader(
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 8.dp, vertical = 6.dp)
+            .padding(
+                horizontal = ListDensity.rowHorizontalPadding,
+                vertical = ListDensity.rowVerticalPadding
+            )
             .combinedClickable(
                 onClick = {
                     if (isSelectionMode) {
@@ -337,10 +341,10 @@ fun TauonAlbumHeader(
                 },
                 onLongClick = onLongClick
             ),
-        shape = RoundedCornerShape(8.dp)
+        shape = RoundedCornerShape(ListDensity.corner)
     ) {
         Row(
-            modifier = Modifier.padding(12.dp),
+            modifier = Modifier.padding(ListDensity.rowInnerPadding),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
@@ -365,20 +369,20 @@ fun TauonAlbumHeader(
                 }
                 ArtworkThumbnail(
                     artworkUri = artworkUri,
-                    size = 52.dp,
-                    cornerRadius = 8.dp
+                    size = ListDensity.artworkAlbumHeader,
+                    cornerRadius = ListDensity.corner
                 )
                 Spacer(modifier = Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = albumName,
-                        style = MaterialTheme.typography.titleMedium,
+                        style = ListDensity.titleStyle,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Text(
                         text = "$artistName • $songCount canciones",
-                        style = MaterialTheme.typography.bodySmall,
+                        style = ListDensity.subtitleStyle,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                     )
                 }

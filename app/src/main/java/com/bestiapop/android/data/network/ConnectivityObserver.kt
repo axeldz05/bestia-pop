@@ -61,4 +61,24 @@ class ConnectivityObserver(context: Context) {
         return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
             caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
     }
+
+    /** True when the active network lacks [NetworkCapabilities.NET_CAPABILITY_NOT_METERED]. */
+    fun isMetered(): Boolean {
+        val network = connectivityManager.activeNetwork ?: return false
+        val caps = connectivityManager.getNetworkCapabilities(network) ?: return false
+        return !caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED)
+    }
+
+    fun networkTypeLabel(): String {
+        if (!isCurrentlyOnline()) return "Sin conexión"
+        val network = connectivityManager.activeNetwork ?: return "Sin conexión"
+        val caps = connectivityManager.getNetworkCapabilities(network) ?: return "Sin conexión"
+        return when {
+            caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> "Wi‑Fi"
+            caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> "Datos"
+            caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> "Ethernet"
+            isMetered() -> "Datos"
+            else -> "Wi‑Fi"
+        }
+    }
 }

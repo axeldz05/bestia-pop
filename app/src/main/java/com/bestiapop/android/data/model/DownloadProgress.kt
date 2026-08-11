@@ -62,4 +62,7 @@ object DownloadMessages {
     const val alreadyQueued = "Ya está en cola — ver Descargas"
     const val downloadQueued = "Descarga en cola — ver Descargas"
     fun downloadsQueued(count: Int) = "$count descargas en cola — ver Descargas"
+
+    const val blockedOnMetered =
+        "Descarga bloqueada: estás en datos móviles. Activá «Descargar con datos móviles» en Ajustes → Descargas."
 }

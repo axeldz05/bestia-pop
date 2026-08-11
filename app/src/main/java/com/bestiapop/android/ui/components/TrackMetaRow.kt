@@ -22,6 +22,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.bestiapop.android.data.model.TrackMeta
+import com.bestiapop.android.ui.theme.ListDensity
 
 fun joinMeta(vararg parts: String?, sep: String = " • "): String =
     parts.mapNotNull { it?.trim()?.takeIf { part -> part.isNotEmpty() } }.joinToString(sep)
@@ -63,7 +64,7 @@ fun TrackTextColumn(
     modifier: Modifier = Modifier,
     titleColor: Color = MaterialTheme.colorScheme.onSurface,
     titleWeight: FontWeight = FontWeight.Medium,
-    titleStyle: TextStyle = MaterialTheme.typography.titleMedium,
+    titleStyle: TextStyle = ListDensity.titleStyle,
     subtitleColor: Color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
     maxTitleLines: Int = 1,
     maxSubtitleLines: Int = 1
@@ -80,7 +81,7 @@ fun TrackTextColumn(
         if (subtitle.isNotEmpty()) {
             Text(
                 text = subtitle,
-                style = MaterialTheme.typography.bodySmall,
+                style = ListDensity.subtitleStyle,
                 color = subtitleColor,
                 maxLines = maxSubtitleLines,
                 overflow = TextOverflow.Ellipsis
@@ -96,7 +97,7 @@ fun TrackMetaRow(
     subtitle: String,
     highlighted: Boolean = false,
     modifier: Modifier = Modifier,
-    artworkSize: Dp = 48.dp,
+    artworkSize: Dp = ListDensity.artworkSong,
     leading: @Composable (RowScope.() -> Unit)? = null,
     trailing: @Composable (RowScope.() -> Unit)? = null,
     onClick: (() -> Unit)? = null
@@ -105,7 +106,7 @@ fun TrackMetaRow(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(ListDensity.corner))
             .background(colors.background)
             .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
         verticalAlignment = Alignment.CenterVertically

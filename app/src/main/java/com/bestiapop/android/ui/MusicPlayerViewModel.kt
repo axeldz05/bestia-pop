@@ -35,6 +35,8 @@ import com.bestiapop.android.data.network.ListenBrainzClient
 import com.bestiapop.android.data.network.MetadataFetcher
 import com.bestiapop.android.data.network.YouTubeExtractor
 import com.bestiapop.android.data.preferences.ActiveDownloadsStore
+import com.bestiapop.android.data.preferences.DownloadPreferencesRepository
+import com.bestiapop.android.data.preferences.DownloadSettings
 import com.bestiapop.android.data.preferences.IdentifyReviewStore
 import com.bestiapop.android.data.preferences.PersistedIdentifyReviewQueue
 import com.bestiapop.android.data.preferences.LibraryPreferencesRepository
@@ -171,6 +173,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private val themeRepository = ThemePreferencesRepository(application)
     private val listenBrainzPreferences = ListenBrainzPreferencesRepository(application)
     private val playbackPreferences = PlaybackPreferencesRepository(application)
+    private val downloadPreferences = DownloadPreferencesRepository(application)
     private val libraryPreferences = LibraryPreferencesRepository(application)
     private val activeDownloadsStore = ActiveDownloadsStore(application)
     private val identifyReviewStore = IdentifyReviewStore(application)
@@ -208,6 +211,15 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private val playbackSettings: StateFlow<PlaybackSettings> =
         playbackPreferences.settingsFlow
             .stateIn(viewModelScope, SharingStarted.Eagerly, PlaybackSettings())
+
+    private val downloadSettings: StateFlow<DownloadSettings> =
+        downloadPreferences.settingsFlow
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), DownloadSettings())
+
+    val downloadOnMeteredNetwork: StateFlow<Boolean> =
+        downloadSettings
+            .map { it.downloadOnMeteredNetwork }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
 
     val volumeBoostEnabled: StateFlow<Boolean> = playbackPref(false) { it.volumeBoostEnabled }
     val stereoLeftGain: StateFlow<Float> = playbackPref(1f) { it.stereoLeftGain }
@@ -415,6 +427,8 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private var playCollectionJob: Job? = null
     /** Applies shuffle order only after player timeline size matches the queue. */
     private var shuffleApplyJob: Job? = null
+    /** Caps silent skip cascades when remotes/locals fail in a row. */
+    private var consecutiveUnplayableSkips = 0
     private val playedInRadioSession = linkedSetOf<String>()
     /** Last user-chosen mode (session); auto-start / tap reuse this when set. */
     private var radioPreferredMode: RadioMode? = null
@@ -591,6 +605,12 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 // Force MusicService to drop gain while disabled by writing amount unchanged + enabled flag.
                 _volumeLevel.value = getDeviceVolumeRatio().coerceAtMost(1f)
             }
+        }
+    }
+
+    fun setDownloadOnMeteredNetwork(enabled: Boolean) {
+        viewModelScope.launch {
+            downloadPreferences.setDownloadOnMeteredNetwork(enabled)
         }
     }
 
@@ -1243,7 +1263,9 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         mediaController?.addListener(object : Player.Listener {
             override fun onIsPlayingChanged(isPlayingNow: Boolean) {
                 _isPlaying.value = isPlayingNow
-                if (!isPlayingNow) {
+                if (isPlayingNow) {
+                    consecutiveUnplayableSkips = 0
+                } else {
                     listenTracker.onStopped()
                     persistCurrentPosition(force = true)
                 }
@@ -1401,9 +1423,12 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             try {
                 val resolvedItem = resolveRemote(item)
                 if (resolvedItem == null) {
-                    if (startPlaying) mediaController?.seekToNextMediaItem()
+                    if (startPlaying) {
+                        recoverAfterUnplayable("No se pudo resolver el audio online")
+                    }
                     return@launch
                 }
+                consecutiveUnplayableSkips = 0
                 updateQueueItem(index, resolvedItem)
                 mediaController?.replaceMediaItem(index, playableToMediaItem(resolvedItem))
                 mediaController?.prepare()
@@ -1414,6 +1439,29 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 _resolvingRemote.value = false
             }
         }
+    }
+
+    /**
+     * After a track cannot play: advance if possible, else pause and optionally start radio.
+     * Shared by local errors, remote resolve failures, and exhausted HTTP retries.
+     */
+    private fun recoverAfterUnplayable(userMessage: String? = null) {
+        userMessage?.let { toast(it) }
+        val controller = mediaController ?: return
+        if (controller.hasNextMediaItem()) {
+            consecutiveUnplayableSkips++
+            if (consecutiveUnplayableSkips >= MAX_CONSECUTIVE_UNPLAYABLE_SKIPS) {
+                consecutiveUnplayableSkips = 0
+                controller.pause()
+                toast("Varias canciones no se pudieron reproducir; se pausó la cola")
+                return
+            }
+            controller.seekToNextMediaItem()
+            return
+        }
+        consecutiveUnplayableSkips = 0
+        controller.pause()
+        maybeAutoStartRadioOnQueueEnd()
     }
 
     private fun prefetchAround(index: Int) {
@@ -1447,7 +1495,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         val item = queued as? PlayableItem.Remote
         if (item == null) {
             val title = (queued as? PlayableItem.Local)?.song?.title?.takeIf { it.isNotBlank() }
-            toast(
+            recoverAfterUnplayable(
                 if (title != null) "No se pudo reproducir «$title»"
                 else "No se pudo reproducir"
             )
@@ -1460,13 +1508,13 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             error.errorCode == PlaybackException.ERROR_CODE_IO_UNSPECIFIED
 
         if (!isHttpFailure) {
-            mediaController?.seekToNextMediaItem()
+            recoverAfterUnplayable()
             return
         }
 
         if (remoteErrorRetryUsed) {
             remoteErrorRetryUsed = false
-            mediaController?.seekToNextMediaItem()
+            recoverAfterUnplayable()
             return
         }
 
@@ -1477,9 +1525,10 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 item.resolved?.videoId?.let { streamResolver.invalidate(it) }
                 val refreshed = resolveRemote(item.copy(resolved = null))
                 if (refreshed == null) {
-                    mediaController?.seekToNextMediaItem()
+                    recoverAfterUnplayable()
                     return@launch
                 }
+                consecutiveUnplayableSkips = 0
                 updateQueueItem(index, refreshed)
                 mediaController?.replaceMediaItem(index, playableToMediaItem(refreshed))
                 mediaController?.prepare()
@@ -4303,6 +4352,23 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         val override = titleOverride
             ?: (conflictPolicy as? DownloadConflictPolicy.SaveAs)?.newTitle
             ?: existing?.titleOverride
+
+        val blockedMessage = ensureDownloadNetworkAllowed()
+        if (blockedMessage != null) {
+            upsertActiveDownload(
+                ActiveDownload.error(
+                    id = downloadId,
+                    source = source,
+                    candidates = candidates,
+                    errorMessage = blockedMessage,
+                    currentCandidateIndex = safeIndex,
+                    targetPlaylistId = targetPlaylistId,
+                    titleOverride = override
+                )
+            )
+            return Result.failure(IllegalStateException(blockedMessage))
+        }
+
         if (existing == null ||
             existing.state != CandidateDownloadState.DOWNLOADING
         ) {
@@ -4332,6 +4398,14 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 titleOverride = override
             )
         }
+    }
+
+    /** Null if download may proceed; otherwise Spanish error for ActiveDownload ERROR. */
+    private suspend fun ensureDownloadNetworkAllowed(): String? {
+        if (!connectivityObserver.isMetered()) return null
+        val allowMetered = downloadPreferences.settingsFlow.first().downloadOnMeteredNetwork
+        if (allowMetered) return null
+        return DownloadMessages.blockedOnMetered
     }
 
     private suspend fun runTrackedDownloadLocked(
@@ -4736,6 +4810,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         private const val RADIO_ONLINE_REFILL_RETRY_TIMEOUT_MS = 20_000L
         private const val RADIO_ONLINE_RETRY_MAX_BACKOFF_MS = 5_000L
         private const val LAST_PLAYED_POSITION_SAVE_INTERVAL_MS = 5_000L
+        private const val MAX_CONSECUTIVE_UNPLAYABLE_SKIPS = 5
     }
 }
 

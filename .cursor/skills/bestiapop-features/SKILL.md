@@ -39,7 +39,7 @@ Archivos: `ui/MusicPlayerViewModel.kt` (`playPlayableCollection` / `toggleShuffl
 | Descargar + persistir | `DownloadAudioTrackUseCase.execute` → `IMusicRepository.downloadAndSaveOnlineTrack` (`onProgress: DownloadPhase`; persiste `OnlineCatalogTrack.trackNumber` / `TrackIdentity.trackNumber` de `fetchFullTrackMetadata`); copy/UI labels `DownloadMessages` |
 | UI diálogo | `ui/components/AddMusicDialog.kt` |
 | Centro de descargas | `DownloadsScreen` + `ActiveDownloadRow`; persistencia `ActiveDownloadsStore` / `ActiveDownloadCodec`; notif `DownloadNotificationHelper`; badge `activeDownloadBadgeCount` en tab Descargas (`MainScreen`) |
-| Orquestación VM | `enqueueTrackedBatch` → `runTrackedDownload` ← `downloadSingleCandidate`, `downloadSelectedCandidatesBatch`, `downloadFromUrl`, `downloadOnlineTrack`, `downloadRemoteItem`, `maybeEnqueueSaveWhileListening`; candidatos vía `expandCandidates`; acciones `retryActiveDownload` / `cycleActiveDownload` / `previewActiveDownload` / `playActiveDownload` / `dismissActiveDownload` / `dismissAllActiveDownloads`; deep-link `requestOpenDownloads` / `pendingOpenDownloads` |
+| Orquestación VM | `enqueueTrackedBatch` → `runTrackedDownload` ← `downloadSingleCandidate`, `downloadSelectedCandidatesBatch`, `downloadFromUrl`, `downloadOnlineTrack`, `downloadRemoteItem`, `maybeEnqueueSaveWhileListening`; gate metered `ensureDownloadNetworkAllowed` (`DownloadPreferencesRepository.downloadOnMeteredNetwork` default true); candidatos vía `expandCandidates`; acciones `retryActiveDownload` / `cycleActiveDownload` / `previewActiveDownload` / `playActiveDownload` / `dismissActiveDownload` / `dismissAllActiveDownloads`; deep-link `requestOpenDownloads` / `pendingOpenDownloads` |
 
 Modelo clave: `TrackIdentity` / `TrackMeta`, `OnlineCatalogTrack` (`identity` + id/provider/audioUrl), `CatalogTrackCandidate` (`TrackMeta` vía `identity` estable de catálogo; YT en `candidates`/`currentTrack`; chrome de descarga **derivado** de `activeDownloads.findByTrack`, no del campo embebido), `DownloadStatus` (legacy Idle), `ActiveDownload` (`TrackMeta` vía `currentTrack`; `displayLabel` / `titleOverride` solo UI; Save As vía `DownloadConflictPolicy` sin mutar candidatos), conflicto/batch lookup = `lookupIdentity` (catálogo) no el hit YT, `ActiveDownloadSource` (`CATALOG`, `LINK`, `SAVE_WHILE_LISTENING`, `BATCH`, `LB_IMPORT`, `DISCOVER`), cola `activeDownloads` (+ `targetPlaylistId` opcional, `resultSongId` en SUCCESS). Batch ids = `TrackMatchKeys.batchDownloadIdFor`. JSON viejo: `displayTitle` blank-fill identity; si difiere → `titleOverride`.
 
@@ -188,6 +188,9 @@ Centro de descargas online → sección 2 (`DownloadsScreen`, tab Descargas).
 | Capacidad | Entry point |
 |-----------|-------------|
 | UI cola | `DownloadsScreen` + `ActiveDownloadRow` (QUEUED / progreso / SUCCESS play+limpiar / ERROR retry·cycle·dismiss) |
+| Prefs descarga | `DownloadPreferencesRepository` / `DownloadSettings` (`download_settings`; `downloadOnMeteredNetwork` default **true**) |
+| Settings UI | `DownloadSettingsScreen` vía `SettingsScreen` sección Descargas (path `Música/BestiaPop` + switch datos) |
+| Gate red | `ConnectivityObserver.isMetered` + `ensureDownloadNetworkAllowed` al inicio de `runTrackedDownload` → ERROR `DownloadMessages.blockedOnMetered` |
 | Persistencia cola | `ActiveDownloadsStore` + `ActiveDownloadCodec` (DataStore JSON; conserva SUCCESS + `resultSongId`) |
 | Notif progreso | `DownloadNotificationHelper` (canal `downloads_channel`; tap → tab Descargas) |
 | Badge tab | `activeDownloadBadgeCount` en `MainScreen` NavigationBar Descargas |
@@ -312,7 +315,7 @@ Origen Discover: se setea en `playPlayableCollection(..., origin)` (wrappers CF/
 | Now Playing | `dismissFullPlayer` | `NowPlayingScreen` `BackHandler` |
 | Library nested | multi-select → cancel addition → álbum (`closeLibraryAlbum`, conserva artista) → artista → clear search | `LibraryScreen` `BackHandler` / `popLibraryNested` |
 | Playlists nested | un detalle a la vez (local / LB / CF) → lista | `PlaylistsScreen` `BackHandler` → `closePlaylistDetail` |
-| Settings nested | Temas / LB / Reproducción / Sonido → home | `SettingsScreen` `BackHandler` |
+| Settings nested | Temas / LB / Reproducción / Sonido / Descargas → home | `SettingsScreen` `BackHandler` |
 | Raíz de tab | Doble atrás (~2s) + snackbar “Pulsa otra vez para salir” | `MainScreen` `BackHandler` + `SnackbarHost` |
 
 Manifest: `android:enableOnBackInvokedCallback="true"` en `MainActivity`.

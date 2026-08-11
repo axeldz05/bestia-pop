@@ -20,6 +20,9 @@ object StorageUtils {
     const val RELATIVE_MUSIC_DIR = "Music/BestiaPop"
     private const val FOLDER_NAME = "BestiaPop"
 
+    /** User-facing label for the app-managed save folder (Spanish Music dir name). */
+    fun userVisibleMusicDirLabel(): String = "Música/BestiaPop"
+
     fun getPublicMusicDirectory(@Suppress("UNUSED_PARAMETER") context: Context): File {
         val dir = publicBestiaPopDir()
         dir.mkdirs()

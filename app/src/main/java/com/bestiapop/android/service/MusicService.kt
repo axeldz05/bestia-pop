@@ -47,6 +47,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
@@ -58,6 +59,7 @@ class MusicService : MediaLibraryService() {
     private var loudnessEnhancer: LoudnessEnhancer? = null
     private var boundAudioSessionId: Int = 0
     private var latestPlaybackSettings: PlaybackSettings = PlaybackSettings()
+    private var foregroundPromoteRetryScheduled = false
     private val stereoBalanceProcessor = StereoBalanceAudioProcessor()
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
@@ -269,6 +271,7 @@ class MusicService : MediaLibraryService() {
                     .setStyle(MediaStyleNotificationHelper.MediaStyle(session))
                     .build()
             )
+            foregroundPromoteRetryScheduled = false
         } catch (e: Exception) {
             CrashReporter.recordNonFatal(
                 e,
@@ -278,6 +281,17 @@ class MusicService : MediaLibraryService() {
                     "playback_state" to (player?.playbackState?.toString() ?: "null")
                 )
             )
+            if (!foregroundPromoteRetryScheduled && player?.playWhenReady == true) {
+                foregroundPromoteRetryScheduled = true
+                serviceScope.launch {
+                    delay(750)
+                    foregroundPromoteRetryScheduled = false
+                    val session = mediaLibrarySession ?: return@launch
+                    if (player?.playWhenReady == true) {
+                        promotePlaybackForeground(session)
+                    }
+                }
+            }
         }
     }
 

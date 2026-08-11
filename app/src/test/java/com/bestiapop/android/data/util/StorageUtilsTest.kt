@@ -28,4 +28,9 @@ class StorageUtilsTest {
         assertFalse(StorageUtils.isBestiaPopLocation("Music/Other/", "/storage/emulated/0/Download/a.mp3"))
         assertFalse(StorageUtils.isBestiaPopLocation(null, "/storage/emulated/0/Music/a.mp3"))
     }
+
+    @Test
+    fun userVisibleMusicDirLabel_isSpanishMusicFolder() {
+        assertEquals("Música/BestiaPop", StorageUtils.userVisibleMusicDirLabel())
+    }
 }

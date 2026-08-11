@@ -42,3 +42,6 @@ google-services.json
 # Changelog local (user-facing pending → release notes; ver skill bestiapop-release-changelog)
 CHANGELOG.pending.md
 CHANGELOG.release-notes.md
+
+# Planes locales de producto/UX (fuera de git)
+.plans/

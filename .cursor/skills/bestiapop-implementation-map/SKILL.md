@@ -145,7 +145,7 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 
 | Servicio | Archivo |
 |----------|---------|
-| Playback Media3 + UA HTTP | `service/MusicService.kt` (`promotePlaybackForeground`, `PLAYBACK_CHANNEL_ID`, `setSessionActivity`, `ACTION_SET_SHUFFLE_ORDER` / `applyShuffleOrder`); VM `playWithForegroundService` → `MediaController.play()`; `service/StreamPlaybackTag.kt` |
+| Playback Media3 + UA HTTP | `service/MusicService.kt` (`promotePlaybackForeground`, `isPlaybackEngaged`, `setWakeMode(NETWORK)`, `applyShuffleOrder` size-guard, `PLAYBACK_CHANNEL_ID`, `setSessionActivity`, `ACTION_SET_SHUFFLE_ORDER`); VM `playWithForegroundService` → `MediaController.play()`, `syncShuffleToPlayerWhenReady`, `playCollectionJob`; `service/StreamPlaybackTag.kt` |
 | Stereo balance (PCM) | `service/StereoBalanceAudioProcessor.kt` + `MusicService.applyStereoBalance` |
 | Volume boost (LoudnessEnhancer) | `MusicService.applyBoost` + `PlaybackPreferencesRepository` |
 | Ktor WiFi server | `service/WebServerService.kt` (`serverState`, `transfers`, `dismissTransfer`, `/existing-files` Room+BestiaPop); identify post-upload en VM vía `transfers` |

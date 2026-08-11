@@ -94,6 +94,8 @@ class MusicService : MediaLibraryService() {
             .setRenderersFactory(renderersFactory)
             .setAudioAttributes(audioAttributes, true)
             .setHandleAudioBecomingNoisy(true)
+            // NETWORK: CPU + wifi lock while playing (local files + remote streams).
+            .setWakeMode(C.WAKE_MODE_NETWORK)
             .setMediaSourceFactory(UserAgentMediaSourceFactory(this))
             .build()
 
@@ -219,8 +221,9 @@ class MusicService : MediaLibraryService() {
 
     private fun isPlaybackEngaged(): Boolean {
         val p = player ?: return false
-        return p.playWhenReady &&
-            (p.playbackState == Player.STATE_READY || p.playbackState == Player.STATE_BUFFERING)
+        if (!p.playWhenReady || p.mediaItemCount <= 0) return false
+        // Keep FGS through brief IDLE while resolving/preparing Remote; drop on ENDED/pause.
+        return p.playbackState != Player.STATE_ENDED
     }
 
     private fun mainActivityPendingIntent(): PendingIntent {
@@ -255,16 +258,27 @@ class MusicService : MediaLibraryService() {
      * rejects once the process is cached (uidState LAST) after FGS was demoted.
      */
     private fun promotePlaybackForeground(session: MediaSession) {
-        val meta = player?.currentMediaItem?.mediaMetadata
-        startPlaybackForeground(
-            playbackNotificationBuilder(
-                meta?.title?.takeIf { it.isNotBlank() } ?: "Bestia Pop",
-                meta?.artist?.takeIf { it.isNotBlank() } ?: "",
-                session.sessionActivity ?: mainActivityPendingIntent()
+        try {
+            val meta = player?.currentMediaItem?.mediaMetadata
+            startPlaybackForeground(
+                playbackNotificationBuilder(
+                    meta?.title?.takeIf { it.isNotBlank() } ?: "Bestia Pop",
+                    meta?.artist?.takeIf { it.isNotBlank() } ?: "",
+                    session.sessionActivity ?: mainActivityPendingIntent()
+                )
+                    .setStyle(MediaStyleNotificationHelper.MediaStyle(session))
+                    .build()
             )
-                .setStyle(MediaStyleNotificationHelper.MediaStyle(session))
-                .build()
-        )
+        } catch (e: Exception) {
+            CrashReporter.recordNonFatal(
+                e,
+                mapOf(
+                    "playback_phase" to "start_foreground",
+                    "play_when_ready" to (player?.playWhenReady?.toString() ?: "null"),
+                    "playback_state" to (player?.playbackState?.toString() ?: "null")
+                )
+            )
+        }
     }
 
     private fun playbackNotificationBuilder(
@@ -316,9 +330,37 @@ class MusicService : MediaLibraryService() {
         val p = player ?: return
         if (indices == null || indices.isEmpty()) {
             p.shuffleModeEnabled = false
-        } else {
+            publishShuffleExtras()
+            return
+        }
+        val playlistSize = p.mediaItemCount
+        // Media3 requires order.length == playlistSize; mismatch used to crash the process.
+        if (indices.size != playlistSize) {
+            CrashReporter.recordNonFatal(
+                IllegalArgumentException("shuffle_order_size_mismatch"),
+                mapOf(
+                    "playback_phase" to "set_shuffle_order",
+                    "order_size" to indices.size.toString(),
+                    "playlist_size" to playlistSize.toString()
+                )
+            )
+            if (playlistSize <= 0) p.shuffleModeEnabled = false
+            publishShuffleExtras()
+            return
+        }
+        try {
             p.setShuffleOrder(ShuffleOrder.DefaultShuffleOrder(indices, /* randomSeed */ 0L))
             p.shuffleModeEnabled = true
+        } catch (e: Exception) {
+            CrashReporter.recordNonFatal(
+                e,
+                mapOf(
+                    "playback_phase" to "set_shuffle_order",
+                    "order_size" to indices.size.toString(),
+                    "playlist_size" to playlistSize.toString()
+                )
+            )
+            p.shuffleModeEnabled = false
         }
         publishShuffleExtras()
     }

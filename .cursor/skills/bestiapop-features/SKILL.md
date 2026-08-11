@@ -152,7 +152,7 @@ State: `currentThemeState`.
 
 **Invariantes:**
 - Último `_isShuffle` + `RepeatMode` se persisten siempre (`lastShuffleEnabled` / `lastRepeatMode`).
-- Shuffle es flag de VM + permutación de índices (`shufflePlayOrder`) sobre la cola fuente; UI observa `displayQueue`. Toggle **no** llama `setMediaItems`. Player: `shuffleModeEnabled` + `DefaultShuffleOrder` vía `MusicService.ACTION_SET_SHUFFLE_ORDER` (notif/auto-advance = mismo orden). Drag en cola visual: shuffle ON → solo permutación; OFF → `moveQueueItem` timeline. `queue_json` persiste `shufflePlayOrder`; hydrate remapea si caen locales.
+- Shuffle es flag de VM + permutación de índices (`shufflePlayOrder`) sobre la cola fuente; UI observa `displayQueue`. Toggle **no** llama `setMediaItems`. Player: `shuffleModeEnabled` + `DefaultShuffleOrder` vía `MusicService.ACTION_SET_SHUFFLE_ORDER` tras timeline listo (`syncShuffleToPlayerWhenReady`; servicio ignora order si `length ≠ mediaItemCount`). Play/Mezclar de colección se serializa (`playCollectionJob`). Drag en cola visual: shuffle ON → solo permutación; OFF → `moveQueueItem` timeline. `queue_json` persiste `shufflePlayOrder`; hydrate remapea si caen locales.
 - Arranque en frío (sin timeline): restaurar según `rememberShuffleOnLaunch` / `rememberRepeatOnLaunch` (on por defecto). Off → ese modo arranca apagado.
 - **Autoplay al abrir** (`autoplayOnLaunch`, off por defecto): mismo flag para Local y Remote. Off → mini player / cola hidratada sin `play()`. On → `maybeAutoplayAfterIdleSeed` → `togglePlayPause`. Sesión FGS viva que ya suena no se toca.
 - Sesión viva: repeat del `MediaController`; shuffle desde prefs (única fuente). Switches de Ajustes no cambian la sesión actual.
@@ -237,7 +237,7 @@ Centro de descargas online → sección 2 (`DownloadsScreen`, tab Descargas).
 | Modelo | `PlayableItem` (`TrackMeta`; `Remote` guarda `identity` + mbid/stream), `ResolvedStream` en `data/model/PlayableItem.kt` |
 | Resolver | `MusicRepository.streamResolver` (`StreamResolver.resolve` / `prefetch` en `data/stream/StreamResolver.kt`) |
 | UA ExoPlayer | `StreamPlaybackTag` + `MusicService` `UserAgentMediaSourceFactory` |
-| FGS background | Canal `playback_channel` + `promotePlaybackForeground` (`Service.startForeground` tipo `mediaPlayback`) al dar play con la Activity visible. VM solo `controller.play()`. Play Store: `mediaPlayback` FGS basta (sin pedir batería). Sideload OEM (Moto): `install.sh` alinea `adaptive_bucket` + `RUN_ANY_IN_BACKGROUND allow` vía adb — no viaja en el APK |
+| FGS background | Canal `playback_channel` + `promotePlaybackForeground` (`Service.startForeground` tipo `mediaPlayback`; try/catch + Crashlytics). VM solo `controller.play()`. ExoPlayer `WAKE_MODE_NETWORK` + permiso `WAKE_LOCK`. FGS se mantiene con `playWhenReady` aunque el state sea IDLE breve (resolve Remote); se suelta en pause/`STATE_ENDED`. Play Store: FGS basta. Sideload OEM (Moto): `install.sh` alinea `adaptive_bucket` + `RUN_ANY_IN_BACKGROUND allow` vía adb — no viaja en el APK |
 | Cola / play | `playPlayableCollection`, `currentItem`, `resolvingRemote` en `MusicPlayerViewModel` |
 | Stream desde catálogo | `playOnlineCatalogTrackAsStream` + preview in-dialog (`CatalogTrackItem` / `CandidateTrackCard` + `CatalogPreviewBar`); `cycleSongCatalogResult` / `cycleTrackCandidate` (“Buscar otro”) |
 | UI player | `BottomPlayerBar` / `NowPlayingScreen` / `QueueScreen` observan `PlayableItem` |
@@ -249,7 +249,7 @@ Centro de descargas online → sección 2 (`DownloadsScreen`, tab Descargas).
 - Sin sesión viva: hidratar cola persistida (`queue_json`: current + upcoming + last `MAX_QUEUE_HISTORY` = 20). Locals rematch por id/uri; Remotes identity+mbid+query/`videoId` **sin** CDN. Si current se borró, avanzar al siguiente (posición 0). Si no hay cola usable: last-played local o aleatoria. Autoplay solo si `autoplayOnLaunch` (Local = Remote). `ensureRemoteReadyAt(..., startPlaying = playWhenReady)` en sync y `onMediaItemTransition` — hydrate/`prepare` no dispara `play()` en remoto.
 - Idle play: si el controller ya tiene items → play/pause. Si current Remote necesita resolve o `mediaItemCount == 0` con `_queue` hidratada → `playPlayableCollection(queue, index, rotate = false)` (no reconstruir biblioteca).
 - Biblioteca vacía y sin sesión → `BottomPlayerBar` oculto (`currentItem == null`).
-- Con playback activo, `MusicService` permanece FGS `mediaPlayback` (notif Now playing + `setSessionActivity`) aunque la Activity esté en segundo plano; sin FGS el proceso queda cached y LMK lo mata al abrir otras apps.
+- Con playback activo (`playWhenReady`, items en timeline, no `ENDED`), `MusicService` permanece FGS `mediaPlayback` (notif Now playing + `setSessionActivity`) aunque la Activity esté en segundo plano o el player esté un instante en IDLE al resolver Remote; sin FGS el proceso queda cached y LMK lo mata al abrir otras apps. Wake: `WAKE_LOCK` + `ExoPlayer.setWakeMode(NETWORK)`.
 - No persistir CDN de `Remote`. Mini bar: Previous + status (`Resolviendo…` / `Armando radio…` / `radioStatusLabel`).
 
 | Capacidad | Entry point |

@@ -411,6 +411,10 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private var remoteErrorRetryUsed = false
     private var resolvingTransitionJob: Job? = null
     private var radioRefillJob: Job? = null
+    /** Serializes play/shuffle collection so overlapping Mezclar cannot race setMediaItems vs shuffle order. */
+    private var playCollectionJob: Job? = null
+    /** Applies shuffle order only after player timeline size matches the queue. */
+    private var shuffleApplyJob: Job? = null
     private val playedInRadioSession = linkedSetOf<String>()
     /** Last user-chosen mode (session); auto-start / tap reuse this when set. */
     private var radioPreferredMode: RadioMode? = null
@@ -418,8 +422,6 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     /** True after UI was rebuilt from a live MediaController timeline. */
     private var liveSessionHydrated = false
     private var idleSeedDone = false
-    /** Seek target applied once on the next [finishPlayPlayableCollection] (idle resume). */
-    private var pendingResumePositionMs: Long? = null
     private var lastPersistedPositionAtMs = 0L
 
     private val radioEngine = RadioEngine(
@@ -665,7 +667,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             if (resolved.applyRepeatToPlayer) {
                 applyRepeatModeToController(resolved.repeat)
             }
-            syncShuffleToPlayer()
+            syncShuffleToPlayerWhenReady()
         }
     }
 
@@ -699,6 +701,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     private fun syncShuffleToPlayer() {
         if (!_isShuffle.value) {
+            shuffleApplyJob?.cancel()
             if (_shufflePlayOrder.value != null) _shufflePlayOrder.value = null
             sendShuffleOrderToPlayer(null)
             return
@@ -709,6 +712,49 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             ?: PlaybackQueueOrder.shufflePlayOrder(size, currentQueueIndex())
         _shufflePlayOrder.value = order
         sendShuffleOrderToPlayer(order)
+    }
+
+    /**
+     * After [Player.setMediaItems], the custom shuffle-order command can arrive before the
+     * timeline has the new size (Media3 footgun → IllegalArgumentException in the service).
+     * Wait until [MediaController.getMediaItemCount] matches the queue, then sync.
+     */
+    private fun syncShuffleToPlayerWhenReady() {
+        shuffleApplyJob?.cancel()
+        if (!_isShuffle.value) {
+            syncShuffleToPlayer()
+            return
+        }
+        val expectedSize = _queue.value.size
+        if (expectedSize == 0) return
+        val controller = mediaController
+        if (controller != null && controller.mediaItemCount == expectedSize) {
+            syncShuffleToPlayer()
+            return
+        }
+        shuffleApplyJob = viewModelScope.launch {
+            repeat(25) {
+                val c = mediaController
+                if (c != null && c.mediaItemCount == expectedSize) {
+                    syncShuffleToPlayer()
+                    return@launch
+                }
+                delay(80)
+            }
+            val c = mediaController
+            if (c != null && c.mediaItemCount == expectedSize) {
+                syncShuffleToPlayer()
+            } else {
+                CrashReporter.recordNonFatal(
+                    IllegalStateException("shuffle_sync_timeout"),
+                    mapOf(
+                        "playback_phase" to "shuffle_sync",
+                        "queue_size" to expectedSize.toString(),
+                        "player_count" to (mediaController?.mediaItemCount?.toString() ?: "null")
+                    )
+                )
+            }
+        }
     }
 
     private fun updateShufflePlayOrder(transform: (List<Int>) -> List<Int>) {
@@ -1129,6 +1175,11 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         controller.prepare()
     }
 
+    /** Keep UI progress in sync with the active media item (always write, including 0). */
+    private fun setPlaybackPositionUi(positionMs: Long) {
+        _playbackPositionMs.value = positionMs.coerceAtLeast(0L)
+    }
+
     private fun applyHydratedQueue(hydrated: HydratedQueue) {
         clearDiscoverPlaybackOrigin()
         _queue.value = hydrated.items
@@ -1138,11 +1189,10 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             hydrated.items.size
         )
         setCurrentItem(hydrated.items[hydrated.currentIndex], persistLastPlayed = false)
-        _playbackPositionMs.value = hydrated.positionMs
+        setPlaybackPositionUi(hydrated.positionMs)
         _isPlaying.value = false
-        pendingResumePositionMs = hydrated.positionMs.takeIf { it > 0L }
         loadHydratedQueueIntoController()
-        if (_isShuffle.value) syncShuffleToPlayer()
+        if (_isShuffle.value) syncShuffleToPlayerWhenReady()
     }
 
     private fun maybeSeedIdlePlayer() {
@@ -1233,6 +1283,8 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                                 (it.song.uriString == idOrUri || it.song.id.toString() == idOrUri)
                         }
                         ?: mediaItemToPlayable(item, songsState.value)
+                    // New item → progress must not keep the previous track's position.
+                    setPlaybackPositionUi(0L)
                     setCurrentItem(playable)
                     remoteErrorRetryUsed = false
                     ensureRemoteReadyAt(
@@ -1594,7 +1646,8 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         rotate: Boolean = true,
         applyManualModes: Boolean = true,
         startShuffled: Boolean = false,
-        origin: DiscoverPlaybackOrigin = DiscoverPlaybackOrigin.None
+        origin: DiscoverPlaybackOrigin = DiscoverPlaybackOrigin.None,
+        resumeAtMs: Long? = null
     ) {
         if (items.isEmpty()) return
         _discoverPlaybackOrigin.value = origin
@@ -1608,7 +1661,10 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         }
         val startAt = if (shouldRotate) 0 else validIndex
         val shouldApplyManualModes = applyManualModes && !fromRadio
-        viewModelScope.launch {
+        // Shuffle / new collection ignore stale UI position unless caller opts in (idle resume).
+        val resumePosition = if (startShuffled) null else resumeAtMs?.takeIf { it > 0L }
+        playCollectionJob?.cancel()
+        playCollectionJob = viewModelScope.launch {
             var working = ordered.toMutableList()
             val startItem = working[startAt]
             if (startItem is PlayableItem.Remote && remoteNeedsResolve(startItem)) {
@@ -1628,7 +1684,8 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                                 idx,
                                 shouldApplyManualModes,
                                 fromRadio,
-                                startShuffled
+                                startShuffled,
+                                resumePosition
                             )
                             played = true
                             break
@@ -1646,7 +1703,8 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 startAt,
                 shouldApplyManualModes,
                 fromRadio,
-                startShuffled
+                startShuffled,
+                resumePosition
             )
             prefetchAround(startAt)
             if (fromRadio && _radioActive.value) {
@@ -1660,7 +1718,8 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         index: Int,
         applyManualModes: Boolean,
         fromRadio: Boolean,
-        startShuffled: Boolean = false
+        startShuffled: Boolean = false,
+        resumeAtMs: Long? = null
     ) {
         _queue.value = items
         lastMediaItemIndex = index
@@ -1684,8 +1743,11 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         idleSeedDone = true
         bumpQueueFocus()
 
-        val startPositionMs = pendingResumePositionMs?.coerceAtLeast(0L) ?: 0L
-        pendingResumePositionMs = null
+        val startPositionMs = when {
+            startShuffled -> 0L
+            else -> resumeAtMs?.coerceAtLeast(0L) ?: 0L
+        }
+        setPlaybackPositionUi(startPositionMs)
 
         mediaController?.let { controller ->
             controller.shuffleModeEnabled = false
@@ -1693,10 +1755,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             controller.prepare()
             playWithForegroundService(controller)
         }
-        syncShuffleToPlayer()
-        if (startPositionMs > 0L) {
-            _playbackPositionMs.value = startPositionMs
-        }
+        syncShuffleToPlayerWhenReady()
     }
 
     fun catalogPreviewKeyFor(track: OnlineCatalogTrack): String {
@@ -1882,21 +1941,32 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         }
 
         if (current == null) return
-        val resumeMs = _playbackPositionMs.value
-        pendingResumePositionMs = resumeMs.takeIf { it > 0L }
+        val resumeMs = _playbackPositionMs.value.takeIf { it > 0L }
         if (queue.isNotEmpty()) {
             val index = queue.indexOfFirst { it.mediaId == current.mediaId }
                 .takeIf { it >= 0 }
                 ?: lastMediaItemIndex.coerceIn(0, queue.lastIndex)
-            playPlayableCollection(queue, index, rotate = false, applyManualModes = false)
+            playPlayableCollection(
+                queue,
+                index,
+                rotate = false,
+                applyManualModes = false,
+                resumeAtMs = resumeMs
+            )
             return
         }
         when (current) {
-            is PlayableItem.Local -> playSong(current.song, applyManualModes = false)
+            is PlayableItem.Local -> playPlayableCollection(
+                listOf(current),
+                0,
+                applyManualModes = false,
+                resumeAtMs = resumeMs
+            )
             is PlayableItem.Remote -> playPlayableCollection(
                 listOf(current),
                 0,
-                applyManualModes = false
+                applyManualModes = false,
+                resumeAtMs = resumeMs
             )
         }
     }
@@ -2383,6 +2453,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         if (timelineIndex in _queue.value.indices) {
             bumpQueueFocus()
             lastMediaItemIndex = timelineIndex
+            setPlaybackPositionUi(0L)
             val item = _queue.value[timelineIndex]
             if (item is PlayableItem.Remote && remoteNeedsResolve(item)) {
                 viewModelScope.launch {

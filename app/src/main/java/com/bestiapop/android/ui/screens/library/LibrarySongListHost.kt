@@ -179,7 +179,8 @@ fun SongActionDialogsHost(
         )
     }
 
-    songsForDeletion?.let { targetSongs ->
+    // takeIf: an empty list is non-null, which rendered "¿Cómo deseas eliminar 0 canción(es)?".
+    songsForDeletion?.takeIf { it.isNotEmpty() }?.let { targetSongs ->
         ConfirmDeleteSongsDialog(
             songCount = targetSongs.size,
             onDismiss = onDismissDelete,

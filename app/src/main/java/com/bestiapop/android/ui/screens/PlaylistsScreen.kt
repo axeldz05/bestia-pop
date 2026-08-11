@@ -435,6 +435,7 @@ fun PlaylistsScreen(
                 activeDownloads = activeDownloads,
                 onDownloadRemote = { viewModel.downloadRemoteItem(it) },
                 onRetryDownload = viewModel::retryActiveDownload,
+                onCancelDownload = viewModel::dismissActiveDownload,
                 queueActions = songActions
             )
         }
@@ -473,6 +474,7 @@ fun PlaylistsScreen(
                 activeDownloads = activeDownloads,
                 onDownloadRemote = { viewModel.downloadRemoteItem(it) },
                 onRetryDownload = viewModel::retryActiveDownload,
+                onCancelDownload = viewModel::dismissActiveDownload,
                 queueActions = songActions
             )
         }
@@ -661,6 +663,7 @@ private fun CfRecommendationsDetailScreen(
     activeDownloads: List<ActiveDownload>,
     onDownloadRemote: (PlayableItem.Remote) -> Unit,
     onRetryDownload: (String) -> Unit,
+    onCancelDownload: (String) -> Unit,
     queueActions: SongQueueActions
 ) {
     MatchedPlaylistDetailScaffold(
@@ -702,6 +705,7 @@ private fun CfRecommendationsDetailScreen(
                 onPlayAt = onPlayAt,
                 onDownloadRemote = onDownloadRemote,
                 onRetryDownload = onRetryDownload,
+                onCancelDownload = onCancelDownload,
                 queueActions = queueActions
             )
         }
@@ -769,6 +773,7 @@ private fun LbPlaylistDetailScreen(
     activeDownloads: List<ActiveDownload>,
     onDownloadRemote: (PlayableItem.Remote) -> Unit,
     onRetryDownload: (String) -> Unit,
+    onCancelDownload: (String) -> Unit,
     queueActions: SongQueueActions
 ) {
     MatchedPlaylistDetailScaffold(
@@ -876,6 +881,7 @@ private fun LbPlaylistDetailScreen(
                 onPlayAt = onPlayAt,
                 onDownloadRemote = onDownloadRemote,
                 onRetryDownload = onRetryDownload,
+                onCancelDownload = onCancelDownload,
                 queueActions = queueActions
             )
         }

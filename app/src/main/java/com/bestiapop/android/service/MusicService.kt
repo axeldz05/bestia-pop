@@ -101,6 +101,13 @@ class MusicService : MediaLibraryService() {
             .setMediaSourceFactory(UserAgentMediaSourceFactory(this))
             .build()
 
+        // Buffers the first seconds of upcoming items. prefetchAround only re-resolves the CDN *URL*
+        // for N+1 / N+2; without this nothing is downloaded until the track actually starts, so a
+        // slow or expiring stream produced an audible gap (or an error) right at the transition.
+        player?.setPreloadConfiguration(
+            ExoPlayer.PreloadConfiguration(PRELOAD_TARGET_DURATION_US)
+        )
+
         player?.let { p ->
             p.addListener(object : Player.Listener {
                 override fun onAudioSessionIdChanged(audioSessionId: Int) {
@@ -323,6 +330,8 @@ class MusicService : MediaLibraryService() {
         const val PLAYBACK_NOTIFICATION_ID = 1001
         const val ACTION_SET_SHUFFLE_ORDER = "com.bestiapop.android.SET_SHUFFLE_ORDER"
         const val EXTRA_SHUFFLE_ORDER = "shuffle_order"
+        /** Head start buffered for upcoming queue items (10s). */
+        private const val PRELOAD_TARGET_DURATION_US = 10_000_000L
 
         fun shuffleOrderFromPlayer(player: Player): IntArray? {
             if (!player.shuffleModeEnabled) return null

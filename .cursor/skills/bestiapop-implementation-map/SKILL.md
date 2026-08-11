@@ -44,7 +44,7 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 | Playlists | `ui/screens/PlaylistsScreen.kt` (`BackHandler`: CF → LB → local detail; play/shuffle vía `LabeledPlayShuffleButtons` + `playCollection`/`shuffleCollection`; `MatchedTrackLazyColumn`; `matchedStreamCountLabel`; `rememberSongQueueActions`) |
 | Ajustes / ListenBrainz | `ui/screens/SettingsScreen.kt` (`BackHandler` sección; home **Actualización** (sección `Update`) + **Invitar amigos** → `/releases/latest`; `VERSION_NAME`), `ListenBrainzSettingsScreen.kt` |
 | App update UI | `ui/update/AppUpdateViewModel.kt` (`maybeCheckOnLaunch` / `refreshReleases` / `startUpdate` / `confirmUpdate`; `AppUpdateUiState` instalación + `AppReleaseNotesState` notas); `ui/update/AppUpdateScreen.kt` (Ajustes → Actualización); `ui/update/AppUpdateDialogs.kt` (`Available` / `Downloading` / `Error`) |
-| Ajustes / Reproducción | `ui/screens/PlaybackSettingsScreen.kt` (`SettingsScreen` sección `Playback`; sección Batería → `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`) |
+| Ajustes / Reproducción | `ui/screens/PlaybackSettingsScreen.kt` (`SettingsScreen` sección `Playback`; sección **Canciones online** → slider `streamSkipGraceSeconds`; sección Batería → `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`) |
 | Ajustes / Sonido | `ui/screens/VolumeBoostSettingsScreen.kt` (`SettingsScreen` sección `Sound`) |
 | Ajustes / Descargas | `ui/screens/DownloadSettingsScreen.kt` (`SettingsScreen` sección `Downloads`; metered + path + totales bytes; deep-link `pendingSettingsSection`) |
 | Ajustes / Archivos | `ui/screens/LibraryTagWriteSettingsScreen.kt` (`SettingsScreen` sección `LibraryTags`; auto-write toggle + batch sync) |

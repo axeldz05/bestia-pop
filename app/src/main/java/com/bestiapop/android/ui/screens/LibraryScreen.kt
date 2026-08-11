@@ -81,6 +81,8 @@ fun LibraryScreen(
     onOpenDownloads: () -> Unit = {}
 ) {
     val songs by viewModel.songsState.collectAsState()
+    /** Unfiltered: multi-select keeps ids picked before a search narrowed the visible list. */
+    val allSongs by viewModel.rawSongs.collectAsState(initial = emptyList())
     val albums by viewModel.albumsState.collectAsState()
     val artists by viewModel.artistsState.collectAsState()
     val genres by viewModel.genresState.collectAsState()
@@ -156,11 +158,6 @@ fun LibraryScreen(
     var selectedSongIds by remember { mutableStateOf(setOf<Long>()) }
     val isMultiSelectMode = selectedSongIds.isNotEmpty()
 
-    // Every selection action resolves ids against the search-filtered list, so a query that hides the
-    // picked songs left the bar open over an empty selection ("0 seleccionados", silent no-ops).
-    LaunchedEffect(searchQuery, browseFilter) {
-        selectedSongIds = emptySet()
-    }
 
     // Add Music dialog state
     var showAddMusicDialog by remember { mutableStateOf(false) }
@@ -527,7 +524,9 @@ fun LibraryScreen(
         }
 
         if (isMultiSelectMode && !isPlaylistAdditionMode) {
-            val selectedSongs = songs.filter { selectedSongIds.contains(it.id) }
+            // Resolved against the *unfiltered* library, so searching narrows what you can tick
+            // without losing what you already ticked, and the actions still cover all of it.
+            val selectedSongs = allSongs.filter { selectedSongIds.contains(it.id) }
             MultiSelectActionBar(
                 selectedCount = selectedSongs.size,
                 onPlaySelected = {

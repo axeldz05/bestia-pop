@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.bestiapop.android.data.model.RepeatMode
@@ -37,8 +38,20 @@ data class PlaybackSettings(
     val clearRepeatAllOnManualPlay: Boolean = false,
     val clearRepeatOneOnManualPlay: Boolean = true,
     val clearShuffleOnSkip: Boolean = false,
-    val clearRepeatOneOnSkip: Boolean = true
+    val clearRepeatOneOnSkip: Boolean = true,
+    /**
+     * How long a failing online track keeps being retried before the queue moves on. 0 = skip on the
+     * first error (the old behaviour); anything above that re-extracts the stream and re-prepares
+     * until the window closes, so a track is not dropped over one bad CDN response.
+     */
+    val streamSkipGraceSeconds: Int = DEFAULT_STREAM_SKIP_GRACE_SECONDS
 )
+
+const val DEFAULT_STREAM_SKIP_GRACE_SECONDS = 3
+const val MAX_STREAM_SKIP_GRACE_SECONDS = 30
+
+fun clampStreamSkipGraceSeconds(seconds: Int): Int =
+    seconds.coerceIn(0, MAX_STREAM_SKIP_GRACE_SECONDS)
 
 data class PlaybackModesSnapshot(
     val shuffle: Boolean,
@@ -136,6 +149,7 @@ class PlaybackPreferencesRepository(private val context: Context) {
         val CLEAR_REPEAT_ONE_ON_MANUAL_PLAY = booleanPreferencesKey("clear_repeat_one_on_manual_play")
         val CLEAR_SHUFFLE_ON_SKIP = booleanPreferencesKey("clear_shuffle_on_skip")
         val CLEAR_REPEAT_ONE_ON_SKIP = booleanPreferencesKey("clear_repeat_one_on_skip")
+        val STREAM_SKIP_GRACE_SECONDS = intPreferencesKey("stream_skip_grace_seconds")
     }
 
     val settingsFlow: Flow<PlaybackSettings> = context.playbackDataStore.data.map { prefs ->
@@ -153,7 +167,10 @@ class PlaybackPreferencesRepository(private val context: Context) {
             clearRepeatAllOnManualPlay = prefs[Keys.CLEAR_REPEAT_ALL_ON_MANUAL_PLAY] ?: false,
             clearRepeatOneOnManualPlay = prefs[Keys.CLEAR_REPEAT_ONE_ON_MANUAL_PLAY] ?: true,
             clearShuffleOnSkip = prefs[Keys.CLEAR_SHUFFLE_ON_SKIP] ?: false,
-            clearRepeatOneOnSkip = prefs[Keys.CLEAR_REPEAT_ONE_ON_SKIP] ?: true
+            clearRepeatOneOnSkip = prefs[Keys.CLEAR_REPEAT_ONE_ON_SKIP] ?: true,
+            streamSkipGraceSeconds = clampStreamSkipGraceSeconds(
+                prefs[Keys.STREAM_SKIP_GRACE_SECONDS] ?: DEFAULT_STREAM_SKIP_GRACE_SECONDS
+            )
         )
     }
 
@@ -218,5 +235,12 @@ class PlaybackPreferencesRepository(private val context: Context) {
 
     suspend fun setClearRepeatOneOnSkip(enabled: Boolean) {
         context.playbackDataStore.put(Keys.CLEAR_REPEAT_ONE_ON_SKIP, enabled)
+    }
+
+    suspend fun setStreamSkipGraceSeconds(seconds: Int) {
+        context.playbackDataStore.put(
+            Keys.STREAM_SKIP_GRACE_SECONDS,
+            clampStreamSkipGraceSeconds(seconds)
+        )
     }
 }

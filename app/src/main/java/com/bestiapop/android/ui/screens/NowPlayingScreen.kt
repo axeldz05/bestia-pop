@@ -649,7 +649,8 @@ fun NowPlayingScreen(
                 NowPlayingRemoteDownloadAction(
                     download = activeDownloads.findByTrack(remoteItem.artist, remoteItem.title),
                     onDownload = { viewModel.downloadRemoteItem(remoteItem) },
-                    onRetry = viewModel::retryActiveDownload
+                    onRetry = viewModel::retryActiveDownload,
+                    onCancel = viewModel::dismissActiveDownload
                 )
             }
 
@@ -808,13 +809,15 @@ fun NowPlayingScreen(
 private fun NowPlayingRemoteDownloadAction(
     download: ActiveDownload?,
     onDownload: () -> Unit,
-    onRetry: (String) -> Unit
+    onRetry: (String) -> Unit,
+    onCancel: (String) -> Unit
 ) {
     Spacer(modifier = Modifier.height(8.dp))
     DownloadStateTrailing(
         state = download?.state,
         percent = download?.progressPercent ?: 0,
         onRetry = download?.let { d -> { onRetry(d.id) } },
+        onDismiss = download?.let { d -> { onCancel(d.id) } },
         successLabel = DownloadMessages.inLibrary,
         idleContent = {
             Button(onClick = onDownload) {

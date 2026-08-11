@@ -200,6 +200,32 @@ fun downloadStateStatusLabel(
     CandidateDownloadState.IDLE -> idleLabel
 }
 
+/**
+ * L1: in-flight status plus a cancel button. Queued and downloading rows had no way out, so a job
+ * that never finished stayed forever — and since the enqueue gate refuses a track that is already
+ * queued or downloading, that one stuck row blocked every later attempt at the same song.
+ */
+@Composable
+private fun DownloadInFlightActions(
+    onDismiss: (() -> Unit)?,
+    status: @Composable () -> Unit
+) {
+    if (onDismiss == null) {
+        status()
+        return
+    }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        status()
+        IconButton(onClick = onDismiss) {
+            Icon(
+                imageVector = Icons.Default.Close,
+                contentDescription = "Cancelar descarga",
+                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+            )
+        }
+    }
+}
+
 /** L2: trailing chrome for queued / progress / retry / download / success. */
 @Composable
 fun DownloadStateTrailing(
@@ -215,8 +241,9 @@ fun DownloadStateTrailing(
     idleContent: (@Composable () -> Unit)? = null
 ) {
     when (state) {
-        CandidateDownloadState.QUEUED -> DownloadQueuedLabel()
-        CandidateDownloadState.DOWNLOADING -> DownloadProgressPercent(percent)
+        CandidateDownloadState.QUEUED -> DownloadInFlightActions(onDismiss) { DownloadQueuedLabel() }
+        CandidateDownloadState.DOWNLOADING ->
+            DownloadInFlightActions(onDismiss) { DownloadProgressPercent(percent) }
         CandidateDownloadState.ERROR -> when {
             onRetry != null && onCycle != null -> RetryCycleDismissActions(
                 onRetry = onRetry,

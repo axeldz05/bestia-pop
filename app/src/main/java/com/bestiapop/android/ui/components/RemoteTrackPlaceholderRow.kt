@@ -38,7 +38,8 @@ fun RemoteTrackPlaceholderRow(
     onClick: (() -> Unit)? = null,
     onDownload: (() -> Unit)? = null,
     download: ActiveDownload? = null,
-    onRetry: (() -> Unit)? = null
+    onRetry: (() -> Unit)? = null,
+    onCancelDownload: (() -> Unit)? = null
 ) {
     Row(
         modifier = Modifier
@@ -104,6 +105,7 @@ fun RemoteTrackPlaceholderRow(
                 state = download?.state,
                 percent = download?.progressPercent ?: 0,
                 onRetry = onRetry,
+                onDismiss = onCancelDownload,
                 onDownload = onDownload
             )
         }

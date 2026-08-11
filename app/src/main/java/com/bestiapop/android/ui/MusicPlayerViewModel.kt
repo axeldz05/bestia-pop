@@ -43,6 +43,7 @@ import com.bestiapop.android.data.preferences.LibraryPreferencesRepository
 import com.bestiapop.android.data.preferences.LibraryTagWritePreferencesRepository
 import com.bestiapop.android.data.preferences.LibraryTagWriteSettings
 import com.bestiapop.android.data.preferences.LibraryUiPreferencesCodec
+import com.bestiapop.android.data.preferences.DEFAULT_STREAM_SKIP_GRACE_SECONDS
 import com.bestiapop.android.data.preferences.NAV_DOWNLOADS
 import com.bestiapop.android.data.preferences.NAV_LIBRARY
 import com.bestiapop.android.data.preferences.NAV_PLAYLISTS
@@ -266,6 +267,8 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         playbackPref(true) { it.clearRepeatOneOnManualPlay }
     val clearShuffleOnSkip: StateFlow<Boolean> = playbackPref(false) { it.clearShuffleOnSkip }
     val clearRepeatOneOnSkip: StateFlow<Boolean> = playbackPref(true) { it.clearRepeatOneOnSkip }
+    val streamSkipGraceSeconds: StateFlow<Int> =
+        playbackPref(DEFAULT_STREAM_SKIP_GRACE_SECONDS) { it.streamSkipGraceSeconds }
 
     val pendingListenCount: StateFlow<Int> = pendingListenDao.countFlow()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
@@ -534,7 +537,10 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     val catalogPreviewKey = _catalogPreviewKey.asStateFlow()
 
     private var prefetchJob: Job? = null
-    private var remoteErrorRetryUsed = false
+    /** Retry loop for the online track that is failing, plus its per-track deadline. */
+    private var remoteRecoveryJob: Job? = null
+    private var remoteRecoveryMediaId: String? = null
+    private var remoteRecoveryDeadlineMs = 0L
     private var resolvingTransitionJob: Job? = null
     private var radioRefillJob: Job? = null
     /** Held so `stopRadio` can cancel an in-flight suggest (NEW mode retries for up to ~45s). */
@@ -853,6 +859,10 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     fun setClearRepeatOneOnSkip(enabled: Boolean) {
         persistPlayback { setClearRepeatOneOnSkip(enabled) }
+    }
+
+    fun setStreamSkipGraceSeconds(seconds: Int) {
+        persistPlayback { setStreamSkipGraceSeconds(seconds) }
     }
 
     private fun restoreVolumeBoostIfNeeded() {
@@ -1662,6 +1672,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 _isPlaying.value = isPlayingNow
                 if (isPlayingNow) {
                     consecutiveUnplayableSkips = 0
+                    clearRemoteRecovery()
                 } else {
                     listenTracker.onStopped()
                     persistCurrentPosition(force = true)
@@ -1709,7 +1720,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                     // New item → progress must not keep the previous track's position.
                     setPlaybackPositionUi(0L)
                     setCurrentItem(playable)
-                    remoteErrorRetryUsed = false
+                    clearRemoteRecovery()
                     ensureRemoteReadyAt(
                         newIndex,
                         startPlaying = controller?.playWhenReady == true
@@ -1918,40 +1929,63 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             return
         }
 
-        val isHttpFailure = error.errorCode == PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS ||
-            error.errorCode == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED ||
-            error.errorCode == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT ||
-            error.errorCode == PlaybackException.ERROR_CODE_IO_UNSPECIFIED
-
-        if (!isHttpFailure) {
-            recoverAfterUnplayable()
+        // Any error code, not a hand-picked list of IO ones. A dead googlevideo URL surfaces as an
+        // HTML error page (invalid content type), a malformed container or a decode failure just as
+        // often as a plain bad status, and those all used to skip the track instantly and silently.
+        val graceMs = playbackSettings.value.streamSkipGraceSeconds
+            .coerceAtLeast(0)
+            .times(1000L)
+        if (graceMs <= 0L) {
+            recoverAfterUnplayable(unplayableRemoteMessage(item))
             return
         }
 
-        if (remoteErrorRetryUsed) {
-            remoteErrorRetryUsed = false
-            recoverAfterUnplayable()
+        // One window per track, shared across error rounds, so a permanently broken stream still
+        // gives up instead of retrying forever.
+        if (remoteRecoveryMediaId != item.mediaId) {
+            remoteRecoveryMediaId = item.mediaId
+            remoteRecoveryDeadlineMs = System.currentTimeMillis() + graceMs
+        }
+        if (System.currentTimeMillis() >= remoteRecoveryDeadlineMs) {
+            clearRemoteRecovery()
+            recoverAfterUnplayable(unplayableRemoteMessage(item))
             return
         }
+        if (remoteRecoveryJob?.isActive == true) return
 
-        remoteErrorRetryUsed = true
-        viewModelScope.launch {
+        remoteRecoveryJob = viewModelScope.launch {
             beginResolvingRemote()
             try {
-                streamResolver.invalidate(item)
-                val refreshed = resolveRemote(item.copy(resolved = null))
-                if (refreshed == null) {
-                    recoverAfterUnplayable()
-                    return@launch
+                while (System.currentTimeMillis() < remoteRecoveryDeadlineMs) {
+                    streamResolver.invalidate(item)
+                    val refreshed = resolveRemote(item.copy(resolved = null))
+                    if (refreshed != null && applyResolvedRemote(refreshed) >= 0) {
+                        consecutiveUnplayableSkips = 0
+                        mediaController?.prepare()
+                        mediaController?.play()
+                        // If it fails again, onPlayerError comes back and reuses the same window.
+                        return@launch
+                    }
+                    delay(STREAM_RECOVERY_RETRY_MS)
                 }
-                consecutiveUnplayableSkips = 0
-                if (applyResolvedRemote(refreshed) < 0) return@launch
-                mediaController?.prepare()
-                mediaController?.play()
+                clearRemoteRecovery()
+                recoverAfterUnplayable(unplayableRemoteMessage(item))
             } finally {
                 endResolvingRemote()
             }
         }
+    }
+
+    private fun unplayableRemoteMessage(item: PlayableItem.Remote): String =
+        item.title.takeIf { it.isNotBlank() }
+            ?.let { "No se pudo reproducir «$it»" }
+            ?: "No se pudo reproducir el audio online"
+
+    private fun clearRemoteRecovery() {
+        remoteRecoveryJob?.cancel()
+        remoteRecoveryJob = null
+        remoteRecoveryMediaId = null
+        remoteRecoveryDeadlineMs = 0L
     }
 
     private var lastSeekTimestamp = 0L
@@ -2219,7 +2253,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             fromRadio -> setShuffleEnabled(false)
         }
         setCurrentItem(playItems[playIndex], persistLastPlayed = false)
-        remoteErrorRetryUsed = false
+        clearRemoteRecovery()
         liveSessionHydrated = true
         idleSeedDone = true
         bumpQueueFocus()
@@ -5250,14 +5284,10 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
         // A track can be enqueued under two ids (plain and `batch:`) that resolve to the same
         // destination filename, so letting a second job through means two writers on one file.
-        // Skipping only the QUEUED reset was not enough: the duplicate still took a permit and ran.
+        // Gated on a **live job**, not on the row state: a row left QUEUED by a job that died would
+        // otherwise block every future attempt at that song with no way to clear it.
         val inFlightIds = TrackMatchKeys.downloadIdVariantsFor(lookup.artist, lookup.title) + downloadId
-        val inFlight = _activeDownloads.value.firstOrNull { candidate ->
-            candidate.id in inFlightIds &&
-                (candidate.state == CandidateDownloadState.DOWNLOADING ||
-                    candidate.state == CandidateDownloadState.QUEUED)
-        }
-        if (inFlight != null) {
+        if (inFlightIds.any { downloadJobs[it]?.isActive == true }) {
             return Result.failure(IllegalStateException(DownloadMessages.alreadyQueued))
         }
 
@@ -5749,6 +5779,8 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         private const val CONFLICT_WAIT_TICK_MS = 250L
         private const val CONFLICT_WAIT_TICKS = 120
         private const val RADIO_EMPTY_REFILL_COOLDOWN_MS = 60_000L
+        /** Gap between re-extract attempts inside the stream grace window. */
+        private const val STREAM_RECOVERY_RETRY_MS = 600L
     }
 }
 

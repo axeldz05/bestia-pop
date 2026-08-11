@@ -70,6 +70,7 @@ fun MatchedTrackRow(
     onPlayAt: () -> Unit,
     onDownloadRemote: (PlayableItem.Remote) -> Unit,
     onRetryDownload: ((String) -> Unit)? = null,
+    onCancelDownload: ((String) -> Unit)? = null,
     queueActions: SongQueueActions,
     leadingIcon: ImageVector = Icons.Default.PlayArrow,
     onAddToPlaylist: ((Song) -> Unit)? = null,
@@ -101,7 +102,10 @@ fun MatchedTrackRow(
             onClick = onPlayAt,
             onDownload = { onDownloadRemote(remote) },
             download = download,
-            onRetry = download?.id?.let { id -> onRetryDownload?.let { retry -> { retry(id) } } }
+            onRetry = download?.id?.let { id -> onRetryDownload?.let { retry -> { retry(id) } } },
+            onCancelDownload = download?.id?.let { id ->
+                onCancelDownload?.let { cancel -> { cancel(id) } }
+            }
         )
     }
 }

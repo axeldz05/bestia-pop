@@ -9,6 +9,7 @@ import android.provider.Settings
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -25,9 +26,11 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.bestiapop.android.data.preferences.MAX_STREAM_SKIP_GRACE_SECONDS
 import com.bestiapop.android.ui.MusicPlayerViewModel
 import com.bestiapop.android.ui.components.SettingsScrollColumn
 import com.bestiapop.android.ui.components.SettingsSwitchRow
+import kotlin.math.roundToInt
 
 @Composable
 fun PlaybackSettingsScreen(viewModel: MusicPlayerViewModel) {
@@ -39,6 +42,7 @@ fun PlaybackSettingsScreen(viewModel: MusicPlayerViewModel) {
     val clearRepeatOneOnManualPlay by viewModel.clearRepeatOneOnManualPlay.collectAsState()
     val clearShuffleOnSkip by viewModel.clearShuffleOnSkip.collectAsState()
     val clearRepeatOneOnSkip by viewModel.clearRepeatOneOnSkip.collectAsState()
+    val streamGraceSeconds by viewModel.streamSkipGraceSeconds.collectAsState()
 
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -153,6 +157,32 @@ fun PlaybackSettingsScreen(viewModel: MusicPlayerViewModel) {
             onCheckedChange = { viewModel.setClearRepeatOneOnSkip(it) },
             onSubtitle = "Siguiente o anterior sale de repetir una y pasa de tema",
             offSubtitle = "Se mantiene repetir una"
+        )
+
+        Spacer(modifier = Modifier.height(28.dp))
+        PlaybackSettingsSectionTitle("Canciones online")
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = "Cuánto insistir con una canción de internet antes de pasar a la siguiente. " +
+                "Mientras dura, vuelve a pedir el audio para que arranque en vez de saltearla.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(modifier = Modifier.height(12.dp))
+        Text(
+            text = if (streamGraceSeconds <= 0) {
+                "Saltear al primer error"
+            } else {
+                "Insistir $streamGraceSeconds ${if (streamGraceSeconds == 1) "segundo" else "segundos"}"
+            },
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+        Slider(
+            value = streamGraceSeconds.toFloat(),
+            onValueChange = { viewModel.setStreamSkipGraceSeconds(it.roundToInt()) },
+            valueRange = 0f..MAX_STREAM_SKIP_GRACE_SECONDS.toFloat(),
+            steps = MAX_STREAM_SKIP_GRACE_SECONDS - 1
         )
 
         Spacer(modifier = Modifier.height(28.dp))

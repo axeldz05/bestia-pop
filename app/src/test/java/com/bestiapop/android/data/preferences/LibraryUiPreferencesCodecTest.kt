@@ -17,36 +17,78 @@ class LibraryUiPreferencesCodecTest {
     }
 
     @Test
+    fun sanitizeBrowseFilter_prefersName_andMapsLegacyTab() {
+        assertEquals("GENRES", LibraryUiPreferencesCodec.sanitizeBrowseFilterName("GENRES"))
+        assertEquals("RECENT", LibraryUiPreferencesCodec.sanitizeBrowseFilterName("RECENT"))
+        assertEquals(
+            DEFAULT_BROWSE_FILTER_NAME,
+            LibraryUiPreferencesCodec.sanitizeBrowseFilterName("NOPE")
+        )
+        assertEquals(
+            "ALBUMS",
+            LibraryUiPreferencesCodec.sanitizeBrowseFilterName(null, LIBRARY_TAB_ALBUMS)
+        )
+        assertEquals(
+            "ARTISTS",
+            LibraryUiPreferencesCodec.sanitizeBrowseFilterName(null, LIBRARY_TAB_ARTISTS)
+        )
+        assertEquals(
+            "SONGS",
+            LibraryUiPreferencesCodec.sanitizeBrowseFilterName(null, LIBRARY_TAB_SONGS)
+        )
+        assertEquals(
+            "SONGS",
+            LibraryUiPreferencesCodec.sanitizeBrowseFilterName(null, -1)
+        )
+        // Explicit name wins over legacy tab
+        assertEquals(
+            "GENRES",
+            LibraryUiPreferencesCodec.sanitizeBrowseFilterName("GENRES", LIBRARY_TAB_ARTISTS)
+        )
+    }
+
+    @Test
     fun sanitizeNavSnapshot_roundTripKeepsValidFields() {
         val snap = LibraryUiPreferencesCodec.sanitizeNavSnapshot(
             navIndex = NAV_PLAYLISTS,
-            libraryTab = LIBRARY_TAB_ARTISTS,
+            browseFilterName = "ARTISTS",
             libraryArtistName = "  Queen  ",
             libraryAlbumName = "A Night at the Opera",
+            libraryGenreName = " Rock ",
             playlistDetailKind = PLAYLIST_DETAIL_LOCAL,
             playlistLocalId = 42L,
             playlistLbMbid = "should-clear"
         )
         assertEquals(NAV_PLAYLISTS, snap.navIndex)
-        assertEquals(LIBRARY_TAB_ARTISTS, snap.libraryTab)
+        assertEquals("ARTISTS", snap.browseFilterName)
         assertEquals("Queen", snap.libraryArtistName)
         assertEquals("A Night at the Opera", snap.libraryAlbumName)
+        assertEquals("Rock", snap.libraryGenreName)
         assertEquals(PLAYLIST_DETAIL_LOCAL, snap.playlistDetailKind)
         assertEquals(42L, snap.playlistLocalId)
         assertNull(snap.playlistLbMbid)
     }
 
     @Test
+    fun sanitizeNavSnapshot_legacyTabWithoutFilterName() {
+        val snap = LibraryUiPreferencesCodec.sanitizeNavSnapshot(
+            libraryTab = LIBRARY_TAB_ALBUMS
+        )
+        assertEquals("ALBUMS", snap.browseFilterName)
+    }
+
+    @Test
     fun sanitizeNavSnapshot_invalidIndexTabAndKind_fallBack() {
         val snap = LibraryUiPreferencesCodec.sanitizeNavSnapshot(
             navIndex = 99,
+            browseFilterName = "weird",
             libraryTab = -1,
             playlistDetailKind = "weird",
             playlistLocalId = 0L,
             playlistLbMbid = "   "
         )
         assertEquals(NAV_LIBRARY, snap.navIndex)
-        assertEquals(LIBRARY_TAB_SONGS, snap.libraryTab)
+        assertEquals(DEFAULT_BROWSE_FILTER_NAME, snap.browseFilterName)
         assertEquals(PLAYLIST_DETAIL_NONE, snap.playlistDetailKind)
         assertNull(snap.playlistLocalId)
         assertNull(snap.playlistLbMbid)
@@ -81,11 +123,14 @@ class LibraryUiPreferencesCodecTest {
         val bothOk = LibraryUiPreferencesCodec.pruneLibraryStack(
             albumName = "Opera",
             artistName = "Queen",
+            genreName = "Rock",
             albumExists = { it == "Opera" },
-            artistExists = { it == "Queen" }
+            artistExists = { it == "Queen" },
+            genreExists = { it == "Rock" }
         )
         assertEquals("Opera", bothOk.albumName)
         assertEquals("Queen", bothOk.artistName)
+        assertEquals("Rock", bothOk.genreName)
 
         val albumGone = LibraryUiPreferencesCodec.pruneLibraryStack(
             albumName = "Missing",
@@ -108,10 +153,13 @@ class LibraryUiPreferencesCodecTest {
         val bothGone = LibraryUiPreferencesCodec.pruneLibraryStack(
             albumName = "A",
             artistName = "B",
+            genreName = "C",
             albumExists = { false },
-            artistExists = { false }
+            artistExists = { false },
+            genreExists = { false }
         )
         assertNull(bothGone.albumName)
         assertNull(bothGone.artistName)
+        assertNull(bothGone.genreName)
     }
 }

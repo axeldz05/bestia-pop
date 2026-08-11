@@ -2,6 +2,7 @@ package com.bestiapop.android.data.preferences
 
 const val DEFAULT_SORT_OPTION_NAME = "TITLE"
 const val DEFAULT_VIEW_MODE_NAME = "ALBUM_GROUPS"
+const val DEFAULT_BROWSE_FILTER_NAME = "SONGS"
 
 const val NAV_LIBRARY = 0
 const val NAV_PLAYLISTS = 1
@@ -9,6 +10,7 @@ const val NAV_DOWNLOADS = 2
 const val NAV_WIFI = 3
 const val NAV_SETTINGS = 4
 
+/** Legacy tab ints (pre–browse-filter). Kept for DataStore migration only. */
 const val LIBRARY_TAB_SONGS = 0
 const val LIBRARY_TAB_ALBUMS = 1
 const val LIBRARY_TAB_ARTISTS = 2
@@ -20,6 +22,7 @@ const val PLAYLIST_DETAIL_CF = "cf"
 
 private val VALID_SORT_OPTION_NAMES = setOf("TITLE", "ARTIST", "ALBUM", "GENRE", "DATE_ADDED")
 private val VALID_VIEW_MODE_NAMES = setOf("FLAT", "ALBUM_GROUPS")
+private val VALID_BROWSE_FILTER_NAMES = setOf("SONGS", "ALBUMS", "ARTISTS", "GENRES", "RECENT")
 private val VALID_PLAYLIST_DETAIL_KINDS = setOf(
     PLAYLIST_DETAIL_NONE,
     PLAYLIST_DETAIL_LOCAL,
@@ -34,9 +37,10 @@ data class LibraryDisplaySettings(
 
 data class UiNavSnapshot(
     val navIndex: Int = NAV_LIBRARY,
-    val libraryTab: Int = LIBRARY_TAB_SONGS,
+    val browseFilterName: String = DEFAULT_BROWSE_FILTER_NAME,
     val libraryArtistName: String? = null,
     val libraryAlbumName: String? = null,
+    val libraryGenreName: String? = null,
     val playlistDetailKind: String = PLAYLIST_DETAIL_NONE,
     val playlistLocalId: Long? = null,
     val playlistLbMbid: String? = null
@@ -44,7 +48,8 @@ data class UiNavSnapshot(
 
 data class PrunedLibraryStack(
     val albumName: String?,
-    val artistName: String?
+    val artistName: String?,
+    val genreName: String? = null
 )
 
 object LibraryUiPreferencesCodec {
@@ -57,17 +62,39 @@ object LibraryUiPreferencesCodec {
     fun sanitizeNavIndex(index: Int?): Int =
         index?.takeIf { it in NAV_LIBRARY..NAV_SETTINGS } ?: NAV_LIBRARY
 
+    /** @deprecated Prefer [sanitizeBrowseFilterName]. */
     fun sanitizeLibraryTab(tab: Int?): Int =
         tab?.takeIf { it in LIBRARY_TAB_SONGS..LIBRARY_TAB_ARTISTS } ?: LIBRARY_TAB_SONGS
+
+    /**
+     * Prefer explicit filter name; else map legacy tab 0/1/2 → SONGS/ALBUMS/ARTISTS.
+     * Unknown names → SONGS.
+     */
+    fun sanitizeBrowseFilterName(name: String?, legacyTab: Int? = null): String {
+        name?.takeIf { it in VALID_BROWSE_FILTER_NAMES }?.let { return it }
+        return when (sanitizeLibraryTab(legacyTab)) {
+            LIBRARY_TAB_ALBUMS -> "ALBUMS"
+            LIBRARY_TAB_ARTISTS -> "ARTISTS"
+            else -> DEFAULT_BROWSE_FILTER_NAME
+        }
+    }
+
+    fun browseFilterNameToLegacyTab(name: String): Int = when (name) {
+        "ALBUMS" -> LIBRARY_TAB_ALBUMS
+        "ARTISTS" -> LIBRARY_TAB_ARTISTS
+        else -> LIBRARY_TAB_SONGS
+    }
 
     fun blankToNull(value: String?): String? =
         value?.trim()?.takeIf { it.isNotEmpty() }
 
     fun sanitizeNavSnapshot(
         navIndex: Int? = null,
+        browseFilterName: String? = null,
         libraryTab: Int? = null,
         libraryArtistName: String? = null,
         libraryAlbumName: String? = null,
+        libraryGenreName: String? = null,
         playlistDetailKind: String? = null,
         playlistLocalId: Long? = null,
         playlistLbMbid: String? = null
@@ -77,9 +104,10 @@ object LibraryUiPreferencesCodec {
         return pruneOrphanPlaylistDetail(
             UiNavSnapshot(
                 navIndex = sanitizeNavIndex(navIndex),
-                libraryTab = sanitizeLibraryTab(libraryTab),
+                browseFilterName = sanitizeBrowseFilterName(browseFilterName, libraryTab),
                 libraryArtistName = blankToNull(libraryArtistName),
                 libraryAlbumName = blankToNull(libraryAlbumName),
+                libraryGenreName = blankToNull(libraryGenreName),
                 playlistDetailKind = kind,
                 playlistLocalId = playlistLocalId?.takeIf { it > 0L },
                 playlistLbMbid = blankToNull(playlistLbMbid)
@@ -120,11 +148,14 @@ object LibraryUiPreferencesCodec {
     fun pruneLibraryStack(
         albumName: String?,
         artistName: String?,
+        genreName: String? = null,
         albumExists: (String) -> Boolean,
-        artistExists: (String) -> Boolean
+        artistExists: (String) -> Boolean,
+        genreExists: (String) -> Boolean = { false }
     ): PrunedLibraryStack {
         val album = albumName?.takeIf(albumExists)
         val artist = artistName?.takeIf(artistExists)
-        return PrunedLibraryStack(albumName = album, artistName = artist)
+        val genre = genreName?.takeIf(genreExists)
+        return PrunedLibraryStack(albumName = album, artistName = artist, genreName = genre)
     }
 }

@@ -312,6 +312,7 @@ fun TauonAlbumHeader(
     isCollapsed: Boolean = false,
     isSelectionMode: Boolean = false,
     selectionState: AlbumHeaderSelectionState = AlbumHeaderSelectionState.NONE,
+    showCollapseToggle: Boolean = true,
     onPlayAlbum: () -> Unit,
     onShuffleAlbum: () -> Unit,
     onToggleSelect: () -> Unit = {},
@@ -388,12 +389,14 @@ fun TauonAlbumHeader(
                 }
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onToggleCollapse) {
-                    Icon(
-                        imageVector = if (isCollapsed) Icons.Default.ExpandMore else Icons.Default.ExpandLess,
-                        contentDescription = if (isCollapsed) "Expandir álbum" else "Plegar álbum",
-                        modifier = Modifier.size(22.dp)
-                    )
+                if (showCollapseToggle) {
+                    IconButton(onClick = onToggleCollapse) {
+                        Icon(
+                            imageVector = if (isCollapsed) Icons.Default.ExpandMore else Icons.Default.ExpandLess,
+                            contentDescription = if (isCollapsed) "Expandir álbum" else "Plegar álbum",
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
                 }
                 if (!isSelectionMode) {
                     Box {

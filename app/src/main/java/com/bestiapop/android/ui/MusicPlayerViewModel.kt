@@ -89,6 +89,7 @@ import com.bestiapop.android.ui.state.IdentifyReviewPhase
 import com.bestiapop.android.ui.state.IdentifyReviewState
 import com.bestiapop.android.ui.state.hasMediumSuggestion
 import com.bestiapop.android.ui.state.identifyReviewFromPersisted
+import com.bestiapop.android.ui.state.LibraryBrowseFilter
 import com.bestiapop.android.ui.state.LibraryListItem
 import com.bestiapop.android.ui.state.LibraryViewMode
 import com.bestiapop.android.ui.state.PlaylistDetailNav
@@ -300,14 +301,17 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private val _selectedNavIndex = MutableStateFlow(0)
     val selectedNavIndex = _selectedNavIndex.asStateFlow()
 
-    private val _libraryTab = MutableStateFlow(0)
-    val libraryTab = _libraryTab.asStateFlow()
+    private val _libraryBrowseFilter = MutableStateFlow(LibraryBrowseFilter.SONGS)
+    val libraryBrowseFilter = _libraryBrowseFilter.asStateFlow()
 
     private val _libraryArtistName = MutableStateFlow<String?>(null)
     val libraryArtistName = _libraryArtistName.asStateFlow()
 
     private val _libraryAlbumName = MutableStateFlow<String?>(null)
     val libraryAlbumName = _libraryAlbumName.asStateFlow()
+
+    private val _libraryGenreName = MutableStateFlow<String?>(null)
+    val libraryGenreName = _libraryGenreName.asStateFlow()
 
     private val _playlistDetail = MutableStateFlow<PlaylistDetailNav>(PlaylistDetailNav.None)
     val playlistDetail = _playlistDetail.asStateFlow()
@@ -346,8 +350,30 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     fun songsForAlbum(songs: List<Song>, albumName: String): List<Song> =
         sortSongsWithinAlbum(songs.filter { it.album.equals(albumName, ignoreCase = true) })
 
+    fun songsForArtist(songs: List<Song>, artistName: String): List<Song> =
+        songs.filter { it.artist.equals(artistName, ignoreCase = true) }
+
+    fun songsForGenre(songs: List<Song>, genreName: String): List<Song> =
+        getLibrarySongsUseCase.songsMatchingGenre(songs, genreName)
+
     fun songsFromLibraryListItems(items: List<LibraryListItem>): List<Song> =
         getLibrarySongsUseCase.songsFromListItems(items)
+
+    fun songsForBrowseProjection(
+        filter: LibraryBrowseFilter,
+        songs: List<Song>,
+        viewMode: LibraryViewMode,
+        albums: List<Album>,
+        artists: List<Artist>,
+        genres: List<GenreGroup>
+    ): List<Song> = getLibrarySongsUseCase.songsForBrowseProjection(
+        filter = filter,
+        songs = songs,
+        viewMode = viewMode,
+        albums = albums,
+        artists = artists,
+        genres = genres
+    )
 
     val albumsState: StateFlow<List<Album>> = combine(
         songsState,
@@ -364,6 +390,10 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     val artistsState: StateFlow<List<Artist>> = combine(songsState, _artistPhotos) { songs: List<Song>, photoMap: Map<String, String> ->
         getLibrarySongsUseCase.extractArtists(songs, photoMap)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val genresState: StateFlow<List<GenreGroup>> =
+        songsState.map { songs -> getLibrarySongsUseCase.extractGenres(songs) }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     // Player State
 
@@ -506,10 +536,13 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private val _playlistSearchResults = MutableStateFlow<List<CatalogPlaylist>>(emptyList())
     val playlistSearchResults = _playlistSearchResults.asStateFlow()
 
+    private val _catalogGenres = MutableStateFlow<List<CatalogGenre>>(emptyList())
+    val catalogGenres = _catalogGenres.asStateFlow()
+
     private val _selectedCollectionTitle = MutableStateFlow<String?>(null)
     val selectedCollectionTitle = _selectedCollectionTitle.asStateFlow()
 
-    private enum class CatalogCollectionKind { ALBUM, PLAYLIST }
+    private enum class CatalogCollectionKind { ALBUM, PLAYLIST, GENRE }
     private var selectedCollectionKind: CatalogCollectionKind? = null
     private var selectedCollectionCoverUrl: String? = null
     /** Local playlist created when batch-downloading a catalog playlist (reuse across single/batch). */
@@ -2573,17 +2606,19 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         _selectedNavIndex.value = NAV_DOWNLOADS
     }
 
-    fun setLibraryTab(tab: Int) {
-        val sanitized = LibraryUiPreferencesCodec.sanitizeLibraryTab(tab)
-        if (_libraryTab.value == sanitized) return
-        _libraryTab.value = sanitized
+    fun setLibraryBrowseFilter(filter: LibraryBrowseFilter) {
+        if (_libraryBrowseFilter.value == filter) return
+        _libraryBrowseFilter.value = filter
         persistNavSnapshot()
     }
 
-    fun openLibraryAlbum(name: String, fromArtist: Boolean = false) {
+    fun openLibraryAlbum(name: String, fromNestedParent: Boolean = false) {
         val trimmed = name.trim()
         if (trimmed.isEmpty()) return
-        if (!fromArtist) _libraryArtistName.value = null
+        if (!fromNestedParent) {
+            _libraryArtistName.value = null
+            _libraryGenreName.value = null
+        }
         _libraryAlbumName.value = trimmed
         persistNavSnapshot()
     }
@@ -2593,6 +2628,16 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         if (trimmed.isEmpty()) return
         _libraryArtistName.value = trimmed
         _libraryAlbumName.value = null
+        _libraryGenreName.value = null
+        persistNavSnapshot()
+    }
+
+    fun openLibraryGenre(name: String) {
+        val trimmed = name.trim()
+        if (trimmed.isEmpty()) return
+        _libraryGenreName.value = trimmed
+        _libraryAlbumName.value = null
+        _libraryArtistName.value = null
         persistNavSnapshot()
     }
 
@@ -2609,10 +2654,18 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         persistNavSnapshot()
     }
 
+    fun closeLibraryGenre() {
+        if (_libraryGenreName.value == null && _libraryAlbumName.value == null) return
+        _libraryGenreName.value = null
+        _libraryAlbumName.value = null
+        persistNavSnapshot()
+    }
+
     fun popLibraryNested() {
         when {
             _libraryAlbumName.value != null -> closeLibraryAlbum()
             _libraryArtistName.value != null -> closeLibraryArtist()
+            _libraryGenreName.value != null -> closeLibraryGenre()
         }
     }
 
@@ -2682,9 +2735,10 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     private fun applyNavSnapshot(nav: UiNavSnapshot) {
         _selectedNavIndex.value = nav.navIndex
-        _libraryTab.value = nav.libraryTab
+        _libraryBrowseFilter.value = parseLibraryBrowseFilter(nav.browseFilterName)
         _libraryArtistName.value = nav.libraryArtistName
         _libraryAlbumName.value = nav.libraryAlbumName
+        _libraryGenreName.value = nav.libraryGenreName
         _playlistDetail.value = PlaylistDetailNav.fromSnapshot(nav)
     }
 
@@ -2693,9 +2747,10 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         val detail = _playlistDetail.value
         val snapshot = UiNavSnapshot(
             navIndex = _selectedNavIndex.value,
-            libraryTab = _libraryTab.value,
+            browseFilterName = _libraryBrowseFilter.value.name,
             libraryArtistName = _libraryArtistName.value,
             libraryAlbumName = _libraryAlbumName.value,
+            libraryGenreName = _libraryGenreName.value,
             playlistDetailKind = detail.kindName(),
             playlistLocalId = detail.localIdOrNull(),
             playlistLbMbid = detail.lbMbidOrNull()
@@ -2708,12 +2763,23 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         val pruned = LibraryUiPreferencesCodec.pruneLibraryStack(
             albumName = _libraryAlbumName.value,
             artistName = _libraryArtistName.value,
+            genreName = _libraryGenreName.value,
             albumExists = { name -> songs.any { it.album.equals(name, ignoreCase = true) } },
-            artistExists = { name -> songs.any { it.artist.equals(name, ignoreCase = true) } }
+            artistExists = { name -> songs.any { it.artist.equals(name, ignoreCase = true) } },
+            genreExists = { name ->
+                songs.any {
+                    com.bestiapop.android.domain.usecase.GetLibrarySongsUseCase.genreKey(it)
+                        .equals(name, ignoreCase = true)
+                }
+            }
         )
-        if (pruned.albumName != _libraryAlbumName.value || pruned.artistName != _libraryArtistName.value) {
+        if (pruned.albumName != _libraryAlbumName.value ||
+            pruned.artistName != _libraryArtistName.value ||
+            pruned.genreName != _libraryGenreName.value
+        ) {
             _libraryAlbumName.value = pruned.albumName
             _libraryArtistName.value = pruned.artistName
+            _libraryGenreName.value = pruned.genreName
             persistNavSnapshot()
         }
     }
@@ -2769,6 +2835,9 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     private fun parseLibraryViewMode(name: String): LibraryViewMode =
         LibraryViewMode.entries.find { it.name == name } ?: LibraryViewMode.ALBUM_GROUPS
+
+    private fun parseLibraryBrowseFilter(name: String): LibraryBrowseFilter =
+        LibraryBrowseFilter.entries.find { it.name == name } ?: LibraryBrowseFilter.SONGS
 
 
     private fun reportLibraryProgress(
@@ -3991,6 +4060,17 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 CatalogCategory.PLAYLISTS -> {
                     _playlistSearchResults.value = MetadataFetcher.searchPlaylists(cleanQ)
                 }
+                CatalogCategory.GENRES -> {
+                    val genres = MetadataFetcher.listGenres()
+                    _catalogGenres.value = if (cleanQ.isEmpty()) {
+                        genres
+                    } else {
+                        genres.filter { it.name.contains(cleanQ, ignoreCase = true) }
+                    }
+                }
+                CatalogCategory.CHARTS -> {
+                    _catalogSearchResults.value = MetadataFetcher.fetchChartTracks()
+                }
             }
             _isSearchingCatalog.value = false
         }
@@ -4018,6 +4098,17 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             coverUrl = playlist.coverUrl
         ) {
             MetadataFetcher.fetchPlaylistTrackCandidates(playlist.id, playlist.title)
+        }
+    }
+
+    fun selectGenreForInspection(genre: CatalogGenre) {
+        selectCollectionForInspection(
+            title = genre.name,
+            kind = CatalogCollectionKind.GENRE,
+            coverUrl = genre.pictureUrl
+        ) {
+            MetadataFetcher.searchTracksByGenre(genre.id, genre.name)
+                .map { MetadataFetcher.toCatalogCandidate(it) }
         }
     }
 

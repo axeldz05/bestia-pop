@@ -122,6 +122,51 @@ class GetLibrarySongsUseCaseListItemsTest {
     }
 
     @Test
+    fun extractGenres_sortsKnownAndPutsUnknownLast() {
+        val withMeta = listOf(
+            Song(id = 1, uriString = "u1", title = "A", genre = "Rock", dateAdded = 10),
+            Song(id = 2, uriString = "u2", title = "B", genre = "Pop", dateAdded = 40),
+            Song(id = 3, uriString = "u3", title = "C", genre = "", dateAdded = 20),
+            Song(id = 4, uriString = "u4", title = "D", genre = "Rock", dateAdded = 30)
+        )
+        val genres = useCase.extractGenres(withMeta)
+        assertEquals(listOf("Pop", "Rock", GetLibrarySongsUseCase.UNKNOWN_GENRE), genres.map { it.name })
+        assertEquals(2, genres.first { it.name == "Rock" }.songCount)
+        assertEquals(40L, genres.first { it.name == "Pop" }.dateAdded)
+    }
+
+    @Test
+    fun songsForBrowseProjection_albumsConcatenatesWithinAlbumOrder() {
+        val list = listOf(
+            Song(id = 1, uriString = "u1", title = "Z", artist = "A", album = "Beta", trackNumber = 2),
+            Song(id = 2, uriString = "u2", title = "A", artist = "A", album = "Beta", trackNumber = 1),
+            Song(id = 3, uriString = "u3", title = "X", artist = "B", album = "Alpha", trackNumber = 1)
+        )
+        val albums = useCase.extractAlbums(list)
+        val projected = useCase.songsForBrowseProjection(
+            filter = com.bestiapop.android.ui.state.LibraryBrowseFilter.ALBUMS,
+            songs = list,
+            albums = albums
+        )
+        // Albums sorted by display name: Alpha then Beta; within Beta by track
+        assertEquals(listOf(3L, 2L, 1L), projected.map { it.id })
+    }
+
+    @Test
+    fun songsForBrowseProjection_recent_sortsByDateAddedDesc() {
+        val list = listOf(
+            Song(id = 1, uriString = "u1", title = "Old", dateAdded = 10),
+            Song(id = 2, uriString = "u2", title = "New", dateAdded = 30),
+            Song(id = 3, uriString = "u3", title = "Mid", dateAdded = 20)
+        )
+        val projected = useCase.songsForBrowseProjection(
+            filter = com.bestiapop.android.ui.state.LibraryBrowseFilter.RECENT,
+            songs = list
+        )
+        assertEquals(listOf(2L, 3L, 1L), projected.map { it.id })
+    }
+
+    @Test
     fun filterCollapsedAlbumSongs_hidesRowsUnderCollapsedHeader() {
         val items = useCase.buildListItems(songs, LibraryViewMode.ALBUM_GROUPS)
         val filtered = filterCollapsedAlbumSongs(items, setOf("Opera"))

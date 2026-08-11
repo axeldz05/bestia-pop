@@ -3,9 +3,11 @@ package com.bestiapop.android.domain.usecase
 import com.bestiapop.android.data.model.Album
 import com.bestiapop.android.data.model.AlbumOverride
 import com.bestiapop.android.data.model.Artist
+import com.bestiapop.android.data.model.GenreGroup
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.data.util.albumTrackSortKey
 import com.bestiapop.android.ui.SortOption
+import com.bestiapop.android.ui.state.LibraryBrowseFilter
 import com.bestiapop.android.ui.state.LibraryListItem
 import com.bestiapop.android.ui.state.LibraryViewMode
 
@@ -137,16 +139,81 @@ class GetLibrarySongsUseCase {
         }.sortedBy { it.name.lowercase() }
     }
 
+    /**
+     * Groups by genre label; blank → [UNKNOWN_GENRE]. Known genres A–Z; Unknown last.
+     */
+    fun extractGenres(songs: List<Song>): List<GenreGroup> {
+        if (songs.isEmpty()) return emptyList()
+        val groups = songs.groupBy { genreKey(it) }.map { (name, genreSongs) ->
+            GenreGroup(
+                name = name,
+                songCount = genreSongs.size,
+                artworkUri = firstArtwork(genreSongs),
+                dateAdded = genreSongs.maxOfOrNull { it.dateAdded }
+            )
+        }
+        val (unknown, known) = groups.partition { it.name.equals(UNKNOWN_GENRE, ignoreCase = true) }
+        return known.sortedBy { it.name.lowercase() } + unknown
+    }
+
+    fun songsMatchingGenre(songs: List<Song>, genreName: String): List<Song> =
+        songs.filter { genreKey(it).equals(genreName, ignoreCase = true) }
+
+    /**
+     * Flattens the songs represented by the current browse projection (play-all / shuffle).
+     */
+    fun songsForBrowseProjection(
+        filter: LibraryBrowseFilter,
+        songs: List<Song>,
+        viewMode: LibraryViewMode = LibraryViewMode.FLAT,
+        albums: List<Album>? = null,
+        artists: List<Artist>? = null,
+        genres: List<GenreGroup>? = null
+    ): List<Song> {
+        if (songs.isEmpty()) return emptyList()
+        return when (filter) {
+            LibraryBrowseFilter.SONGS ->
+                songsFromListItems(buildListItems(songs, viewMode))
+            LibraryBrowseFilter.RECENT ->
+                songs.sortedByDescending { it.dateAdded }
+            LibraryBrowseFilter.ALBUMS -> {
+                val albumList = albums ?: extractAlbums(songs)
+                albumList.flatMap { album ->
+                    sortSongsWithinAlbum(
+                        songs.filter { it.album.equals(album.name, ignoreCase = true) }
+                    )
+                }
+            }
+            LibraryBrowseFilter.ARTISTS -> {
+                val artistList = artists ?: extractArtists(songs)
+                artistList.flatMap { artist ->
+                    songs.filter { it.artist.equals(artist.name, ignoreCase = true) }
+                }
+            }
+            LibraryBrowseFilter.GENRES -> {
+                val genreList = genres ?: extractGenres(songs)
+                genreList.flatMap { genre -> songsMatchingGenre(songs, genre.name) }
+            }
+        }
+    }
+
     private fun firstArtwork(songs: List<Song>): String? =
         songs.firstOrNull { !it.artworkUri.isNullOrEmpty() }?.artworkUri
 
     private fun dominantGenre(genres: List<String>): String? {
         if (genres.isEmpty()) return null
         return genres
-            .filter { it.isNotBlank() && !it.equals("Unknown Genre", ignoreCase = true) }
+            .filter { it.isNotBlank() && !it.equals(UNKNOWN_GENRE, ignoreCase = true) }
             .groupingBy { it }
             .eachCount()
             .maxByOrNull { it.value }
             ?.key
+    }
+
+    companion object {
+        const val UNKNOWN_GENRE = "Unknown Genre"
+
+        fun genreKey(song: Song): String =
+            song.genre.trim().ifBlank { UNKNOWN_GENRE }
     }
 }

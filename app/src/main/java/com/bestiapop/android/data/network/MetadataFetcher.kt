@@ -1,6 +1,7 @@
 package com.bestiapop.android.data.network
 
 import com.bestiapop.android.data.model.CatalogAlbum
+import com.bestiapop.android.data.model.CatalogGenre
 import com.bestiapop.android.data.model.CatalogPlaylist
 import com.bestiapop.android.data.model.CatalogTrackCandidate
 import com.bestiapop.android.data.model.OnlineCatalogTrack
@@ -241,6 +242,86 @@ object MetadataFetcher {
             return@withContext tracks
         }
         return@withContext searchOnlineCatalog("top songs")
+    }
+
+    fun parseCatalogGenres(data: JSONArray?): List<CatalogGenre> {
+        if (data == null || data.length() == 0) return emptyList()
+        val genres = ArrayList<CatalogGenre>(data.length())
+        for (i in 0 until data.length()) {
+            val obj = data.getJSONObject(i)
+            val id = obj.optLong("id", -1L)
+            // Deezer id 0 is the synthetic "All" row — skip.
+            if (id <= 0L) continue
+            val name = obj.optString("name").trim()
+            if (name.isEmpty()) continue
+            genres.add(
+                CatalogGenre(
+                    id = id,
+                    name = name,
+                    pictureUrl = pickCoverUrl(
+                        obj.optString("picture_xl"),
+                        obj.optString("picture_big").ifBlank { obj.optString("picture_medium") }
+                    )
+                )
+            )
+        }
+        return genres
+    }
+
+    /** Deezer genre browse list (`GET /genre`). */
+    suspend fun listGenres(): List<CatalogGenre> = withContext(Dispatchers.IO) {
+        try {
+            val json = getJson("https://api.deezer.com/genre", userAgent = "Mozilla/5.0")
+            return@withContext parseCatalogGenres(json?.optJSONArray("data"))
+        } catch (e: Exception) {
+            e.printStackTrace()
+            emptyList()
+        }
+    }
+
+    /** Global Deezer chart tracks (`GET /chart/0/tracks`). */
+    suspend fun fetchChartTracks(limit: Int = 25): List<OnlineCatalogTrack> = withContext(Dispatchers.IO) {
+        fetchDeezerChartTracks(chartId = 0L, limit = limit)
+    }
+
+    /**
+     * Tracks for a Deezer genre: chart-by-genre first, then `search?q=genre:"Name"`.
+     * Reuses [parseDeezerSearchTracks] — same download path as song search.
+     */
+    suspend fun searchTracksByGenre(
+        genreId: Long,
+        genreName: String,
+        limit: Int = 25
+    ): List<OnlineCatalogTrack> = withContext(Dispatchers.IO) {
+        if (genreId > 0L) {
+            val chartTracks = fetchDeezerChartTracks(chartId = genreId, limit = limit)
+            if (chartTracks.isNotEmpty()) return@withContext chartTracks
+        }
+        val cleanName = genreName.trim()
+        if (cleanName.isEmpty() || limit <= 0) return@withContext emptyList()
+        try {
+            val q = "genre:\"$cleanName\""
+            val url = "https://api.deezer.com/search?q=${encodeQuery(q)}&limit=$limit"
+            return@withContext parseDeezerSearchTracks(
+                getJson(url, userAgent = "Mozilla/5.0")?.optJSONArray("data")
+            )
+        } catch (e: Exception) {
+            e.printStackTrace()
+            emptyList()
+        }
+    }
+
+    private fun fetchDeezerChartTracks(chartId: Long, limit: Int): List<OnlineCatalogTrack> {
+        if (limit <= 0) return emptyList()
+        return try {
+            val url = "https://api.deezer.com/chart/$chartId/tracks?limit=$limit"
+            parseDeezerSearchTracks(
+                getJson(url, userAgent = "Mozilla/5.0")?.optJSONArray("data")
+            )
+        } catch (e: Exception) {
+            e.printStackTrace()
+            emptyList()
+        }
     }
 
     suspend fun searchOnlineCatalog(query: String): List<OnlineCatalogTrack> = withContext(Dispatchers.IO) {

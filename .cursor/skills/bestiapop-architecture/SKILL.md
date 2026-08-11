@@ -57,7 +57,7 @@ service/     MusicService (playback), WebServerService (WiFi sync)
 ## Navegación UI
 
 `MainScreen` bottom nav (índice persistido en `LibraryPreferencesRepository` / `selectedNavIndex`; deep-link descargas = `openDownloadsTabTransient` sin pisar snapshot):
-0. Biblioteca (`LibraryScreen` + subviews album/artist/song)
+0. Biblioteca (`LibraryScreen` + chips browse + nested album/artist/genre)
 1. Playlists (`PlaylistsScreen` + `PlaylistDetailNav`)
 2. Descargas (`DownloadsScreen`)
 3. WiFi Sync (`WebServerScreen`)

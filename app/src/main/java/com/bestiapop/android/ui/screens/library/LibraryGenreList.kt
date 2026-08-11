@@ -12,78 +12,57 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Audiotrack
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.bestiapop.android.data.model.Artist
-import com.bestiapop.android.ui.SortOption
+import com.bestiapop.android.data.model.GenreGroup
 import com.bestiapop.android.ui.components.ArtworkThumbnail
 import com.bestiapop.android.ui.components.EmptyListHint
 import com.bestiapop.android.ui.components.PlayShuffleIconPair
-import com.bestiapop.android.ui.components.formatSortRelevantInfo
 import com.bestiapop.android.ui.theme.ListDensity
 
 @Composable
-fun LibraryArtistList(
-    artists: List<Artist>,
-    sortOption: SortOption = SortOption.TITLE,
-    onArtistClick: (Artist) -> Unit,
-    onPlayArtist: (Artist) -> Unit,
-    onShuffleArtist: (Artist) -> Unit,
+fun LibraryGenreList(
+    genres: List<GenreGroup>,
+    onGenreClick: (GenreGroup) -> Unit,
+    onPlayGenre: (GenreGroup) -> Unit,
+    onShuffleGenre: (GenreGroup) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    if (artists.isEmpty()) {
+    if (genres.isEmpty()) {
         EmptyListHint(
-            text = "Ningún artista coincide",
+            text = "Ningún género coincide",
             modifier = modifier.fillMaxSize()
         )
         return
     }
 
     LazyColumn(modifier = modifier.fillMaxSize()) {
-        items(artists, key = { it.name }) { artist ->
-            ArtistListItem(
-                artist = artist,
-                sortOption = sortOption,
-                onClick = { onArtistClick(artist) },
-                onPlay = { onPlayArtist(artist) },
-                onShuffle = { onShuffleArtist(artist) }
+        items(genres, key = { it.name }) { genre ->
+            GenreListItem(
+                genre = genre,
+                onClick = { onGenreClick(genre) },
+                onPlay = { onPlayGenre(genre) },
+                onShuffle = { onShuffleGenre(genre) }
             )
         }
     }
 }
 
 @Composable
-fun ArtistListItem(
-    artist: Artist,
-    sortOption: SortOption = SortOption.TITLE,
+fun GenreListItem(
+    genre: GenreGroup,
     onClick: () -> Unit,
     onPlay: () -> Unit,
     onShuffle: () -> Unit
 ) {
-    val sortInfo = remember(artist.genre, artist.dateAdded, sortOption) {
-        formatSortRelevantInfo(
-            sortOption = sortOption,
-            genre = artist.genre,
-            dateAdded = artist.dateAdded,
-            alreadyShowsArtist = true,
-            alreadyShowsAlbum = false,
-            alreadyShowsTitle = false
-        )
-    }
-    val subtitle = remember(artist.albumCount, artist.songCount, sortInfo) {
-        val base = "${artist.albumCount} álbumes • ${artist.songCount} canciones"
-        if (sortInfo.isNullOrBlank()) base else "$base • $sortInfo"
-    }
-
     Surface(
         modifier = Modifier
             .fillMaxWidth()
@@ -100,24 +79,24 @@ fun ArtistListItem(
             verticalAlignment = Alignment.CenterVertically
         ) {
             ArtworkThumbnail(
-                artworkUri = artist.photoUri,
+                artworkUri = genre.artworkUri,
                 size = ListDensity.artworkChipRow,
-                cornerRadius = ListDensity.artworkChipRow / 2,
-                fallbackIcon = Icons.Default.Person
+                cornerRadius = ListDensity.corner,
+                fallbackIcon = Icons.Default.Audiotrack
             )
 
             Spacer(modifier = Modifier.width(12.dp))
 
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = artist.name,
+                    text = genre.name,
                     style = ListDensity.titleStyle,
                     fontWeight = FontWeight.Bold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    text = subtitle,
+                    text = "${genre.songCount} canciones",
                     style = ListDensity.subtitleStyle,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
                     maxLines = 1,
@@ -128,8 +107,8 @@ fun ArtistListItem(
             PlayShuffleIconPair(
                 onPlay = onPlay,
                 onShuffle = onShuffle,
-                playDescription = "Reproducir artista",
-                shuffleDescription = "Mezclar artista"
+                playDescription = "Reproducir género",
+                shuffleDescription = "Mezclar género"
             )
         }
     }

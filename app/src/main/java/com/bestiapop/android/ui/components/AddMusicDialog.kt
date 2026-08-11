@@ -2,6 +2,7 @@ package com.bestiapop.android.ui.components
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,6 +19,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -25,6 +27,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Album
+import androidx.compose.material.icons.filled.Category
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.Error
@@ -37,6 +40,7 @@ import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.Whatshot
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -47,6 +51,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import com.bestiapop.android.data.model.CatalogCategory
+import com.bestiapop.android.data.model.CatalogGenre
 
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -105,6 +110,7 @@ fun AddMusicDialog(
     val catalogCategory by viewModel.catalogCategory.collectAsState()
     val albumSearchResults by viewModel.albumSearchResults.collectAsState()
     val playlistSearchResults by viewModel.playlistSearchResults.collectAsState()
+    val catalogGenres by viewModel.catalogGenres.collectAsState()
     val selectedCollectionTitle by viewModel.selectedCollectionTitle.collectAsState()
     val activeTrackCandidates by viewModel.activeTrackCandidates.collectAsState()
     val isLoadingCollection by viewModel.isLoadingCollection.collectAsState()
@@ -247,6 +253,7 @@ fun AddMusicDialog(
                             songResults = catalogResults,
                             albumResults = albumSearchResults,
                             playlistResults = playlistSearchResults,
+                            genreResults = catalogGenres,
                             selectedCollectionTitle = selectedCollectionTitle,
                             activeCandidates = activeTrackCandidates,
                             isLoadingCollection = isLoadingCollection,
@@ -271,6 +278,7 @@ fun AddMusicDialog(
                             },
                             onSelectAlbum = { album -> viewModel.selectAlbumForInspection(album) },
                             onSelectPlaylist = { playlist -> viewModel.selectPlaylistForInspection(playlist) },
+                            onSelectGenre = { genre -> viewModel.selectGenreForInspection(genre) },
                             onCycleCandidate = { index -> viewModel.cycleTrackCandidate(index) },
                             onStreamCandidate = { candidate ->
                                 candidate.currentTrack?.let { viewModel.playOnlineCatalogTrackAsStream(it) }
@@ -511,6 +519,7 @@ private fun OnlineCatalogTab(
     songResults: List<OnlineCatalogTrack>,
     albumResults: List<com.bestiapop.android.data.model.CatalogAlbum>,
     playlistResults: List<com.bestiapop.android.data.model.CatalogPlaylist>,
+    genreResults: List<CatalogGenre>,
     selectedCollectionTitle: String?,
     activeCandidates: List<com.bestiapop.android.data.model.CatalogTrackCandidate>,
     isLoadingCollection: Boolean,
@@ -529,6 +538,7 @@ private fun OnlineCatalogTab(
     onStopPreview: () -> Unit,
     onSelectAlbum: (com.bestiapop.android.data.model.CatalogAlbum) -> Unit,
     onSelectPlaylist: (com.bestiapop.android.data.model.CatalogPlaylist) -> Unit,
+    onSelectGenre: (CatalogGenre) -> Unit,
     onCycleCandidate: (Int) -> Unit,
     onStreamCandidate: (com.bestiapop.android.data.model.CatalogTrackCandidate) -> Unit,
     onToggleSelection: (Int) -> Unit,
@@ -539,12 +549,14 @@ private fun OnlineCatalogTab(
     onOpenDownloads: () -> Unit
 ) {
     androidx.compose.runtime.LaunchedEffect(Unit) {
-        if (songResults.isEmpty() && albumResults.isEmpty() && playlistResults.isEmpty()) {
+        if (songResults.isEmpty() && albumResults.isEmpty() && playlistResults.isEmpty() &&
+            genreResults.isEmpty()
+        ) {
             onSearch()
         }
     }
 
-    // If inspecting an album/playlist, show the track candidate inspection view!
+    // If inspecting an album/playlist/genre, show the track candidate inspection view!
     if (selectedCollectionTitle != null) {
         CollectionTrackInspectionView(
             title = selectedCollectionTitle,
@@ -571,65 +583,85 @@ private fun OnlineCatalogTab(
         return
     }
 
+    val searchPlaceholder = when (category) {
+        CatalogCategory.GENRES -> "Filtrar géneros..."
+        CatalogCategory.CHARTS -> "Charts globales (Deezer)"
+        else -> "Buscar en catálogo..."
+    }
+    val showSearchField = category != CatalogCategory.CHARTS
+
     Column(modifier = Modifier.fillMaxSize()) {
 
-        // Search Input Bar
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            OutlinedTextField(
-                value = searchInput,
-                onValueChange = onSearchInputChange,
-                placeholder = { Text("Buscar en catálogo...") },
-                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                singleLine = true,
-                shape = RoundedCornerShape(16.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = MaterialTheme.colorScheme.primary,
-                    unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
-                ),
-                modifier = Modifier.weight(1f)
-            )
-
-            Spacer(modifier = Modifier.width(8.dp))
-
-            Button(
-                onClick = onSearch,
-                shape = RoundedCornerShape(16.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+        // Search Input Bar (hidden for Charts — no query needed)
+        if (showSearchField) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(Icons.Default.Search, contentDescription = "Buscar")
-            }
-        }
+                OutlinedTextField(
+                    value = searchInput,
+                    onValueChange = onSearchInputChange,
+                    placeholder = { Text(searchPlaceholder) },
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                    singleLine = true,
+                    shape = RoundedCornerShape(16.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = MaterialTheme.colorScheme.primary,
+                        unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
+                    ),
+                    modifier = Modifier.weight(1f)
+                )
 
-        Spacer(modifier = Modifier.height(10.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+
+                Button(
+                    onClick = onSearch,
+                    shape = RoundedCornerShape(16.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                ) {
+                    Icon(Icons.Default.Search, contentDescription = "Buscar")
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+        }
 
         // Category Selection Chips
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            FilterChip(
+            CatalogCategoryChip(
                 selected = category == CatalogCategory.SONGS,
-                onClick = { onCategorySelect(CatalogCategory.SONGS) },
-                label = { Text("Canciones", fontWeight = FontWeight.Bold) },
-                leadingIcon = { Icon(Icons.Default.MusicNote, contentDescription = null, modifier = Modifier.size(16.dp)) },
-                shape = RoundedCornerShape(20.dp)
+                label = "Canciones",
+                icon = Icons.Default.MusicNote,
+                onClick = { onCategorySelect(CatalogCategory.SONGS) }
             )
-            FilterChip(
+            CatalogCategoryChip(
                 selected = category == CatalogCategory.ALBUMS,
-                onClick = { onCategorySelect(CatalogCategory.ALBUMS) },
-                label = { Text("Álbumes", fontWeight = FontWeight.Bold) },
-                leadingIcon = { Icon(Icons.Default.Album, contentDescription = null, modifier = Modifier.size(16.dp)) },
-                shape = RoundedCornerShape(20.dp)
+                label = "Álbumes",
+                icon = Icons.Default.Album,
+                onClick = { onCategorySelect(CatalogCategory.ALBUMS) }
             )
-            FilterChip(
+            CatalogCategoryChip(
                 selected = category == CatalogCategory.PLAYLISTS,
-                onClick = { onCategorySelect(CatalogCategory.PLAYLISTS) },
-                label = { Text("Playlists", fontWeight = FontWeight.Bold) },
-                leadingIcon = { Icon(Icons.AutoMirrored.Filled.QueueMusic, contentDescription = null, modifier = Modifier.size(16.dp)) },
-                shape = RoundedCornerShape(20.dp)
+                label = "Playlists",
+                icon = Icons.AutoMirrored.Filled.QueueMusic,
+                onClick = { onCategorySelect(CatalogCategory.PLAYLISTS) }
+            )
+            CatalogCategoryChip(
+                selected = category == CatalogCategory.GENRES,
+                label = "Géneros",
+                icon = Icons.Default.Category,
+                onClick = { onCategorySelect(CatalogCategory.GENRES) }
+            )
+            CatalogCategoryChip(
+                selected = category == CatalogCategory.CHARTS,
+                label = "Charts",
+                icon = Icons.Default.Whatshot,
+                onClick = { onCategorySelect(CatalogCategory.CHARTS) }
             )
         }
 
@@ -652,9 +684,15 @@ private fun OnlineCatalogTab(
                 }
             } else {
                 when (category) {
-                    CatalogCategory.SONGS -> {
+                    CatalogCategory.SONGS, CatalogCategory.CHARTS -> {
                         if (songResults.isEmpty()) {
-                            EmptyResultText("No se encontraron canciones en el catálogo")
+                            EmptyResultText(
+                                if (category == CatalogCategory.CHARTS) {
+                                    "No se pudieron cargar los charts"
+                                } else {
+                                    "No se encontraron canciones en el catálogo"
+                                }
+                            )
                         } else {
                             LazyColumn(modifier = Modifier.fillMaxSize()) {
                                 itemsIndexed(
@@ -709,6 +747,20 @@ private fun OnlineCatalogTab(
                             }
                         }
                     }
+                    CatalogCategory.GENRES -> {
+                        if (genreResults.isEmpty()) {
+                            EmptyResultText("No se encontraron géneros")
+                        } else {
+                            LazyColumn(modifier = Modifier.fillMaxSize()) {
+                                items(genreResults, key = { genre -> genre.id }) { genre ->
+                                    CatalogGenreItem(
+                                        genre = genre,
+                                        onClick = { onSelectGenre(genre) }
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -746,6 +798,24 @@ private fun EmptyResultText(msg: String) {
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
         )
     }
+}
+
+@Composable
+private fun CatalogCategoryChip(
+    selected: Boolean,
+    label: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    onClick: () -> Unit
+) {
+    FilterChip(
+        selected = selected,
+        onClick = onClick,
+        label = { Text(label, fontWeight = FontWeight.Bold) },
+        leadingIcon = {
+            Icon(icon, contentDescription = null, modifier = Modifier.size(16.dp))
+        },
+        shape = RoundedCornerShape(20.dp)
+    )
 }
 
 @Composable
@@ -1126,6 +1196,20 @@ private fun CatalogAlbumItem(
         title = album.title,
         subtitle = "${album.artist} • ${album.trackCount} canciones",
         fallbackIcon = Icons.Default.Album,
+        onClick = onClick
+    )
+}
+
+@Composable
+private fun CatalogGenreItem(
+    genre: CatalogGenre,
+    onClick: () -> Unit
+) {
+    CatalogCollectionRow(
+        coverUrl = genre.pictureUrl,
+        title = genre.name,
+        subtitle = "Género",
+        fallbackIcon = Icons.Default.Category,
         onClick = onClick
     )
 }

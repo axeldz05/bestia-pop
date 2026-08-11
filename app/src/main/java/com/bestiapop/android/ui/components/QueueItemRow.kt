@@ -37,6 +37,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import com.bestiapop.android.data.model.PlayableItem
+import com.bestiapop.android.ui.theme.ListDensity
 import kotlin.math.roundToInt
 
 /** L1: artwork + title + artist for a queue/playable row. */
@@ -44,7 +45,7 @@ import kotlin.math.roundToInt
 fun PlayableItemRowContent(
     item: PlayableItem,
     isCurrentPlaying: Boolean,
-    artworkSize: Dp = 48.dp,
+    artworkSize: Dp = ListDensity.artworkSong,
     appendRemoteSuffix: Boolean = true,
     boldWhenCurrent: Boolean = false,
     modifier: Modifier = Modifier
@@ -70,10 +71,10 @@ fun PlayableItemRowContent(
         ArtworkThumbnail(
             artworkUri = item.artworkUri,
             size = artworkSize,
-            cornerRadius = 8.dp,
+            cornerRadius = ListDensity.corner,
             contentDescription = item.title
         )
-        Spacer(modifier = Modifier.width(if (artworkSize <= 40.dp) 10.dp else 12.dp))
+        Spacer(modifier = Modifier.width(if (artworkSize <= ListDensity.artworkSong) 10.dp else 12.dp))
         TrackTextColumn(
             title = item.title,
             subtitle = subtitle,
@@ -150,7 +151,10 @@ fun QueueItemRow(
                 .fillMaxWidth()
                 .background(bgColor)
                 .clickable(onClick = onClick)
-                .padding(horizontal = 12.dp, vertical = 6.dp),
+                .padding(
+                    horizontal = ListDensity.rowHorizontalPadding,
+                    vertical = ListDensity.rowVerticalPadding
+                ),
             verticalAlignment = Alignment.CenterVertically
         ) {
             QueueDragHandle(handleModifier)
@@ -178,7 +182,7 @@ fun QueueItemRow(
             PlayableItemRowContent(
                 item = item,
                 isCurrentPlaying = isCurrentPlaying,
-                artworkSize = 40.dp,
+                artworkSize = ListDensity.artworkSong,
                 appendRemoteSuffix = false,
                 boldWhenCurrent = true,
                 modifier = Modifier.weight(1f)
@@ -214,15 +218,15 @@ fun QueueItemRow(
                 } else {
                     MaterialTheme.colorScheme.surface
                 },
-                shape = RoundedCornerShape(12.dp),
+                shape = RoundedCornerShape(ListDensity.corner),
                 modifier = Modifier
                     .weight(1f)
-                    .padding(vertical = 4.dp)
+                    .padding(vertical = ListDensity.rowVerticalPadding)
             ) {
                 PlayableItemRowContent(
                     item = item,
                     isCurrentPlaying = isCurrentPlaying,
-                    modifier = Modifier.padding(10.dp)
+                    modifier = Modifier.padding(ListDensity.rowInnerPadding)
                 )
             }
             if (onRemove != null) {

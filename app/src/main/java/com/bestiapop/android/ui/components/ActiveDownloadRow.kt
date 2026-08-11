@@ -19,6 +19,7 @@ import com.bestiapop.android.data.model.ActiveDownload
 import com.bestiapop.android.data.model.ActiveDownloadSource
 import com.bestiapop.android.data.model.CandidateDownloadState
 import com.bestiapop.android.data.model.DownloadMessages
+import com.bestiapop.android.ui.theme.ListDensity
 
 @Composable
 fun ActiveDownloadRow(
@@ -36,21 +37,21 @@ fun ActiveDownloadRow(
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
         ),
-        shape = RoundedCornerShape(14.dp),
+        shape = RoundedCornerShape(ListDensity.corner),
         modifier = modifier
             .fillMaxWidth()
-            .padding(vertical = 4.dp)
+            .padding(vertical = ListDensity.rowVerticalPadding)
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(10.dp),
+                .padding(ListDensity.rowInnerPadding),
             verticalAlignment = Alignment.CenterVertically
         ) {
             ArtworkThumbnail(
                 artworkUri = download.artworkUri,
-                size = 48.dp,
-                cornerRadius = 8.dp
+                size = ListDensity.artworkSong,
+                cornerRadius = ListDensity.corner
             )
 
             Spacer(modifier = Modifier.width(10.dp))

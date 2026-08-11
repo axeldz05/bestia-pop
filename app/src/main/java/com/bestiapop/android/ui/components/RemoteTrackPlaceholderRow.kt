@@ -25,6 +25,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.bestiapop.android.ui.theme.ListDensity
 
 /** L1: placeholder row for a remote/unmatched track (stream + optional download). */
 @Composable
@@ -43,20 +44,23 @@ fun RemoteTrackPlaceholderRow(
         modifier = Modifier
             .fillMaxWidth()
             .alpha(if (onClick == null && onDownload == null) 0.55f else 0.85f)
-            .padding(vertical = 4.dp, horizontal = 4.dp),
+            .padding(
+                horizontal = ListDensity.rowHorizontalPadding,
+                vertical = ListDensity.rowVerticalPadding
+            ),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Row(
             modifier = Modifier
                 .weight(1f)
                 .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
-                .padding(vertical = 6.dp),
+                .padding(ListDensity.rowInnerPadding),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box(
                 modifier = Modifier
-                    .size(48.dp)
-                    .clip(RoundedCornerShape(8.dp))
+                    .size(ListDensity.artworkSong)
+                    .clip(RoundedCornerShape(ListDensity.corner))
                     .background(
                         if (highlighted) {
                             MaterialTheme.colorScheme.primaryContainer

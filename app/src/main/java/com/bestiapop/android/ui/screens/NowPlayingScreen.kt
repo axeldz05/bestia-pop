@@ -621,7 +621,7 @@ fun NowPlayingScreen(
                         isLocal = localSong != null,
                         canEditAlbum = localSong != null && matchedAlbum != null,
                         onGoToAlbum = { name ->
-                            goToLibrary { viewModel.openLibraryAlbum(name, fromArtist = false) }
+                            goToLibrary { viewModel.openLibraryAlbum(name, fromNestedParent = false) }
                         },
                         onGoToArtist = { name ->
                             goToLibrary { viewModel.openLibraryArtist(name) }

@@ -33,6 +33,7 @@ Archivos: `ui/MusicPlayerViewModel.kt` (`playPlayableCollection` / `toggleShuffl
 | Paso | Dónde |
 |------|--------|
 | Search catálogo tracks | `MetadataFetcher.searchOnlineCatalog` / `YouTubeExtractor.searchYouTube` (`parseSearchContents` + `audioPreferenceScore` / `rankByAudioPreference`: prioriza Topic / Official Audio sobre music video) |
+| Géneros / charts | `MetadataFetcher.listGenres` / `searchTracksByGenre` / `fetchChartTracks` (`parseCatalogGenres` + `parseDeezerSearchTracks`); UI chips `CatalogCategory.GENRES` / `CHARTS` en `AddMusicDialog`; drill-down género → `selectGenreForInspection` (mismo BackHandler / batch que álbum) |
 | Query YT desde catálogo | `YouTubeExtractor.resolveYouTubeQueryOrId` (ignora ids Deezer/iTunes; usa `audioUrl` o `artist title`) |
 | Álbumes / playlists online | `MetadataFetcher.searchAlbums` / `searchPlaylists` + `fetchAlbumTrackCandidates` / `fetchPlaylistTrackCandidates` |
 | Extraer stream | `YouTubeExtractor.extractAudioStream` / `extractAudioStreamDetailed` |
@@ -47,27 +48,28 @@ Modelo clave: `TrackIdentity` / `TrackMeta`, `OnlineCatalogTrack` (`identity` + 
 
 ## 3. Biblioteca: filtro, orden y vistas
 
-**Invariante:** `songsState` filtra por título/artista/álbum/género y ordena con `SortOption`. Orden, vista, tab Canciones/Álbumes/Artistas y pila artista→álbum **persisten** entre sesiones (`LibraryPreferencesRepository`). Con `ALBUM_GROUPS`, canciones **dentro de cada álbum** van por `trackNumber` (0 al final + título); play/shuffle/tap usan ese orden visual (`songsFromListItems`). Detalle de álbum siempre por pista.
+**Invariante:** `songsState` filtra por título/artista/álbum/género y ordena con `SortOption`. Orden, vista, chip de browse (`LibraryBrowseFilter`) y pila artista→álbum / género→álbum **persisten** entre sesiones (`LibraryPreferencesRepository`). Con `ALBUM_GROUPS`, canciones **dentro de cada álbum** van por `trackNumber` (0 al final + título); play/shuffle/tap usan ese orden visual (`songsFromListItems`). Detalle de álbum siempre por pista. Un chip a la vez proyecta el pool (estilo YouTube Music); search no cambia el chip.
 
 | Capacidad | API |
 |-----------|-----|
 | Query | `MusicPlayerViewModel.searchQuery` (no se persiste) |
-| Sort | `SortOption`: TITLE, ARTIST, ALBUM, GENRE, DATE_ADDED → `setSortOption` (DataStore); menú marca la activa con check |
+| Sort | `SortOption`: TITLE, ARTIST, ALBUM, GENRE, DATE_ADDED → `setSortOption` (DataStore); menú marca la activa con check; oculto en chip `RECENT` |
 | Filtrado/orden | `GetLibrarySongsUseCase.execute` |
-| Vista plana vs grupos álbum | `LibraryViewMode.FLAT` / `ALBUM_GROUPS` → `setLibraryViewMode` / `toggleLibraryViewMode`; `buildLibraryListItems` / `buildListItems`; within-album `compareSongsWithinAlbum` / `sortSongsWithinAlbum` / `songsFromListItems` |
-| Tab + pila | `libraryTab`, `openLibraryAlbum(fromArtist)`, `openLibraryArtist`, `popLibraryNested` (álbum encima de artista) |
+| Vista plana vs grupos álbum | `LibraryViewMode.FLAT` / `ALBUM_GROUPS` → `setLibraryViewMode` / `toggleLibraryViewMode`; solo UI cuando chip = `SONGS`; `buildLibraryListItems` / `buildListItems`; within-album `compareSongsWithinAlbum` / `sortSongsWithinAlbum` / `songsFromListItems` |
+| Browse chip + pila | `libraryBrowseFilter` / `setLibraryBrowseFilter` (`LibraryBrowseFilter`: SONGS, ALBUMS, ARTISTS, GENRES, RECENT); `openLibraryAlbum(fromNestedParent)`, `openLibraryArtist`, `openLibraryGenre`, `popLibraryNested` (álbum encima de artista\|género) |
 | Colapsar álbum / todos | `collapsedAlbumNames` + toggle por header (`onToggleCollapseAlbum`); expandir/colapsar todo en `LibraryScreen` (vista grupos; no persistido) |
-| Derivados | `extractAlbums`, `extractArtists` → `albumsState`, `artistsState` |
+| Derivados | `extractAlbums`, `extractArtists`, `extractGenres` → `albumsState`, `artistsState`, `genresState`; play-all `songsForBrowseProjection` |
+| RECENT | Fase A: canciones por `dateAdded` DESC; chip label **Añadidas** (no last-played aún) |
 
-UI: `LibraryScreen`, `LibrarySongList` (`onOpenAlbum`), `LibraryAlbumGrid`, `LibraryArtistList`.
-Estado: `ui/state/LibraryUiState.kt`, `LibraryListItem.kt`. Prefs: `LibraryDisplaySettings` + `UiNavSnapshot` / `LibraryUiPreferencesCodec`.
+UI: `LibraryScreen`, `LibraryFilterChipRow`, `LibrarySongList` (`onOpenAlbum`), `LibraryAlbumBrowseList` (`TauonAlbumHeader`, sin grilla grande), `LibraryArtistList`, `LibraryGenreList`.
+Estado: `ui/state/LibraryUiState.kt`, `LibraryBrowseFilter.kt`, `LibraryListItem.kt`. Prefs: `LibraryDisplaySettings` + `UiNavSnapshot.browseFilterName` / `LibraryUiPreferencesCodec` (legacy `library_tab` 0/1/2 → SONGS/ALBUMS/ARTISTS).
 
 ## 4. Portadas y metadata: álbum ≠ playlist ≠ canción
 
 | Tipo | Comportamiento | Entry points |
 |------|----------------|--------------|
 | **Álbum (override)** | Tabla `album_overrides`; UI lee override si existe. **Guardar para álbum** = solo override; **Guardar para álbum y canciones** = override + bulk update de songs. Ambos pasan por `saveAlbumOverride(propagateToSongs)` | `requestSaveAlbumMetadata` → `saveAlbumOverride` → `upsertAlbumOverride` / `updateAlbumMetadataPropagateToSongs`; UI `EditAlbumMetadataDialog` |
-| **Álbum menú** | Header de grupos (`TauonAlbumHeader` ⋮) y grilla (`AlbumGridCard` ⋮) → Editar / Cambiar portada vía `AlbumEditCoverMenuItems`; detalle de álbum también tiene IconButton Edit | `LibrarySongList` / `LibraryAlbumGrid` / `LibraryScreen` |
+| **Álbum menú** | Header de grupos y browse (`TauonAlbumHeader` ⋮) → Editar / Cambiar portada vía `AlbumEditCoverMenuItems`; detalle de álbum también tiene IconButton Edit | `LibrarySongList` / `LibraryAlbumBrowseList` / `LibraryScreen` |
 | **Álbum merge** | Renombrar a un álbum existente → `ConfirmMergeAlbumsDialog`; al confirmar, canciones de A adoptan metadata de B. Match con `normalizeAlbumName` (trim, `…`/`â€¦` → `...`, ignoreCase) vía Room en `requestSaveAlbumMetadata`. `mergeAlbumInto` también pliega otras keys equivalentes (mojibake) | `requestSaveAlbumMetadata` / `confirmPendingAlbumMerge` / `findAlbumMergeTarget` / `AlbumNames.kt` |
 | **Álbum portada** | `setAlbumArtwork` → `saveAlbumOverride(..., propagateToSongs = true)` | `MusicPlayerViewModel.setAlbumArtwork` |
 | **Playlist** | `Playlist.coverUri` / `PlaylistEntity.coverUri` es de la lista; **no** pisa artwork de canciones | `createPlaylist` / `updatePlaylist`, `savePlaylistCoverImage` |
@@ -313,7 +315,7 @@ Origen Discover: se setea en `playPlayableCollection(..., origin)` (wrappers CF/
 | Identify review | ITEM+overview → vuelve overview (`returnIdentifyReviewOverview`); si no, oculta overlay y conserva cola (`dismissIdentifyReview`); `skipAllIdentifyReview` vacía | `IdentifyReviewScreen` `BackHandler` |
 | Add Music colección | `clearSelectedCollection` antes de cerrar | `AddMusicDialog` `BackHandler` + `onDismissRequest` |
 | Now Playing | `dismissFullPlayer` | `NowPlayingScreen` `BackHandler` |
-| Library nested | multi-select → cancel addition → álbum (`closeLibraryAlbum`, conserva artista) → artista → clear search | `LibraryScreen` `BackHandler` / `popLibraryNested` |
+| Library nested | multi-select → cancel addition → álbum (`closeLibraryAlbum`, conserva artista\|género) → artista\|género → clear search | `LibraryScreen` `BackHandler` / `popLibraryNested` |
 | Playlists nested | un detalle a la vez (local / LB / CF) → lista | `PlaylistsScreen` `BackHandler` → `closePlaylistDetail` |
 | Settings nested | Temas / LB / Reproducción / Sonido / Descargas → home | `SettingsScreen` `BackHandler` |
 | Raíz de tab | Doble atrás (~2s) + snackbar “Pulsa otra vez para salir” | `MainScreen` `BackHandler` + `SnackbarHost` |

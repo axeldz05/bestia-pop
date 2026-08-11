@@ -37,9 +37,11 @@ class LibraryPreferencesRepository(private val context: Context) {
     val navSnapshotFlow: Flow<UiNavSnapshot> = context.libraryDataStore.data.map { prefs ->
         LibraryUiPreferencesCodec.sanitizeNavSnapshot(
             navIndex = prefs[Keys.NAV_INDEX],
+            browseFilterName = prefs[Keys.LIBRARY_BROWSE_FILTER],
             libraryTab = prefs[Keys.LIBRARY_TAB],
             libraryArtistName = prefs[Keys.LIBRARY_ARTIST],
             libraryAlbumName = prefs[Keys.LIBRARY_ALBUM],
+            libraryGenreName = prefs[Keys.LIBRARY_GENRE],
             playlistDetailKind = prefs[Keys.PLAYLIST_DETAIL_KIND],
             playlistLocalId = prefs[Keys.PLAYLIST_LOCAL_ID],
             playlistLbMbid = prefs[Keys.PLAYLIST_LB_MBID]
@@ -72,18 +74,23 @@ class LibraryPreferencesRepository(private val context: Context) {
     suspend fun setNavSnapshot(snapshot: UiNavSnapshot) {
         val clean = LibraryUiPreferencesCodec.sanitizeNavSnapshot(
             navIndex = snapshot.navIndex,
-            libraryTab = snapshot.libraryTab,
+            browseFilterName = snapshot.browseFilterName,
             libraryArtistName = snapshot.libraryArtistName,
             libraryAlbumName = snapshot.libraryAlbumName,
+            libraryGenreName = snapshot.libraryGenreName,
             playlistDetailKind = snapshot.playlistDetailKind,
             playlistLocalId = snapshot.playlistLocalId,
             playlistLbMbid = snapshot.playlistLbMbid
         )
         context.libraryDataStore.edit { prefs ->
             prefs[Keys.NAV_INDEX] = clean.navIndex
-            prefs[Keys.LIBRARY_TAB] = clean.libraryTab
+            prefs[Keys.LIBRARY_BROWSE_FILTER] = clean.browseFilterName
+            // Keep legacy int in sync so older builds / mid-upgrade reads stay coherent.
+            prefs[Keys.LIBRARY_TAB] =
+                LibraryUiPreferencesCodec.browseFilterNameToLegacyTab(clean.browseFilterName)
             prefs[Keys.LIBRARY_ARTIST] = clean.libraryArtistName.orEmpty()
             prefs[Keys.LIBRARY_ALBUM] = clean.libraryAlbumName.orEmpty()
+            prefs[Keys.LIBRARY_GENRE] = clean.libraryGenreName.orEmpty()
             prefs[Keys.PLAYLIST_DETAIL_KIND] = clean.playlistDetailKind
             val localId = clean.playlistLocalId
             if (localId != null) {
@@ -101,8 +108,10 @@ class LibraryPreferencesRepository(private val context: Context) {
         val VIEW_MODE = stringPreferencesKey("library_view_mode")
         val NAV_INDEX = intPreferencesKey("ui_nav_index")
         val LIBRARY_TAB = intPreferencesKey("library_tab")
+        val LIBRARY_BROWSE_FILTER = stringPreferencesKey("library_browse_filter")
         val LIBRARY_ARTIST = stringPreferencesKey("library_artist_name")
         val LIBRARY_ALBUM = stringPreferencesKey("library_album_name")
+        val LIBRARY_GENRE = stringPreferencesKey("library_genre_name")
         val PLAYLIST_DETAIL_KIND = stringPreferencesKey("playlist_detail_kind")
         val PLAYLIST_LOCAL_ID = longPreferencesKey("playlist_local_id")
         val PLAYLIST_LB_MBID = stringPreferencesKey("playlist_lb_mbid")

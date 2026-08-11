@@ -107,6 +107,14 @@ data class Artist(
     val dateAdded: Long? = null
 )
 
+/** Aggregated library genre row for browse chips (not catalog [CatalogGenre]). */
+data class GenreGroup(
+    val name: String,
+    val songCount: Int,
+    val artworkUri: String? = null,
+    val dateAdded: Long? = null
+)
+
 data class Playlist(
     val id: Long = 0,
     val name: String,
@@ -186,8 +194,17 @@ data class OnlineCatalogTrack(
 enum class CatalogCategory {
     SONGS,
     ALBUMS,
-    PLAYLISTS
+    PLAYLISTS,
+    GENRES,
+    CHARTS
 }
+
+/** Lightweight Deezer genre row for catalog browse (not a TrackIdentity). */
+data class CatalogGenre(
+    val id: Long,
+    val name: String,
+    val pictureUrl: String? = null
+)
 
 data class CatalogAlbum(
     val id: String,

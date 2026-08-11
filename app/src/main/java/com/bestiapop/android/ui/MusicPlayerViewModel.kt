@@ -1721,6 +1721,10 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                     setPlaybackPositionUi(0L)
                     setCurrentItem(playable)
                     clearRemoteRecovery()
+                    // Covers every transition, including landing on a local track or on a Remote whose
+                    // stream is still fresh: ensureRemoteReadyAt returns early in both cases and would
+                    // leave an idle player idle.
+                    ensurePreparedForPlayback()
                     ensureRemoteReadyAt(
                         newIndex,
                         startPlaying = controller?.playWhenReady == true
@@ -1891,6 +1895,8 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 return
             }
             controller.seekToNextMediaItem()
+            // The error that got us here left the player idle, and a seek does not undo that.
+            ensurePreparedForPlayback()
             return
         }
         consecutiveUnplayableSkips = 0
@@ -2481,12 +2487,28 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         bumpQueueFocus()
         applySkipModes()
         mediaController?.seekToNextMediaItem()
+        ensurePreparedForPlayback()
     }
 
     fun skipToPrevious() {
         bumpQueueFocus()
         applySkipModes()
         mediaController?.seekToPreviousMediaItem()
+        ensurePreparedForPlayback()
+    }
+
+    /**
+     * A seek does not take the player out of [Player.STATE_IDLE], and a failed stream parks it there,
+     * so next/previous looked dead while the play button worked: Media3 prepares an idle player for
+     * the play action (`Util.handlePlayButtonAction`) and nothing did it for a seek. Only prepares —
+     * `playWhenReady` still decides whether it actually starts, so skipping while paused stays paused.
+     */
+    private fun ensurePreparedForPlayback() {
+        val controller = mediaController ?: return
+        if (controller.mediaItemCount == 0) return
+        if (controller.playbackState == Player.STATE_IDLE) {
+            controller.prepare()
+        }
     }
 
     fun seekTo(positionMs: Long) {

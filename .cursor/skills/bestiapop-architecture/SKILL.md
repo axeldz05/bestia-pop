@@ -84,7 +84,7 @@ Mini player se rehidrata desde `MediaController` (sesión viva) o `PlaybackSessi
 
 | Servicio | Rol |
 |----------|-----|
-| `MusicService` | `MediaLibraryService` + ExoPlayer (`WAKE_MODE_NETWORK` + `WAKE_LOCK`); FGS `mediaPlayback` vía `promotePlaybackForeground` (`startForeground`, no `startForegroundService`; engaged mientras `playWhenReady` y no `ENDED`) + `setSessionActivity`; `UserAgentMediaSourceFactory` lee UA de `StreamPlaybackTag`; `StereoBalanceAudioProcessor` + `LoudnessEnhancer` desde `PlaybackPreferencesRepository` |
+| `MusicService` | `MediaLibraryService` + ExoPlayer (`WAKE_MODE_NETWORK` + `WAKE_LOCK`); FGS `mediaPlayback` vía `promotePlaybackForeground` (`startForeground`, no `startForegroundService`; engaged mientras `playWhenReady` y no `ENDED`; re-promote en state/transition; `onTaskRemoved` consulta `isPlaybackEngaged`) + `setSessionActivity`; `UserAgentMediaSourceFactory` lee UA de `StreamPlaybackTag`; `StereoBalanceAudioProcessor` + `LoudnessEnhancer` desde `PlaybackPreferencesRepository` |
 | `WebServerService` | Servidor Ktor local para sync/upload por WiFi. FGS `dataSync` (no `mediaPlayback`) vía `ServiceCompat.startForeground` con tipo explícito. Subidas: validación de `Host` (bloquea POST drive-by desde cualquier web a la IP LAN) + tope `MAX_UPLOAD_BYTES` chequeado también sobre el stream |
 
 ## Base de datos

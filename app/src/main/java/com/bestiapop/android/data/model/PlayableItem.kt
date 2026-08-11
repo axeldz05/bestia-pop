@@ -1,5 +1,9 @@
 package com.bestiapop.android.data.model
 
+import java.util.UUID
+
+private fun newRemoteQueueEntryId(): String = UUID.randomUUID().toString()
+
 /**
  * Unified queue item: local library song or ephemeral remote stream.
  * Never persist [ResolvedStream.audioUrl] in Room (CDN URLs expire).
@@ -15,7 +19,9 @@ sealed class PlayableItem : TrackMeta {
         val identity: TrackIdentity,
         val recordingMbid: String? = null,
         val youtubeQueryOrId: String? = null,
-        val resolved: ResolvedStream? = null
+        val resolved: ResolvedStream? = null,
+        /** Ephemeral identity of this occurrence in the playback queue; never persisted. */
+        val queueEntryId: String = newRemoteQueueEntryId()
     ) : PlayableItem(), TrackMeta by identity {
         override val mediaId: String
             get() {
@@ -122,6 +128,15 @@ fun Song.toPlayable(): PlayableItem.Local = PlayableItem.Local(this)
 
 fun List<Song>.toPlayableItems(): List<PlayableItem> = map { it.toPlayable() }
 
+/** Every Remote occurrence entering a queue gets its own identity, even if the same object repeats. */
+fun List<PlayableItem>.withFreshRemoteQueueEntryIds(): List<PlayableItem> = map { item ->
+    if (item is PlayableItem.Remote) {
+        item.copy(queueEntryId = newRemoteQueueEntryId())
+    } else {
+        item
+    }
+}
+
 fun PlayableItem.matchesSong(song: Song): Boolean {
     if (this is PlayableItem.Local) {
         if (song.id > 0L && this.song.id == song.id) return true
@@ -136,4 +151,14 @@ fun PlayableItem.matchesItem(other: PlayableItem): Boolean {
     val otherLocal = other as? PlayableItem.Local ?: return false
     if (local.song.id > 0L && local.song.id == otherLocal.song.id) return true
     return local.song.uriString == otherLocal.song.uriString
+}
+
+/**
+ * Exact queue occurrence of a Remote before or after resolve. [PlayableItem.Remote.queueEntryId]
+ * survives `copy(resolved = …)`, unlike [PlayableItem.Remote.mediaId], which changes to the video id.
+ */
+fun List<PlayableItem>.indexOfRemoteSlot(
+    original: PlayableItem.Remote
+): Int = indexOfFirst {
+    it is PlayableItem.Remote && it.queueEntryId == original.queueEntryId
 }

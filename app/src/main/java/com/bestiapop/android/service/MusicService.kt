@@ -129,8 +129,16 @@ class MusicService : MediaLibraryService() {
 
                 override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
                     if (playWhenReady) {
-                        mediaLibrarySession?.let { promotePlaybackForeground(it) }
+                        maybeRepromotePlaybackForeground()
                     }
+                }
+
+                override fun onPlaybackStateChanged(playbackState: Int) {
+                    maybeRepromotePlaybackForeground()
+                }
+
+                override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                    maybeRepromotePlaybackForeground()
                 }
 
             })
@@ -216,6 +224,16 @@ class MusicService : MediaLibraryService() {
         super.onUpdateNotification(session, startInForegroundRequired)
     }
 
+    /**
+     * Media3 default uses [isPlaybackOngoing] → [MediaNotificationManager.isStartedInForeground],
+     * which stays false while we promote via [promotePlaybackForeground]. Without this override,
+     * swiping the task away called [stopSelf] even while local audio was playing.
+     */
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        if (isPlaybackEngaged()) return
+        pauseAllPlayersAndStopSelf()
+    }
+
     override fun onDestroy() {
         serviceScope.cancel()
         releaseLoudnessEnhancer()
@@ -233,6 +251,11 @@ class MusicService : MediaLibraryService() {
         if (!p.playWhenReady || p.mediaItemCount <= 0) return false
         // Keep FGS through brief IDLE while resolving/preparing Remote; drop on ENDED/pause.
         return p.playbackState != Player.STATE_ENDED
+    }
+
+    private fun maybeRepromotePlaybackForeground() {
+        if (!isPlaybackEngaged()) return
+        mediaLibrarySession?.let { promotePlaybackForeground(it) }
     }
 
     private fun mainActivityPendingIntent(): PendingIntent {

@@ -542,6 +542,8 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private var remoteRecoveryMediaId: String? = null
     private var remoteRecoveryDeadlineMs = 0L
     private var resolvingTransitionJob: Job? = null
+    /** Item the current transition resolve is working on, so repeat errors do not restart it. */
+    private var resolvingTransitionQueueEntryId: String? = null
     private var radioRefillJob: Job? = null
     /** Held so `stopRadio` can cancel an in-flight suggest (NEW mode retries for up to ~45s). */
     private var radioStartJob: Job? = null
@@ -1502,7 +1504,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         _playbackPositionMs.value = controller.currentPosition.coerceAtLeast(0L)
         _repeatMode.value = repeatModeFromPlayer(controller.repeatMode)
 
-        ensureRemoteReadyAt(lastMediaItemIndex, startPlaying = controller.isPlaying)
+        ensureRemoteReadyAt(lastMediaItemIndex, startPlaying = controller.playWhenReady)
         prefetchAround(lastMediaItemIndex)
     }
 
@@ -1724,10 +1726,11 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                     // Covers every transition, including landing on a local track or on a Remote whose
                     // stream is still fresh: ensureRemoteReadyAt returns early in both cases and would
                     // leave an idle player idle.
+                    val resumeAfterTransition = controller?.playWhenReady == true
                     ensurePreparedForPlayback()
                     ensureRemoteReadyAt(
                         newIndex,
-                        startPlaying = controller?.playWhenReady == true
+                        startPlaying = resumeAfterTransition
                     )
                     prefetchAround(newIndex)
                     if (_radioActive.value) {
@@ -1815,9 +1818,17 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
+    /**
+     * Stricter than the resolver's cache TTL on purpose. A URL that prefetch resolved a couple of
+     * minutes ago is usually already rejected by the CDN, and handing it to the player burns ~2s
+     * failing before anything re-extracts it — that was the silence after pressing next. Re-resolving
+     * up front costs one extraction and starts it while the item is loading instead of after it dies.
+     */
     private fun remoteNeedsResolve(item: PlayableItem.Remote): Boolean {
         val resolved = item.resolved ?: return true
-        return !streamResolver.isFresh(resolved)
+        if (!streamResolver.isFresh(resolved)) return true
+        val age = System.currentTimeMillis() - resolved.resolvedAtEpochMs
+        return age > STREAM_READY_MAX_AGE_MS
     }
 
     private suspend fun resolveRemote(item: PlayableItem.Remote): PlayableItem.Remote? {
@@ -1827,12 +1838,19 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     /**
      * Writes a freshly resolved remote into the queue and the player timeline, locating the slot by
-     * mediaId. The index captured before the network call can point at a different track by the time
-     * the resolve returns (removal, radio refill, reshuffle), and writing it blindly overwrote that
-     * other song. Returns the slot used, or -1 when the item is no longer queued.
+     * mediaId instead of by the index captured before the network call (that index can point at a
+     * different track by the time the resolve returns: removal, radio refill, reshuffle).
+     *
+     * Matched against [original] as well as [resolved], because `Remote.mediaId` is derived from the
+     * videoId once a stream is attached: a resolved copy carries a *different* id than the queue entry
+     * it came from. Searching only for the resolved id never matched, so every resolve was silently
+     * discarded and the player kept retrying an empty URI forever.
      */
-    private fun applyResolvedRemote(resolved: PlayableItem.Remote): Int {
-        val index = _queue.value.indexOfFirst { it.mediaId == resolved.mediaId }
+    private fun applyResolvedRemote(
+        original: PlayableItem.Remote,
+        resolved: PlayableItem.Remote
+    ): Int {
+        val index = _queue.value.indexOfRemoteSlot(original)
         if (index < 0) return -1
         updateQueueItem(index, resolved)
         if (index < (mediaController?.mediaItemCount ?: 0)) {
@@ -1856,22 +1874,45 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private fun ensureRemoteReadyAt(index: Int, startPlaying: Boolean = true) {
         val item = _queue.value.getOrNull(index) as? PlayableItem.Remote ?: return
         if (!remoteNeedsResolve(item)) return
+        // Already resolving this exact item: let it finish. ExoPlayer reports the empty-URI failure
+        // several times in a row, and cancelling + restarting the extraction on each report is what
+        // stretched a ~3s resolve into 11s of silence.
+        if (resolvingTransitionJob?.isActive == true &&
+            resolvingTransitionQueueEntryId == item.queueEntryId
+        ) {
+            return
+        }
+        // Preserve the controller's playWhenReady decision while resolving. Preparation waits until
+        // a real URL is applied, so an unresolved Uri.EMPTY is not opened as a local file.
         resolvingTransitionJob?.cancel()
+        resolvingTransitionQueueEntryId = item.queueEntryId
         resolvingTransitionJob = viewModelScope.launch {
             beginResolvingRemote()
             try {
                 val resolvedItem = resolveRemote(item)
                 if (resolvedItem == null) {
-                    if (startPlaying) {
+                    // Defer to the grace window when it owns this track: otherwise this path toasted
+                    // "no se pudo reproducir" and skipped while the retry loop was still working —
+                    // and it often recovered a second later, so the message was simply wrong.
+                    val recoveryOwnsItem = remoteRecoveryMediaId == item.mediaId &&
+                        System.currentTimeMillis() < remoteRecoveryDeadlineMs
+                    if (startPlaying && !recoveryOwnsItem) {
                         recoverAfterUnplayable("No se pudo resolver el audio online")
                     }
                     return@launch
                 }
                 consecutiveUnplayableSkips = 0
-                if (applyResolvedRemote(resolvedItem) < 0) return@launch
-                mediaController?.prepare()
-                if (startPlaying) {
-                    mediaController?.play()
+                val slot = applyResolvedRemote(item, resolvedItem)
+                if (slot < 0) {
+                    if (startPlaying) {
+                        recoverAfterUnplayable("No se pudo resolver el audio online")
+                    }
+                    return@launch
+                }
+                val controller = mediaController
+                controller?.prepare()
+                if (startPlaying && controller?.playWhenReady == true) {
+                    controller.play()
                 }
             } finally {
                 endResolvingRemote()
@@ -1917,7 +1958,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
             for (remote in targets) {
                 val resolved = resolveRemote(remote) ?: continue
-                applyResolvedRemote(resolved)
+                applyResolvedRemote(remote, resolved)
             }
         }
     }
@@ -1932,6 +1973,13 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 if (title != null) "No se pudo reproducir «$title»"
                 else "No se pudo reproducir"
             )
+            return
+        }
+
+        // Expected failure while the URL is still being fetched (Uri.EMPTY → ENOENT). Skipping here
+        // marched through the whole queue and tripped the "too many failures" pause.
+        if (item.resolved == null) {
+            ensureRemoteReadyAt(index, startPlaying = mediaController?.playWhenReady == true)
             return
         }
 
@@ -1959,16 +2007,20 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         }
         if (remoteRecoveryJob?.isActive == true) return
 
+        val resumeAfterRecovery = mediaController?.playWhenReady == true
         remoteRecoveryJob = viewModelScope.launch {
             beginResolvingRemote()
             try {
                 while (System.currentTimeMillis() < remoteRecoveryDeadlineMs) {
                     streamResolver.invalidate(item)
                     val refreshed = resolveRemote(item.copy(resolved = null))
-                    if (refreshed != null && applyResolvedRemote(refreshed) >= 0) {
+                    if (refreshed != null && applyResolvedRemote(item, refreshed) >= 0) {
                         consecutiveUnplayableSkips = 0
-                        mediaController?.prepare()
-                        mediaController?.play()
+                        val controller = mediaController
+                        controller?.prepare()
+                        if (resumeAfterRecovery && controller?.playWhenReady == true) {
+                            controller.play()
+                        }
                         // If it fails again, onPlayerError comes back and reuses the same window.
                         return@launch
                     }
@@ -2000,6 +2052,13 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         viewModelScope.launch {
             while (true) {
                 mediaController?.let { controller ->
+                    // The play/pause icon reads _isPlaying while togglePlayPause acts on
+                    // controller.isPlaying. If those ever disagree the button does the opposite of
+                    // what it shows — you aim at "play" and it pauses. Re-syncing here caps any
+                    // divergence at one tick instead of waiting for onIsPlayingChanged.
+                    if (_isPlaying.value != controller.isPlaying) {
+                        _isPlaying.value = controller.isPlaying
+                    }
                     if (controller.isPlaying && System.currentTimeMillis() - lastSeekTimestamp > 600) {
                         _playbackPositionMs.value = controller.currentPosition.coerceAtLeast(0L)
                         persistCurrentPosition(force = false)
@@ -2164,14 +2223,15 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         resumeAtMs: Long? = null
     ) {
         if (items.isEmpty()) return
+        val queueItems = items.withFreshRemoteQueueEntryIds()
         _discoverPlaybackOrigin.value = origin
         if (!fromRadio) clearRadioSession()
-        val validIndex = startIndex.coerceIn(0, items.size - 1)
+        val validIndex = startIndex.coerceIn(0, queueItems.size - 1)
         val shouldRotate = rotate && !fromRadio && validIndex > 0
         val ordered = if (shouldRotate) {
-            PlaybackQueueOrder.rotateToStart(items, validIndex)
+            PlaybackQueueOrder.rotateToStart(queueItems, validIndex)
         } else {
-            items
+            queueItems
         }
         val startAt = if (shouldRotate) 0 else validIndex
         val shouldApplyManualModes = applyManualModes && !fromRadio
@@ -2490,10 +2550,22 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         ensurePreparedForPlayback()
     }
 
+    /**
+     * Wraps to the last track when nothing precedes the current one: for manual navigation the queue is
+     * a ring. Only reachable with repeat off — [Player.REPEAT_MODE_ALL] already wraps by itself, and
+     * with it [Player.hasPreviousMediaItem] is already true at index 0.
+     */
     fun skipToPrevious() {
         bumpQueueFocus()
         applySkipModes()
-        mediaController?.seekToPreviousMediaItem()
+        val controller = mediaController
+        if (controller != null) {
+            if (controller.hasPreviousMediaItem()) {
+                controller.seekToPreviousMediaItem()
+            } else if (controller.mediaItemCount > 1) {
+                controller.seekTo(controller.mediaItemCount - 1, 0L)
+            }
+        }
         ensurePreparedForPlayback()
     }
 
@@ -2501,14 +2573,25 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
      * A seek does not take the player out of [Player.STATE_IDLE], and a failed stream parks it there,
      * so next/previous looked dead while the play button worked: Media3 prepares an idle player for
      * the play action (`Util.handlePlayButtonAction`) and nothing did it for a seek. Only prepares —
-     * `playWhenReady` still decides whether it actually starts, so skipping while paused stays paused.
+     * [Player.getPlayWhenReady] remains the single source of whether playback should continue.
      */
     private fun ensurePreparedForPlayback() {
         val controller = mediaController ?: return
         if (controller.mediaItemCount == 0) return
+        // An unresolved Remote sits in the timeline as Uri.EMPTY, which ExoPlayer opens with
+        // FileDataSource and fails instantly (ENOENT on an empty path). Preparing it again just
+        // spins that error, so wait for ensureRemoteReadyAt to put a real URL in first.
+        if (currentItemAwaitsStreamUrl()) return
         if (controller.playbackState == Player.STATE_IDLE) {
             controller.prepare()
         }
+    }
+
+    /** True while the playing slot holds a Remote placeholder with no stream URL yet. */
+    private fun currentItemAwaitsStreamUrl(): Boolean {
+        val index = mediaController?.currentMediaItemIndex ?: return false
+        val item = _queue.value.getOrNull(index) as? PlayableItem.Remote ?: return false
+        return item.resolved == null
     }
 
     fun seekTo(positionMs: Long) {
@@ -2572,12 +2655,12 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     fun addPlayableBatch(items: List<PlayableItem>) {
         if (items.isEmpty()) return
+        val queueItems = items.withFreshRemoteQueueEntryIds()
         val currentList = _queue.value.toMutableList()
-        val firstNew = currentList.size
-        currentList.addAll(items)
+        currentList.addAll(queueItems)
         _queue.value = currentList
         mediaController?.let { controller ->
-            controller.addMediaItems(items.map { playableToMediaItem(it) })
+            controller.addMediaItems(queueItems.map { playableToMediaItem(it) })
         }
         persistPlaybackSession(force = true)
     }
@@ -2948,8 +3031,9 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             return
         }
 
+        val queueSuggestions = suggestions.withFreshRemoteQueueEntryIds()
         val kept = currentList.subList(0, currentIndex + 1).toMutableList()
-        kept.addAll(suggestions)
+        kept.addAll(queueSuggestions)
         _queue.value = kept
 
         controller?.let { c ->
@@ -2957,7 +3041,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             if (nextIndex < c.mediaItemCount) {
                 c.removeMediaItems(nextIndex, c.mediaItemCount)
             }
-            c.addMediaItems(suggestions.map { playableToMediaItem(it) })
+            c.addMediaItems(queueSuggestions.map { playableToMediaItem(it) })
         }
         persistPlaybackSession(force = true)
     }
@@ -3172,10 +3256,10 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                     beginResolvingRemote()
                     try {
                         val resolved = resolveRemote(item)
-                        if (resolved == null) {
-                            // Relative to the tapped slot, not to the controller's current index:
-                            // seekToNextMediaItem advanced from whatever was already playing, so a
-                            // failed tap on item 10 jumped from 2 to 3 with no message.
+                        val slot = if (resolved != null) applyResolvedRemote(item, resolved) else -1
+                        if (slot < 0) {
+                            // Relative to the tapped slot, not controller current: seekToNext would
+                            // advance from whatever was already playing (tap on 10 jumped 2→3).
                             val next = timelineIndex + 1
                             if (next in _queue.value.indices) {
                                 mediaController?.seekTo(next, 0L)
@@ -3184,8 +3268,6 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                             toast("No se pudo resolver el audio online")
                             return@launch
                         }
-                        val slot = applyResolvedRemote(resolved)
-                        if (slot < 0) return@launch
                         mediaController?.seekTo(slot, 0L)
                         mediaController?.prepare()
                         mediaController?.play()
@@ -3196,6 +3278,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 }
             } else {
                 mediaController?.seekTo(timelineIndex, 0L)
+                mediaController?.play()
                 prefetchAround(timelineIndex)
             }
             persistPlaybackSession(force = true)
@@ -5803,6 +5886,8 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         private const val RADIO_EMPTY_REFILL_COOLDOWN_MS = 60_000L
         /** Gap between re-extract attempts inside the stream grace window. */
         private const val STREAM_RECOVERY_RETRY_MS = 600L
+        /** Older than this, a resolved stream is re-extracted before playing rather than after failing. */
+        private const val STREAM_READY_MAX_AGE_MS = 60_000L
     }
 }
 

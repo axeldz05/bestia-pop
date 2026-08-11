@@ -123,6 +123,9 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** Kept in sync with the `@Database` version so a downgrade can be detected and reported. */
+        const val VERSION = 8
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -139,6 +142,9 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_6_7,
                     MIGRATION_7_8
                 )
+                // Sideloading an older APK is plausible here (GitHub Releases), and Room would refuse
+                // to open a newer schema, so the app has to stay usable. The wipe is not silent:
+                // LibraryPreferencesRepository keeps a high-water mark and the UI reports it.
                 .fallbackToDestructiveMigrationOnDowngrade(dropAllTables = true)
                 .build()
 

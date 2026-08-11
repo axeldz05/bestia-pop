@@ -85,13 +85,14 @@ Mini player se rehidrata desde `MediaController` (sesión viva) o `PlaybackSessi
 | Servicio | Rol |
 |----------|-----|
 | `MusicService` | `MediaLibraryService` + ExoPlayer (`WAKE_MODE_NETWORK` + `WAKE_LOCK`); FGS `mediaPlayback` vía `promotePlaybackForeground` (`startForeground`, no `startForegroundService`; engaged mientras `playWhenReady` y no `ENDED`) + `setSessionActivity`; `UserAgentMediaSourceFactory` lee UA de `StreamPlaybackTag`; `StereoBalanceAudioProcessor` + `LoudnessEnhancer` desde `PlaybackPreferencesRepository` |
-| `WebServerService` | Servidor Ktor local para sync/upload por WiFi |
+| `WebServerService` | Servidor Ktor local para sync/upload por WiFi. FGS `dataSync` (no `mediaPlayback`) vía `ServiceCompat.startForeground` con tipo explícito. Subidas: validación de `Host` (bloquea POST drive-by desde cualquier web a la IP LAN) + tope `MAX_UPLOAD_BYTES` chequeado también sobre el stream |
 
 ## Base de datos
 
 Entidades: filas de app en `data.model` — `Song` (`songs`), `AlbumOverride` (`album_overrides`). El resto sigue en `data/db`: `PlaylistEntity`, `PlaylistSongCrossRef`, `PlaylistPendingTrackEntity`, `PendingListenEntity`.
 Índice único Room: `songs.uriString`. Deduplicación lógica por `matchKey(artist, title)` en filtros de scan / download conflict (`Music/BestiaPop` app-managed). I/O local solo vía `MusicFileStore` / `AudioPersistRef.canonicalize`: BestiaPop = path absoluto; MediaStore ajeno = `content://media`. One-shot `migrateCanonicalAudioUris` reescribe SAF/cache. Migrator dedup histórico: branch `archive/library-dedup-v1-migrator`.
 Migraciones Room: 1→2 (dedupe + unique index), 2→3 (playlist description/coverUri), 3→4 (pending_listens), 4→5 (playlist_pending_tracks), 5→6 (`album_overrides`), 6→7 (index `playlist_song_cross_ref.songId`), 7→8 (`songs.lastPlayedAt`).
+Downgrade (instalar un APK viejo) sigue siendo destructivo para que la app abra, pero **no es silencioso**: `AppDatabase.VERSION` vs `LibraryPreferencesRepository.highestDbVersionSeen` (fuera de Room, sobrevive el wipe) → `warnIfDatabaseWasDowngraded` avisa que se perdieron playlists y overrides.
 
 ## Relacionado
 

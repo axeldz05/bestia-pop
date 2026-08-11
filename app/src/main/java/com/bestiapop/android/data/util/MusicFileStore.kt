@@ -65,12 +65,16 @@ class MusicFileStore(private val context: Context) {
 
     fun delete(ref: AudioPersistRef) {
         val uri = ref.uriString
-        if (uri.startsWith("content://media/", ignoreCase = true)) {
+        val abs = SongPathNormalizer.resolveFilePath(uri, ref.folderPath)
+        val appManaged = !abs.isNullOrBlank() && SongPathNormalizer.isSafeToDeleteAppManagedFile(abs)
+        // The MediaStore branch used to run before (and without) this guard, so callers that only
+        // meant to drop an app row — saveUploadedSong, the "Sobrescribir" download policy — could
+        // delete a foreign file the user never asked to remove.
+        if (appManaged && uri.startsWith("content://media/", ignoreCase = true)) {
             runCatching { context.contentResolver.delete(Uri.parse(uri), null, null) }
         }
-        val abs = SongPathNormalizer.resolveFilePath(uri, ref.folderPath)
-        if (!abs.isNullOrBlank() && SongPathNormalizer.isSafeToDeleteAppManagedFile(abs)) {
-            StorageUtils.deleteManagedAudio(context, abs)
+        if (appManaged) {
+            StorageUtils.deleteManagedAudio(context, abs!!)
         }
         val fileName = SongPathNormalizer.fileName(uri, ref.folderPath)
         if (fileName.isNotEmpty()) {

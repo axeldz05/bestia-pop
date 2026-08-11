@@ -1124,6 +1124,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         viewModelScope.launch {
             hydrateUiPreferences()
         }
+
         viewModelScope.launch {
             ensureInitialLibraryImport(showRecoveryToast = true)
         }
@@ -1131,6 +1132,10 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             _catalogSearchResults.value = MetadataFetcher.getFeaturedDemoCatalog()
             _albumSearchResults.value = MetadataFetcher.searchAlbums("")
             _playlistSearchResults.value = MetadataFetcher.searchPlaylists("")
+        }
+
+        viewModelScope.launch {
+            warnIfDatabaseWasDowngraded()
         }
 
         viewModelScope.launch(Dispatchers.IO) {
@@ -3464,10 +3469,19 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     // SAF Import
     fun importFolder(treeUri: Uri) {
         viewModelScope.launch {
-            val count = withContext(Dispatchers.IO) {
-                repository.scanFolderUri(treeUri, importScanProgress())
+            // finally: a stuck banner blocks every later library job (see the guard in
+            // syncLibraryTagsToFiles), so it must clear even if the scan throws.
+            val count = try {
+                withContext(Dispatchers.IO) {
+                    repository.scanFolderUri(treeUri, importScanProgress())
+                }
+            } catch (e: Exception) {
+                CrashReporter.recordNonFatal(e, mapOf("scan_phase" to "folder_import"))
+                toast("No se pudo leer esa carpeta")
+                return@launch
+            } finally {
+                clearLibraryProgress()
             }
-            clearLibraryProgress()
             toast(
                 when {
                     count <= 0 -> "No se encontraron canciones nuevas en esa carpeta"
@@ -3475,6 +3489,23 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                     else -> "$count canciones agregadas a la biblioteca"
                 }
             )
+        }
+    }
+
+    /**
+     * Installing an older APK makes Room drop every table (playlists, album overrides). Without this
+     * the user just found them gone with no explanation.
+     */
+    private suspend fun warnIfDatabaseWasDowngraded() {
+        val seen = libraryPreferences.highestDbVersionSeen()
+        if (seen > AppDatabase.VERSION) {
+            toast(
+                "Instalaste una versión más vieja de BestiaPop: se reinició la base " +
+                    "(playlists y datos de álbumes). Tus archivos de música siguen en Music/BestiaPop."
+            )
+        }
+        if (seen < AppDatabase.VERSION) {
+            libraryPreferences.setHighestDbVersionSeen(AppDatabase.VERSION)
         }
     }
 
@@ -3498,12 +3529,15 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     private suspend fun runLibraryDiskImport(showRecoveryToast: Boolean) {
-        val recovered = withContext(Dispatchers.IO) {
-            val n = repository.resyncAppManagedMusic(importScanProgress())
-            repository.scanMediaStore(importScanProgress())
-            n
+        val recovered = try {
+            withContext(Dispatchers.IO) {
+                val n = repository.resyncAppManagedMusic(importScanProgress())
+                repository.scanMediaStore(importScanProgress())
+                n
+            }
+        } finally {
+            clearLibraryProgress()
         }
-        clearLibraryProgress()
         if (showRecoveryToast && recovered > 0) {
             toast(
                 if (recovered == 1) "Se recuperó 1 canción de Music/BestiaPop"

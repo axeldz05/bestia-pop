@@ -66,7 +66,7 @@ BestiaPop {NEXT_VERSION_NAME}
 versionCode: {NEXT_VERSION_CODE}
 ```
 
-`versionCode` debe coincidir con el que va a publicar `release.sh` (actual + 1 si hay bump). El script también lo asegura si falta.
+`versionCode` debe coincidir con el que va a publicar `release.sh` (actual + 1 si hay bump). Si falta la línea el script la agrega; si está y **no** coincide, aborta antes de compilar (`--dry-run` ya lo muestra). Ese es el caso típico de reusar un `CHANGELOG.release-notes.md` viejo: con el número equivocado, los usuarios de la versión anterior nunca verían la actualización.
 
 4. Correr (o indicar) `./release.sh --notes-file CHANGELOG.release-notes.md` (u opciones que pida el usuario). Si no hay `--notes` / `--notes-file`, `release.sh` usa `CHANGELOG.release-notes.md` cuando existe.
 5. Tras release **exitoso**:

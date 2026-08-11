@@ -5,6 +5,7 @@ import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.provider.MediaStore
 import androidx.documentfile.provider.DocumentFile
+import androidx.room.withTransaction
 import com.bestiapop.android.data.db.AppDatabase
 import com.bestiapop.android.data.db.PlaylistEntity
 import com.bestiapop.android.data.db.PlaylistPendingTrackEntity
@@ -1073,32 +1074,37 @@ class MusicRepository(private val context: Context) : IMusicRepository {
         val safeYear = override.year.coerceAtLeast(0)
         val savedArt = saveAlbumCoverImage(override.artworkUri) ?: override.artworkUri
 
-        musicDao.updateSongsAlbumMetadata(
-            oldAlbum = oldKey,
-            newAlbum = newName,
-            artist = safeArtist,
-            genre = safeGenre,
-            year = safeYear,
-            artworkUri = savedArt
-        )
-        maybeWriteTagsForAlbum(newName)
-
-        if (oldKey != newName) {
-            musicDao.deleteAlbumOverride(oldKey)
-        }
-        musicDao.upsertAlbumOverride(
-            persistOverride(
-                override.copy(
-                    albumKey = newName,
-                    displayName = newName,
-                    artist = safeArtist,
-                    genre = safeGenre,
-                    year = safeYear,
-                    artworkUri = savedArt
-                ),
-                savedArt
+        // One transaction: the rename, the old override delete and the new upsert are one edit. Split,
+        // a crash in between renamed the songs while the override stayed under the old key, so the
+        // album silently lost its custom cover / artist / genre / year.
+        db.withTransaction {
+            musicDao.updateSongsAlbumMetadata(
+                oldAlbum = oldKey,
+                newAlbum = newName,
+                artist = safeArtist,
+                genre = safeGenre,
+                year = safeYear,
+                artworkUri = savedArt
             )
-        )
+            if (oldKey != newName) {
+                musicDao.deleteAlbumOverride(oldKey)
+            }
+            musicDao.upsertAlbumOverride(
+                persistOverride(
+                    override.copy(
+                        albumKey = newName,
+                        displayName = newName,
+                        artist = safeArtist,
+                        genre = safeGenre,
+                        year = safeYear,
+                        artworkUri = savedArt
+                    ),
+                    savedArt
+                )
+            )
+        }
+        // After the commit: writing tags can take a while on a big album.
+        maybeWriteTagsForAlbum(newName)
     }
 
     override suspend fun mergeAlbumInto(
@@ -1138,15 +1144,18 @@ class MusicRepository(private val context: Context) : IMusicRepository {
             musicDao.deleteAlbumOverride(oldKey)
         }
 
-        rewriteAlbumKey(sourceAlbumKey)
+        // Same reason as updateAlbumMetadataPropagateToSongs: rename + override delete is one edit.
+        db.withTransaction {
+            rewriteAlbumKey(sourceAlbumKey)
 
-        // Fold other equivalent titles (e.g. Takk… + Takkâ€¦ after renaming Takk. → Takk...)
-        val remainingKeys = musicDao.getAllSongs().map { it.album }.distinct()
-        com.bestiapop.android.domain.util.findEquivalentAlbumKeys(
-            albumKeys = remainingKeys,
-            targetName = canonicalTarget,
-            excludeKey = canonicalTarget
-        ).forEach { rewriteAlbumKey(it) }
+            // Fold other equivalent titles (e.g. Takk… + Takkâ€¦ after renaming Takk. → Takk...)
+            val remainingKeys = musicDao.getAllSongs().map { it.album }.distinct()
+            com.bestiapop.android.domain.util.findEquivalentAlbumKeys(
+                albumKeys = remainingKeys,
+                targetName = canonicalTarget,
+                excludeKey = canonicalTarget
+            ).forEach { rewriteAlbumKey(it) }
+        }
 
         maybeWriteTagsForAlbum(canonicalTarget)
     }

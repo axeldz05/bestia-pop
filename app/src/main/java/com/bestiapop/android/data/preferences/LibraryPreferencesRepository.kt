@@ -62,6 +62,20 @@ class LibraryPreferencesRepository(private val context: Context) {
         context.libraryDataStore.put(Keys.INITIAL_SCAN_COMPLETED, completed)
     }
 
+    /**
+     * Highest Room schema version this install has ever opened. Lives outside the database on purpose:
+     * a destructive downgrade wipes Room, so the only way to tell the user why their playlists are
+     * gone is a marker that survives it.
+     */
+    suspend fun highestDbVersionSeen(): Int =
+        context.libraryDataStore.data.map { prefs ->
+            prefs[Keys.HIGHEST_DB_VERSION] ?: 0
+        }.first()
+
+    suspend fun setHighestDbVersionSeen(version: Int) {
+        context.libraryDataStore.put(Keys.HIGHEST_DB_VERSION, version)
+    }
+
     suspend fun isLegacyYouTubeMusicMigrated(): Boolean =
         context.libraryDataStore.data.map { prefs ->
             prefs[Keys.LEGACY_YTM_MIGRATED] ?: false
@@ -128,6 +142,7 @@ class LibraryPreferencesRepository(private val context: Context) {
     private object Keys {
         val INITIAL_SCAN_COMPLETED = booleanPreferencesKey("initial_library_scan_completed")
         val LEGACY_YTM_MIGRATED = booleanPreferencesKey("legacy_ytm_album_migrated")
+        val HIGHEST_DB_VERSION = intPreferencesKey("highest_db_version_seen")
         val SORT_OPTION = stringPreferencesKey("library_sort_option")
         val SORT_DIRECTION = stringPreferencesKey("library_sort_direction")
         val VIEW_MODE = stringPreferencesKey("library_view_mode")

@@ -6,10 +6,12 @@ import android.app.NotificationManager
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import androidx.core.app.ServiceCompat
 import com.bestiapop.android.data.model.WifiTransferItem
 import com.bestiapop.android.data.model.WifiTransferState
 import com.bestiapop.android.data.repository.MusicRepository
@@ -50,6 +52,8 @@ class WebServerService : Service() {
     companion object {
         private const val TAG = "WebServerService"
         const val PORT = 8080
+        /** Per-file cap: a lossless album track sits far below this; an attacker cannot fill storage. */
+        private const val MAX_UPLOAD_BYTES = 512L * 1024 * 1024
         private val _serverState = MutableStateFlow<String?>(null)
         val serverState: StateFlow<String?> = _serverState
 
@@ -121,7 +125,30 @@ class WebServerService : Service() {
             .setSmallIcon(android.R.drawable.ic_menu_upload)
             .build()
 
-        startForeground(2001, notification)
+        // Explicit type so it cannot silently inherit whatever the manifest declares.
+        val fgsType = if (Build.VERSION.SDK_INT >= 29) {
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+        } else {
+            0
+        }
+        ServiceCompat.startForeground(this, 2001, notification, fgsType)
+    }
+
+    /**
+     * Accepts only requests addressed to this server's own host:port. A browser on any site can reach
+     * a LAN address, but it cannot forge the `Host` header, so this blocks drive-by uploads while
+     * leaving the intended `http://<lan-ip>:8080` peers working.
+     */
+    private fun isLocalRequest(host: String?): Boolean {
+        val value = host?.trim()?.lowercase() ?: return false
+        val hostName = value.substringBeforeLast(':', value)
+        val port = value.substringAfterLast(':', "").toIntOrNull()
+        if (port != null && port != PORT) return false
+        val advertised = _serverState.value?.substringBeforeLast(':')?.lowercase()
+        return hostName == advertised ||
+            hostName == "localhost" ||
+            hostName == "127.0.0.1" ||
+            hostName == "[::1]"
     }
 
     /**
@@ -172,6 +199,27 @@ class WebServerService : Service() {
                             call.response.header("Connection", "close")
                             call.response.header("Cache-Control", "no-cache, no-store, must-revalidate")
 
+                            // Any page the user visits can POST to the phone's LAN IP (DNS rebinding /
+                            // CSRF against a LAN server), so only requests aimed at this server's own
+                            // host:port are accepted, and the body is capped.
+                            if (!isLocalRequest(call.request.headers["Host"])) {
+                                call.respondText(
+                                    """{"status":"error","message":"Origen no permitido"}""",
+                                    ContentType.Application.Json,
+                                    HttpStatusCode.Forbidden
+                                )
+                                return@post
+                            }
+                            val declaredLength = call.request.headers["Content-Length"]?.toLongOrNull()
+                            if (declaredLength != null && declaredLength > MAX_UPLOAD_BYTES) {
+                                call.respondText(
+                                    """{"status":"error","message":"Archivo demasiado grande"}""",
+                                    ContentType.Application.Json,
+                                    HttpStatusCode.PayloadTooLarge
+                                )
+                                return@post
+                            }
+
                             val rawName = call.request.queryParameters["name"] ?: "audio_${System.currentTimeMillis()}.mp3"
                             val safeName = sanitizeUploadName(rawName)
                             val pendingWrite = audioStore.prepareWrite(safeName)
@@ -201,6 +249,10 @@ class WebServerService : Service() {
                                         if (read <= 0) break
                                         output.write(buffer, 0, read)
                                         bytesWritten += read
+                                        // Enforced on the stream too: Content-Length can lie or be absent.
+                                        if (bytesWritten > MAX_UPLOAD_BYTES) {
+                                            throw IllegalStateException("Archivo demasiado grande")
+                                        }
                                         if (contentLength != null) {
                                             val percent = ((bytesWritten * 100) / contentLength).toInt().coerceIn(0, 99)
                                             updateTransfer(transferId) {

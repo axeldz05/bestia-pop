@@ -78,12 +78,24 @@ gradle_cmd() {
 }
 
 # El update in-app lee `versionCode: N` del body del release (no hace falta latest.json).
+# Ojo: no basta con que *exista* la línea. Un CHANGELOG.release-notes.md viejo trae el versionCode
+# del release anterior, y con ese número los usuarios de la versión previa nunca ven la actualización
+# (AppReleaseSelection compara por ese valor). Por eso acá se exige que coincida con NEXT_CODE, y se
+# chequea antes de compilar para que --dry-run lo muestre.
 ensure_version_code_in_notes() {
     local path="$1"
-    if grep -Eiq '^[[:space:]]*versionCode[[:space:]]*:[[:space:]]*[0-9]+[[:space:]]*$' "$path"; then
+    local found
+    found="$(grep -Eio '^[[:space:]]*versionCode[[:space:]]*:[[:space:]]*[0-9]+' "$path" |
+        grep -Eo '[0-9]+' | tail -1 || true)"
+    if [[ -z "$found" ]]; then
+        printf '\nversionCode: %s\n' "$NEXT_CODE" >> "$path"
         return 0
     fi
-    printf '\nversionCode: %s\n' "$NEXT_CODE" >> "$path"
+    if [[ "$found" != "$NEXT_CODE" ]]; then
+        echo -e "${RED}Las notas dicen 'versionCode: ${found}' pero este release publica ${NEXT_CODE}.${NC}" >&2
+        echo -e "${YELLOW}Suele ser un ${PENDING_RELEASE_NOTES} de un release anterior: borralo o corregí la línea.${NC}" >&2
+        return 1
+    fi
 }
 
 # La pantalla Ajustes → Actualización muestra este body: nunca dejarlo con solo título + versionCode.

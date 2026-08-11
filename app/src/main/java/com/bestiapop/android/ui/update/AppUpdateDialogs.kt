@@ -12,6 +12,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 
+/**
+ * Update surfaces that must show over any screen: the launch-time find, the download progress and
+ * its errors. Browsing notes and checking on demand live in `AppUpdateScreen`.
+ */
 @Composable
 fun AppUpdateDialogs(
     state: AppUpdateUiState,
@@ -22,27 +26,11 @@ fun AppUpdateDialogs(
         AppUpdateUiState.Idle,
         is AppUpdateUiState.NeedsInstallPermission,
         is AppUpdateUiState.ReadyToInstall -> Unit
-        AppUpdateUiState.Checking -> AlertDialog(
-            onDismissRequest = onDismiss,
-            title = { Text("Actualización") },
-            text = { Text("Buscando en GitHub…") },
-            confirmButton = {
-                TextButton(onClick = onDismiss) { Text("Cancelar") }
-            }
-        )
-        AppUpdateUiState.UpToDate -> AlertDialog(
-            onDismissRequest = onDismiss,
-            title = { Text("Actualización") },
-            text = { Text("Ya tenés la última versión.") },
-            confirmButton = {
-                TextButton(onClick = onDismiss) { Text("OK") }
-            }
-        )
         is AppUpdateUiState.Available -> AlertDialog(
             onDismissRequest = onDismiss,
-            title = { Text("Nueva versión ${state.info.versionName}") },
+            title = { Text("Nueva versión ${state.release.versionName}") },
             text = {
-                val notes = state.info.changelog?.trim().orEmpty()
+                val notes = state.release.notes?.trim().orEmpty()
                 Text(
                     if (notes.isBlank()) {
                         "Hay una actualización lista para instalar."
@@ -60,7 +48,7 @@ fun AppUpdateDialogs(
         )
         is AppUpdateUiState.Downloading -> AlertDialog(
             onDismissRequest = onDismiss,
-            title = { Text("Descargando ${state.info.versionName}") },
+            title = { Text("Descargando ${state.release.versionName}") },
             text = {
                 Column {
                     val progress = state.progress

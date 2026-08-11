@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.longPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.bestiapop.android.data.preferences.put
 import kotlinx.coroutines.flow.first
@@ -24,7 +25,20 @@ class AppUpdateCheckStore(private val context: Context) {
         context.appUpdateDataStore.put(Keys.LAST_CHECK_AT_MS, epochMs)
     }
 
+    /** Notes of the installed build, so Ajustes → Actualización shows something offline. */
+    suspend fun cachedNotes(versionName: String): String? =
+        context.appUpdateDataStore.data.map { prefs ->
+            if (prefs[Keys.NOTES_VERSION] == versionName) prefs[Keys.NOTES_BODY] else null
+        }.first()
+
+    suspend fun setCachedNotes(versionName: String, notes: String) {
+        context.appUpdateDataStore.put(Keys.NOTES_VERSION, versionName)
+        context.appUpdateDataStore.put(Keys.NOTES_BODY, notes)
+    }
+
     private object Keys {
         val LAST_CHECK_AT_MS = longPreferencesKey("last_check_at_ms")
+        val NOTES_VERSION = stringPreferencesKey("current_notes_version")
+        val NOTES_BODY = stringPreferencesKey("current_notes_body")
     }
 }

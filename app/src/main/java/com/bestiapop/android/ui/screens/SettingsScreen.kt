@@ -49,7 +49,7 @@ import com.bestiapop.android.BuildConfig
 import com.bestiapop.android.data.update.GitHubReleaseUrls
 import com.bestiapop.android.ui.MusicPlayerViewModel
 import com.bestiapop.android.ui.components.ScreenBackHeader
-import com.bestiapop.android.ui.update.AppUpdateUiState
+import com.bestiapop.android.ui.update.AppUpdateScreen
 import com.bestiapop.android.ui.update.AppUpdateViewModel
 
 private enum class SettingsSection {
@@ -58,7 +58,8 @@ private enum class SettingsSection {
     Playback,
     Sound,
     Downloads,
-    LibraryTags
+    LibraryTags,
+    Update
 }
 
 @Composable
@@ -87,7 +88,8 @@ fun SettingsScreen(viewModel: MusicPlayerViewModel, appUpdateViewModel: AppUpdat
             onOpenPlayback = { section = SettingsSection.Playback },
             onOpenSound = { section = SettingsSection.Sound },
             onOpenDownloads = { section = SettingsSection.Downloads },
-            onOpenLibraryTags = { section = SettingsSection.LibraryTags }
+            onOpenLibraryTags = { section = SettingsSection.LibraryTags },
+            onOpenUpdate = { section = SettingsSection.Update }
         )
         SettingsSection.Themes -> SettingsSectionPage("Temas", onBack = { section = null }) {
             ThemeSettingsScreen(viewModel = viewModel, showTitle = false)
@@ -106,6 +108,9 @@ fun SettingsScreen(viewModel: MusicPlayerViewModel, appUpdateViewModel: AppUpdat
         }
         SettingsSection.LibraryTags -> SettingsSectionPage("Archivos", onBack = { section = null }) {
             LibraryTagWriteSettingsScreen(viewModel = viewModel)
+        }
+        SettingsSection.Update -> SettingsSectionPage("Actualización", onBack = { section = null }) {
+            AppUpdateScreen(viewModel = appUpdateViewModel)
         }
     }
 }
@@ -134,10 +139,11 @@ private fun SettingsHome(
     onOpenPlayback: () -> Unit,
     onOpenSound: () -> Unit,
     onOpenDownloads: () -> Unit,
-    onOpenLibraryTags: () -> Unit
+    onOpenLibraryTags: () -> Unit,
+    onOpenUpdate: () -> Unit
 ) {
     val context = LocalContext.current
-    val updateState by appUpdateViewModel.state.collectAsState()
+    val updateNotes by appUpdateViewModel.notes.collectAsState()
     val repo = BuildConfig.GITHUB_REPOSITORY.trim()
     val latestUrl = if (repo.isNotEmpty()) GitHubReleaseUrls.latestPageUrl(repo) else ""
     val inviteText = """
@@ -147,11 +153,10 @@ private fun SettingsHome(
 
         En el celular: descargá el APK y permití “Instalar apps desconocidas” para el navegador.
     """.trimIndent()
-    val updateSubtitle = when (val s = updateState) {
-        AppUpdateUiState.Checking -> "Buscando…"
-        is AppUpdateUiState.Downloading -> "Descargando ${s.info.versionName}…"
-        is AppUpdateUiState.Available -> "Nueva versión ${s.info.versionName}"
-        else -> "GitHub Releases"
+    val newestVersion = updateNotes.newer.firstOrNull()?.versionName
+    val updateSubtitle = when {
+        newestVersion != null -> "Nueva versión $newestVersion"
+        else -> "Versión ${BuildConfig.VERSION_NAME} · notas y cambios"
     }
 
     Column(
@@ -225,12 +230,11 @@ private fun SettingsHome(
                 onOpenLibraryTags
             ),
             SettingsHomeEntry(
-                "Buscar actualización",
+                "Actualización",
                 updateSubtitle,
-                Icons.Default.SystemUpdate
-            ) {
-                appUpdateViewModel.checkNow()
-            },
+                Icons.Default.SystemUpdate,
+                onOpenUpdate
+            ),
             SettingsHomeEntry(
                 "Invitar amigos",
                 "Link de descarga del APK",

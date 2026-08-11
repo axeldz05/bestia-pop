@@ -12,17 +12,12 @@ class GitHubUpdateClient(
     private val userAgent: String,
     private val http: OkHttpClient = defaultClient
 ) {
-    suspend fun fetchLatest(): Result<AppUpdateInfo> = withContext(Dispatchers.IO) {
+    suspend fun fetchReleases(): Result<List<AppRelease>> = withContext(Dispatchers.IO) {
         if (repository.isBlank()) {
             return@withContext Result.failure(IllegalStateException("GITHUB_REPOSITORY vacío"))
         }
         try {
-            val releaseBody = get(GitHubReleaseUrls.apiLatestUrl(repository))
-            val info = GitHubReleaseParser.parseReleaseApi(releaseBody)
-                ?: return@withContext Result.failure(
-                    IllegalStateException("El release no tiene APK o falta versionCode en las notas")
-                )
-            Result.success(info)
+            Result.success(GitHubReleaseParser.parseReleases(get(GitHubReleaseUrls.apiReleasesUrl(repository))))
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {

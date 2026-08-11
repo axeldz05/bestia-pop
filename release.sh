@@ -29,10 +29,12 @@ USAGE="Usage: $0 [options]
   --notes TEXT  cuerpo del release
   --notes-file FILE  notas desde archivo
   --no-upload   buildear APK en dist/; no crear release
-  --dry-run     chequear requisitos y mostrar próxima versión; no escribe ni buildea
+  --dry-run     chequear requisitos, tag y notas resueltas; no escribe ni buildea
   -h, --help
 
 Notas (prioridad): --notes-file → --notes → CHANGELOG.release-notes.md (si existe) → plantilla mínima.
+El body nunca queda vacío (lo lee Ajustes → Actualización) y siempre lleva 'versionCode: N'.
+Tag v{VERSION_NAME} fijado al commit compilado si ya está en el remoto; se verifica tras publicar.
 Changelog local user-facing: CHANGELOG.pending.md (gitignored; skill bestiapop-release-changelog).
 Habitual: preparar CHANGELOG.release-notes.md y correr $0
 Después: compartí https://github.com/OWNER/REPO/releases/latest
@@ -73,6 +75,85 @@ gradle_cmd() {
         echo -e "${RED}No hay ./gradlew ni gradle en PATH.${NC}" >&2
         exit 1
     fi
+}
+
+# El update in-app lee `versionCode: N` del body del release (no hace falta latest.json).
+ensure_version_code_in_notes() {
+    local path="$1"
+    if grep -Eiq '^[[:space:]]*versionCode[[:space:]]*:[[:space:]]*[0-9]+[[:space:]]*$' "$path"; then
+        return 0
+    fi
+    printf '\nversionCode: %s\n' "$NEXT_CODE" >> "$path"
+}
+
+# La pantalla Ajustes → Actualización muestra este body: nunca dejarlo con solo título + versionCode.
+ensure_notes_have_body() {
+    local path="$1"
+    local content
+    content="$( { grep -Eiv '^[[:space:]]*versionCode[[:space:]]*:[[:space:]]*[0-9]+[[:space:]]*$' "$path" |
+        grep -Fxv "BestiaPop ${NEXT_NAME}" | tr -d '[:space:]'; } || true)"
+    if [[ -z "$content" ]]; then
+        printf -- '\n- Mantenimiento y mejoras internas\n' >> "$path"
+    fi
+    return 0
+}
+
+# Deja RELEASE_NOTES_PATH + NOTES_SOURCE listos (prioridad: --notes-file → --notes → CHANGELOG.release-notes.md → plantilla).
+resolve_release_notes() {
+    NOTES_TMP="$(mktemp)"
+    if [[ -n "$NOTES_FILE" ]]; then
+        cat "$NOTES_FILE" > "$NOTES_TMP"
+        NOTES_SOURCE="$NOTES_FILE"
+    elif [[ -n "$NOTES_TEXT" ]]; then
+        printf '%s\n' "$NOTES_TEXT" > "$NOTES_TMP"
+        NOTES_SOURCE="--notes"
+    elif [[ -f "$PENDING_RELEASE_NOTES" ]]; then
+        cat "$PENDING_RELEASE_NOTES" > "$NOTES_TMP"
+        NOTES_SOURCE="$PENDING_RELEASE_NOTES"
+    else
+        printf 'BestiaPop %s\n' "$NEXT_NAME" > "$NOTES_TMP"
+        NOTES_SOURCE="plantilla mínima"
+        echo -e "${YELLOW}Sin ${PENDING_RELEASE_NOTES} ni --notes: plantilla mínima. Preferí el skill bestiapop-release-changelog.${NC}"
+    fi
+    ensure_notes_have_body "$NOTES_TMP"
+    ensure_version_code_in_notes "$NOTES_TMP"
+    RELEASE_NOTES_PATH="$NOTES_TMP"
+}
+
+# Los cuatro invariantes que parsea la app (GitHubReleaseParser / AppReleaseSelection).
+verify_published_release() {
+    local json_tmp
+    json_tmp="$(mktemp)"
+    if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" \
+        --json tagName,isDraft,isPrerelease,body,assets > "$json_tmp" 2>/dev/null; then
+        rm -f "$json_tmp"
+        echo -e "${RED}No se pudo leer el release ${TAG} para verificarlo.${NC}"
+        return 1
+    fi
+    local result=0
+    python3 - "$json_tmp" "$TAG" "$NEXT_CODE" <<'PY' || result=1
+import json, re, sys
+path, tag, code = sys.argv[1], sys.argv[2], sys.argv[3]
+data = json.loads(open(path, encoding="utf-8").read())
+body = data.get("body") or ""
+assets = [a.get("name", "") for a in data.get("assets") or []]
+problems = []
+if data.get("tagName") != tag:
+    problems.append(f"tag publicado {data.get('tagName')!r} != {tag!r}")
+if data.get("isDraft"):
+    problems.append("el release quedó como draft (la app lo ignora)")
+if data.get("isPrerelease"):
+    problems.append("el release quedó como prerelease (la app lo ignora)")
+if not re.search(rf"(?im)^\s*versionCode\s*:\s*{code}\s*$", body):
+    problems.append(f"falta 'versionCode: {code}' en las notas")
+if not any(re.fullmatch(r"BestiaPop.*\.apk", n, re.I) for n in assets):
+    problems.append(f"no hay asset BestiaPop*.apk (assets: {assets})")
+for p in problems:
+    print(p)
+sys.exit(1 if problems else 0)
+PY
+    rm -f "$json_tmp"
+    return "$result"
 }
 
 echo -e "${CYAN}====================================================${NC}"
@@ -152,10 +233,44 @@ fi
 echo -e "${CYAN}Versión actual:${NC} ${CURRENT_NAME} (${CURRENT_CODE})"
 echo -e "${CYAN}Versión release:${NC} ${NEXT_NAME} (${NEXT_CODE})"
 
+# El update in-app matchea la versión instalada por `versionCode: N` y, si falta, por tag v{VERSION_NAME}.
+if ! [[ "$NEXT_NAME" =~ ^[A-Za-z0-9._-]+$ ]]; then
+    echo -e "${RED}VERSION_NAME inválido para un tag: ${NEXT_NAME} (solo A-Z a-z 0-9 . _ -).${NC}"
+    exit 1
+fi
+TAG="v${NEXT_NAME}"
+
+RELEASE_TARGET=""
+if [[ "$DO_UPLOAD" -eq 1 ]]; then
+    if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+        echo -e "${RED}Ya existe el release ${TAG} en ${GITHUB_REPOSITORY}. Bumpeá la versión o borralo.${NC}"
+        exit 1
+    fi
+    # Sin --target el tag cae en el HEAD de la rama por defecto, que puede no ser lo compilado.
+    HEAD_SHA="$(git rev-parse HEAD 2>/dev/null || true)"
+    if [[ -n "$HEAD_SHA" ]] && gh api "repos/${GITHUB_REPOSITORY}/commits/${HEAD_SHA}" >/dev/null 2>&1; then
+        RELEASE_TARGET="$HEAD_SHA"
+    elif [[ -n "$HEAD_SHA" ]]; then
+        echo -e "${YELLOW}El commit local ${HEAD_SHA:0:7} no está en el remoto: el tag ${TAG} va a apuntar a la rama por defecto.${NC}"
+    fi
+fi
+
+NOTES_TMP=""
+cleanup_notes() {
+    [[ -n "$NOTES_TMP" && -f "$NOTES_TMP" ]] && rm -f "$NOTES_TMP"
+}
+trap cleanup_notes EXIT
+resolve_release_notes
+echo -e "${GREEN}Notas:${NC} ${NOTES_SOURCE}"
+
 if [[ "$DRY_RUN" -eq 1 ]]; then
     echo -e "\n${GREEN}Dry-run OK. No se escribió ni compiló nada.${NC}"
-    echo "Tag: v${NEXT_NAME}"
+    echo "Tag: ${TAG}"
+    echo "Commit: ${RELEASE_TARGET:-rama por defecto}"
     echo "URL: ${LATEST_URL}"
+    echo -e "\n${CYAN}--- notas ---${NC}"
+    cat "$RELEASE_NOTES_PATH"
+    echo -e "${CYAN}-------------${NC}"
     echo "Para publicar: $0"
     exit 0
 fi
@@ -185,54 +300,23 @@ if [[ "$DO_UPLOAD" -eq 0 ]]; then
     exit 0
 fi
 
-TAG="v${NEXT_NAME}"
-NOTES_TMP=""
-cleanup_notes() {
-    [[ -n "$NOTES_TMP" && -f "$NOTES_TMP" ]] && rm -f "$NOTES_TMP"
-}
-trap cleanup_notes EXIT
-
-# El update in-app lee `versionCode: N` del body del release (no hace falta latest.json).
-ensure_version_code_in_notes() {
-    local path="$1"
-    if grep -Eiq '^[[:space:]]*versionCode[[:space:]]*:[[:space:]]*[0-9]+[[:space:]]*$' "$path"; then
-        return 0
-    fi
-    printf '\nversionCode: %s\n' "$NEXT_CODE" >> "$path"
-}
-
-if [[ -n "$NOTES_FILE" ]]; then
-    NOTES_TMP="$(mktemp)"
-    cat "$NOTES_FILE" > "$NOTES_TMP"
-    ensure_version_code_in_notes "$NOTES_TMP"
-    RELEASE_NOTES_PATH="$NOTES_TMP"
-elif [[ -n "$NOTES_TEXT" ]]; then
-    NOTES_TMP="$(mktemp)"
-    printf '%s\n' "$NOTES_TEXT" > "$NOTES_TMP"
-    ensure_version_code_in_notes "$NOTES_TMP"
-    RELEASE_NOTES_PATH="$NOTES_TMP"
-elif [[ -f "$PENDING_RELEASE_NOTES" ]]; then
-    NOTES_TMP="$(mktemp)"
-    cat "$PENDING_RELEASE_NOTES" > "$NOTES_TMP"
-    ensure_version_code_in_notes "$NOTES_TMP"
-    RELEASE_NOTES_PATH="$NOTES_TMP"
-    echo -e "${GREEN}Notas:${NC} ${PENDING_RELEASE_NOTES}"
-else
-    NOTES_TMP="$(mktemp)"
-    cat > "$NOTES_TMP" <<EOF
-BestiaPop ${NEXT_NAME}
-
-versionCode: ${NEXT_CODE}
-EOF
-    RELEASE_NOTES_PATH="$NOTES_TMP"
-    echo -e "${YELLOW}Sin ${PENDING_RELEASE_NOTES} ni --notes: plantilla mínima. Preferí el skill bestiapop-release-changelog.${NC}"
-fi
-
 echo -e "\n${YELLOW}Creando GitHub Release ${TAG}…${NC}"
-gh release create "$TAG" \
-    --repo "$GITHUB_REPOSITORY" \
-    --title "BestiaPop ${NEXT_NAME}" \
-    --notes-file "$RELEASE_NOTES_PATH" \
-    "$APK_DIST"
+CREATE_ARGS=(
+    "$TAG"
+    --repo "$GITHUB_REPOSITORY"
+    --title "BestiaPop ${NEXT_NAME}"
+    --notes-file "$RELEASE_NOTES_PATH"
+    --latest
+)
+if [[ -n "$RELEASE_TARGET" ]]; then
+    CREATE_ARGS+=(--target "$RELEASE_TARGET")
+fi
+gh release create "${CREATE_ARGS[@]}" "$APK_DIST"
 
-echo -e "\n${GREEN}Release publicado.${NC}"
+echo -e "\n${YELLOW}Verificando lo que va a leer la app…${NC}"
+if verify_published_release; then
+    echo -e "${GREEN}Release publicado y fetcheable.${NC} ${LATEST_URL}"
+else
+    echo -e "${RED}El release ${TAG} se publicó pero no cumple lo que espera el update in-app (ver arriba).${NC}"
+    exit 1
+fi

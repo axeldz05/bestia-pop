@@ -354,9 +354,10 @@ Manifest: `android:enableOnBackInvokedCallback="true"` en `MainActivity`.
 | Config Firebase | `app/google-services.json` (gitignored) |
 | Firma release | `keystore.properties` + `.jks` (gitignored; plantilla `keystore.properties.example`) |
 | Versión | `version.properties` (`VERSION_CODE` / `VERSION_NAME`; bump en `./release.sh`) |
-| GitHub Releases | `./release.sh` → APK `BestiaPop-{VERSION_NAME}.apk`; tag `v{VERSION_NAME}`; notas con `versionCode: N` (el update in-app lo lee del body); repo `github-release.properties` `GITHUB_REPOSITORY` → `BuildConfig.GITHUB_REPOSITORY` |
+| GitHub Releases | `./release.sh` → APK `BestiaPop-{VERSION_NAME}.apk`; tag `v{VERSION_NAME}` (validado tag-safe y fijado al commit compilado si está en el remoto), `--latest`; notas con `versionCode: N` y body nunca vacío (lo lee la app); tras publicar `verify_published_release` chequea tag / versionCode / asset `BestiaPop*.apk` / ni draft ni prerelease; repo `github-release.properties` `GITHUB_REPOSITORY` → `BuildConfig.GITHUB_REPOSITORY` |
 | Invitar amigos | Ajustes → Invitar amigos: `ACTION_SEND` con `https://github.com/{repo}/releases/latest` (`GitHubReleaseUrls.latestPageUrl`) |
-| Update in-app | Al abrir (release, máx. 1/12h) + Ajustes → Buscar actualización: `GitHubUpdateClient.fetchLatest` vs `VERSION_CODE`; descarga APK + `FileProvider` + `REQUEST_INSTALL_PACKAGES`. UI `AppUpdateViewModel` / `AppUpdateDialogs` (no `MusicPlayerViewModel`) |
+| Update in-app | Un solo fetch `GitHubUpdateClient.fetchReleases` (`/releases`) → `AppReleaseSelection.from(releases, VERSION_CODE, VERSION_NAME)` = notas de la versión instalada (match por `versionCode`, fallback tag `v{VERSION_NAME}`) + `newer` acumuladas + `updateTarget`. Al abrir (release, máx. 1/12h) muestra `AppUpdateDialogs`; descarga APK + `FileProvider` + `REQUEST_INSTALL_PACKAGES`. UI `AppUpdateViewModel` (no `MusicPlayerViewModel`) |
+| Ajustes → Actualización | `AppUpdateScreen`: versión instalada + `versionCode`, link al repo (`GitHubReleaseUrls.repoUrl`), notas de la versión actual (cacheadas en `AppUpdateCheckStore` para verlas offline), botón Buscar actualización (`refreshReleases(force = true)`) y, si hay versiones nuevas, qué cambia en cada una + Actualizar (`startUpdate`) |
 | Play Console AAB | `./deploy-play.sh --upload --rollout` path legacy (no distribución de producto) |
 
 ## Relacionado

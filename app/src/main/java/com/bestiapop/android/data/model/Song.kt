@@ -22,5 +22,6 @@ data class Song(
     override val artworkUri: String? = null,
     val lyrics: String? = null,
     val folderPath: String = "",
-    val dateAdded: Long = System.currentTimeMillis()
+    val dateAdded: Long = System.currentTimeMillis(),
+    val lastPlayedAt: Long = 0
 ) : TrackMeta

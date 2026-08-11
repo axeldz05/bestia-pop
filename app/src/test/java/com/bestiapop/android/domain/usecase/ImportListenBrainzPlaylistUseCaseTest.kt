@@ -162,6 +162,7 @@ class ImportListenBrainzPlaylistUseCaseTest {
         override suspend fun identifySongMetadata(song: Song) =
             com.bestiapop.android.data.model.IdentifyResult.Skipped
         override suspend fun updateSongDuration(songId: Long, durationMs: Long) = Unit
+        override suspend fun touchSongLastPlayed(songId: Long, playedAt: Long) = Unit
         override suspend fun updateSongMetadata(
             songId: Long,
             title: String,

@@ -34,7 +34,8 @@ interface IMusicRepository {
     suspend fun deleteSongsFromDevice(songs: List<Song>)
     suspend fun enhanceSongMetadataAndLyrics(song: Song)
     /**
-     * Ranked online candidates for a library song (no Room write).
+     * Ranked online candidates for a library song.
+     * May persist a soft cleanup of rip-style tags (`01` / `- Title`) before searching.
      * Songs that already have usable artist+album return [IdentifyProposal.alreadyIdentified]
      * unless [force] is true (WiFi import always forces to detect catalog conflicts).
      * Song tags are predominant ranking source; [customQuery] replaces the default search.
@@ -57,6 +58,7 @@ interface IMusicRepository {
      */
     suspend fun identifySongMetadata(song: Song): IdentifyResult
     suspend fun updateSongDuration(songId: Long, durationMs: Long)
+    suspend fun touchSongLastPlayed(songId: Long, playedAt: Long = System.currentTimeMillis())
     suspend fun updateSongMetadata(
         songId: Long,
         title: String,

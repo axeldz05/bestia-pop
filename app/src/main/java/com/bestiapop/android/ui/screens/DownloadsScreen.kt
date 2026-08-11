@@ -21,9 +21,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.bestiapop.android.data.model.PlayableItem
+import com.bestiapop.android.data.util.StorageUtils
 import com.bestiapop.android.ui.MusicPlayerViewModel
 import com.bestiapop.android.ui.components.ActiveDownloadRow
 import com.bestiapop.android.ui.components.EmptyListHint
@@ -32,10 +32,13 @@ import com.bestiapop.android.ui.components.previewFlags
 @Composable
 fun DownloadsScreen(viewModel: MusicPlayerViewModel) {
     val activeDownloads by viewModel.activeDownloads.collectAsState()
+    val downloadSettings by viewModel.downloadSettings.collectAsState()
     val catalogPreviewKey by viewModel.catalogPreviewKey.collectAsState()
     val isPlaying by viewModel.isPlaying.collectAsState()
     val resolvingRemote by viewModel.resolvingRemote.collectAsState()
     val currentItem by viewModel.currentItem.collectAsState()
+
+    val totalBytes = downloadSettings.totalMeteredBytes + downloadSettings.totalUnmeteredBytes
 
     Column(
         modifier = Modifier
@@ -67,11 +70,36 @@ fun DownloadsScreen(viewModel: MusicPlayerViewModel) {
             }
         }
 
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = "Guardando en: ${StorageUtils.userVisibleMusicDirLabel()}",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.fillMaxWidth()
+        )
+        if (totalBytes > 0L) {
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = "Con límite de datos: ${StorageUtils.formatByteCount(downloadSettings.totalMeteredBytes)}" +
+                    " · Sin límite: ${StorageUtils.formatByteCount(downloadSettings.totalUnmeteredBytes)}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+        TextButton(
+            onClick = { viewModel.openDownloadSettings() },
+            modifier = Modifier.align(Alignment.Start)
+        ) {
+            Text("Ajustes de descarga")
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
 
         if (activeDownloads.isEmpty()) {
             EmptyListHint(
                 text = "No hay descargas",
+                subtitle = "Buscá música online y descargá desde Añadir música o el catálogo.",
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(vertical = 8.dp)

@@ -52,3 +52,10 @@ fun sortEmphasisFor(song: Song, sortOption: SortOption): SortEmphasizedTexts {
         )
     }
 }
+
+fun sortEmphasisForLastPlayed(song: Song): SortEmphasizedTexts = SortEmphasizedTexts(
+    title = song.title,
+    subtitle = joinMeta(song.artist, song.album),
+    trailing = if (song.lastPlayedAt > 0) formatDateAdded(song.lastPlayedAt) else null,
+    trailingIsSortKey = song.lastPlayedAt > 0
+)

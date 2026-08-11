@@ -33,4 +33,12 @@ class StorageUtilsTest {
     fun userVisibleMusicDirLabel_isSpanishMusicFolder() {
         assertEquals("Música/BestiaPop", StorageUtils.userVisibleMusicDirLabel())
     }
+
+    @Test
+    fun formatByteCount_scalesUnits() {
+        assertEquals("512 B", StorageUtils.formatByteCount(512))
+        assertEquals("1.0 KB", StorageUtils.formatByteCount(1024))
+        assertEquals("1.5 MB", StorageUtils.formatByteCount((1.5 * 1024 * 1024).toLong()))
+        assertEquals("1.00 GB", StorageUtils.formatByteCount(1024L * 1024L * 1024L))
+    }
 }

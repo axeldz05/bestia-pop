@@ -5,8 +5,10 @@ import com.bestiapop.android.data.listenbrainz.rematchLocals
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.data.model.TrackIdentity
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class TrackMatchKeysTest {
@@ -29,6 +31,37 @@ class TrackMatchKeysTest {
             TrackIdentity(title = "creep", artist = "radiohead")
         )
         assertEquals(1L, found?.id)
+    }
+
+    @Test
+    fun normalize_foldsDiacritics() {
+        assertEquals("cancion", TrackMatchKeys.normalize("Canción"))
+        assertEquals("senor", TrackMatchKeys.normalize("Señor"))
+        assertEquals("radiohead|creep", TrackMatchKeys.matchKey("Radiohead", "Creep!"))
+    }
+
+    @Test
+    fun lookupLocalSong_matchesWithoutTildes() {
+        val library = listOf(song(2, "La Canción", "José"))
+        val found = TrackMatchKeys.lookupLocalSong(
+            TrackMatchKeys.buildLibraryIndex(library),
+            TrackIdentity(title = "la cancion", artist = "jose")
+        )
+        assertEquals(2L, found?.id)
+    }
+
+    @Test
+    fun containsNormalized_substringIgnoresDiacritics() {
+        assertTrue(TrackMatchKeys.containsNormalized("La Canción del Verano", "cancion"))
+        assertTrue(TrackMatchKeys.containsNormalized("José José", "jose"))
+        assertFalse(TrackMatchKeys.containsNormalized("Creep", "cancion"))
+    }
+
+    @Test
+    fun containsNormalized_punctuationOnlyNeedleDoesNotMatch() {
+        assertFalse(TrackMatchKeys.containsNormalized("Creep", "!!!"))
+        assertTrue(TrackMatchKeys.containsNormalized("Creep", ""))
+        assertTrue(TrackMatchKeys.containsNormalized("Creep", "   "))
     }
 
     @Test

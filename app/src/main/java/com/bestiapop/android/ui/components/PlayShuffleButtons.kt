@@ -1,10 +1,12 @@
 package com.bestiapop.android.ui.components
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
@@ -19,6 +21,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 
 /** L1: play IconButton with primary tint. */
@@ -78,6 +81,7 @@ fun LabeledPlayShuffleButtons(
     shuffleLabel: String = "Aleatorio",
     modifier: Modifier = Modifier.fillMaxWidth()
 ) {
+    val contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp)
     Row(
         modifier = modifier,
         horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -87,21 +91,37 @@ fun LabeledPlayShuffleButtons(
             enabled = enabled,
             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
             shape = RoundedCornerShape(12.dp),
-            modifier = Modifier.weight(1f)
+            contentPadding = contentPadding,
+            modifier = Modifier
+                .weight(1f)
+                .widthIn(min = 0.dp)
         ) {
             Icon(imageVector = Icons.Default.PlayArrow, contentDescription = null)
             Spacer(modifier = Modifier.width(4.dp))
-            Text(playLabel)
+            Text(
+                text = playLabel,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis
+            )
         }
         OutlinedButton(
             onClick = onShuffle,
             enabled = enabled,
             shape = RoundedCornerShape(12.dp),
-            modifier = Modifier.weight(1f)
+            contentPadding = contentPadding,
+            modifier = Modifier
+                .weight(1f)
+                .widthIn(min = 0.dp)
         ) {
             Icon(imageVector = Icons.Default.Shuffle, contentDescription = null)
             Spacer(modifier = Modifier.width(4.dp))
-            Text(shuffleLabel)
+            Text(
+                text = shuffleLabel,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis
+            )
         }
     }
 }

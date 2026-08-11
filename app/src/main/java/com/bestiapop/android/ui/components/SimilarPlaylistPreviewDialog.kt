@@ -103,7 +103,10 @@ fun SimilarPlaylistPreviewDialog(
                     }
                 } else if (state.items.isEmpty()) {
                     Text(
-                        text = "No hay candidatos",
+                        text = when {
+                            state.failedOnline -> "No pude completar la búsqueda online. Probá de nuevo o usá solo conocidos."
+                            else -> "No encontré canciones parecidas"
+                        },
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -187,7 +190,7 @@ private fun SimilarPreviewRow(
         ),
         highlighted = checked,
         leading = {
-            Checkbox(checked = checked, onCheckedChange = { onToggle() })
+            Checkbox(checked = checked, onCheckedChange = null)
         },
         onClick = onToggle
     )

@@ -2,17 +2,33 @@ package com.bestiapop.android.domain.util
 
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.data.model.TrackMeta
+import java.text.Normalizer
 
 /**
  * Shared artist+title matching keys used by radio, downloads, imports, and library lookups.
+ * [normalize] folds case, punctuation, and diacritics (so "canción" ≡ "cancion").
  */
 object TrackMatchKeys {
+    private val COMBINING_MARKS = Regex("\\p{Mn}+")
+    private val PUNCT = Regex("[\\p{Punct}\\p{IsPunctuation}]")
+    private val WHITESPACE = Regex("\\s+")
+
     fun normalize(value: String): String {
-        return value
+        val folded = Normalizer.normalize(value, Normalizer.Form.NFD)
+            .replace(COMBINING_MARKS, "")
+        return folded
             .lowercase()
-            .replace(Regex("[\\p{Punct}\\p{IsPunctuation}]"), " ")
-            .replace(Regex("\\s+"), " ")
+            .replace(PUNCT, " ")
+            .replace(WHITESPACE, " ")
             .trim()
+    }
+
+    /** Substring match after [normalize] (blank [needle] matches everything). */
+    fun containsNormalized(haystack: String, needle: String): Boolean {
+        if (needle.isBlank()) return true
+        val n = normalize(needle)
+        if (n.isEmpty()) return false
+        return normalize(haystack).contains(n)
     }
 
     fun matchKey(artist: String, title: String): String {

@@ -46,6 +46,7 @@ import com.bestiapop.android.ui.components.EmptyListHint
 import com.bestiapop.android.ui.components.PlayShuffleIconPair
 import com.bestiapop.android.ui.components.SongListItem
 import com.bestiapop.android.ui.components.sortEmphasisFor
+import com.bestiapop.android.ui.components.sortEmphasisForLastPlayed
 import com.bestiapop.android.ui.state.LibraryListItem
 import com.bestiapop.android.ui.theme.ListDensity
 
@@ -57,6 +58,9 @@ fun LibrarySongList(
     selectedSongIds: Set<Long>,
     collapsedAlbumNames: Set<String> = emptySet(),
     sortOption: SortOption = SortOption.TITLE,
+    emphasizeLastPlayed: Boolean = false,
+    emptySubtitle: String? = null,
+    emptyText: String = "No se encontraron canciones",
     onSongClick: (Song, Int) -> Unit,
     onSongLongClick: (Song) -> Unit,
     onToggleSelect: (Song) -> Unit,
@@ -79,7 +83,8 @@ fun LibrarySongList(
 ) {
     if (items.isEmpty()) {
         EmptyListHint(
-            text = "No se encontraron canciones",
+            text = emptyText,
+            subtitle = emptySubtitle,
             modifier = modifier.fillMaxSize()
         )
         return
@@ -176,6 +181,7 @@ fun LibrarySongList(
                         isSelectionMode = isSelectionMode,
                         isSelected = selectedSongIds.contains(item.song.id),
                         sortOption = sortOption,
+                        emphasizeLastPlayed = emphasizeLastPlayed,
                         onSongClickState = onSongClickState,
                         onSongLongClickState = onSongLongClickState,
                         onToggleSelectState = onToggleSelectState,
@@ -230,6 +236,7 @@ private fun LibrarySongRow(
     isSelectionMode: Boolean,
     isSelected: Boolean,
     sortOption: SortOption,
+    emphasizeLastPlayed: Boolean,
     onSongClickState: State<(Song, Int) -> Unit>,
     onSongLongClickState: State<(Song) -> Unit>,
     onToggleSelectState: State<(Song) -> Unit>,
@@ -272,8 +279,9 @@ private fun LibrarySongRow(
     val onDelete = remember(song.id) {
         { onDeleteSongState.value(songState.value) }
     }
-    val emphasis = remember(song, sortOption) {
-        sortEmphasisFor(song, sortOption)
+    val emphasis = remember(song, sortOption, emphasizeLastPlayed) {
+        if (emphasizeLastPlayed) sortEmphasisForLastPlayed(song)
+        else sortEmphasisFor(song, sortOption)
     }
 
     SongListItem(
@@ -305,6 +313,7 @@ fun TauonAlbumHeader(
     artistName: String,
     artworkUri: String?,
     songCount: Int,
+    sortHint: String? = null,
     isCollapsed: Boolean = false,
     isSelectionMode: Boolean = false,
     selectionState: AlbumHeaderSelectionState = AlbumHeaderSelectionState.NONE,
@@ -378,7 +387,10 @@ fun TauonAlbumHeader(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Text(
-                        text = "$artistName • $songCount canciones",
+                        text = buildString {
+                            append("$artistName • $songCount canciones")
+                            if (!sortHint.isNullOrBlank()) append(" • $sortHint")
+                        },
                         style = ListDensity.subtitleStyle,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                     )

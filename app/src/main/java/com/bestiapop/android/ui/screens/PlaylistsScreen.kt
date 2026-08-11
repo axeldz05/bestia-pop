@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
@@ -86,7 +87,9 @@ import com.bestiapop.android.ui.state.toDiscoverOrigin
 import com.bestiapop.android.ui.components.ArtworkHero
 import com.bestiapop.android.ui.components.ArtworkPickerBlock
 import com.bestiapop.android.ui.components.ArtworkThumbnail
+import com.bestiapop.android.ui.components.EmptyListHint
 import com.bestiapop.android.ui.components.LabeledPlayShuffleButtons
+import com.bestiapop.android.ui.components.PlayShuffleIconPair
 import com.bestiapop.android.ui.components.MatchedTrackLazyColumn
 import com.bestiapop.android.ui.components.toListItem
 import com.bestiapop.android.ui.components.RemoteTrackPlaceholderRow
@@ -333,31 +336,17 @@ fun PlaylistsScreen(
 
                     if (playlists.isEmpty()) {
                         item(key = "local-empty") {
-                            Column(
+                            EmptyListHint(
+                                text = "No tenés playlists creadas",
+                                subtitle = "Creá tu primera lista personalizada.",
+                                icon = Icons.AutoMirrored.Filled.QueueMusic,
+                                iconSize = 64.dp,
+                                actionLabel = "Crear playlist",
+                                onAction = { showCreateDialog = true },
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(vertical = 32.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally
-                            ) {
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Filled.QueueMusic,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(64.dp).padding(8.dp),
-                                    tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
-                                )
-                                Spacer(modifier = Modifier.height(8.dp))
-                                Text(
-                                    text = "No tenés playlists creadas",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                                )
-                                Text(
-                                    text = "Tocá el botón '+' para crear tu primera lista personalizada.",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
-                                    modifier = Modifier.padding(top = 4.dp)
-                                )
-                            }
+                                    .padding(vertical = 32.dp)
+                            )
                         }
                     } else {
                         items(playlists, key = { it.id }) { playlist ->
@@ -1034,23 +1023,35 @@ private fun PlaylistDetailScreen(
             // Action Buttons
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                LabeledPlayShuffleButtons(
-                    onPlay = { viewModel.playCollection(songs) },
-                    onShuffle = { viewModel.shuffleCollection(songs) },
-                    enabled = songs.isNotEmpty(),
+                PlayShuffleIconPair(
+                    onPlay = {
+                        if (songs.isNotEmpty()) viewModel.playCollection(songs)
+                    },
+                    onShuffle = {
+                        if (songs.isNotEmpty()) viewModel.shuffleCollection(songs)
+                    },
+                    playDescription = "Reproducir",
+                    shuffleDescription = "Aleatorio",
                     modifier = Modifier.weight(1f)
                 )
-
                 Button(
                     onClick = { onAddSongsRequest(playlist) },
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondaryContainer, contentColor = MaterialTheme.colorScheme.onSecondaryContainer),
-                    shape = RoundedCornerShape(12.dp)
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                    ),
+                    shape = RoundedCornerShape(12.dp),
+                    contentPadding = PaddingValues(
+                        horizontal = 12.dp,
+                        vertical = 8.dp
+                    )
                 ) {
                     Icon(imageVector = Icons.Default.Add, contentDescription = null)
                     Spacer(modifier = Modifier.width(4.dp))
-                    Text("Añadir")
+                    Text("Añadir", maxLines = 1, softWrap = false)
                 }
             }
 

@@ -139,6 +139,67 @@ class GetLibrarySongsUseCaseListItemsTest {
     }
 
     @Test
+    fun extractAlbums_respectsSortOptionAndDirection() {
+        val list = listOf(
+            Song(id = 1, uriString = "u1", title = "A", artist = "Zed", album = "Beta", genre = "Rock", dateAdded = 10),
+            Song(id = 2, uriString = "u2", title = "B", artist = "Amy", album = "Alpha", genre = "Pop", dateAdded = 50),
+            Song(id = 3, uriString = "u3", title = "C", artist = "Bob", album = "Gamma", genre = "Jazz", dateAdded = 30)
+        )
+        assertEquals(
+            listOf("Alpha", "Beta", "Gamma"),
+            useCase.extractAlbums(list, sortOption = SortOption.TITLE).map { it.displayName }
+        )
+        assertEquals(
+            listOf("Gamma", "Beta", "Alpha"),
+            useCase.extractAlbums(list, sortOption = SortOption.TITLE, sortDirection = SortDirection.DESC)
+                .map { it.displayName }
+        )
+        assertEquals(
+            listOf("Alpha", "Gamma", "Beta"),
+            useCase.extractAlbums(list, sortOption = SortOption.ARTIST).map { it.displayName }
+        )
+        assertEquals(
+            listOf("Beta", "Gamma", "Alpha"),
+            useCase.extractAlbums(list, sortOption = SortOption.DATE_ADDED).map { it.displayName }
+        )
+    }
+
+    @Test
+    fun extractArtists_respectsGenreAndDateSort() {
+        val list = listOf(
+            Song(id = 1, uriString = "u1", title = "A", artist = "Zed", genre = "Rock", dateAdded = 10),
+            Song(id = 2, uriString = "u2", title = "B", artist = "Amy", genre = "Pop", dateAdded = 50),
+            Song(id = 3, uriString = "u3", title = "C", artist = "Bob", genre = "Jazz", dateAdded = 30)
+        )
+        assertEquals(
+            listOf("Bob", "Amy", "Zed"),
+            useCase.extractArtists(list, sortOption = SortOption.GENRE).map { it.name }
+        )
+        assertEquals(
+            listOf("Zed", "Bob", "Amy"),
+            useCase.extractArtists(list, sortOption = SortOption.DATE_ADDED).map { it.name }
+        )
+    }
+
+    @Test
+    fun extractGenres_dateAddedKeepsUnknownLast() {
+        val withMeta = listOf(
+            Song(id = 1, uriString = "u1", title = "A", genre = "Rock", dateAdded = 10),
+            Song(id = 2, uriString = "u2", title = "B", genre = "Pop", dateAdded = 40),
+            Song(id = 3, uriString = "u3", title = "C", genre = "", dateAdded = 99)
+        )
+        val genres = useCase.extractGenres(
+            withMeta,
+            sortOption = SortOption.DATE_ADDED,
+            sortDirection = SortDirection.DESC
+        )
+        assertEquals(
+            listOf("Pop", "Rock", GetLibrarySongsUseCase.UNKNOWN_GENRE),
+            genres.map { it.name }
+        )
+    }
+
+    @Test
     fun songsForBrowseProjection_albumsConcatenatesWithinAlbumOrder() {
         val list = listOf(
             Song(id = 1, uriString = "u1", title = "Z", artist = "A", album = "Beta", trackNumber = 2),
@@ -156,11 +217,12 @@ class GetLibrarySongsUseCaseListItemsTest {
     }
 
     @Test
-    fun songsForBrowseProjection_recent_sortsByDateAddedDesc() {
+    fun songsForBrowseProjection_recent_sortsByLastPlayedDesc() {
         val list = listOf(
-            Song(id = 1, uriString = "u1", title = "Old", dateAdded = 10),
-            Song(id = 2, uriString = "u2", title = "New", dateAdded = 30),
-            Song(id = 3, uriString = "u3", title = "Mid", dateAdded = 20)
+            Song(id = 1, uriString = "u1", title = "Old", lastPlayedAt = 10),
+            Song(id = 2, uriString = "u2", title = "New", lastPlayedAt = 30),
+            Song(id = 3, uriString = "u3", title = "Mid", lastPlayedAt = 20),
+            Song(id = 4, uriString = "u4", title = "Never", lastPlayedAt = 0)
         )
         val projected = useCase.songsForBrowseProjection(
             filter = com.bestiapop.android.ui.state.LibraryBrowseFilter.RECENT,

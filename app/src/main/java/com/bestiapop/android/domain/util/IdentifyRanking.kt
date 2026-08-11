@@ -304,7 +304,8 @@ object IdentifyRanking {
         return a.isEmpty() ||
             a.equals("Unknown Artist", ignoreCase = true) ||
             a == "YouTube Artist" ||
-            a == "Enlace Web"
+            a == "Enlace Web" ||
+            isTrackNumberLabel(a)
     }
 
     fun dedupeKey(artist: String, title: String, album: String): String =

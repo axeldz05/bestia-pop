@@ -17,7 +17,7 @@ import com.bestiapop.android.ui.components.SettingsSwitchRow
 
 @Composable
 fun DownloadSettingsScreen(viewModel: MusicPlayerViewModel) {
-    val downloadOnMetered by viewModel.downloadOnMeteredNetwork.collectAsState()
+    val downloadSettings by viewModel.downloadSettings.collectAsState()
     val savePathLabel = StorageUtils.userVisibleMusicDirLabel()
     val absolutePath = StorageUtils.publicBestiaPopDir().absolutePath
 
@@ -26,13 +26,26 @@ fun DownloadSettingsScreen(viewModel: MusicPlayerViewModel) {
     ) {
         SettingsSwitchRow(
             title = "Descargar con datos móviles",
-            subtitle = if (downloadOnMetered) {
+            subtitle = if (downloadSettings.downloadOnMeteredNetwork) {
                 "Activo — también descarga en redes metered (datos / hotspot)"
             } else {
                 "Desactivado — solo descarga en Wi‑Fi u otras redes no metered"
             },
-            checked = downloadOnMetered,
+            checked = downloadSettings.downloadOnMeteredNetwork,
             onCheckedChange = { viewModel.setDownloadOnMeteredNetwork(it) }
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = "Con límite de datos: ${StorageUtils.formatByteCount(downloadSettings.totalMeteredBytes)}",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(modifier = Modifier.height(2.dp))
+        Text(
+            text = "Sin límite: ${StorageUtils.formatByteCount(downloadSettings.totalUnmeteredBytes)}",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
 
         Spacer(modifier = Modifier.height(28.dp))

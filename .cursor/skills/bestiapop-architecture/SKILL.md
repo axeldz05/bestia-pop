@@ -19,7 +19,7 @@ Módulo único Gradle: `:app`. Nombre del proyecto: **BestiaPop**.
 | UI | Jetpack Compose + Material3 |
 | Estado UI | `MusicPlayerViewModel` (AndroidViewModel) + StateFlow |
 | Reproducción | Media3 ExoPlayer + `MediaLibraryService` (`MusicService`) |
-| Persistencia | Room (`bestiapop_music_db`, v3) |
+| Persistencia | Room (`bestiapop_music_db`, v8) |
 | Preferencias | DataStore (`ThemePreferencesRepository`, `ListenBrainzPreferencesRepository`, `PlaybackPreferencesRepository`, `DownloadPreferencesRepository` metered/path prefs, `LibraryPreferencesRepository` display+nav, `ActiveDownloadsStore`, `IdentifyReviewStore` cola identify, `PlaybackSessionStore` last-played + cola, `AppUpdateCheckStore` last GitHub check) |
 | Red / catálogo | OkHttp + `MetadataFetcher` (iTunes/Deezer) + `YouTubeExtractor` + `ListenBrainzClient` + `GitHubUpdateClient` (releases) |
 | Sync WiFi | Ktor CIO embebido (`WebServerService`) |
@@ -70,7 +70,7 @@ Mini player se rehidrata desde `MediaController` (sesión viva) o `PlaybackSessi
 
 ## Principios estructurales (invariantes)
 
-1. **Todo es colección** — play/shuffle/enqueue pasan por pipeline unificado (`playPlayableCollection` + permutación `shufflePlayOrder` en ViewModel); cola interna es `PlayableItem` (orden fuente); UI de cola = `displayQueue`.
+1. **Todo es colección** — play/shuffle/enqueue pasan por pipeline unificado (`playPlayableCollection` + `permuteQueueToPlayOrder` al mezclar); cola interna `PlayableItem` = orden de reproducción; UI de cola = `displayQueue`.
 2. **Catálogo ≠ audio** — metadatos de iTunes/Deezer; bytes de audio vía YouTube (re-extraer URL antes de descargar/stream por CDN 403).
 3. **Álbum vs playlist en portadas/metadata** — álbum tiene `album_overrides` (guardar solo álbum vs álbum+canciones); portada de playlist es entidad propia; editar canción no reescribe álbum.
 4. **Portadas locales** — copiar a `context.filesDir` (no depender de content URIs temporales).
@@ -91,7 +91,7 @@ Mini player se rehidrata desde `MediaController` (sesión viva) o `PlaybackSessi
 
 Entidades: filas de app en `data.model` — `Song` (`songs`), `AlbumOverride` (`album_overrides`). El resto sigue en `data/db`: `PlaylistEntity`, `PlaylistSongCrossRef`, `PlaylistPendingTrackEntity`, `PendingListenEntity`.
 Índice único Room: `songs.uriString`. Deduplicación lógica por `matchKey(artist, title)` en filtros de scan / download conflict (`Music/BestiaPop` app-managed). I/O local solo vía `MusicFileStore` / `AudioPersistRef.canonicalize`: BestiaPop = path absoluto; MediaStore ajeno = `content://media`. One-shot `migrateCanonicalAudioUris` reescribe SAF/cache. Migrator dedup histórico: branch `archive/library-dedup-v1-migrator`.
-Migraciones Room: 1→2 (dedupe + unique index), 2→3 (playlist description/coverUri), 3→4 (pending_listens), 4→5 (playlist_pending_tracks), 5→6 (`album_overrides`), 6→7 (index `playlist_song_cross_ref.songId`).
+Migraciones Room: 1→2 (dedupe + unique index), 2→3 (playlist description/coverUri), 3→4 (pending_listens), 4→5 (playlist_pending_tracks), 5→6 (`album_overrides`), 6→7 (index `playlist_song_cross_ref.songId`), 7→8 (`songs.lastPlayedAt`).
 
 ## Relacionado
 

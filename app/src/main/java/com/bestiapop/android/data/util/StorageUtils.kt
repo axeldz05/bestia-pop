@@ -23,6 +23,16 @@ object StorageUtils {
     /** User-facing label for the app-managed save folder (Spanish Music dir name). */
     fun userVisibleMusicDirLabel(): String = "Música/BestiaPop"
 
+    /** Human-readable byte count for download totals (B / KB / MB / GB). */
+    fun formatByteCount(bytes: Long): String {
+        if (bytes < 1024L) return "$bytes B"
+        val kb = bytes / 1024.0
+        if (kb < 1024.0) return String.format("%.1f KB", kb)
+        val mb = kb / 1024.0
+        if (mb < 1024.0) return String.format("%.1f MB", mb)
+        return String.format("%.2f GB", mb / 1024.0)
+    }
+
     fun getPublicMusicDirectory(@Suppress("UNUSED_PARAMETER") context: Context): File {
         val dir = publicBestiaPopDir()
         dir.mkdirs()

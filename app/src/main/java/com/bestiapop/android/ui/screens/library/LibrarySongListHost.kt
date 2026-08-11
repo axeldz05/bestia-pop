@@ -48,6 +48,9 @@ fun LibrarySongListHost(
     actions: LibrarySongListActions,
     onSongClick: (Song, Int) -> Unit,
     onSongLongClick: (Song) -> Unit = actions.onToggleSelect,
+    emphasizeLastPlayed: Boolean = false,
+    emptySubtitle: String? = null,
+    emptyText: String = "No se encontraron canciones",
     modifier: Modifier = Modifier
 ) {
     LibrarySongList(
@@ -57,6 +60,9 @@ fun LibrarySongListHost(
         selectedSongIds = selectedSongIds,
         collapsedAlbumNames = collapsedAlbumNames,
         sortOption = sortOption,
+        emphasizeLastPlayed = emphasizeLastPlayed,
+        emptySubtitle = emptySubtitle,
+        emptyText = emptyText,
         onSongClick = onSongClick,
         onSongLongClick = onSongLongClick,
         onToggleSelect = actions.onToggleSelect,

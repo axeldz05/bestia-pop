@@ -32,6 +32,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -61,6 +62,17 @@ private enum class SettingsSection {
 @Composable
 fun SettingsScreen(viewModel: MusicPlayerViewModel, appUpdateViewModel: AppUpdateViewModel) {
     var section by remember { mutableStateOf<SettingsSection?>(null) }
+    val pendingSettingsSection by viewModel.pendingSettingsSection.collectAsState()
+
+    LaunchedEffect(pendingSettingsSection) {
+        when (pendingSettingsSection) {
+            "downloads" -> {
+                section = SettingsSection.Downloads
+                viewModel.consumePendingSettingsSection()
+            }
+        }
+    }
+
     BackHandler(enabled = section != null) {
         section = null
     }

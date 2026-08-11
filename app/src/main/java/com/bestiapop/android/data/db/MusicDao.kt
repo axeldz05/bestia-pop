@@ -86,6 +86,9 @@ interface MusicDao {
     @Query("UPDATE songs SET durationMs = :durationMs WHERE id = :songId")
     suspend fun updateSongDuration(songId: Long, durationMs: Long)
 
+    @Query("UPDATE songs SET lastPlayedAt = :ts WHERE id = :songId")
+    suspend fun updateLastPlayedAt(songId: Long, ts: Long)
+
     // Album overrides
     @Query("SELECT * FROM album_overrides")
     fun getAllAlbumOverridesFlow(): Flow<List<AlbumOverride>>

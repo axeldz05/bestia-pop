@@ -135,10 +135,13 @@ fun IdentifyReviewScreen(
                     (currentItem as PlayableItem.Local).song.id == item.song.id &&
                     isPlaying
                 val showSearch = state.showSearchField || item.proposal.candidates.isEmpty()
-                val searchPlaceholder = item.song.title.trim()
+                val searchPlaceholder = item.proposal.queryTitle.trim()
                     .takeUnless { it.isBlank() || looksLikeStoragePath(it) }
-                    ?: item.song.artist.trim().takeUnless {
-                        it.isBlank() || looksLikeStoragePath(it)
+                    ?: item.song.title.trim()
+                        .takeUnless { it.isBlank() || looksLikeStoragePath(it) }
+                    ?: item.proposal.queryArtist.trim().takeUnless {
+                        it.isBlank() || looksLikeStoragePath(it) ||
+                            IdentifyRanking.isPlaceholderArtist(it)
                     }
                     ?: "Título o artista"
                 Column(

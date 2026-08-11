@@ -9,6 +9,6 @@ enum class LibraryBrowseFilter {
     ALBUMS,
     ARTISTS,
     GENRES,
-    /** dateAdded DESC (“Añadidas”); not last-played until Room lastPlayedAt exists. */
+    /** lastPlayedAt DESC (“Recientes”); never-played songs omitted. */
     RECENT
 }

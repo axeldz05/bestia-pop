@@ -13,19 +13,14 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowDownward
-import androidx.compose.material.icons.filled.ArrowUpward
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.UnfoldLess
 import androidx.compose.material.icons.filled.UnfoldMore
 import androidx.compose.material.icons.filled.ViewAgenda
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -34,6 +29,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -41,15 +37,18 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.bestiapop.android.data.model.Album
 import com.bestiapop.android.data.model.Playlist
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.ui.MusicPlayerViewModel
-import com.bestiapop.android.ui.SortDirection
 import com.bestiapop.android.ui.SortOption
-import com.bestiapop.android.ui.components.LabeledPlayShuffleButtons
+import com.bestiapop.android.ui.components.PlayShuffleIconPair
 import com.bestiapop.android.ui.components.MultiSelectActionBar
 import com.bestiapop.android.ui.components.PlaylistAdditionActionBar
 import com.bestiapop.android.ui.components.SimilarPlaylistPreviewDialog
@@ -58,12 +57,15 @@ import com.bestiapop.android.ui.screens.library.AlbumEditDialogsHost
 import com.bestiapop.android.ui.screens.library.IdentifyPendingBanner
 import com.bestiapop.android.ui.screens.library.LibraryAlbumBrowseList
 import com.bestiapop.android.ui.screens.library.LibraryArtistList
+import com.bestiapop.android.ui.screens.library.LibraryBrowseSortSheet
 import com.bestiapop.android.ui.screens.library.LibraryFilterChipRow
 import com.bestiapop.android.ui.screens.library.LibraryGenreList
 import com.bestiapop.android.ui.screens.library.LibraryProgressBanner
 import com.bestiapop.android.ui.screens.library.LibrarySongListActions
 import com.bestiapop.android.ui.screens.library.LibrarySongListHost
 import com.bestiapop.android.ui.screens.library.SetAlbumArtworkDialog
+import com.bestiapop.android.ui.screens.library.libraryOrderSummary
+import com.bestiapop.android.ui.screens.library.libraryTuneContentDescription
 import com.bestiapop.android.ui.screens.library.rememberSongActionDialogs
 import com.bestiapop.android.ui.state.LibraryBrowseFilter
 import com.bestiapop.android.ui.state.LibraryViewMode
@@ -96,7 +98,18 @@ fun LibraryScreen(
     val identifyReview by viewModel.identifyReview.collectAsState()
     val similarPlaylistPreview by viewModel.similarPlaylistPreview.collectAsState()
 
-    var sortMenuExpanded by remember { mutableStateOf(false) }
+    var showBrowseSortSheet by remember { mutableStateOf(false) }
+    var searchExpanded by remember { mutableStateOf(false) }
+    val searchFocusRequester = remember { FocusRequester() }
+    val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
+
+    val collapseSearch: () -> Unit = {
+        viewModel.setSearchQuery("")
+        searchExpanded = false
+        focusManager.clearFocus(force = true)
+        keyboardController?.hide()
+    }
 
     val isPlaylistAdditionMode = targetPlaylistForAddition != null
     val activeFilter = if (isPlaylistAdditionMode) LibraryBrowseFilter.SONGS else browseFilter
@@ -111,7 +124,7 @@ fun LibraryScreen(
         viewModel.buildLibraryListItems(songs, songsViewMode)
     }
     val recentSongs = remember(songs) {
-        songs.sortedByDescending { it.dateAdded }
+        songs.filter { it.lastPlayedAt > 0 }.sortedByDescending { it.lastPlayedAt }
     }
     val recentListItems = remember(recentSongs) {
         viewModel.buildLibraryListItems(recentSongs, LibraryViewMode.FLAT)
@@ -131,6 +144,9 @@ fun LibraryScreen(
                 genres = genres
             )
         }
+    }
+    val orderSummary = remember(activeFilter, sortOption, sortDirection) {
+        libraryOrderSummary(activeFilter, sortOption, sortDirection)
     }
 
     var collapsedAlbumNames by remember { mutableStateOf(setOf<String>()) }
@@ -222,8 +238,21 @@ fun LibraryScreen(
         collapsedAlbumNames = if (allAlbumsCollapsed) emptySet() else libraryAlbumNames
     }
 
+    val songsForSelection = remember(
+        selectedAlbumName, selectedArtistName, selectedGenreName,
+        activeFilter, songs, recentSongs, songsForPlayAll
+    ) {
+        when {
+            selectedAlbumName != null -> viewModel.songsForAlbum(songs, selectedAlbumName!!)
+            selectedArtistName != null -> viewModel.songsForArtist(songs, selectedArtistName!!)
+            selectedGenreName != null -> viewModel.songsForGenre(songs, selectedGenreName!!)
+            activeFilter == LibraryBrowseFilter.RECENT -> recentSongs
+            else -> songsForPlayAll
+        }
+    }
+
     val selectAllSongs = {
-        selectedSongIds = songs.map { it.id }.toSet()
+        selectedSongIds = songsForSelection.map { it.id }.toSet()
     }
 
     val clearSelection = remember {
@@ -236,15 +265,24 @@ fun LibraryScreen(
     val hasNestedBack = isMultiSelectMode ||
         isPlaylistAdditionMode ||
         hasNestedDetail ||
-        searchQuery.isNotEmpty()
+        searchQuery.isNotEmpty() ||
+        searchExpanded
 
     BackHandler(enabled = hasNestedBack) {
         when {
             isMultiSelectMode -> clearSelection()
             isPlaylistAdditionMode -> onCancelPlaylistAddition()
             hasNestedDetail -> viewModel.popLibraryNested()
-            searchQuery.isNotEmpty() -> viewModel.setSearchQuery("")
+            searchQuery.isNotEmpty() -> collapseSearch()
+            searchExpanded -> collapseSearch()
         }
+    }
+
+    LaunchedEffect(searchExpanded) {
+        if (searchExpanded) searchFocusRequester.requestFocus()
+    }
+    LaunchedEffect(searchQuery) {
+        if (searchQuery.isNotEmpty()) searchExpanded = true
     }
 
     val playOrShuffleAlbum: (Album, Boolean) -> Unit = remember(songs) {
@@ -299,7 +337,22 @@ fun LibraryScreen(
         )
     }
 
-    val showSortMenu = activeFilter != LibraryBrowseFilter.RECENT || hasNestedDetail
+    val sortEnabledInSheet = activeFilter != LibraryBrowseFilter.RECENT
+
+    if (showBrowseSortSheet) {
+        LibraryBrowseSortSheet(
+            browseFilter = if (isPlaylistAdditionMode) LibraryBrowseFilter.SONGS else browseFilter,
+            sortOption = sortOption,
+            sortDirection = sortDirection,
+            sortEnabled = sortEnabledInSheet,
+            onBrowseFilterChange = { filter ->
+                if (!isPlaylistAdditionMode) viewModel.setLibraryBrowseFilter(filter)
+            },
+            onSortOptionChange = { viewModel.setSortOption(it) },
+            onToggleSortDirection = { viewModel.toggleSortDirection() },
+            onDismiss = { showBrowseSortSheet = false }
+        )
+    }
 
     Column(modifier = Modifier.fillMaxSize()) {
         Row(
@@ -314,26 +367,33 @@ fun LibraryScreen(
                 }
             }
 
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = { viewModel.setSearchQuery(it) },
-                placeholder = { Text("Buscar canción, artista, álbum, género...") },
-                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                trailingIcon = {
-                    if (searchQuery.isNotEmpty()) {
-                        IconButton(onClick = { viewModel.setSearchQuery("") }) {
-                            Icon(Icons.Default.Close, contentDescription = "Limpiar")
+            if (searchExpanded) {
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { viewModel.setSearchQuery(it) },
+                    placeholder = { Text("Buscar…") },
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                    trailingIcon = {
+                        IconButton(onClick = collapseSearch) {
+                            Icon(Icons.Default.Close, contentDescription = "Cerrar búsqueda")
                         }
-                    }
-                },
-                singleLine = true,
-                modifier = Modifier.weight(1f),
-                colors = OutlinedTextFieldDefaults.colors(
-                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-                    focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                ),
-                shape = RoundedCornerShape(12.dp)
-            )
+                    },
+                    singleLine = true,
+                    modifier = Modifier
+                        .weight(1f)
+                        .focusRequester(searchFocusRequester),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                        focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                    ),
+                    shape = RoundedCornerShape(12.dp)
+                )
+            } else {
+                Spacer(modifier = Modifier.weight(1f))
+                IconButton(onClick = { searchExpanded = true }) {
+                    Icon(Icons.Default.Search, contentDescription = "Buscar")
+                }
+            }
 
             Spacer(modifier = Modifier.width(4.dp))
 
@@ -343,62 +403,26 @@ fun LibraryScreen(
                 }
             }
 
-            if (showSortMenu) {
-                IconButton(onClick = { viewModel.toggleSortDirection() }) {
+            if (!searchExpanded && !isPlaylistAdditionMode) {
+                IconButton(onClick = { showBrowseSortSheet = true }) {
                     Icon(
-                        imageVector = if (sortDirection == SortDirection.ASC) {
-                            Icons.Default.ArrowUpward
-                        } else {
-                            Icons.Default.ArrowDownward
-                        },
-                        contentDescription = if (sortDirection == SortDirection.ASC) {
-                            "Orden ascendente"
-                        } else {
-                            "Orden descendente"
-                        }
+                        imageVector = Icons.Default.Tune,
+                        contentDescription = libraryTuneContentDescription(orderSummary)
                     )
                 }
-                Box {
-                    IconButton(onClick = { sortMenuExpanded = true }) {
-                        Icon(Icons.AutoMirrored.Filled.Sort, contentDescription = "Ordenar")
-                    }
-                    DropdownMenu(
-                        expanded = sortMenuExpanded,
-                        onDismissRequest = { sortMenuExpanded = false }
-                    ) {
-                        SortOption.entries.forEach { option ->
-                            val selected = sortOption == option
-                            DropdownMenuItem(
-                                text = {
-                                    Text(
-                                        text = when (option) {
-                                            SortOption.TITLE -> "Título"
-                                            SortOption.ARTIST -> "Artista"
-                                            SortOption.ALBUM -> "Álbum"
-                                            SortOption.GENRE -> "Género"
-                                            SortOption.DATE_ADDED -> "Fecha de adición"
-                                        },
-                                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
-                                    )
-                                },
-                                trailingIcon = if (selected) {
-                                    {
-                                        Icon(
-                                            imageVector = Icons.Default.Check,
-                                            contentDescription = "Seleccionado"
-                                        )
-                                    }
-                                } else {
-                                    null
-                                },
-                                onClick = {
-                                    viewModel.setSortOption(option)
-                                    sortMenuExpanded = false
-                                }
-                            )
-                        }
-                    }
-                }
+            }
+
+            if (!searchExpanded && !isMultiSelectMode && !isPlaylistAdditionMode && !hasNestedDetail) {
+                PlayShuffleIconPair(
+                    onPlay = {
+                        if (songsForPlayAll.isNotEmpty()) viewModel.playCollection(songsForPlayAll)
+                    },
+                    onShuffle = {
+                        if (songsForPlayAll.isNotEmpty()) viewModel.shuffleCollection(songsForPlayAll)
+                    },
+                    playDescription = "Reproducir todo",
+                    shuffleDescription = "Mezclar"
+                )
             }
         }
 
@@ -419,51 +443,42 @@ fun LibraryScreen(
             )
         }
 
-        if (!isMultiSelectMode && !isPlaylistAdditionMode && !hasNestedDetail) {
+        if (!isMultiSelectMode && !isPlaylistAdditionMode && !hasNestedDetail &&
+            activeFilter == LibraryBrowseFilter.SONGS
+        ) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 6.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                    .padding(horizontal = 4.dp),
+                horizontalArrangement = Arrangement.End,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                LabeledPlayShuffleButtons(
-                    onPlay = { viewModel.playCollection(songsForPlayAll) },
-                    onShuffle = { viewModel.shuffleCollection(songsForPlayAll) },
-                    enabled = songsForPlayAll.isNotEmpty(),
-                    playLabel = "Reproducir todo",
-                    shuffleLabel = "Mezclar",
-                    modifier = Modifier.weight(1f)
-                )
-
-                if (activeFilter == LibraryBrowseFilter.SONGS) {
-                    if (showAlbumHeaders && libraryAlbumNames.isNotEmpty()) {
-                        IconButton(onClick = toggleCollapseAllAlbums) {
-                            Icon(
-                                imageVector = if (allAlbumsCollapsed) {
-                                    Icons.Default.UnfoldMore
-                                } else {
-                                    Icons.Default.UnfoldLess
-                                },
-                                contentDescription = if (allAlbumsCollapsed) {
-                                    "Expandir todos los álbumes"
-                                } else {
-                                    "Colapsar todos los álbumes"
-                                }
-                            )
-                        }
-                    }
-                    IconButton(onClick = { viewModel.toggleLibraryViewMode() }) {
+                if (showAlbumHeaders && libraryAlbumNames.isNotEmpty()) {
+                    IconButton(onClick = toggleCollapseAllAlbums) {
                         Icon(
-                            imageVector = Icons.Default.ViewAgenda,
-                            contentDescription = "Cambiar vista",
-                            tint = if (showAlbumHeaders) {
-                                MaterialTheme.colorScheme.primary
+                            imageVector = if (allAlbumsCollapsed) {
+                                Icons.Default.UnfoldMore
                             } else {
-                                MaterialTheme.colorScheme.onSurface
+                                Icons.Default.UnfoldLess
+                            },
+                            contentDescription = if (allAlbumsCollapsed) {
+                                "Expandir todos los álbumes"
+                            } else {
+                                "Colapsar todos los álbumes"
                             }
                         )
                     }
+                }
+                IconButton(onClick = { viewModel.toggleLibraryViewMode() }) {
+                    Icon(
+                        imageVector = Icons.Default.ViewAgenda,
+                        contentDescription = "Cambiar vista",
+                        tint = if (showAlbumHeaders) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurface
+                        }
+                    )
                 }
             }
         }
@@ -615,6 +630,7 @@ fun LibraryScreen(
                 }
 
                 activeFilter == LibraryBrowseFilter.RECENT -> {
+                    val recentEmptyFromSearch = searchQuery.isNotBlank()
                     LibrarySongListHost(
                         items = recentListItems,
                         currentSongId = currentSongId,
@@ -622,6 +638,17 @@ fun LibraryScreen(
                         selectedSongIds = selectedSongIds,
                         collapsedAlbumNames = emptySet(),
                         sortOption = SortOption.DATE_ADDED,
+                        emphasizeLastPlayed = true,
+                        emptyText = if (recentEmptyFromSearch) {
+                            "No se encontraron canciones"
+                        } else {
+                            "Todavía no hay recientes"
+                        },
+                        emptySubtitle = if (recentEmptyFromSearch) {
+                            "Ningún resultado para esta búsqueda"
+                        } else {
+                            "Reproducí canciones para verlas acá"
+                        },
                         actions = songListActions,
                         onSongClick = { song, index ->
                             if (isMultiSelectMode) {
@@ -636,6 +663,7 @@ fun LibraryScreen(
                 activeFilter == LibraryBrowseFilter.ALBUMS -> {
                     LibraryAlbumBrowseList(
                         albums = albums,
+                        sortOption = sortOption,
                         onAlbumClick = { viewModel.openLibraryAlbum(it.name, fromNestedParent = false) },
                         onPlayAlbum = { playOrShuffleAlbum(it, false) },
                         onShuffleAlbum = { playOrShuffleAlbum(it, true) },
@@ -661,6 +689,7 @@ fun LibraryScreen(
                 activeFilter == LibraryBrowseFilter.GENRES -> {
                     LibraryGenreList(
                         genres = genres,
+                        sortOption = sortOption,
                         onGenreClick = { viewModel.openLibraryGenre(it.name) },
                         onPlayGenre = { genre ->
                             viewModel.playCollection(viewModel.songsForGenre(songs, genre.name))

@@ -5,11 +5,11 @@ import android.media.MediaMetadataRetriever
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.data.model.TrackIdentity
 import com.bestiapop.android.data.model.TrackMeta
-
-data class FilenameMetadataHints(
-    val artist: String?,
-    val title: String?
-)
+import com.bestiapop.android.domain.util.isTrackNumberLabel
+import com.bestiapop.android.domain.util.mergeIdentityHints
+import com.bestiapop.android.domain.util.parseFilenameMetadataHints
+import com.bestiapop.android.domain.util.resolveWeakIdentityHints
+import com.bestiapop.android.domain.util.stripLeadingTitleJunk
 
 /** True for SAF/document URIs or Music/BestiaPop paths mistaken for a track name. */
 fun looksLikeStoragePath(value: String): Boolean {
@@ -23,20 +23,6 @@ fun looksLikeStoragePath(value: String): Boolean {
         lower.startsWith("file:") ||
         lower.contains("primary:") ||
         lower.contains("music/bestiapop")
-}
-
-/** Parse BestiaPop-style `Artist_Title` filenames (underscores → spaces). */
-fun parseFilenameMetadataHints(nameWithoutExtension: String): FilenameMetadataHints {
-    val cleaned = nameWithoutExtension.trim()
-    if (cleaned.isEmpty()) return FilenameMetadataHints(artist = null, title = null)
-    val idx = cleaned.indexOf('_')
-    if (idx <= 0 || idx >= cleaned.length - 1) {
-        val titleOnly = cleaned.replace('_', ' ').trim().ifBlank { null }
-        return FilenameMetadataHints(artist = null, title = titleOnly)
-    }
-    val artist = cleaned.substring(0, idx).replace('_', ' ').trim().ifBlank { null }
-    val title = cleaned.substring(idx + 1).replace('_', ' ').trim().ifBlank { null }
-    return FilenameMetadataHints(artist = artist, title = title)
 }
 
 data class AudioFileMetadata(
@@ -67,7 +53,9 @@ data class AudioFileMetadata(
 
     companion object {
         private fun isUnknownArtist(artist: String): Boolean =
-            artist.isBlank() || artist.equals("Unknown Artist", ignoreCase = true)
+            artist.isBlank() ||
+                artist.equals("Unknown Artist", ignoreCase = true) ||
+                isTrackNumberLabel(artist)
 
         private fun isUnknownAlbum(album: String): Boolean =
             album.isBlank() || album.equals("Unknown Album", ignoreCase = true)
@@ -135,26 +123,48 @@ data class AudioFileMetadata(
         }
 
         /**
-         * When embedded tags are Unknown, recover artist/title from BestiaPop `Artist_Title` filenames.
-         * Does not invent an album name.
+         * When embedded tags are Unknown / track-number rips, recover artist/title from
+         * filename shapes (`Artist_Title`, `NN_-_Title`, `Artist - Song`). Does not invent album.
          */
         internal fun applyFilenameHints(
             metadata: AudioFileMetadata,
             fallbackTitle: String
         ): AudioFileMetadata {
-            if (!isUnknownArtist(metadata.artist) && !isUnknownAlbum(metadata.album)) {
-                return metadata
+            val fromTags = resolveWeakIdentityHints(metadata.artist, metadata.title)
+            val fromFile = parseFilenameMetadataHints(fallbackTitle)
+            val hints = mergeIdentityHints(fromTags, fromFile)
+            val artistWeak = isUnknownArtist(metadata.artist)
+            val titleWeak = metadata.title.isBlank() ||
+                metadata.title.equals(fallbackTitle, ignoreCase = true) ||
+                metadata.title.trimStart().let { it.startsWith("-") || it.startsWith("_") } ||
+                looksLikeStoragePath(metadata.title) ||
+                (artistWeak && (metadata.title.contains(" - ") || metadata.title.contains("_-_")))
+
+            if (!artistWeak && !isUnknownAlbum(metadata.album) && !titleWeak) {
+                val cleaned = stripLeadingTitleJunk(metadata.title)
+                return if (cleaned != metadata.title) {
+                    metadata.withIdentity { copy(title = cleaned) }
+                } else {
+                    metadata
+                }
             }
-            val hints = parseFilenameMetadataHints(fallbackTitle)
-            val artist = if (isUnknownArtist(metadata.artist) && !hints.artist.isNullOrBlank()) {
-                hints.artist
-            } else {
-                metadata.artist
+
+            val artist = when {
+                artistWeak && !hints.artist.isNullOrBlank() -> hints.artist
+                artistWeak -> "Unknown Artist"
+                else -> metadata.artist
             }
-            val titleFromFile = !hints.title.isNullOrBlank() &&
-                (metadata.title.isBlank() || metadata.title.equals(fallbackTitle, ignoreCase = true))
-            val title = if (titleFromFile) hints.title!! else metadata.title
-            return metadata.withIdentity { copy(artist = artist, title = title) }
+            val title = when {
+                titleWeak && !hints.title.isNullOrBlank() -> hints.title
+                !hints.title.isNullOrBlank() && artistWeak -> hints.title
+                else -> stripLeadingTitleJunk(metadata.title).ifBlank { metadata.title }
+            }
+            val trackNumber = metadata.trackNumber.takeIf { it > 0 }
+                ?: hints.trackNumber
+                ?: metadata.trackNumber
+            return metadata.withIdentity {
+                copy(artist = artist, title = title, trackNumber = trackNumber)
+            }
         }
     }
 }

@@ -6,6 +6,7 @@ import com.bestiapop.android.data.model.Artist
 import com.bestiapop.android.data.model.GenreGroup
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.data.util.albumTrackSortKey
+import com.bestiapop.android.domain.util.TrackMatchKeys
 import com.bestiapop.android.ui.SortDirection
 import com.bestiapop.android.ui.SortOption
 import com.bestiapop.android.ui.state.LibraryBrowseFilter
@@ -31,15 +32,15 @@ class GetLibrarySongsUseCase {
             if (albumArt != song.artworkUri) song.copy(artworkUri = albumArt) else song
         }
 
-        // Multi-field search filtering (Title, Artist, Album, Genre)
+        // Multi-field search (title/artist/album/genre); case + diacritic insensitive
         val filtered = if (query.isBlank()) {
             unifiedList
         } else {
             unifiedList.filter { song ->
-                song.title.contains(query, ignoreCase = true) ||
-                song.artist.contains(query, ignoreCase = true) ||
-                song.album.contains(query, ignoreCase = true) ||
-                song.genre.contains(query, ignoreCase = true)
+                TrackMatchKeys.containsNormalized(song.title, query) ||
+                    TrackMatchKeys.containsNormalized(song.artist, query) ||
+                    TrackMatchKeys.containsNormalized(song.album, query) ||
+                    TrackMatchKeys.containsNormalized(song.genre, query)
             }
         }
 
@@ -111,9 +112,12 @@ class GetLibrarySongsUseCase {
 
     fun extractAlbums(
         songs: List<Song>,
-        overrides: Map<String, AlbumOverride> = emptyMap()
+        overrides: Map<String, AlbumOverride> = emptyMap(),
+        sortOption: SortOption = SortOption.TITLE,
+        sortDirection: SortDirection = SortDirection.ASC
     ): List<Album> {
-        return songs.groupBy { it.album }.map { (albumName, albumSongs) ->
+        val ascending = sortDirection == SortDirection.ASC
+        val albums = songs.groupBy { it.album }.map { (albumName, albumSongs) ->
             val override = overrides[albumName]
             val firstArt = firstArtwork(albumSongs)
             val artistName = albumSongs.firstOrNull()?.artist ?: "Unknown Artist"
@@ -129,11 +133,27 @@ class GetLibrarySongsUseCase {
                 year = if (override != null && override.year > 0) override.year else derivedYear,
                 dateAdded = albumSongs.maxOfOrNull { it.dateAdded }
             )
-        }.sortedBy { it.displayName.lowercase() }
+        }
+        return when (sortOption) {
+            SortOption.TITLE, SortOption.ALBUM ->
+                albums.sortedAggregates(ascending) { it.displayName }
+            SortOption.ARTIST ->
+                albums.sortedAggregates(ascending) { it.artist }
+            SortOption.GENRE ->
+                albums.sortedAggregates(ascending) { it.genre ?: "" }
+            SortOption.DATE_ADDED ->
+                albums.sortedAggregates(ascending, useLong = true, longKey = { it.dateAdded }) { it.displayName }
+        }
     }
 
-    fun extractArtists(songs: List<Song>, artistPhotoMap: Map<String, String> = emptyMap()): List<Artist> {
-        return songs.groupBy { it.artist }.map { (artistName, artistSongs) ->
+    fun extractArtists(
+        songs: List<Song>,
+        artistPhotoMap: Map<String, String> = emptyMap(),
+        sortOption: SortOption = SortOption.TITLE,
+        sortDirection: SortDirection = SortDirection.ASC
+    ): List<Artist> {
+        val ascending = sortDirection == SortDirection.ASC
+        val artists = songs.groupBy { it.artist }.map { (artistName, artistSongs) ->
             val albumCount = artistSongs.map { it.album }.distinct().size
             val photoArt = artistPhotoMap[artistName]
             Artist(
@@ -144,14 +164,27 @@ class GetLibrarySongsUseCase {
                 genre = dominantGenre(artistSongs.map { it.genre }),
                 dateAdded = artistSongs.maxOfOrNull { it.dateAdded }
             )
-        }.sortedBy { it.name.lowercase() }
+        }
+        return when (sortOption) {
+            SortOption.TITLE, SortOption.ARTIST, SortOption.ALBUM ->
+                artists.sortedAggregates(ascending) { it.name }
+            SortOption.GENRE ->
+                artists.sortedAggregates(ascending) { it.genre ?: "" }
+            SortOption.DATE_ADDED ->
+                artists.sortedAggregates(ascending, useLong = true, longKey = { it.dateAdded }) { it.name }
+        }
     }
 
     /**
-     * Groups by genre label; blank → [UNKNOWN_GENRE]. Known genres A–Z; Unknown last.
+     * Groups by genre label; blank → [UNKNOWN_GENRE]. Known genres sorted; Unknown always last.
      */
-    fun extractGenres(songs: List<Song>): List<GenreGroup> {
+    fun extractGenres(
+        songs: List<Song>,
+        sortOption: SortOption = SortOption.TITLE,
+        sortDirection: SortDirection = SortDirection.ASC
+    ): List<GenreGroup> {
         if (songs.isEmpty()) return emptyList()
+        val ascending = sortDirection == SortDirection.ASC
         val groups = songs.groupBy { genreKey(it) }.map { (name, genreSongs) ->
             GenreGroup(
                 name = name,
@@ -161,8 +194,27 @@ class GetLibrarySongsUseCase {
             )
         }
         val (unknown, known) = groups.partition { it.name.equals(UNKNOWN_GENRE, ignoreCase = true) }
-        return known.sortedBy { it.name.lowercase() } + unknown
+        val sortedKnown = when (sortOption) {
+            SortOption.TITLE, SortOption.ARTIST, SortOption.ALBUM, SortOption.GENRE ->
+                known.sortedAggregates(ascending) { it.name }
+            SortOption.DATE_ADDED ->
+                known.sortedAggregates(ascending, useLong = true, longKey = { it.dateAdded }) { it.name }
+        }
+        return sortedKnown + unknown
     }
+
+    private fun <T> List<T>.sortedAggregates(
+        ascending: Boolean,
+        useLong: Boolean = false,
+        longKey: ((T) -> Long?)? = null,
+        stringKey: (T) -> String
+    ): List<T> =
+        if (useLong && longKey != null) {
+            if (ascending) sortedBy { longKey(it) ?: 0L } else sortedByDescending { longKey(it) ?: 0L }
+        } else {
+            if (ascending) sortedBy { stringKey(it).lowercase() }
+            else sortedByDescending { stringKey(it).lowercase() }
+        }
 
     fun songsMatchingGenre(songs: List<Song>, genreName: String): List<Song> =
         songs.filter { genreKey(it).equals(genreName, ignoreCase = true) }
@@ -183,7 +235,7 @@ class GetLibrarySongsUseCase {
             LibraryBrowseFilter.SONGS ->
                 songsFromListItems(buildListItems(songs, viewMode))
             LibraryBrowseFilter.RECENT ->
-                songs.sortedByDescending { it.dateAdded }
+                songs.filter { it.lastPlayedAt > 0 }.sortedByDescending { it.lastPlayedAt }
             LibraryBrowseFilter.ALBUMS -> {
                 val albumList = albums ?: extractAlbums(songs)
                 albumList.flatMap { album ->

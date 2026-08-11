@@ -24,7 +24,7 @@ Cada feature lista **invariantes** + **entry points**. Si el código diverge, ac
 | Una canción | `playSong(song, playlistOrQueue)` | (arma cola + MediaController) |
 | Tap en Cola / NP | `skipToQueueIndex(index)` | índice **display**; seek timeline; **no** rota ni apaga shuffle |
 
-Archivos: `ui/MusicPlayerViewModel.kt` (`playPlayableCollection` / `toggleShuffle` / `displayQueue` / `moveDisplayQueueItem` / `skipToQueueIndex`); `data/playback/PlaybackQueueOrder.kt` (`shufflePlayOrder`); `service/MusicService.kt` (`ACTION_SET_SHUFFLE_ORDER`); `ui/components/PlayShuffleButtons.kt`.
+Archivos: `ui/MusicPlayerViewModel.kt` (`playPlayableCollection` / `toggleShuffle` / `permuteQueueToPlayOrder` / `displayQueue` / `moveDisplayQueueItem` / `skipToQueueIndex`); `data/playback/PlaybackQueueOrder.kt` (`shufflePlayOrder`); `service/MusicService.kt` (`ACTION_SET_SHUFFLE_ORDER` legacy); `ui/components/PlayShuffleButtons.kt`.
 
 ## 2. Búsqueda online y descarga de audio
 
@@ -53,17 +53,19 @@ Modelo clave: `TrackIdentity` / `TrackMeta`, `OnlineCatalogTrack` (`identity` + 
 | Capacidad | API |
 |-----------|-----|
 | Query | `MusicPlayerViewModel.searchQuery` (no se persiste) |
-| Sort | `SortOption`: TITLE, ARTIST, ALBUM, GENRE, DATE_ADDED → `setSortOption` (DataStore; resetea dirección); menú marca la activa con check; oculto en chip `RECENT` |
-| Dirección | `SortDirection` ASC/DESC → `setSortDirection` / `toggleSortDirection`; toggle ↑↓ junto al menú sort (oculto en `RECENT`) |
-| Énfasis fila | `sortEmphasisFor(song, sortOption)` → title/subtitle/trailing; sort key trailing con color primary (`SongListItem`) |
-| Filtrado/orden | `GetLibrarySongsUseCase.execute(songs, query, sortOption, sortDirection)` |
+| Sort | `SortOption`: TITLE, ARTIST, ALBUM, GENRE, DATE_ADDED → `setSortOption` (DataStore; resetea dirección); labels en sheet vía `SortOption.sortLabel(browseFilter)` |
+| Dirección | `SortDirection` ASC/DESC → `setSortDirection` / `toggleSortDirection`; toggle Asc/Desc **dentro** del sheet (no en header) |
+| Vista+orden UI | Chips = forma (`LibraryBrowseFilter`); botón Tune → `LibraryBrowseSortSheet` (“Ver como” + “Ordenar por”); summary a11y `libraryOrderSummary` / `libraryTuneContentDescription`; play/shuffle header = `PlayShuffleIconPair` |
+| Énfasis fila | `sortEmphasisFor(song, sortOption)` / `sortEmphasisForLastPlayed` (chip RECENT) → title/subtitle/trailing; sort key trailing con color primary (`SongListItem`) |
+| Filtrado/orden | `GetLibrarySongsUseCase.execute(songs, query, sortOption, sortDirection)` — query vía `TrackMatchKeys.containsNormalized` (case + tildes; blank needle = match all; punctuation-only → no match) |
 | Vista plana vs grupos álbum | `LibraryViewMode.FLAT` / `ALBUM_GROUPS` → `setLibraryViewMode` / `toggleLibraryViewMode`; solo UI cuando chip = `SONGS`; `buildLibraryListItems` / `buildListItems`; within-album `compareSongsWithinAlbum` / `sortSongsWithinAlbum` / `songsFromListItems` |
 | Browse chip + pila | `libraryBrowseFilter` / `setLibraryBrowseFilter` (`LibraryBrowseFilter`: SONGS, ALBUMS, ARTISTS, GENRES, RECENT); `openLibraryAlbum(fromNestedParent)`, `openLibraryArtist`, `openLibraryGenre`, `popLibraryNested` (álbum encima de artista\|género) |
 | Colapsar álbum / todos | `collapsedAlbumNames` + toggle por header (`onToggleCollapseAlbum`); expandir/colapsar todo en `LibraryScreen` (vista grupos; no persistido) |
-| Derivados | `extractAlbums`, `extractArtists`, `extractGenres` → `albumsState`, `artistsState`, `genresState`; play-all `songsForBrowseProjection` |
-| RECENT | Fase A: canciones por `dateAdded` DESC; chip label **Añadidas** (no last-played aún); sort menu y toggle dirección ocultos |
+| Derivados | `extractAlbums` / `extractArtists` / `extractGenres` (`sortOption` + `sortDirection`) → `albumsState`, `artistsState`, `genresState`; play-all `songsForBrowseProjection` |
+| Énfasis agregados | Álbumes: `TauonAlbumHeader.sortHint` vía `formatSortRelevantInfo`; artistas/géneros: subtítulo con mismo helper |
+| RECENT | Chip label **Recientes**; canciones con `lastPlayedAt > 0` DESC; stamp `setCurrentItem` → `maybeTouchSongLastPlayed` (dedupe por songId / mismo mediaId; sin enhance extra en re-set); `emphasizeLastPlayed`; sección orden del sheet deshabilitada en RECENT (también con nested) |
 
-UI: `LibraryScreen`, `LibraryFilterChipRow`, `LibrarySongList` (`onOpenAlbum`), `LibraryAlbumBrowseList` (`TauonAlbumHeader`, sin grilla grande), `LibraryArtistList`, `LibraryGenreList`.
+UI: `LibraryScreen`, `LibraryFilterChipRow`, `LibraryBrowseSortSheet`, `LibrarySongList` (`onOpenAlbum`), `LibraryAlbumBrowseList` (`TauonAlbumHeader`, sin grilla grande), `LibraryArtistList`, `LibraryGenreList`.
 Estado: `ui/state/LibraryUiState.kt`, `LibraryBrowseFilter.kt`, `LibraryListItem.kt`. Prefs: `LibraryDisplaySettings` (`sortOptionName` / `sortDirectionName`) + `UiNavSnapshot.browseFilterName` / `LibraryUiPreferencesCodec` (legacy `library_tab` 0/1/2 → SONGS/ALBUMS/ARTISTS).
 
 ## 4. Portadas y metadata: álbum ≠ playlist ≠ canción
@@ -78,7 +80,7 @@ Estado: `ui/state/LibraryUiState.kt`, `LibraryBrowseFilter.kt`, `LibraryListItem
 | **Canción** | Editar una canción **no** reescribe el álbum ni siblings | `updateSongMetadata` (incluye `year` + `trackNumber`); UI `EditSongMetadataDialog` (Nº de pista; encoding MediaStore `disc*1000+track` vía `encodeAlbumTrack`) |
 | **Persistencia local** | Copiar imagen a `context.filesDir` (`album_covers` / playlist covers); URI unificada `file.toURI()` vía `persistUserCover` | `saveAlbumCoverImage`, `savePlaylistCoverImage`, `extractAndSaveEmbeddedArtwork` |
 
-Herencia visual en lista: `GetLibrarySongsUseCase.execute` unifica artwork faltante desde otras canciones del mismo álbum; `extractAlbums(songs, overrides)` aplica `AlbumOverride`.
+Herencia visual en lista: `GetLibrarySongsUseCase.execute` unifica artwork faltante desde otras canciones del mismo álbum; `extractAlbums(songs, overrides, sortOption, sortDirection)` aplica `AlbumOverride` y ordena agregados.
 
 ## 5. Playlists locales
 
@@ -101,7 +103,7 @@ UI: `PlaylistsScreen`. Detalle abierto = `PlaylistDetailNav` persistido (`openLo
 - Playlists/overrides viven en Room (app-private): **no** sobreviven uninstall (solo los archivos de audio en `Music/BestiaPop`).
 - Descarga con conflicto → `DuplicateSongException` / `DownloadConflict` → diálogo Sobrescribir | Crear nueva | Cancelar (`DownloadConflictPolicy`).
 - One-shot migrator histórico: branch `archive/library-dedup-v1-migrator` (no compila en LB).
-- Tags Unknown en reimport: `AudioFileMetadata.applyFilenameHints` / `parseFilenameMetadataHints` recuperan artist/title de `Artist_Title` (sin inventar álbum).
+- Tags Unknown / rip numérico: `AudioFileMetadata.applyFilenameHints` + `parseFilenameMetadataHints` / `resolveWeakIdentityHints`; al `proposeSongIdentity` persiste limpieza soft (`01`→Unknown Artist, `- Title`→Title, trackNumber) antes de buscar.
 - Identificar online (manual, multi-select, ⋮ o WiFi): Fase 1 lookup + score (`IdentifyRanking`); tags actuales de la canción son **fuente predominante** (`sourceArtist`/`sourceTitle`/`sourceAlbum`); auto-aplica solo **HIGH**; conflicto grave (artista/álbum/título distinto, versión, YouTube) → nunca HIGH. Si LB `enabled` + token y confianza ≠ HIGH (sin `customQuery`), enriquece con `lookupRecordingMetadata` → `fetchRecordingMetadata` → `toListenBrainzCatalogTrack` y re-rank (`IdentifyProposal.usedListenBrainz`). MEDIUM/LOW/NONE van a cola persistida `IdentifyReviewStore` (DataStore; cold start hidrata, **no** abre overlay). UI `IdentifyReviewScreen`: overview por álbum sugerido (`clusterIdentifyAlbumGroups`, solo MEDIUM + álbum no genérico, size ≥ 2) o cola canción a canción (Usar / Omitir / Buscar otro / Aplicar automático a restantes = solo MEDIUM con suggested / Omitir todas / Aplicar grupo). Cerrar oculta overlay y **conserva** la cola (`pendingCount`); banner biblioteca + botón WiFi retoman. Re-identificar lote/WiFi **omite** songIds ya pendientes (cero red); ⋮ sobre pending abre ese ítem. Progreso en `libraryJobProgress` + toast resumen. Telemetría lote (sin PII): `CrashReporter.setKey`/`log` keys `identify_high`/`identify_medium`/`identify_low`/`identify_none`/`identify_skipped`/`identify_lb_hits`.
 - Álbum genérico (`IdentifyRanking.isGenericAlbum`: `YouTube`, `YouTube Music`, `Unknown Album`, `Single`, `Álbum`/`Album`) **sí** entra a identify; no se omite como ya identificado. Provider YouTube y versiones extra (live / letra / remix / cover…) nunca son HIGH → review. `cleanIdentityTitle` no persiste `+ letra` / `(Original Mix)`.
 - Descarga online: álbum genérico dispara `fetchFullTrackMetadata` → `TrackIdentity?`; no se guarda `"YouTube"` — fallback `"$artist - Single"`.
@@ -157,7 +159,7 @@ State: `currentThemeState`.
 
 **Invariantes:**
 - Último `_isShuffle` + `RepeatMode` se persisten siempre (`lastShuffleEnabled` / `lastRepeatMode`).
-- Shuffle es flag de VM + permutación de índices (`shufflePlayOrder`) sobre la cola fuente; UI observa `displayQueue`. Toggle **no** llama `setMediaItems`. Player: `shuffleModeEnabled` + `DefaultShuffleOrder` vía `MusicService.ACTION_SET_SHUFFLE_ORDER` tras timeline listo (`syncShuffleToPlayerWhenReady`; servicio ignora order si `length ≠ mediaItemCount`). Play/Mezclar de colección se serializa (`playCollectionJob`). Drag en cola visual: shuffle ON → solo permutación; OFF → `moveQueueItem` timeline. `queue_json` persiste `shufflePlayOrder`; hydrate remapea si caen locales.
+- Shuffle: al activar (toggle / Mezclar) se **reescribe** `_queue` + timeline; toggle en NP usa `rebuildPlayerQueueAroundCurrent` (cirugía remove/add alrededor del tema actual, sin `setMediaItems`/`prepare`) para no trabar la reproducción; fallback `reloadPlayerTimeline` si no hay controller. ExoPlayer queda lineal (`shuffleModeEnabled=false`). Backup `preShuffleQueueBackup` restaura al apagar shuffle. Persist (`queueSnapshotForPersist`): si shuffle on + backup mismo tamaño → items=backup, `shufflePlayOrder`=índices físicos→backup, `currentIndex` en backup; `applyHydratedQueue` pliega a cola física y restaura backup. `displayQueue` = cola (o remap legacy si hubiera `_shufflePlayOrder`). Play/Mezclar serializado (`playCollectionJob`). Drag en cola: `moveQueueItem` (cola física).
 - Arranque en frío (sin timeline): restaurar según `rememberShuffleOnLaunch` / `rememberRepeatOnLaunch` (on por defecto). Off → ese modo arranca apagado.
 - **Autoplay al abrir** (`autoplayOnLaunch`, off por defecto): mismo flag para Local y Remote. Off → mini player / cola hidratada sin `play()`. On → `maybeAutoplayAfterIdleSeed` → `togglePlayPause`. Sesión FGS viva que ya suena no se toca.
 - Sesión viva: repeat del `MediaController`; shuffle desde prefs (única fuente). Switches de Ajustes no cambian la sesión actual.
@@ -166,9 +168,9 @@ State: `currentThemeState`.
 | Capacidad | Entry point |
 |-----------|-------------|
 | Prefs | `PlaybackSettings` + `PlaybackModeRestore.resolve` / `PlaybackModeClear.afterManualPlay` / `afterSkip` / `parseRepeatModeName`; writes 1-key `DataStore.put` |
-| Settings UI | `PlaybackSettingsScreen` vía `SettingsScreen` sección Reproducción |
+| Settings UI | `PlaybackSettingsScreen` vía `SettingsScreen` sección Reproducción; sección Batería pide `ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` |
 | Restore | `MusicPlayerViewModel.restorePlaybackModes` tras `syncUiFromController` |
-| Persist | `setShuffleEnabled` / `setRepeatMode` / `toggleShuffle` / `toggleRepeatMode` / `finishPlayPlayableCollection` (`startShuffled`) / `QueueSnapshot.shufflePlayOrder` |
+| Persist | `setShuffleEnabled` / `setRepeatMode` / `toggleShuffle` (`applyQueueReorder` / `rebuildPlayerQueueAroundCurrent`) / `toggleRepeatMode` / `finishPlayPlayableCollection` (`startShuffled`) / `persistPlaybackSession` → `queueSnapshotForPersist` / `QueueSnapshot.shufflePlayOrder` |
 | Remember flags | `setRememberShuffleOnLaunch` / `setRememberRepeatOnLaunch` / `setAutoplayOnLaunch` |
 | Clear-on-play | `setClearShuffleOnManualPlay` / `setClearRepeatAllOnManualPlay` / `setClearRepeatOneOnManualPlay` / `applyManualPlayModes` |
 | Clear-on-skip | `setClearShuffleOnSkip` / `setClearRepeatOneOnSkip` / `applySkipModes` / `skipToNext` / `skipToPrevious` |
@@ -193,13 +195,14 @@ Centro de descargas online → sección 2 (`DownloadsScreen`, tab Descargas).
 | Capacidad | Entry point |
 |-----------|-------------|
 | UI cola | `DownloadsScreen` + `ActiveDownloadRow` (QUEUED / progreso / SUCCESS play+limpiar / ERROR retry·cycle·dismiss) |
-| Prefs descarga | `DownloadPreferencesRepository` / `DownloadSettings` (`download_settings`; `downloadOnMeteredNetwork` default **true**) |
-| Settings UI | `DownloadSettingsScreen` vía `SettingsScreen` sección Descargas (path `Música/BestiaPop` + switch datos) |
-| Gate red | `ConnectivityObserver.isMetered` + `ensureDownloadNetworkAllowed` al inicio de `runTrackedDownload` → ERROR `DownloadMessages.blockedOnMetered` |
+| Prefs descarga | `DownloadPreferencesRepository` / `DownloadSettings` (`download_settings`; `downloadOnMeteredNetwork` default **true**; `totalMeteredBytes` / `totalUnmeteredBytes` vía `addDownloadedBytes`) |
+| Settings UI | `DownloadSettingsScreen` vía `SettingsScreen` sección Descargas (path `Música/BestiaPop` + switch datos + totales bytes); deep-link `openDownloadSettings` / `pendingSettingsSection` / `consumePendingSettingsSection` |
+| Gate red | `ConnectivityObserver.isMetered` + `ensureDownloadNetworkAllowed` al inicio de `runTrackedDownload` → ERROR `DownloadMessages.blockedOnMetered`; al éxito `addDownloadedBytes` con `isMetered()` muestreado en completion (no al start) |
+| Totales UI | Labels “Con límite de datos” / “Sin límite” en `DownloadsScreen` + `DownloadSettingsScreen` (`formatByteCount`) |
 | Persistencia cola | `ActiveDownloadsStore` + `ActiveDownloadCodec` (DataStore JSON; conserva SUCCESS + `resultSongId`) |
 | Notif progreso | `DownloadNotificationHelper` (canal `downloads_channel`; tap → tab Descargas) |
 | Badge tab | `activeDownloadBadgeCount` en `MainScreen` NavigationBar Descargas |
-| Deep-link | `requestOpenDownloads` / `pendingOpenDownloads` / `consumeOpenDownloads` |
+| Deep-link | `requestOpenDownloads` / `pendingOpenDownloads` / `consumeOpenDownloads`; tab UI path + CTA ajustes en `DownloadsScreen` |
 | Límite | `downloadSemaphore` (3) en ViewModel |
 
 ## 9. ListenBrainz (scrobbling + Para Ti)
@@ -209,7 +212,7 @@ Centro de descargas online → sección 2 (`DownloadsScreen`, tab Descargas).
 - Sección **Para Ti** / **Recomendados** en Playlists solo si `showDiscoverPlaylists` (`enabled && discoverEnabled && username`).
 - Playlists Discover = `GET /1/user/{user}/playlists/createdfor`; detalle = `GET /1/playlist/{mbid}`.
 - CF Recomendados = `GET /1/cf/recommendation/user/{user}/recording` + metadata → match Local|Remote.
-- Match local por artist+title normalizado (`TrackMatchKeys.matchMetasAgainstLibrary` / `matchAgainstLibrary`; L1 `buildLibraryIndex` + `lookupLocalSong` para radio); faltantes = `PlayableItem.Remote`. Rematch LB/CF tras descarga = `List.rematchLocals`. Query YT / id catálogo = `TrackMeta.youtubeSearchQuery` / `TrackIdentity.toCatalogTrack`.
+- Match local por artist+title normalizado (`TrackMatchKeys.normalize` pliega case/puntuación/tildes; `matchMetasAgainstLibrary` / `matchAgainstLibrary`; L1 `buildLibraryIndex` + `lookupLocalSong` para radio); faltantes = `PlayableItem.Remote`. Rematch LB/CF tras descarga = `List.rematchLocals`. Query YT / id catálogo = `TrackMeta.youtubeSearchQuery` / `TrackIdentity.toCatalogTrack`.
 - Reproducción: cola mixta `Local|Remote` vía `playPlayableCollection` (prefetch / 403 retry de stream).
 - **Descarga manual** de un Remote en detalle Para Ti / Recomendados o Now Playing: icono Descargar en `RemoteTrackPlaceholderRow` / CTA `NowPlayingRemoteDownloadAction` → `downloadRemoteItem` (`ActiveDownloadSource.DISCOVER`); progreso en Descargas (+ estados en NP); al éxito rematch LB + CF.
 - **Guardar al escuchar** (`saveWhileListening` + `saveWhileListeningPercent`): al alcanzar ≥N% de la duración (o fin) de un Remote, encola en `activeDownloads` vía `runTrackedDownload` (sin reemplazar el MediaItem). Fallo → `ERROR` en el centro + Toast; quita la key de `saveWhileListeningAttempted` para permitir reintento manual/auto.

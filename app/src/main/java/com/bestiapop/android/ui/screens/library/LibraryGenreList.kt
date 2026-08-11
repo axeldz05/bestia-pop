@@ -17,20 +17,24 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.bestiapop.android.data.model.GenreGroup
+import com.bestiapop.android.ui.SortOption
 import com.bestiapop.android.ui.components.ArtworkThumbnail
 import com.bestiapop.android.ui.components.EmptyListHint
 import com.bestiapop.android.ui.components.PlayShuffleIconPair
+import com.bestiapop.android.ui.components.formatSortRelevantInfo
 import com.bestiapop.android.ui.theme.ListDensity
 
 @Composable
 fun LibraryGenreList(
     genres: List<GenreGroup>,
+    sortOption: SortOption = SortOption.TITLE,
     onGenreClick: (GenreGroup) -> Unit,
     onPlayGenre: (GenreGroup) -> Unit,
     onShuffleGenre: (GenreGroup) -> Unit,
@@ -48,6 +52,7 @@ fun LibraryGenreList(
         items(genres, key = { it.name }) { genre ->
             GenreListItem(
                 genre = genre,
+                sortOption = sortOption,
                 onClick = { onGenreClick(genre) },
                 onPlay = { onPlayGenre(genre) },
                 onShuffle = { onShuffleGenre(genre) }
@@ -59,10 +64,26 @@ fun LibraryGenreList(
 @Composable
 fun GenreListItem(
     genre: GenreGroup,
+    sortOption: SortOption = SortOption.TITLE,
     onClick: () -> Unit,
     onPlay: () -> Unit,
     onShuffle: () -> Unit
 ) {
+    val sortInfo = remember(genre.dateAdded, sortOption) {
+        formatSortRelevantInfo(
+            sortOption = sortOption,
+            genre = null,
+            dateAdded = genre.dateAdded,
+            alreadyShowsArtist = false,
+            alreadyShowsAlbum = false,
+            alreadyShowsTitle = true
+        )
+    }
+    val subtitle = remember(genre.songCount, sortInfo) {
+        val base = "${genre.songCount} canciones"
+        if (sortInfo.isNullOrBlank()) base else "$base • $sortInfo"
+    }
+
     Surface(
         modifier = Modifier
             .fillMaxWidth()
@@ -96,7 +117,7 @@ fun GenreListItem(
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    text = "${genre.songCount} canciones",
+                    text = subtitle,
                     style = ListDensity.subtitleStyle,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
                     maxLines = 1,

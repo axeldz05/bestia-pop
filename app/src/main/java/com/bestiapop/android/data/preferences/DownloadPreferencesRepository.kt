@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
@@ -38,5 +39,13 @@ class DownloadPreferencesRepository(private val context: Context) {
 
     suspend fun setDownloadOnMeteredNetwork(enabled: Boolean) {
         context.downloadDataStore.put(Keys.DOWNLOAD_ON_METERED, enabled)
+    }
+
+    suspend fun addDownloadedBytes(byteCount: Long, metered: Boolean) {
+        if (byteCount <= 0) return
+        context.downloadDataStore.edit { prefs ->
+            val key = if (metered) Keys.TOTAL_METERED_BYTES else Keys.TOTAL_UNMETERED_BYTES
+            prefs[key] = (prefs[key] ?: 0L) + byteCount
+        }
     }
 }

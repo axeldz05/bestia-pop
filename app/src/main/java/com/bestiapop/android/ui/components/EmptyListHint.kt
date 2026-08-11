@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -24,7 +25,9 @@ fun EmptyListHint(
     subtitle: String? = null,
     icon: ImageVector? = null,
     iconSize: Dp = 48.dp,
-    centered: Boolean = true
+    centered: Boolean = true,
+    actionLabel: String? = null,
+    onAction: (() -> Unit)? = null
 ) {
     Box(
         modifier = modifier,
@@ -55,6 +58,12 @@ fun EmptyListHint(
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
                     textAlign = if (centered) TextAlign.Center else TextAlign.Start
                 )
+            }
+            if (!actionLabel.isNullOrBlank() && onAction != null) {
+                Spacer(modifier = Modifier.height(8.dp))
+                TextButton(onClick = onAction) {
+                    Text(actionLabel)
+                }
             }
         }
     }

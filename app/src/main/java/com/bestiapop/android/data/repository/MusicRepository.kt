@@ -36,15 +36,19 @@ import com.bestiapop.android.data.network.MetadataFetcher
 import com.bestiapop.android.data.stream.StreamResolver
 import com.bestiapop.android.data.util.AudioFileMetadata
 import com.bestiapop.android.data.util.CrashReporter
-import com.bestiapop.android.data.util.FilenameMetadataHints
 import com.bestiapop.android.data.util.MusicFileStore
 import com.bestiapop.android.data.util.SongPathNormalizer
 import com.bestiapop.android.data.util.looksLikeStoragePath
-import com.bestiapop.android.data.util.parseFilenameMetadataHints
 import com.bestiapop.android.domain.repository.IMusicRepository
 import com.bestiapop.android.domain.repository.LibraryScanProgress
+import com.bestiapop.android.domain.util.FilenameMetadataHints
 import com.bestiapop.android.domain.util.IdentifyRanking
 import com.bestiapop.android.domain.util.TrackMatchKeys
+import com.bestiapop.android.domain.util.mergeIdentityHints
+import com.bestiapop.android.domain.util.parseFilenameMetadataHints
+import com.bestiapop.android.domain.util.resolveWeakIdentityHints
+import com.bestiapop.android.domain.util.isTrackNumberLabel
+import com.bestiapop.android.domain.util.stripLeadingTitleJunk
 import kotlinx.coroutines.Dispatchers
 
 import kotlinx.coroutines.flow.Flow
@@ -574,29 +578,40 @@ class MusicRepository(private val context: Context) : IMusicRepository {
             )
         }
 
-        var queryArtist = song.artist
-        var queryTitle = song.title
         val path = SongPathNormalizer.resolveFilePath(song.uriString, song.folderPath)
         val baseName = path
             ?.substringAfterLast('/')
             ?.substringBeforeLast('.')
             ?: song.uriString.substringAfterLast('/').substringBeforeLast('.')
-        val hints = if (looksLikeStoragePath(baseName)) {
+        val fileHints = if (looksLikeStoragePath(baseName)) {
             FilenameMetadataHints(artist = null, title = null)
         } else {
             parseFilenameMetadataHints(baseName)
         }
+        val hints = mergeIdentityHints(
+            resolveWeakIdentityHints(song.artist, song.title),
+            fileHints
+        )
+        val working = persistWeakIdentityCleanup(song, hints)
         val filenameArtist = hints.artist?.takeUnless { looksLikeStoragePath(it) }
         val filenameTitle = hints.title?.takeUnless { looksLikeStoragePath(it) }
+
+        var queryArtist = working.artist
+        var queryTitle = working.title
         if (IdentifyRanking.isPlaceholderArtist(queryArtist)) {
-            if (!hints.artist.isNullOrBlank()) queryArtist = hints.artist
+            // Drop track-number / Unknown artists from the search string; title-only works better.
+            queryArtist = hints.artist?.takeIf { it.isNotBlank() }.orEmpty()
             if (!hints.title.isNullOrBlank()) queryTitle = hints.title
+        } else if (!hints.title.isNullOrBlank() &&
+            (queryTitle.trimStart().startsWith("-") || looksLikeStoragePath(queryTitle))
+        ) {
+            queryTitle = hints.title
         }
 
         val tagHints = listOfNotNull(
-            song.artist.takeUnless { IdentifyRanking.isPlaceholderArtist(it) },
-            song.title.takeUnless { it.isBlank() || looksLikeStoragePath(it) },
-            song.album.takeUnless { IdentifyRanking.isGenericAlbum(it) }
+            working.artist.takeUnless { IdentifyRanking.isPlaceholderArtist(it) },
+            working.title.takeUnless { it.isBlank() || looksLikeStoragePath(it) },
+            working.album.takeUnless { IdentifyRanking.isGenericAlbum(it) }
         ).joinToString(" · ").ifBlank { null }
         val filenameHint = listOfNotNull(
             filenameArtist?.takeIf { it.isNotBlank() },
@@ -606,7 +621,8 @@ class MusicRepository(private val context: Context) : IMusicRepository {
         val sourceHints = tagHints ?: filenameHint
 
         val trimmedCustom = customQuery?.trim().orEmpty()
-        val artistPlaceholder = IdentifyRanking.isPlaceholderArtist(queryArtist)
+        val artistPlaceholder = queryArtist.isBlank() ||
+            IdentifyRanking.isPlaceholderArtist(queryArtist)
         var tracks = if (trimmedCustom.isNotEmpty()) {
             MetadataFetcher.searchOnlineCatalog(trimmedCustom)
         } else {
@@ -615,13 +631,13 @@ class MusicRepository(private val context: Context) : IMusicRepository {
         val rankingQuery = IdentifyRanking.Query(
             artist = queryArtist,
             title = if (trimmedCustom.isNotEmpty()) trimmedCustom else queryTitle,
-            durationMs = song.durationMs,
+            durationMs = working.durationMs,
             filenameArtist = filenameArtist,
             filenameTitle = filenameTitle,
             artistIsPlaceholder = artistPlaceholder && trimmedCustom.isEmpty(),
-            sourceArtist = song.artist.takeUnless { IdentifyRanking.isPlaceholderArtist(it) },
-            sourceTitle = song.title.takeUnless { it.isBlank() || looksLikeStoragePath(it) },
-            sourceAlbum = song.album.takeUnless { IdentifyRanking.isGenericAlbum(it) }
+            sourceArtist = working.artist.takeUnless { IdentifyRanking.isPlaceholderArtist(it) },
+            sourceTitle = working.title.takeUnless { it.isBlank() || looksLikeStoragePath(it) },
+            sourceAlbum = working.album.takeUnless { IdentifyRanking.isGenericAlbum(it) }
         )
         var ranked = IdentifyRanking.rank(rankingQuery, tracks)
         var confidence = IdentifyRanking.confidence(ranked)
@@ -633,7 +649,7 @@ class MusicRepository(private val context: Context) : IMusicRepository {
             !artistPlaceholder &&
             confidence != IdentifyConfidence.HIGH
         if (canEnrichLb) {
-            val releaseHint = song.album.takeUnless { IdentifyRanking.isGenericAlbum(it) }
+            val releaseHint = working.album.takeUnless { IdentifyRanking.isGenericAlbum(it) }
             val lbTrack = fetchListenBrainzIdentifyTrack(
                 artist = queryArtist,
                 title = queryTitle,
@@ -776,6 +792,61 @@ class MusicRepository(private val context: Context) : IMusicRepository {
         return IdentifyRanking.isPlaceholderArtist(artist) || IdentifyRanking.isGenericAlbum(album)
     }
 
+    /**
+     * Persist rip-style tag cleanup (`01` + `- Title`) so library/review stop showing junk
+     * even when catalog confidence is not HIGH enough to auto-apply.
+     */
+    private suspend fun persistWeakIdentityCleanup(
+        song: Song,
+        hints: FilenameMetadataHints
+    ): Song {
+        val artistWeak = IdentifyRanking.isPlaceholderArtist(song.artist)
+        val titleJunk = song.title.trimStart().let {
+            it.startsWith("-") || it.startsWith("_") || looksLikeStoragePath(it)
+        } || (
+            artistWeak &&
+                hints.title != null &&
+                stripLeadingTitleJunk(song.title) == hints.title &&
+                song.title != hints.title
+        )
+
+        val newArtist = when {
+            artistWeak && !hints.artist.isNullOrBlank() -> hints.artist
+            isTrackNumberLabel(song.artist) -> "Unknown Artist"
+            else -> null
+        }
+        val newTitle = when {
+            !hints.title.isNullOrBlank() && (titleJunk || (artistWeak && song.title != hints.title)) ->
+                hints.title
+            else -> null
+        }
+        val newTrack = hints.trackNumber?.takeIf { it > 0 && song.trackNumber <= 0 }
+
+        if (newArtist == null && newTitle == null && newTrack == null) return song
+
+        val updated = song.copy(
+            artist = newArtist ?: song.artist,
+            title = newTitle ?: song.title,
+            trackNumber = newTrack ?: song.trackNumber
+        )
+        if (updated.artist == song.artist &&
+            updated.title == song.title &&
+            updated.trackNumber == song.trackNumber
+        ) {
+            return song
+        }
+        musicDao.updateSongMetadata(
+            songId = song.id,
+            title = updated.title,
+            artist = updated.artist,
+            album = song.album,
+            genre = song.genre,
+            year = song.year,
+            trackNumber = updated.trackNumber
+        )
+        return updated
+    }
+
     fun calculateAudioDurationMs(audioPathOrUri: String): Long {
         val ref = audioStore.canonicalize(audioPathOrUri)
 
@@ -817,6 +888,13 @@ class MusicRepository(private val context: Context) : IMusicRepository {
 
     override suspend fun updateSongDuration(songId: Long, durationMs: Long) = withContext(Dispatchers.IO) {
         musicDao.updateSongDuration(songId, durationMs)
+    }
+
+    override suspend fun touchSongLastPlayed(
+        songId: Long,
+        playedAt: Long
+    ) = withContext(Dispatchers.IO) {
+        musicDao.updateLastPlayedAt(songId, playedAt)
     }
 
     override suspend fun updateSongMetadata(

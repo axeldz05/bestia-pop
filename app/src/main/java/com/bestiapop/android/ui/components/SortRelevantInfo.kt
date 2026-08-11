@@ -1,5 +1,6 @@
 package com.bestiapop.android.ui.components
 
+import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.ui.SortOption
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -20,7 +21,9 @@ fun formatSortRelevantInfo(
 ): String? {
     return when (sortOption) {
         SortOption.TITLE, SortOption.ARTIST, SortOption.ALBUM -> null
-        SortOption.GENRE -> genre?.takeIf { it.isNotBlank() && !it.equals("Unknown Genre", ignoreCase = true) }
+        SortOption.GENRE -> genre?.takeIf {
+            it.isNotBlank() && !it.equals(Song.UNKNOWN_GENRE, ignoreCase = true)
+        }
         SortOption.DATE_ADDED -> dateAdded?.let { formatDateAdded(it) }
     }
 }

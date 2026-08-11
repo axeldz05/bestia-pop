@@ -42,6 +42,10 @@ sealed class DownloadPhase {
 object DownloadMessages {
     const val searching = "Buscando audio de alta calidad en YouTube..."
     fun downloading(title: String) = "Descargando audio ($title)..."
+    fun downloadingQuoted(label: String) = "Descargando «$label»…"
+    fun downloadingCount(count: Int) = "Descargando $count canciones…"
+    const val downloadingEllipsis = "Descargando…"
+    const val downloadingAudio = "Descargando audio..."
     const val fetchingMetadata = "Obteniendo información del álbum y portada..."
     const val saving = "Guardando en la biblioteca..."
     const val completed = "¡Canción agregada con éxito!"
@@ -53,11 +57,16 @@ object DownloadMessages {
     const val conflictInLibrary = "Conflicto: ya está en la biblioteca"
     const val inLibrary = "En biblioteca"
     const val savedInLibrary = "¡Guardado en biblioteca!"
+    const val interrupted = "Interrumpida — tocá Reintentar"
+    const val missingArtistOrTitle = "No se puede descargar: faltan artista o título"
 
     fun songSaved(title: String) = "«$title» guardada en biblioteca"
     fun songAdded(title: String) = "¡$title agregada a la biblioteca!"
     fun songAlready(title: String) = "«$title» ya está en la biblioteca"
     fun batchProcessed(done: Int, total: Int) = "¡$done de $total canciones procesadas!"
+    fun failedQuoted(label: String) = "Falló «$label»"
+    fun downloadsFailed(count: Int) = "$count descargas fallaron"
+    fun downloadFailed(detail: String) = "Falló la descarga: $detail"
 
     const val alreadyQueued = "Ya está en cola — ver Descargas"
     const val downloadQueued = "Descarga en cola — ver Descargas"

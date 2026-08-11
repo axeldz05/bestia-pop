@@ -33,12 +33,6 @@ object StorageUtils {
         return String.format("%.2f GB", mb / 1024.0)
     }
 
-    fun getPublicMusicDirectory(@Suppress("UNUSED_PARAMETER") context: Context): File {
-        val dir = publicBestiaPopDir()
-        dir.mkdirs()
-        return dir
-    }
-
     fun publicBestiaPopDir(): File =
         File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC), FOLDER_NAME)
 

@@ -71,9 +71,6 @@ object TrackMatchKeys {
         return if (key.isEmpty()) null else index[key]
     }
 
-    fun lookupLocalSong(library: List<Song>, meta: TrackMeta): Song? =
-        lookupLocalSong(buildLibraryIndex(library), meta)
-
     /**
      * L2: build a library index once and map each item (via [metaOf]) to a result.
      * When [skipBlank] is true, rows with blank title or artist are omitted.

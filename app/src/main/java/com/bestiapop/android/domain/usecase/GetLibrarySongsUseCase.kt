@@ -176,7 +176,7 @@ class GetLibrarySongsUseCase {
     }
 
     /**
-     * Groups by genre label; blank → [UNKNOWN_GENRE]. Known genres sorted; Unknown always last.
+     * Groups by genre label; blank → [Song.UNKNOWN_GENRE]. Known genres sorted; Unknown always last.
      */
     fun extractGenres(
         songs: List<Song>,
@@ -193,7 +193,7 @@ class GetLibrarySongsUseCase {
                 dateAdded = genreSongs.maxOfOrNull { it.dateAdded }
             )
         }
-        val (unknown, known) = groups.partition { it.name.equals(UNKNOWN_GENRE, ignoreCase = true) }
+        val (unknown, known) = groups.partition { it.name.equals(Song.UNKNOWN_GENRE, ignoreCase = true) }
         val sortedKnown = when (sortOption) {
             SortOption.TITLE, SortOption.ARTIST, SortOption.ALBUM, SortOption.GENRE ->
                 known.sortedAggregates(ascending) { it.name }
@@ -263,7 +263,7 @@ class GetLibrarySongsUseCase {
     private fun dominantGenre(genres: List<String>): String? {
         if (genres.isEmpty()) return null
         return genres
-            .filter { it.isNotBlank() && !it.equals(UNKNOWN_GENRE, ignoreCase = true) }
+            .filter { it.isNotBlank() && !it.equals(Song.UNKNOWN_GENRE, ignoreCase = true) }
             .groupingBy { it }
             .eachCount()
             .maxByOrNull { it.value }
@@ -271,9 +271,7 @@ class GetLibrarySongsUseCase {
     }
 
     companion object {
-        const val UNKNOWN_GENRE = "Unknown Genre"
-
         fun genreKey(song: Song): String =
-            song.genre.trim().ifBlank { UNKNOWN_GENRE }
+            song.genre.trim().ifBlank { Song.UNKNOWN_GENRE }
     }
 }

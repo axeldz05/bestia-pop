@@ -292,6 +292,20 @@ fun LibraryScreen(
             else viewModel.playCollection(albumSongs)
         }
     }
+    val playOrShuffleArtist: (String, Boolean) -> Unit = remember(songs) {
+        { artistName, shuffle ->
+            val artistSongs = viewModel.songsForArtist(songs, artistName)
+            if (shuffle) viewModel.shuffleCollection(artistSongs)
+            else viewModel.playCollection(artistSongs)
+        }
+    }
+    val playOrShuffleGenre: (String, Boolean) -> Unit = remember(songs) {
+        { genreName, shuffle ->
+            val genreSongs = viewModel.songsForGenre(songs, genreName)
+            if (shuffle) viewModel.shuffleCollection(genreSongs)
+            else viewModel.playCollection(genreSongs)
+        }
+    }
 
     val songActions = rememberSongQueueActions(viewModel)
     val onPlayNext = songActions.onPlayNext
@@ -536,20 +550,17 @@ fun LibraryScreen(
                     val albumSongs = remember(songs, albumName) {
                         viewModel.songsForAlbum(songs, albumName)
                     }
-                    val albumListItems = remember(albumSongs) {
-                        viewModel.buildLibraryListItems(albumSongs, LibraryViewMode.FLAT)
-                    }
-                    LibrarySongListHost(
-                        items = albumListItems,
+                    NestedLibraryBrowse(
+                        browseSongs = albumSongs,
+                        viewMode = LibraryViewMode.FLAT,
+                        viewModel = viewModel,
                         currentSongId = currentSongId,
                         isSelectionMode = isMultiSelectMode,
                         selectedSongIds = selectedSongIds,
                         collapsedAlbumNames = collapsedAlbumNames,
                         sortOption = sortOption,
                         actions = songListActions,
-                        onSongClick = { song, index ->
-                            if (isMultiSelectMode) toggleSelectSong(song) else viewModel.playCollection(albumSongs, index)
-                        }
+                        onToggleSelect = toggleSelectSong
                     )
                 }
 
@@ -557,27 +568,17 @@ fun LibraryScreen(
                     val artistSongs = remember(songs, selectedArtistName) {
                         viewModel.songsForArtist(songs, selectedArtistName!!)
                     }
-                    val artistListItems = remember(artistSongs) {
-                        viewModel.buildLibraryListItems(artistSongs, LibraryViewMode.ALBUM_GROUPS)
-                    }
-                    val artistSongsInViewOrder = remember(artistListItems) {
-                        viewModel.songsFromLibraryListItems(artistListItems)
-                    }
-                    LibrarySongListHost(
-                        items = artistListItems,
+                    NestedLibraryBrowse(
+                        browseSongs = artistSongs,
+                        viewMode = LibraryViewMode.ALBUM_GROUPS,
+                        viewModel = viewModel,
                         currentSongId = currentSongId,
                         isSelectionMode = isMultiSelectMode,
                         selectedSongIds = selectedSongIds,
                         collapsedAlbumNames = collapsedAlbumNames,
                         sortOption = sortOption,
                         actions = songListActions,
-                        onSongClick = { song, index ->
-                            if (isMultiSelectMode) {
-                                toggleSelectSong(song)
-                            } else {
-                                viewModel.playCollection(artistSongsInViewOrder, index)
-                            }
-                        }
+                        onToggleSelect = toggleSelectSong
                     )
                 }
 
@@ -586,27 +587,17 @@ fun LibraryScreen(
                     val genreSongs = remember(songs, genreName) {
                         viewModel.songsForGenre(songs, genreName)
                     }
-                    val genreListItems = remember(genreSongs) {
-                        viewModel.buildLibraryListItems(genreSongs, LibraryViewMode.ALBUM_GROUPS)
-                    }
-                    val genreSongsInViewOrder = remember(genreListItems) {
-                        viewModel.songsFromLibraryListItems(genreListItems)
-                    }
-                    LibrarySongListHost(
-                        items = genreListItems,
+                    NestedLibraryBrowse(
+                        browseSongs = genreSongs,
+                        viewMode = LibraryViewMode.ALBUM_GROUPS,
+                        viewModel = viewModel,
                         currentSongId = currentSongId,
                         isSelectionMode = isMultiSelectMode,
                         selectedSongIds = selectedSongIds,
                         collapsedAlbumNames = collapsedAlbumNames,
                         sortOption = sortOption,
                         actions = songListActions,
-                        onSongClick = { song, index ->
-                            if (isMultiSelectMode) {
-                                toggleSelectSong(song)
-                            } else {
-                                viewModel.playCollection(genreSongsInViewOrder, index)
-                            }
-                        }
+                        onToggleSelect = toggleSelectSong
                     )
                 }
 
@@ -677,12 +668,8 @@ fun LibraryScreen(
                         artists = artists,
                         sortOption = sortOption,
                         onArtistClick = { viewModel.openLibraryArtist(it.name) },
-                        onPlayArtist = { artist ->
-                            viewModel.playCollection(viewModel.songsForArtist(songs, artist.name))
-                        },
-                        onShuffleArtist = { artist ->
-                            viewModel.shuffleCollection(viewModel.songsForArtist(songs, artist.name))
-                        }
+                        onPlayArtist = { playOrShuffleArtist(it.name, false) },
+                        onShuffleArtist = { playOrShuffleArtist(it.name, true) }
                     )
                 }
 
@@ -691,12 +678,8 @@ fun LibraryScreen(
                         genres = genres,
                         sortOption = sortOption,
                         onGenreClick = { viewModel.openLibraryGenre(it.name) },
-                        onPlayGenre = { genre ->
-                            viewModel.playCollection(viewModel.songsForGenre(songs, genre.name))
-                        },
-                        onShuffleGenre = { genre ->
-                            viewModel.shuffleCollection(viewModel.songsForGenre(songs, genre.name))
-                        }
+                        onPlayGenre = { playOrShuffleGenre(it.name, false) },
+                        onShuffleGenre = { playOrShuffleGenre(it.name, true) }
                     )
                 }
             }
@@ -768,4 +751,43 @@ fun LibraryScreen(
             onEnqueue = { viewModel.enqueueSimilarPreview() }
         )
     }
+}
+
+/** Nested album/artist/genre detail: build list items + play in view order. */
+@Composable
+private fun NestedLibraryBrowse(
+    browseSongs: List<Song>,
+    viewMode: LibraryViewMode,
+    viewModel: MusicPlayerViewModel,
+    currentSongId: Long?,
+    isSelectionMode: Boolean,
+    selectedSongIds: Set<Long>,
+    collapsedAlbumNames: Set<String>,
+    sortOption: SortOption,
+    actions: LibrarySongListActions,
+    onToggleSelect: (Song) -> Unit
+) {
+    val listItems = remember(browseSongs, viewMode) {
+        viewModel.buildLibraryListItems(browseSongs, viewMode)
+    }
+    val playQueue = remember(listItems, viewMode, browseSongs) {
+        if (viewMode == LibraryViewMode.ALBUM_GROUPS) {
+            viewModel.songsFromLibraryListItems(listItems)
+        } else {
+            browseSongs
+        }
+    }
+    LibrarySongListHost(
+        items = listItems,
+        currentSongId = currentSongId,
+        isSelectionMode = isSelectionMode,
+        selectedSongIds = selectedSongIds,
+        collapsedAlbumNames = collapsedAlbumNames,
+        sortOption = sortOption,
+        actions = actions,
+        onSongClick = { song, index ->
+            if (isSelectionMode) onToggleSelect(song)
+            else viewModel.playCollection(playQueue, index)
+        }
+    )
 }

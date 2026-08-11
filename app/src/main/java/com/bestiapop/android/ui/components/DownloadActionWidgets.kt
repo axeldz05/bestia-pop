@@ -189,7 +189,7 @@ fun downloadStateStatusLabel(
     errorMessage: String? = null,
     successLabel: String = DownloadMessages.downloadedShort,
     queuedLabel: String = DownloadMessages.queued,
-    downloadingFallback: String = "Descargando…",
+    downloadingFallback: String = DownloadMessages.downloadingEllipsis,
     idleLabel: String? = null
 ): String? = when (state) {
     CandidateDownloadState.QUEUED -> queuedLabel

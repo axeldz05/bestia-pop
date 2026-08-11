@@ -5,7 +5,7 @@ import android.media.MediaMetadataRetriever
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.data.model.TrackIdentity
 import com.bestiapop.android.data.model.TrackMeta
-import com.bestiapop.android.domain.util.isTrackNumberLabel
+import com.bestiapop.android.domain.util.IdentifyRanking
 import com.bestiapop.android.domain.util.mergeIdentityHints
 import com.bestiapop.android.domain.util.parseFilenameMetadataHints
 import com.bestiapop.android.domain.util.resolveWeakIdentityHints
@@ -52,14 +52,6 @@ data class AudioFileMetadata(
     )
 
     companion object {
-        private fun isUnknownArtist(artist: String): Boolean =
-            artist.isBlank() ||
-                artist.equals("Unknown Artist", ignoreCase = true) ||
-                isTrackNumberLabel(artist)
-
-        private fun isUnknownAlbum(album: String): Boolean =
-            album.isBlank() || album.equals("Unknown Album", ignoreCase = true)
-
         /** L2: flat file-tag construction. */
         operator fun invoke(
             title: String,
@@ -132,15 +124,23 @@ data class AudioFileMetadata(
         ): AudioFileMetadata {
             val fromTags = resolveWeakIdentityHints(metadata.artist, metadata.title)
             val fromFile = parseFilenameMetadataHints(fallbackTitle)
-            val hints = mergeIdentityHints(fromTags, fromFile)
-            val artistWeak = isUnknownArtist(metadata.artist)
-            val titleWeak = metadata.title.isBlank() ||
-                metadata.title.equals(fallbackTitle, ignoreCase = true) ||
+            // When tags are placeholder + title is just the raw filename, prefer filename parse.
+            val tagTitleIsFilename = metadata.title.isBlank() ||
+                metadata.title.equals(fallbackTitle, ignoreCase = true)
+            val hints = if (
+                IdentifyRanking.isPlaceholderArtist(metadata.artist) && tagTitleIsFilename
+            ) {
+                mergeIdentityHints(fromFile, fromTags)
+            } else {
+                mergeIdentityHints(fromTags, fromFile)
+            }
+            val artistWeak = IdentifyRanking.isPlaceholderArtist(metadata.artist)
+            val titleWeak = tagTitleIsFilename ||
                 metadata.title.trimStart().let { it.startsWith("-") || it.startsWith("_") } ||
                 looksLikeStoragePath(metadata.title) ||
                 (artistWeak && (metadata.title.contains(" - ") || metadata.title.contains("_-_")))
 
-            if (!artistWeak && !isUnknownAlbum(metadata.album) && !titleWeak) {
+            if (!artistWeak && !IdentifyRanking.isGenericAlbum(metadata.album) && !titleWeak) {
                 val cleaned = stripLeadingTitleJunk(metadata.title)
                 return if (cleaned != metadata.title) {
                     metadata.withIdentity { copy(title = cleaned) }

@@ -132,6 +132,35 @@ class FilenameMetadataHintsTest {
     }
 
     @Test
+    fun applyFilenameHints_treatsYouTubeArtistAsWeak() {
+        val tagged = AudioFileMetadata(
+            title = "Artist - Song",
+            artist = "YouTube Artist",
+            album = "Unknown Album",
+            genre = "Music",
+            durationMs = 1000L,
+            artworkUri = null
+        )
+        val result = AudioFileMetadata.applyFilenameHints(tagged, "Artist_Song")
+        assertEquals("Artist", result.artist)
+        assertEquals("Song", result.title)
+    }
+
+    @Test
+    fun resolveWeak_youtubeArtist_splitsTitle() {
+        val hints = resolveWeakIdentityHints("YouTube Artist", "Radiohead - Creep")
+        assertEquals("Radiohead", hints.artist)
+        assertEquals("Creep", hints.title)
+    }
+
+    @Test
+    fun resolveWeak_enlaceWeb_splitsTitle() {
+        val hints = resolveWeakIdentityHints("Enlace Web", "Daft Punk - Digital Love")
+        assertEquals("Daft Punk", hints.artist)
+        assertEquals("Digital Love", hints.title)
+    }
+
+    @Test
     fun applyFilenameHints_keepsKnownTags() {
         val tagged = AudioFileMetadata(
             title = "Creep",

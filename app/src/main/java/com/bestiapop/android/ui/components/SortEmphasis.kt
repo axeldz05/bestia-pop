@@ -17,7 +17,7 @@ data class SortEmphasizedTexts(
 fun sortEmphasisFor(song: Song, sortOption: SortOption): SortEmphasizedTexts {
     val duration = formatDuration(song.durationMs)
     val genreLabel = song.genre.takeIf {
-        it.isNotBlank() && !it.equals("Unknown Genre", ignoreCase = true)
+        it.isNotBlank() && !it.equals(Song.UNKNOWN_GENRE, ignoreCase = true)
     }
     return when (sortOption) {
         SortOption.TITLE -> SortEmphasizedTexts(

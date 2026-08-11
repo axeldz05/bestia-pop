@@ -122,7 +122,6 @@ fun AddMusicDialog(
     val playbackPositionMs by viewModel.playbackPositionMs.collectAsState()
 
     fun dismissDialog() {
-        viewModel.resetDownloadStatus()
         viewModel.clearSelectedCollection()
         viewModel.clearCatalogPreview()
         onDismiss()
@@ -465,9 +464,10 @@ private fun ActiveDownloadsSummaryBanner(
                         Spacer(modifier = Modifier.width(10.dp))
                         Text(
                             text = if (downloading.size == 1) {
-                                latest.progressMessage ?: "Descargando «${latest.displayLabel}»…"
+                                latest.progressMessage
+                                    ?: DownloadMessages.downloadingQuoted(latest.displayLabel)
                             } else {
-                                "Descargando ${downloading.size} canciones…"
+                                DownloadMessages.downloadingCount(downloading.size)
                             },
                             style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
                             color = MaterialTheme.colorScheme.onPrimaryContainer
@@ -485,9 +485,9 @@ private fun ActiveDownloadsSummaryBanner(
                         Text(
                             text = if (failed.size == 1) {
                                 failed.first().errorMessage
-                                    ?: "Falló «${failed.first().displayLabel}»"
+                                    ?: DownloadMessages.failedQuoted(failed.first().displayLabel)
                             } else {
-                                "${failed.size} descargas fallaron"
+                                DownloadMessages.downloadsFailed(failed.size)
                             },
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onErrorContainer
@@ -1067,7 +1067,7 @@ private fun CandidateTrackCard(
                 state = downloadState,
                 successLabel = DownloadMessages.savedInLibrary,
                 queuedLabel = DownloadMessages.queuedEllipsis,
-                downloadingFallback = "Descargando audio...",
+                downloadingFallback = DownloadMessages.downloadingAudio,
                 errorMessage = "Error"
             ) ?: "Error"
             "${item.artist} • $status"

@@ -3,6 +3,7 @@ package com.bestiapop.android.data.preferences
 import com.bestiapop.android.data.model.ActiveDownload
 import com.bestiapop.android.data.model.ActiveDownloadSource
 import com.bestiapop.android.data.model.CandidateDownloadState
+import com.bestiapop.android.data.model.DownloadMessages
 import com.bestiapop.android.data.model.OnlineCatalogTrack
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -54,7 +55,7 @@ class ActiveDownloadCodecTest {
         )
         assertEquals(1, persisted.size)
         assertEquals(CandidateDownloadState.ERROR, persisted[0].state)
-        assertEquals(INTERRUPTED_DOWNLOAD_MESSAGE, persisted[0].errorMessage)
+        assertEquals(DownloadMessages.interrupted, persisted[0].errorMessage)
         assertEquals(0, persisted[0].progressPercent)
     }
 
@@ -65,7 +66,7 @@ class ActiveDownloadCodecTest {
         )
         assertEquals(1, persisted.size)
         assertEquals(CandidateDownloadState.ERROR, persisted[0].state)
-        assertEquals(INTERRUPTED_DOWNLOAD_MESSAGE, persisted[0].errorMessage)
+        assertEquals(DownloadMessages.interrupted, persisted[0].errorMessage)
     }
 
     @Test

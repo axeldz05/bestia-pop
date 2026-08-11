@@ -610,9 +610,6 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private val _isSearchingCatalog = MutableStateFlow(false)
     val isSearchingCatalog = _isSearchingCatalog.asStateFlow()
 
-    private val _downloadStatus = MutableStateFlow<DownloadStatus>(DownloadStatus.Idle)
-    val downloadStatus = _downloadStatus.asStateFlow()
-
     private val _activeDownloads = MutableStateFlow<List<ActiveDownload>>(emptyList())
     val activeDownloads = _activeDownloads.asStateFlow()
 
@@ -3335,22 +3332,6 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
-    /**
-     * Force reindex Music/BestiaPop + MediaStore (manual / recovery). Does not change the
-     * initial-scan flag unless [markInitialScanCompleted] is true.
-     */
-    fun refreshLibraryFromDisk(
-        showRecoveryToast: Boolean = false,
-        markInitialScanCompleted: Boolean = false
-    ) {
-        viewModelScope.launch {
-            runLibraryDiskImport(showRecoveryToast = showRecoveryToast)
-            if (markInitialScanCompleted) {
-                libraryPreferences.setInitialScanCompleted(true)
-            }
-        }
-    }
-
     private suspend fun runLibraryDiskImport(showRecoveryToast: Boolean) {
         val recovered = withContext(Dispatchers.IO) {
             val n = repository.resyncAppManagedMusic(importScanProgress())
@@ -4702,7 +4683,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         e.message?.contains("YouTube") == true ->
             e.message ?: "No se pudo obtener audio de YouTube."
         else ->
-            "Falló la descarga: ${e.localizedMessage ?: "Error de red."}"
+            DownloadMessages.downloadFailed(e.localizedMessage ?: "Error de red.")
     }
 
     private suspend fun downloadTrack(
@@ -5153,7 +5134,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     fun downloadRemoteItem(remote: PlayableItem.Remote) {
         val key = TrackMatchKeys.downloadIdFor(remote.artist, remote.title)
         if (key.isEmpty()) {
-            toast("No se puede descargar: faltan artista o título")
+            toast(DownloadMessages.missingArtistOrTitle)
             return
         }
         val existing = _activeDownloads.value.find { it.id == key }
@@ -5360,10 +5341,6 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 track = track
             )
         }
-    }
-
-    fun resetDownloadStatus() {
-        _downloadStatus.value = DownloadStatus.Idle
     }
 
     override fun onCleared() {

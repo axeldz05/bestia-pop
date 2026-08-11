@@ -11,6 +11,7 @@ import androidx.core.app.NotificationManagerCompat
 import com.bestiapop.android.MainActivity
 import com.bestiapop.android.data.model.ActiveDownload
 import com.bestiapop.android.data.model.CandidateDownloadState
+import com.bestiapop.android.data.model.DownloadMessages
 
 /**
  * Progress notification while downloads run in-process (no WorkManager / FGS).
@@ -41,9 +42,9 @@ class DownloadNotificationHelper(private val context: Context) {
         val latest = downloading.first()
         val count = downloading.size
         val title = if (count == 1) {
-            "Descargando «${latest.displayLabel}»"
+            DownloadMessages.downloadingQuoted(latest.displayLabel)
         } else {
-            "Descargando $count canciones"
+            DownloadMessages.downloadingCount(count)
         }
         val text = latest.progressMessage?.takeIf { it.isNotBlank() }
             ?: "${latest.progressPercent}%"

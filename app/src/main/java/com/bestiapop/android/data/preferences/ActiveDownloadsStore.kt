@@ -9,6 +9,7 @@ import androidx.datastore.preferences.preferencesDataStore
 import com.bestiapop.android.data.model.ActiveDownload
 import com.bestiapop.android.data.model.ActiveDownloadSource
 import com.bestiapop.android.data.model.CandidateDownloadState
+import com.bestiapop.android.data.model.DownloadMessages
 import com.bestiapop.android.data.model.withIdentity
 import com.bestiapop.android.data.util.CatalogTrackJson
 import com.bestiapop.android.data.util.optNullableString
@@ -21,8 +22,6 @@ import org.json.JSONObject
 private val Context.activeDownloadsDataStore: DataStore<Preferences> by preferencesDataStore(
     name = "active_downloads"
 )
-
-const val INTERRUPTED_DOWNLOAD_MESSAGE = "Interrumpida — tocá Reintentar"
 
 /**
  * Pure JSON codec for [ActiveDownload] snapshots. Used by [ActiveDownloadsStore] and unit tests.
@@ -53,7 +52,7 @@ object ActiveDownloadCodec {
 
     /**
      * Persist IDLE/ERROR/SUCCESS/QUEUED; any DOWNLOADING or QUEUED becomes ERROR with
-     * [INTERRUPTED_DOWNLOAD_MESSAGE] (QUEUED never started; DOWNLOADING was interrupted).
+     * [DownloadMessages.interrupted] (QUEUED never started; DOWNLOADING was interrupted).
      */
     fun forPersistence(list: List<ActiveDownload>): List<ActiveDownload> =
         list.map { download ->
@@ -63,7 +62,7 @@ object ActiveDownloadCodec {
                     state = CandidateDownloadState.ERROR,
                     progressMessage = null,
                     progressPercent = 0,
-                    errorMessage = INTERRUPTED_DOWNLOAD_MESSAGE
+                    errorMessage = DownloadMessages.interrupted
                 )
                 CandidateDownloadState.SUCCESS -> download.copy(
                     progressMessage = null,

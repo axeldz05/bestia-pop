@@ -75,11 +75,7 @@ fun resolveWeakIdentityHints(artist: String, title: String): FilenameMetadataHin
     } else {
         null
     }
-    val artistWeak = a.isEmpty() ||
-        a.equals("Unknown Artist", ignoreCase = true) ||
-        a == "YouTube Artist" ||
-        a == "Enlace Web" ||
-        isTrackNumberLabel(a)
+    val artistWeak = IdentifyRanking.isPlaceholderArtist(a)
 
     if (artistWeak) {
         splitArtistTitleDash(cleanedTitle)?.let { (art, tit) ->

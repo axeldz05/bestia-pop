@@ -235,22 +235,10 @@ data class CatalogTrackCandidate(
     val identity: TrackIdentity,
     val candidates: List<OnlineCatalogTrack>,
     val currentCandidateIndex: Int = 0,
-    val isSelected: Boolean = true,
-    /** Legacy; UI derives download chrome from ActiveDownload via findByTrack. */
-    val downloadState: CandidateDownloadState = CandidateDownloadState.IDLE,
-    val downloadProgressPercent: Int = 0,
-    val errorMessage: String? = null
+    val isSelected: Boolean = true
 ) : TrackMeta by identity {
     val currentTrack: OnlineCatalogTrack?
         get() = candidates.getOrNull(currentCandidateIndex)
-}
-
-
-sealed class DownloadStatus {
-    object Idle : DownloadStatus()
-    data class Downloading(val message: String) : DownloadStatus()
-    data class Success(val song: Song, val message: String) : DownloadStatus()
-    data class Error(val message: String) : DownloadStatus()
 }
 
 enum class ActiveDownloadSource {

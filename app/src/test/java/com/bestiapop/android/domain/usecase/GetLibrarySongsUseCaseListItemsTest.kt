@@ -133,7 +133,7 @@ class GetLibrarySongsUseCaseListItemsTest {
             Song(id = 4, uriString = "u4", title = "D", genre = "Rock", dateAdded = 30)
         )
         val genres = useCase.extractGenres(withMeta)
-        assertEquals(listOf("Pop", "Rock", GetLibrarySongsUseCase.UNKNOWN_GENRE), genres.map { it.name })
+        assertEquals(listOf("Pop", "Rock", Song.UNKNOWN_GENRE), genres.map { it.name })
         assertEquals(2, genres.first { it.name == "Rock" }.songCount)
         assertEquals(40L, genres.first { it.name == "Pop" }.dateAdded)
     }
@@ -194,7 +194,7 @@ class GetLibrarySongsUseCaseListItemsTest {
             sortDirection = SortDirection.DESC
         )
         assertEquals(
-            listOf("Pop", "Rock", GetLibrarySongsUseCase.UNKNOWN_GENRE),
+            listOf("Pop", "Rock", Song.UNKNOWN_GENRE),
             genres.map { it.name }
         )
     }

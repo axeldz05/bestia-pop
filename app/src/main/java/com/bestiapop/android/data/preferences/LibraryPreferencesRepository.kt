@@ -24,9 +24,14 @@ private val Context.libraryDataStore: DataStore<Preferences> by preferencesDataS
 class LibraryPreferencesRepository(private val context: Context) {
 
     val displaySettingsFlow: Flow<LibraryDisplaySettings> = context.libraryDataStore.data.map { prefs ->
+        val sortOptionName = LibraryUiPreferencesCodec.sanitizeSortOptionName(
+            prefs[Keys.SORT_OPTION]
+        )
         LibraryDisplaySettings(
-            sortOptionName = LibraryUiPreferencesCodec.sanitizeSortOptionName(
-                prefs[Keys.SORT_OPTION]
+            sortOptionName = sortOptionName,
+            sortDirectionName = LibraryUiPreferencesCodec.sanitizeSortDirectionName(
+                prefs[Keys.SORT_DIRECTION],
+                sortOptionName
             ),
             viewModeName = LibraryUiPreferencesCodec.sanitizeViewModeName(
                 prefs[Keys.VIEW_MODE]
@@ -58,9 +63,18 @@ class LibraryPreferencesRepository(private val context: Context) {
     }
 
     suspend fun setSortOptionName(name: String) {
+        val clean = LibraryUiPreferencesCodec.sanitizeSortOptionName(name)
+        context.libraryDataStore.edit { prefs ->
+            prefs[Keys.SORT_OPTION] = clean
+            prefs[Keys.SORT_DIRECTION] =
+                LibraryUiPreferencesCodec.defaultSortDirectionName(clean)
+        }
+    }
+
+    suspend fun setSortDirectionName(name: String, sortOptionName: String) {
         context.libraryDataStore.put(
-            Keys.SORT_OPTION,
-            LibraryUiPreferencesCodec.sanitizeSortOptionName(name)
+            Keys.SORT_DIRECTION,
+            LibraryUiPreferencesCodec.sanitizeSortDirectionName(name, sortOptionName)
         )
     }
 
@@ -105,6 +119,7 @@ class LibraryPreferencesRepository(private val context: Context) {
     private object Keys {
         val INITIAL_SCAN_COMPLETED = booleanPreferencesKey("initial_library_scan_completed")
         val SORT_OPTION = stringPreferencesKey("library_sort_option")
+        val SORT_DIRECTION = stringPreferencesKey("library_sort_direction")
         val VIEW_MODE = stringPreferencesKey("library_view_mode")
         val NAV_INDEX = intPreferencesKey("ui_nav_index")
         val LIBRARY_TAB = intPreferencesKey("library_tab")

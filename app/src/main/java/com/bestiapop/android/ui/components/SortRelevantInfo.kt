@@ -6,8 +6,8 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * Extra subtitle fragment for the active sort when that field is not already shown
- * in the row (title / artist / album).
+ * Extra subtitle fragment for album/artist aggregate rows when the sort field is not already shown.
+ * Song rows use [sortEmphasisFor] instead.
  */
 @Suppress("UNUSED_PARAMETER")
 fun formatSortRelevantInfo(
@@ -26,6 +26,6 @@ fun formatSortRelevantInfo(
 }
 
 fun formatDateAdded(epochMs: Long): String {
-    val formatter = SimpleDateFormat("dd MMM yyyy", Locale.getDefault())
+    val formatter = SimpleDateFormat("dd MMM", Locale.getDefault())
     return formatter.format(Date(epochMs))
 }

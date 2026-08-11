@@ -48,21 +48,23 @@ Modelo clave: `TrackIdentity` / `TrackMeta`, `OnlineCatalogTrack` (`identity` + 
 
 ## 3. Biblioteca: filtro, orden y vistas
 
-**Invariante:** `songsState` filtra por título/artista/álbum/género y ordena con `SortOption`. Orden, vista, chip de browse (`LibraryBrowseFilter`) y pila artista→álbum / género→álbum **persisten** entre sesiones (`LibraryPreferencesRepository`). Con `ALBUM_GROUPS`, canciones **dentro de cada álbum** van por `trackNumber` (0 al final + título); play/shuffle/tap usan ese orden visual (`songsFromListItems`). Detalle de álbum siempre por pista. Un chip a la vez proyecta el pool (estilo YouTube Music); search no cambia el chip.
+**Invariante:** `songsState` filtra por título/artista/álbum/género y ordena con `SortOption` + `SortDirection` (ASC/DESC). Orden, dirección, vista, chip de browse (`LibraryBrowseFilter`) y pila artista→álbum / género→álbum **persisten** entre sesiones (`LibraryPreferencesRepository`). Al cambiar `SortOption`, la dirección vuelve al default (DATE_ADDED → DESC; resto → ASC). Con `ALBUM_GROUPS`, canciones **dentro de cada álbum** van por `trackNumber` (0 al final + título); play/shuffle/tap usan ese orden visual (`songsFromListItems`). Detalle de álbum siempre por pista. Un chip a la vez proyecta el pool (estilo YouTube Music); search no cambia el chip.
 
 | Capacidad | API |
 |-----------|-----|
 | Query | `MusicPlayerViewModel.searchQuery` (no se persiste) |
-| Sort | `SortOption`: TITLE, ARTIST, ALBUM, GENRE, DATE_ADDED → `setSortOption` (DataStore); menú marca la activa con check; oculto en chip `RECENT` |
-| Filtrado/orden | `GetLibrarySongsUseCase.execute` |
+| Sort | `SortOption`: TITLE, ARTIST, ALBUM, GENRE, DATE_ADDED → `setSortOption` (DataStore; resetea dirección); menú marca la activa con check; oculto en chip `RECENT` |
+| Dirección | `SortDirection` ASC/DESC → `setSortDirection` / `toggleSortDirection`; toggle ↑↓ junto al menú sort (oculto en `RECENT`) |
+| Énfasis fila | `sortEmphasisFor(song, sortOption)` → title/subtitle/trailing; sort key trailing con color primary (`SongListItem`) |
+| Filtrado/orden | `GetLibrarySongsUseCase.execute(songs, query, sortOption, sortDirection)` |
 | Vista plana vs grupos álbum | `LibraryViewMode.FLAT` / `ALBUM_GROUPS` → `setLibraryViewMode` / `toggleLibraryViewMode`; solo UI cuando chip = `SONGS`; `buildLibraryListItems` / `buildListItems`; within-album `compareSongsWithinAlbum` / `sortSongsWithinAlbum` / `songsFromListItems` |
 | Browse chip + pila | `libraryBrowseFilter` / `setLibraryBrowseFilter` (`LibraryBrowseFilter`: SONGS, ALBUMS, ARTISTS, GENRES, RECENT); `openLibraryAlbum(fromNestedParent)`, `openLibraryArtist`, `openLibraryGenre`, `popLibraryNested` (álbum encima de artista\|género) |
 | Colapsar álbum / todos | `collapsedAlbumNames` + toggle por header (`onToggleCollapseAlbum`); expandir/colapsar todo en `LibraryScreen` (vista grupos; no persistido) |
 | Derivados | `extractAlbums`, `extractArtists`, `extractGenres` → `albumsState`, `artistsState`, `genresState`; play-all `songsForBrowseProjection` |
-| RECENT | Fase A: canciones por `dateAdded` DESC; chip label **Añadidas** (no last-played aún) |
+| RECENT | Fase A: canciones por `dateAdded` DESC; chip label **Añadidas** (no last-played aún); sort menu y toggle dirección ocultos |
 
 UI: `LibraryScreen`, `LibraryFilterChipRow`, `LibrarySongList` (`onOpenAlbum`), `LibraryAlbumBrowseList` (`TauonAlbumHeader`, sin grilla grande), `LibraryArtistList`, `LibraryGenreList`.
-Estado: `ui/state/LibraryUiState.kt`, `LibraryBrowseFilter.kt`, `LibraryListItem.kt`. Prefs: `LibraryDisplaySettings` + `UiNavSnapshot.browseFilterName` / `LibraryUiPreferencesCodec` (legacy `library_tab` 0/1/2 → SONGS/ALBUMS/ARTISTS).
+Estado: `ui/state/LibraryUiState.kt`, `LibraryBrowseFilter.kt`, `LibraryListItem.kt`. Prefs: `LibraryDisplaySettings` (`sortOptionName` / `sortDirectionName`) + `UiNavSnapshot.browseFilterName` / `LibraryUiPreferencesCodec` (legacy `library_tab` 0/1/2 → SONGS/ALBUMS/ARTISTS).
 
 ## 4. Portadas y metadata: álbum ≠ playlist ≠ canción
 
@@ -83,6 +85,7 @@ Herencia visual en lista: `GetLibrarySongsUseCase.execute` unifica artwork falta
 CRUD + membresía vía `IMusicRepository`:
 `createPlaylist`, `updatePlaylist`, `deletePlaylist`, `addSongToPlaylist`, `removeSongFromPlaylist`.
 Import LB: matched + `PlaylistPendingTrack` (`identity` + mbid/playlist extras; `getPlaylistPendingTracksFlow` / `downloadPlaylistPendingTracks`). Entity Room plana: columna `releaseName` ↔ `identity.album`.
+Similares multi-select: `BuildSimilarPlaylistPreviewUseCase.createPlaylistFromPlayables` (locales + pending remotos, mismo patrón LB; no CDN en Room).
 Flows: `playlistsFlow`, `getPlaylistSongsFlow`, `getPlaylistDetailsFlow`.
 UI: `PlaylistsScreen`. Detalle abierto = `PlaylistDetailNav` persistido (`openLocalPlaylist` / `closePlaylistDetail`); id inválido al restore → lista general.
 
@@ -292,18 +295,20 @@ Origen Discover: se setea en `playPlayableCollection(..., origin)` (wrappers CF/
 - **KNOWN:** solo biblioteca (`LocalMetadataRadio` + boost co-playlist). **NEW:** solo `PlayableItem.Remote` vía LB → CF → Deezer (+ iTunes fill); matches de biblioteca se omiten; reintenta con backoff hasta ~45s (`suggestRadioWithRetry`); toast “Radio online no disponible” solo si tras timeout no hay Remotes. **BOTH:** intercala Remote, Local… (`RadioEngine.interleaveEquitable`); sin red sigue con conocidos (sin toast).
 - Fill remoto: `SimilarTracksProvider` (Deezer); LB/CF siguen cableados en `RadioEngine` con credenciales.
 - Refill con el mismo modo; **NEW** reintenta online ~20s; **no** persistir URLs CDN.
+- **Multi-select → playlist:** `previewSimilarFromSelection` usa el mismo `RadioEngine` (`suggestFromSeeds` round-robin + dedupe); **no** llama `startRadio` / `replaceUpcomingWithRadio`. Preview editable → crear playlist / play / encolar (`SimilarPlaylistPreviewDialog`).
 
 | Capacidad | Entry point |
 |-----------|-------------|
 | Modos | `RadioMode.KNOWN` / `NEW` / `BOTH`; `radioMode` / `radioStatusLabel` |
-| Motor | `RadioEngine.suggest` → `RadioSuggestResult` (`usedOnlineDiscovery`); `interleaveEquitable` |
+| Motor | `RadioEngine.suggest` / `suggestFromSeeds` → `RadioSuggestResult`; `interleaveEquitable` / `roundRobinMerge` |
+| Preview multi-seed | `BuildSimilarPlaylistPreviewUseCase` + VM `previewSimilarFromSelection` / `confirmSimilarPreviewAsPlaylist` / `playSimilarPreview` / `enqueueSimilarPreview`; estado `similarPlaylistPreview` |
 | Contrato fill | `SimilarTracksProvider` |
-| Local | `LocalMetadataRadio.suggest` (+ `coPlaylistSongIds` vía `IMusicRepository.getCoPlaylistSongIds`) |
+| Local | `LocalMetadataRadio.suggest` (+ `coPlaylistSongIds` vía `IMusicRepository.getCoPlaylistSongIds`; unión multi-seed en use case) |
 | LB | `ListenBrainzRadio.suggest` + LB client metadata/lb-radio |
 | CF fill | `CfRecommendationsRadio.suggest` (`artist_type=similar`, cache TTL) |
 | Deezer fill | `DeezerSimilarRadio.suggest` + `MetadataFetcher.resolveDeezerArtistId` / `fetchDeezerArtistRadio` / `fetchDeezerRelatedArtistIds` / `fetchDeezerArtistTop` / `fetchItunesArtistSongs` |
-| Sesión | `startRadio`, `stopRadio`, `setRadioPreferredMode`, `suggestRadioWithRetry`, `replaceUpcomingWithRadio`, refill/auto |
-| UI | Now Playing (tap/long-press + ⋮ “Iniciar radio”); mini bar `statusLabel` (radio / resolving); menú canción biblioteca “Iniciar radio” |
+| Sesión cola | `startRadio`, `stopRadio`, `setRadioPreferredMode`, `suggestRadioWithRetry`, `replaceUpcomingWithRadio`, refill/auto |
+| UI | Now Playing (tap/long-press + ⋮ “Iniciar radio”); mini bar `statusLabel` (radio / resolving); menú canción biblioteca “Iniciar radio”; multi-select `MultiSelectActionBar` “Similares” + `SimilarPlaylistPreviewDialog` |
 
 ## 12. System back (jerarquía UI)
 

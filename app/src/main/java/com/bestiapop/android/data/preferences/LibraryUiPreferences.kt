@@ -1,6 +1,7 @@
 package com.bestiapop.android.data.preferences
 
 const val DEFAULT_SORT_OPTION_NAME = "TITLE"
+const val DEFAULT_SORT_DIRECTION_NAME = "ASC"
 const val DEFAULT_VIEW_MODE_NAME = "ALBUM_GROUPS"
 const val DEFAULT_BROWSE_FILTER_NAME = "SONGS"
 
@@ -21,6 +22,7 @@ const val PLAYLIST_DETAIL_LB = "lb"
 const val PLAYLIST_DETAIL_CF = "cf"
 
 private val VALID_SORT_OPTION_NAMES = setOf("TITLE", "ARTIST", "ALBUM", "GENRE", "DATE_ADDED")
+private val VALID_SORT_DIRECTION_NAMES = setOf("ASC", "DESC")
 private val VALID_VIEW_MODE_NAMES = setOf("FLAT", "ALBUM_GROUPS")
 private val VALID_BROWSE_FILTER_NAMES = setOf("SONGS", "ALBUMS", "ARTISTS", "GENRES", "RECENT")
 private val VALID_PLAYLIST_DETAIL_KINDS = setOf(
@@ -32,6 +34,7 @@ private val VALID_PLAYLIST_DETAIL_KINDS = setOf(
 
 data class LibraryDisplaySettings(
     val sortOptionName: String = DEFAULT_SORT_OPTION_NAME,
+    val sortDirectionName: String = DEFAULT_SORT_DIRECTION_NAME,
     val viewModeName: String = DEFAULT_VIEW_MODE_NAME
 )
 
@@ -55,6 +58,14 @@ data class PrunedLibraryStack(
 object LibraryUiPreferencesCodec {
     fun sanitizeSortOptionName(name: String?): String =
         name?.takeIf { it in VALID_SORT_OPTION_NAMES } ?: DEFAULT_SORT_OPTION_NAME
+
+    /** DATE_ADDED / RECENT-style sorts default DESC; others ASC. */
+    fun defaultSortDirectionName(sortOptionName: String?): String =
+        if (sanitizeSortOptionName(sortOptionName) == "DATE_ADDED") "DESC" else "ASC"
+
+    fun sanitizeSortDirectionName(name: String?, sortOptionName: String? = null): String =
+        name?.takeIf { it in VALID_SORT_DIRECTION_NAMES }
+            ?: defaultSortDirectionName(sortOptionName)
 
     fun sanitizeViewModeName(name: String?): String =
         name?.takeIf { it in VALID_VIEW_MODE_NAMES } ?: DEFAULT_VIEW_MODE_NAME

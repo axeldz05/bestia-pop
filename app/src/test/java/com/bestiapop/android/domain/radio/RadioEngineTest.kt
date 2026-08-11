@@ -531,4 +531,85 @@ class RadioEngineTest {
         val out = RadioEngine.interleaveEquitable(online, offline, limit = 5)
         assertEquals(listOf("R1", "L1", "R2", "L2", "L3"), out.map { it.title })
     }
+
+    @Test
+    fun suggestFromSeedsExcludesSeedsAndDedupesAcrossSeeds() = runBlocking {
+        val engine = RadioEngine(localRadio = LocalMetadataRadio(random = Random(7)))
+        val seedA = song(1, "SeedA", "Artist A")
+        val seedB = song(2, "SeedB", "Artist B")
+        // Shared library hit that both seeds could surface via genre/artist proximity
+        val shared = song(10, "Shared Hit", "Artist A")
+        val onlyA = song(11, "OnlyA", "Artist A")
+        val onlyB = song(12, "OnlyB", "Artist B")
+        val library = listOf(seedA, seedB, shared, onlyA, onlyB)
+
+        val result = engine.suggestFromSeeds(
+            seeds = listOf(seedA.toPlayable(), seedB.toPlayable()),
+            library = library,
+            mode = RadioMode.KNOWN,
+            excludeKeys = emptySet(),
+            limit = 10
+        )
+
+        val titles = result.items.map { it.title }
+        assertFalse(titles.contains("SeedA"))
+        assertFalse(titles.contains("SeedB"))
+        assertEquals(titles.size, titles.distinct().size)
+        assertTrue(titles.contains("Shared Hit") || titles.contains("OnlyA") || titles.contains("OnlyB"))
+    }
+
+    @Test
+    fun suggestFromSeedsCapsAtLimit() = runBlocking {
+        val engine = RadioEngine(localRadio = LocalMetadataRadio(random = Random(8)))
+        val seed = song(1, "Seed", "Artist A")
+        val others = (2L..40L).map { song(it, "Track$it", "Artist A") }
+        val result = engine.suggestFromSeeds(
+            seeds = listOf(seed.toPlayable()),
+            library = listOf(seed) + others,
+            mode = RadioMode.KNOWN,
+            excludeKeys = emptySet(),
+            limit = 5
+        )
+        assertTrue(result.items.size <= 5)
+    }
+
+    @Test
+    fun suggestFromSeedsRoundRobinMergesFairly() {
+        val a = listOf(
+            song(1, "A1", "X").toPlayable(),
+            song(2, "A2", "X").toPlayable()
+        )
+        val b = listOf(
+            song(3, "B1", "Y").toPlayable(),
+            song(4, "B2", "Y").toPlayable()
+        )
+        val out = RadioEngine.roundRobinMerge(listOf(a, b), limit = 4, initialSeen = emptySet())
+        assertEquals(listOf("A1", "B1", "A2", "B2"), out.map { it.title })
+    }
+
+    @Test
+    fun suggestFromSeedsRoundRobinSkipsDuplicates() {
+        val shared = song(9, "Dup", "Z").toPlayable()
+        val a = listOf(shared, song(1, "A1", "X").toPlayable())
+        val b = listOf(shared, song(2, "B1", "Y").toPlayable())
+        val out = RadioEngine.roundRobinMerge(listOf(a, b), limit = 4, initialSeen = emptySet())
+        assertEquals(listOf("Dup", "B1", "A1"), out.map { it.title })
+    }
+
+    @Test
+    fun suggestFromSeedsIgnoresBlankSeeds() = runBlocking {
+        val engine = RadioEngine(localRadio = LocalMetadataRadio(random = Random(9)))
+        val blank = song(1, "", "Artist A").toPlayable()
+        val good = song(2, "Seed", "Artist A")
+        val other = song(3, "Other", "Artist A")
+        val result = engine.suggestFromSeeds(
+            seeds = listOf(blank, good.toPlayable()),
+            library = listOf(good, other),
+            mode = RadioMode.KNOWN,
+            excludeKeys = emptySet(),
+            limit = 5
+        )
+        assertTrue(result.items.any { it.title == "Other" })
+        assertFalse(result.items.any { it.title == "Seed" })
+    }
 }

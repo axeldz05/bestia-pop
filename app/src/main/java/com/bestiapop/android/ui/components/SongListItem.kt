@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
@@ -28,6 +29,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.ui.theme.ListDensity
@@ -41,6 +44,10 @@ fun SongListItem(
     isSelectionMode: Boolean = false,
     isSelected: Boolean = false,
     secondaryInfo: String? = null,
+    title: String? = null,
+    subtitle: String? = null,
+    trailing: String? = null,
+    trailingIsSortKey: Boolean = false,
     onClick: () -> Unit,
     onLongClick: () -> Unit = {},
     onToggleSelect: () -> Unit = {},
@@ -54,10 +61,11 @@ fun SongListItem(
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
     val colors = playingRowColors(highlighted = isCurrentPlaying, selected = isSelected)
-    val subtitle = remember(song.artist, song.album, secondaryInfo) {
+    val displayTitle = title ?: song.title
+    val displaySubtitle = subtitle ?: remember(song.artist, song.album, secondaryInfo) {
         joinMeta(song.artist, song.album, secondaryInfo)
     }
-    val durationText = remember(song.durationMs) { formatDuration(song.durationMs) }
+    val trailingText = trailing ?: remember(song.durationMs) { formatDuration(song.durationMs) }
 
     Row(
         modifier = Modifier
@@ -101,18 +109,27 @@ fun SongListItem(
         Spacer(modifier = Modifier.width(12.dp))
 
         TrackTextColumn(
-            title = song.title,
-            subtitle = subtitle,
+            title = displayTitle,
+            subtitle = displaySubtitle,
             modifier = Modifier.weight(1f),
             titleColor = colors.title,
             titleWeight = colors.titleWeight
         )
 
         Text(
-            text = durationText,
+            text = trailingText,
             style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
-            modifier = Modifier.padding(horizontal = 8.dp)
+            color = if (trailingIsSortKey) {
+                MaterialTheme.colorScheme.primary
+            } else {
+                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+            },
+            textAlign = TextAlign.End,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier
+                .widthIn(min = 56.dp)
+                .padding(horizontal = 8.dp)
         )
 
         if (!isSelectionMode) {

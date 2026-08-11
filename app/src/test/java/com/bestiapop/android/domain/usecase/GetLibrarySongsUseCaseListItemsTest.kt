@@ -1,12 +1,15 @@
 package com.bestiapop.android.domain.usecase
 
 import com.bestiapop.android.data.model.Song
+import com.bestiapop.android.ui.SortDirection
 import com.bestiapop.android.ui.SortOption
 import com.bestiapop.android.ui.components.formatSortRelevantInfo
+import com.bestiapop.android.ui.components.sortEmphasisFor
 import com.bestiapop.android.ui.screens.library.filterCollapsedAlbumSongs
 import com.bestiapop.android.ui.state.LibraryListItem
 import com.bestiapop.android.ui.state.LibraryViewMode
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -209,7 +212,7 @@ class GetLibrarySongsUseCaseListItemsTest {
     }
 
     @Test
-    fun execute_sortsByDateAddedDescending() {
+    fun execute_sortsByDateAddedDescendingByDefault() {
         val list = listOf(
             Song(id = 1, uriString = "u1", title = "Old", dateAdded = 10),
             Song(id = 2, uriString = "u2", title = "New", dateAdded = 30),
@@ -217,6 +220,89 @@ class GetLibrarySongsUseCaseListItemsTest {
         )
         val sorted = useCase.execute(list, "", SortOption.DATE_ADDED)
         assertEquals(listOf(2L, 3L, 1L), sorted.map { it.id })
+    }
+
+    @Test
+    fun execute_respectsSortDirectionAscAndDesc() {
+        val list = listOf(
+            Song(id = 1, uriString = "u1", title = "Charlie", dateAdded = 10),
+            Song(id = 2, uriString = "u2", title = "Alpha", dateAdded = 30),
+            Song(id = 3, uriString = "u3", title = "Bravo", dateAdded = 20)
+        )
+        assertEquals(
+            listOf(2L, 3L, 1L),
+            useCase.execute(list, "", SortOption.TITLE, SortDirection.ASC).map { it.id }
+        )
+        assertEquals(
+            listOf(1L, 3L, 2L),
+            useCase.execute(list, "", SortOption.TITLE, SortDirection.DESC).map { it.id }
+        )
+        assertEquals(
+            listOf(1L, 3L, 2L),
+            useCase.execute(list, "", SortOption.DATE_ADDED, SortDirection.ASC).map { it.id }
+        )
+        assertEquals(
+            listOf(2L, 3L, 1L),
+            useCase.execute(list, "", SortOption.DATE_ADDED, SortDirection.DESC).map { it.id }
+        )
+    }
+
+    @Test
+    fun sortDirection_defaultFor_dateAddedDescOthersAsc() {
+        assertEquals(SortDirection.DESC, SortDirection.defaultFor(SortOption.DATE_ADDED))
+        assertEquals(SortDirection.ASC, SortDirection.defaultFor(SortOption.TITLE))
+        assertEquals(SortDirection.ASC, SortDirection.defaultFor(SortOption.GENRE))
+    }
+
+    @Test
+    fun sortEmphasisFor_mapsDominantFieldsAndSortKeyTrailing() {
+        val song = Song(
+            id = 1,
+            uriString = "u1",
+            title = "Song",
+            artist = "Artist",
+            album = "Album",
+            genre = "Rock",
+            durationMs = 125_000,
+            trackNumber = 4,
+            dateAdded = 1_700_000_000_000L
+        )
+
+        val byTitle = sortEmphasisFor(song, SortOption.TITLE)
+        assertEquals("Song", byTitle.title)
+        assertEquals("Artist • Album", byTitle.subtitle)
+        assertEquals("2:05", byTitle.trailing)
+        assertFalse(byTitle.trailingIsSortKey)
+
+        val byArtist = sortEmphasisFor(song, SortOption.ARTIST)
+        assertEquals("Artist", byArtist.title)
+        assertEquals("Song • Album", byArtist.subtitle)
+        assertFalse(byArtist.trailingIsSortKey)
+
+        val byAlbum = sortEmphasisFor(song, SortOption.ALBUM)
+        assertEquals("Album", byAlbum.title)
+        assertEquals("Song • Artist", byAlbum.subtitle)
+        assertEquals("4", byAlbum.trailing)
+        assertFalse(byAlbum.trailingIsSortKey)
+
+        val byGenre = sortEmphasisFor(song, SortOption.GENRE)
+        assertEquals("Song", byGenre.title)
+        assertEquals("Artist • Album", byGenre.subtitle)
+        assertEquals("Rock", byGenre.trailing)
+        assertTrue(byGenre.trailingIsSortKey)
+
+        val byDate = sortEmphasisFor(song, SortOption.DATE_ADDED)
+        assertEquals("Song", byDate.title)
+        assertEquals("Artist • Album", byDate.subtitle)
+        assertNotNull(byDate.trailing)
+        assertTrue(byDate.trailingIsSortKey)
+
+        val unknownGenre = sortEmphasisFor(
+            song.copy(genre = "Unknown Genre"),
+            SortOption.GENRE
+        )
+        assertEquals("2:05", unknownGenre.trailing)
+        assertFalse(unknownGenre.trailingIsSortKey)
     }
 
     @Test

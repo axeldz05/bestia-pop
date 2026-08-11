@@ -17,6 +17,16 @@ class LibraryUiPreferencesCodecTest {
     }
 
     @Test
+    fun sanitizeSortDirection_defaultsBySortOption() {
+        assertEquals("ASC", LibraryUiPreferencesCodec.defaultSortDirectionName("TITLE"))
+        assertEquals("DESC", LibraryUiPreferencesCodec.defaultSortDirectionName("DATE_ADDED"))
+        assertEquals("DESC", LibraryUiPreferencesCodec.sanitizeSortDirectionName(null, "DATE_ADDED"))
+        assertEquals("ASC", LibraryUiPreferencesCodec.sanitizeSortDirectionName(null, "ARTIST"))
+        assertEquals("DESC", LibraryUiPreferencesCodec.sanitizeSortDirectionName("DESC", "TITLE"))
+        assertEquals("ASC", LibraryUiPreferencesCodec.sanitizeSortDirectionName("NOPE", "GENRE"))
+    }
+
+    @Test
     fun sanitizeBrowseFilter_prefersName_andMapsLegacyTab() {
         assertEquals("GENRES", LibraryUiPreferencesCodec.sanitizeBrowseFilterName("GENRES"))
         assertEquals("RECENT", LibraryUiPreferencesCodec.sanitizeBrowseFilterName("RECENT"))

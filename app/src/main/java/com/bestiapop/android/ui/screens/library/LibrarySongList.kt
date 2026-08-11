@@ -45,7 +45,7 @@ import com.bestiapop.android.ui.components.ArtworkThumbnail
 import com.bestiapop.android.ui.components.EmptyListHint
 import com.bestiapop.android.ui.components.PlayShuffleIconPair
 import com.bestiapop.android.ui.components.SongListItem
-import com.bestiapop.android.ui.components.formatSortRelevantInfo
+import com.bestiapop.android.ui.components.sortEmphasisFor
 import com.bestiapop.android.ui.state.LibraryListItem
 import com.bestiapop.android.ui.theme.ListDensity
 
@@ -272,15 +272,8 @@ private fun LibrarySongRow(
     val onDelete = remember(song.id) {
         { onDeleteSongState.value(songState.value) }
     }
-    val secondaryInfo = remember(song.genre, song.dateAdded, sortOption) {
-        formatSortRelevantInfo(
-            sortOption = sortOption,
-            genre = song.genre,
-            dateAdded = song.dateAdded,
-            alreadyShowsArtist = true,
-            alreadyShowsAlbum = true,
-            alreadyShowsTitle = true
-        )
+    val emphasis = remember(song, sortOption) {
+        sortEmphasisFor(song, sortOption)
     }
 
     SongListItem(
@@ -288,7 +281,10 @@ private fun LibrarySongRow(
         isCurrentPlaying = currentSongId == song.id,
         isSelectionMode = isSelectionMode,
         isSelected = isSelected,
-        secondaryInfo = secondaryInfo,
+        title = emphasis.title,
+        subtitle = emphasis.subtitle,
+        trailing = emphasis.trailing,
+        trailingIsSortKey = emphasis.trailingIsSortKey,
         onClick = onClick,
         onLongClick = onLongClick,
         onToggleSelect = onToggleSelect,

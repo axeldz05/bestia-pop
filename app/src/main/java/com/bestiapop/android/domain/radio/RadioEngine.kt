@@ -83,6 +83,79 @@ class RadioEngine(
         }
     }
 
+    /**
+     * Multi-seed radio batch for playlist preview: call [suggest] per seed, then
+     * round-robin merge with global [TrackMatchKeys] dedupe (seeds always excluded).
+     */
+    suspend fun suggestFromSeeds(
+        seeds: List<PlayableItem>,
+        library: List<Song>,
+        mode: RadioMode,
+        excludeKeys: Set<String>,
+        limit: Int = PREVIEW_DEFAULT_LIMIT,
+        lbToken: String? = null,
+        lbAvailable: Boolean = false,
+        lbUsername: String? = null,
+        networkAvailable: Boolean = false,
+        coPlaylistSongIds: Set<Long> = emptySet(),
+        maxSeeds: Int = MAX_SEEDS
+    ): RadioSuggestResult {
+        if (limit <= 0) {
+            return RadioSuggestResult(
+                items = emptyList(),
+                usedOnlineDiscovery = false,
+                onlineDiscoveryFailed = false
+            )
+        }
+        val validSeeds = seeds
+            .asSequence()
+            .filter { it.artist.isNotBlank() && it.title.isNotBlank() }
+            .distinctBy {
+                TrackMatchKeys.matchKey(it.artist, it.title).ifEmpty { it.mediaId }
+            }
+            .take(maxSeeds)
+            .toList()
+        if (validSeeds.isEmpty()) {
+            return RadioSuggestResult(
+                items = emptyList(),
+                usedOnlineDiscovery = false,
+                onlineDiscoveryFailed = false
+            )
+        }
+
+        val seedKeys = validSeeds.mapNotNull { seed ->
+            TrackMatchKeys.matchKey(seed.artist, seed.title).takeIf { it.isNotEmpty() }
+        }.toSet()
+        val baseExclude = excludeKeys + seedKeys
+        val limitPerSeed = (limit + validSeeds.size - 1) / validSeeds.size
+
+        val perSeed = validSeeds.map { seed ->
+            suggest(
+                seed = seed,
+                library = library,
+                mode = mode,
+                excludeKeys = baseExclude,
+                limit = limitPerSeed,
+                lbToken = lbToken,
+                lbAvailable = lbAvailable,
+                lbUsername = lbUsername,
+                networkAvailable = networkAvailable,
+                coPlaylistSongIds = coPlaylistSongIds
+            )
+        }
+
+        val merged = roundRobinMerge(
+            lists = perSeed.map { it.items },
+            limit = limit,
+            initialSeen = baseExclude
+        )
+        return RadioSuggestResult(
+            items = merged,
+            usedOnlineDiscovery = perSeed.any { it.usedOnlineDiscovery },
+            onlineDiscoveryFailed = merged.isEmpty() && perSeed.any { it.onlineDiscoveryFailed }
+        )
+    }
+
     private fun suggestKnown(
         seed: PlayableItem,
         library: List<Song>,
@@ -292,6 +365,42 @@ class RadioEngine(
 
     companion object {
         const val DEFAULT_LIMIT = 30
+        const val PREVIEW_DEFAULT_LIMIT = 40
+        const val MAX_SEEDS = 10
+
+        /**
+         * Take one item from each seed list per round; skip already-seen matchKey/mediaId.
+         */
+        internal fun roundRobinMerge(
+            lists: List<List<PlayableItem>>,
+            limit: Int,
+            initialSeen: Set<String>
+        ): List<PlayableItem> {
+            if (limit <= 0 || lists.isEmpty()) return emptyList()
+            val seen = initialSeen.toMutableSet()
+            val queues = lists.map { ArrayDeque(it) }
+            val result = ArrayList<PlayableItem>(minOf(limit, lists.sumOf { it.size }))
+            var progressed = true
+            while (result.size < limit && progressed) {
+                progressed = false
+                for (queue in queues) {
+                    if (result.size >= limit) break
+                    while (queue.isNotEmpty()) {
+                        val item = queue.removeFirst()
+                        val key = TrackMatchKeys.matchKey(item.artist, item.title)
+                        val idKey = item.mediaId
+                        if (key.isNotEmpty() && key in seen) continue
+                        if (idKey in seen) continue
+                        if (key.isNotEmpty()) seen.add(key)
+                        seen.add(idKey)
+                        result.add(item)
+                        progressed = true
+                        break
+                    }
+                }
+            }
+            return result
+        }
 
         /** Online first, then offline, alternating; drain remaining when one side is empty. */
         internal fun interleaveEquitable(

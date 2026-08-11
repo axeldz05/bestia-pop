@@ -13,12 +13,14 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowDownward
+import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.UnfoldLess
 import androidx.compose.material.icons.filled.UnfoldMore
 import androidx.compose.material.icons.filled.ViewAgenda
@@ -45,10 +47,12 @@ import com.bestiapop.android.data.model.Album
 import com.bestiapop.android.data.model.Playlist
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.ui.MusicPlayerViewModel
+import com.bestiapop.android.ui.SortDirection
 import com.bestiapop.android.ui.SortOption
 import com.bestiapop.android.ui.components.LabeledPlayShuffleButtons
 import com.bestiapop.android.ui.components.MultiSelectActionBar
 import com.bestiapop.android.ui.components.PlaylistAdditionActionBar
+import com.bestiapop.android.ui.components.SimilarPlaylistPreviewDialog
 import com.bestiapop.android.ui.components.rememberSongQueueActions
 import com.bestiapop.android.ui.screens.library.AlbumEditDialogsHost
 import com.bestiapop.android.ui.screens.library.IdentifyPendingBanner
@@ -82,6 +86,7 @@ fun LibraryScreen(
     val currentSong by viewModel.currentSong.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
     val sortOption by viewModel.sortOption.collectAsState()
+    val sortDirection by viewModel.sortDirection.collectAsState()
     val libraryViewMode by viewModel.libraryViewMode.collectAsState()
     val browseFilter by viewModel.libraryBrowseFilter.collectAsState()
     val selectedAlbumName by viewModel.libraryAlbumName.collectAsState()
@@ -89,6 +94,7 @@ fun LibraryScreen(
     val selectedGenreName by viewModel.libraryGenreName.collectAsState()
     val libraryJobProgress by viewModel.libraryJobProgress.collectAsState()
     val identifyReview by viewModel.identifyReview.collectAsState()
+    val similarPlaylistPreview by viewModel.similarPlaylistPreview.collectAsState()
 
     var sortMenuExpanded by remember { mutableStateOf(false) }
 
@@ -338,6 +344,20 @@ fun LibraryScreen(
             }
 
             if (showSortMenu) {
+                IconButton(onClick = { viewModel.toggleSortDirection() }) {
+                    Icon(
+                        imageVector = if (sortDirection == SortDirection.ASC) {
+                            Icons.Default.ArrowUpward
+                        } else {
+                            Icons.Default.ArrowDownward
+                        },
+                        contentDescription = if (sortDirection == SortDirection.ASC) {
+                            "Orden ascendente"
+                        } else {
+                            "Orden descendente"
+                        }
+                    )
+                }
                 Box {
                     IconButton(onClick = { sortMenuExpanded = true }) {
                         Icon(Icons.AutoMirrored.Filled.Sort, contentDescription = "Ordenar")
@@ -465,6 +485,10 @@ fun LibraryScreen(
                 },
                 onIdentifySelected = {
                     viewModel.identifySongs(selectedSongs)
+                    clearSelection()
+                },
+                onSimilarSelected = {
+                    viewModel.previewSimilarFromSelection(selectedSongs)
                     clearSelection()
                 },
                 onDeleteSelected = {
@@ -700,6 +724,19 @@ fun LibraryScreen(
                 showAddMusicDialog = false
                 onOpenDownloads()
             }
+        )
+    }
+
+    similarPlaylistPreview?.let { preview ->
+        SimilarPlaylistPreviewDialog(
+            state = preview,
+            onDismiss = { viewModel.dismissSimilarPreview() },
+            onToggleItem = { viewModel.toggleSimilarPreviewItem(it) },
+            onModeChange = { viewModel.setSimilarPreviewMode(it) },
+            onPlaylistNameChange = { viewModel.setSimilarPreviewPlaylistName(it) },
+            onCreatePlaylist = { viewModel.confirmSimilarPreviewAsPlaylist() },
+            onPlay = { viewModel.playSimilarPreview() },
+            onEnqueue = { viewModel.enqueueSimilarPreview() }
         )
     }
 }

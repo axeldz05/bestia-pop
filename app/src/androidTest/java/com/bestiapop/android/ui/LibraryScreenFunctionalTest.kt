@@ -54,6 +54,7 @@ class LibraryScreenFunctionalTest {
                 onEnqueueSelected = {},
                 onAddToPlaylist = {},
                 onIdentifySelected = {},
+                onSimilarSelected = {},
                 onDeleteSelected = {},
                 onSelectAll = {},
                 onClearSelection = {}
@@ -78,6 +79,7 @@ class LibraryScreenFunctionalTest {
                 onEnqueueSelected = {},
                 onAddToPlaylist = {},
                 onIdentifySelected = {},
+                onSimilarSelected = {},
                 onDeleteSelected = { deleteClicked = true },
                 onSelectAll = { selectAllClicked = true },
                 onClearSelection = {}

@@ -70,6 +70,7 @@ import com.bestiapop.android.domain.radio.LocalMetadataRadio
 import com.bestiapop.android.domain.radio.RadioEngine
 import com.bestiapop.android.domain.radio.RadioMode
 import com.bestiapop.android.domain.radio.RadioSuggestResult
+import com.bestiapop.android.domain.usecase.BuildSimilarPlaylistPreviewUseCase
 import com.bestiapop.android.domain.usecase.FetchAndMatchCfRecommendationsUseCase
 import com.bestiapop.android.domain.usecase.ImportListenBrainzPlaylistUseCase
 import com.bestiapop.android.domain.usecase.MatchListenBrainzTracksUseCase
@@ -93,6 +94,7 @@ import com.bestiapop.android.ui.state.LibraryBrowseFilter
 import com.bestiapop.android.ui.state.LibraryListItem
 import com.bestiapop.android.ui.state.LibraryViewMode
 import com.bestiapop.android.ui.state.PlaylistDetailNav
+import com.bestiapop.android.ui.state.SimilarPlaylistPreviewState
 import com.bestiapop.android.ui.state.kindName
 import com.bestiapop.android.ui.state.lbMbidOrNull
 import com.bestiapop.android.ui.state.localIdOrNull
@@ -134,6 +136,19 @@ enum class SortOption {
     ALBUM,
     GENRE,
     DATE_ADDED
+}
+
+enum class SortDirection {
+    ASC,
+    DESC;
+
+    companion object {
+        fun defaultFor(option: SortOption): SortDirection =
+            when (option) {
+                SortOption.DATE_ADDED -> DESC
+                else -> ASC
+            }
+    }
 }
 
 sealed class TokenValidationUiState {
@@ -295,6 +310,9 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private val _sortOption = MutableStateFlow(SortOption.TITLE)
     val sortOption = _sortOption.asStateFlow()
 
+    private val _sortDirection = MutableStateFlow(SortDirection.defaultFor(SortOption.TITLE))
+    val sortDirection = _sortDirection.asStateFlow()
+
     private val _libraryViewMode = MutableStateFlow(LibraryViewMode.ALBUM_GROUPS)
     val libraryViewMode = _libraryViewMode.asStateFlow()
 
@@ -326,8 +344,13 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private val downloadAudioTrackUseCase =
         com.bestiapop.android.domain.usecase.DownloadAudioTrackUseCase(repository)
 
-    val songsState: StateFlow<List<Song>> = combine(rawSongs, _searchQuery, _sortOption) { list, query, sort ->
-        getLibrarySongsUseCase.execute(list, query, sort)
+    val songsState: StateFlow<List<Song>> = combine(
+        rawSongs,
+        _searchQuery,
+        _sortOption,
+        _sortDirection
+    ) { list, query, sort, direction ->
+        getLibrarySongsUseCase.execute(list, query, sort, direction)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     data class PendingAlbumMerge(
@@ -509,6 +532,13 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             )
         )
     )
+    private val buildSimilarPlaylistPreviewUseCase =
+        BuildSimilarPlaylistPreviewUseCase(radioEngine, repository)
+
+    private val _similarPlaylistPreview = MutableStateFlow<SimilarPlaylistPreviewState?>(null)
+    val similarPlaylistPreview = _similarPlaylistPreview.asStateFlow()
+    private var similarPreviewJob: Job? = null
+    private var similarPreviewSeeds: List<PlayableItem> = emptyList()
 
     /** Bumped on user-initiated track changes so the queue UI can scroll to the current item. */
     private val _queueFocusEpoch = MutableStateFlow(0)
@@ -2128,6 +2158,177 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         radioPreferredMode = mode
     }
 
+    private fun resolvePreferredRadioMode(
+        mode: RadioMode?,
+        networkOnline: Boolean = connectivityObserver.isCurrentlyOnline()
+    ): RadioMode = when {
+        mode != null -> mode
+        radioPreferredMode != null -> radioPreferredMode!!
+        networkOnline -> RadioMode.BOTH
+        else -> RadioMode.KNOWN
+    }
+
+    /**
+     * Multi-select → similares preview (does **not** mutate the playback queue / radio session).
+     */
+    fun previewSimilarFromSelection(songs: List<Song>, mode: RadioMode? = null) {
+        val seeds = songs
+            .asSequence()
+            .map { it.toPlayable() }
+            .filter { it.artist.isNotBlank() && it.title.isNotBlank() }
+            .take(RadioEngine.MAX_SEEDS)
+            .toList()
+        if (seeds.isEmpty()) {
+            toastRadioNeedsSeed()
+            return
+        }
+        val networkOnline = connectivityObserver.isCurrentlyOnline()
+        val resolvedMode = resolvePreferredRadioMode(mode, networkOnline)
+        if (mode != null) {
+            setRadioPreferredMode(mode)
+        }
+        similarPreviewSeeds = seeds
+        val name = BuildSimilarPlaylistPreviewUseCase.defaultPlaylistName(seeds)
+        _similarPlaylistPreview.value = SimilarPlaylistPreviewState(
+            items = emptyList(),
+            selectedKeys = emptySet(),
+            mode = resolvedMode,
+            loading = true,
+            seedCount = seeds.size,
+            playlistName = name
+        )
+        runSimilarPreview(resolvedMode)
+    }
+
+    fun dismissSimilarPreview() {
+        similarPreviewJob?.cancel()
+        similarPreviewJob = null
+        similarPreviewSeeds = emptyList()
+        _similarPlaylistPreview.value = null
+    }
+
+    fun toggleSimilarPreviewItem(key: String) {
+        val state = _similarPlaylistPreview.value ?: return
+        if (state.loading || key.isBlank()) return
+        val next = state.selectedKeys.toMutableSet()
+        if (!next.add(key)) next.remove(key)
+        _similarPlaylistPreview.value = state.copy(selectedKeys = next)
+    }
+
+    fun setSimilarPreviewMode(mode: RadioMode) {
+        val state = _similarPlaylistPreview.value ?: return
+        if (state.mode == mode && !state.loading) return
+        setRadioPreferredMode(mode)
+        _similarPlaylistPreview.value = state.copy(mode = mode, loading = true)
+        runSimilarPreview(mode)
+    }
+
+    fun setSimilarPreviewPlaylistName(name: String) {
+        val state = _similarPlaylistPreview.value ?: return
+        _similarPlaylistPreview.value = state.copy(playlistName = name)
+    }
+
+    fun confirmSimilarPreviewAsPlaylist(
+        name: String? = null,
+        downloadMissing: Boolean = false
+    ) {
+        val state = _similarPlaylistPreview.value ?: return
+        if (state.loading) return
+        val selected = state.selectedItems
+        if (selected.isEmpty()) {
+            toast("Seleccioná al menos una canción")
+            return
+        }
+        val playlistName = (name ?: state.playlistName).ifBlank {
+            BuildSimilarPlaylistPreviewUseCase.defaultPlaylistName(similarPreviewSeeds)
+        }
+        viewModelScope.launch {
+            val playlistId = buildSimilarPlaylistPreviewUseCase.createPlaylistFromPlayables(
+                name = playlistName,
+                items = selected
+            )
+            if (playlistId == null) {
+                toast("No se pudo crear la playlist")
+                return@launch
+            }
+            val localCount = selected.count { it is PlayableItem.Local }
+            val pendingCount = selected.count { it is PlayableItem.Remote }
+            toastPlaylistSaved(localCount, pending = pendingCount)
+            dismissSimilarPreview()
+            setSelectedNavIndex(NAV_PLAYLISTS)
+            openLocalPlaylist(playlistId)
+            if (downloadMissing && pendingCount > 0) {
+                downloadPlaylistPendingTracks(playlistId)
+            }
+        }
+    }
+
+    fun playSimilarPreview() {
+        val state = _similarPlaylistPreview.value ?: return
+        if (state.loading) return
+        val selected = state.selectedItems
+        if (selected.isEmpty()) {
+            toast("Seleccioná al menos una canción")
+            return
+        }
+        dismissSimilarPreview()
+        playPlayableCollection(selected, startIndex = 0, rotate = false)
+    }
+
+    fun enqueueSimilarPreview() {
+        val state = _similarPlaylistPreview.value ?: return
+        if (state.loading) return
+        val selected = state.selectedItems
+        if (selected.isEmpty()) {
+            toast("Seleccioná al menos una canción")
+            return
+        }
+        addPlayableBatch(selected)
+        toast("Agregadas a la cola (${selected.size})")
+        dismissSimilarPreview()
+    }
+
+    private fun runSimilarPreview(mode: RadioMode) {
+        val seeds = similarPreviewSeeds
+        if (seeds.isEmpty()) return
+        similarPreviewJob?.cancel()
+        similarPreviewJob = viewModelScope.launch {
+            val settings = listenBrainzSettings.value
+            val networkOnline = connectivityObserver.isCurrentlyOnline()
+            val canUseLb = settings.enabled &&
+                settings.userToken.isNotBlank() &&
+                networkOnline
+            val library = rawSongs.first()
+            val preview = buildSimilarPlaylistPreviewUseCase.execute(
+                seeds = seeds,
+                library = library,
+                mode = mode,
+                lbToken = settings.userToken.takeIf { it.isNotBlank() },
+                lbAvailable = canUseLb,
+                lbUsername = settings.username,
+                networkAvailable = networkOnline
+            )
+            val current = _similarPlaylistPreview.value
+            if (current == null) return@launch
+            if (preview.items.isEmpty()) {
+                val emptyMsg = when {
+                    mode == RadioMode.NEW || preview.failedOnline ->
+                        "Radio online no disponible"
+                    else -> "No encontré canciones parecidas"
+                }
+                toast(emptyMsg)
+            }
+            _similarPlaylistPreview.value = current.copy(
+                items = preview.items,
+                selectedKeys = SimilarPlaylistPreviewState.keysOf(preview.items),
+                mode = mode,
+                loading = false,
+                usedOnline = preview.usedOnline,
+                failedOnline = preview.failedOnline
+            )
+        }
+    }
+
     fun stopRadio() {
         radioRefillJob?.cancel()
         radioRefillJob = null
@@ -2162,13 +2363,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         val settings = listenBrainzSettings.value
         val networkOnline = connectivityObserver.isCurrentlyOnline()
 
-        val resolvedMode = when {
-            mode != null -> mode
-            radioPreferredMode != null -> radioPreferredMode!!
-            // Online usable = network (Deezer) and/or LB; no token required for BOTH default
-            networkOnline -> RadioMode.BOTH
-            else -> RadioMode.KNOWN
-        }
+        val resolvedMode = resolvePreferredRadioMode(mode, networkOnline)
 
         val keepCurrentPlaying = !auto && shouldKeepCurrentWhenStartingRadio()
         val toastMode = announceMode
@@ -2573,7 +2768,22 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     fun setSortOption(option: SortOption) {
         if (_sortOption.value == option) return
         _sortOption.value = option
+        _sortDirection.value = SortDirection.defaultFor(option)
         viewModelScope.launch { libraryPreferences.setSortOptionName(option.name) }
+    }
+
+    fun setSortDirection(direction: SortDirection) {
+        if (_sortDirection.value == direction) return
+        _sortDirection.value = direction
+        viewModelScope.launch {
+            libraryPreferences.setSortDirectionName(direction.name, _sortOption.value.name)
+        }
+    }
+
+    fun toggleSortDirection() {
+        setSortDirection(
+            if (_sortDirection.value == SortDirection.ASC) SortDirection.DESC else SortDirection.ASC
+        )
     }
 
     fun setLibraryViewMode(mode: LibraryViewMode) {
@@ -2720,6 +2930,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private suspend fun hydrateUiPreferences() {
         val display = libraryPreferences.displaySettingsFlow.first()
         _sortOption.value = parseSortOption(display.sortOptionName)
+        _sortDirection.value = parseSortDirection(display.sortDirectionName)
         _libraryViewMode.value = parseLibraryViewMode(display.viewModeName)
 
         val nav = libraryPreferences.navSnapshotFlow.first()
@@ -2832,6 +3043,9 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     private fun parseSortOption(name: String): SortOption =
         SortOption.entries.find { it.name == name } ?: SortOption.TITLE
+
+    private fun parseSortDirection(name: String): SortDirection =
+        SortDirection.entries.find { it.name == name } ?: SortDirection.ASC
 
     private fun parseLibraryViewMode(name: String): LibraryViewMode =
         LibraryViewMode.entries.find { it.name == name } ?: LibraryViewMode.ALBUM_GROUPS

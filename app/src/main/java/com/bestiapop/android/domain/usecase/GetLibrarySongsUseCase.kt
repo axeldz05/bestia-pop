@@ -6,6 +6,7 @@ import com.bestiapop.android.data.model.Artist
 import com.bestiapop.android.data.model.GenreGroup
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.data.util.albumTrackSortKey
+import com.bestiapop.android.ui.SortDirection
 import com.bestiapop.android.ui.SortOption
 import com.bestiapop.android.ui.state.LibraryBrowseFilter
 import com.bestiapop.android.ui.state.LibraryListItem
@@ -16,7 +17,8 @@ class GetLibrarySongsUseCase {
     fun execute(
         songs: List<Song>,
         query: String,
-        sortOption: SortOption
+        sortOption: SortOption,
+        sortDirection: SortDirection = SortDirection.defaultFor(sortOption)
     ): List<Song> {
         // Build map of album artwork for fallback inheritance
         val albumArtMap = songs.groupBy { it.album }.mapValues { (_, albumSongs) ->
@@ -41,15 +43,21 @@ class GetLibrarySongsUseCase {
             }
         }
 
-        // Sorting by criteria
+        val ascending = sortDirection == SortDirection.ASC
         return when (sortOption) {
-            SortOption.TITLE -> filtered.sortedBy { it.title.lowercase() }
-            SortOption.ARTIST -> filtered.sortedBy { it.artist.lowercase() }
-            SortOption.ALBUM -> filtered.sortedBy { it.album.lowercase() }
-            SortOption.GENRE -> filtered.sortedBy { it.genre.lowercase() }
-            SortOption.DATE_ADDED -> filtered.sortedByDescending { it.dateAdded }
+            SortOption.TITLE -> filtered.sortedByDir(ascending) { it.title.lowercase() }
+            SortOption.ARTIST -> filtered.sortedByDir(ascending) { it.artist.lowercase() }
+            SortOption.ALBUM -> filtered.sortedByDir(ascending) { it.album.lowercase() }
+            SortOption.GENRE -> filtered.sortedByDir(ascending) { it.genre.lowercase() }
+            SortOption.DATE_ADDED -> filtered.sortedByDir(ascending) { it.dateAdded }
         }
     }
+
+    private fun <T : Comparable<T>> List<Song>.sortedByDir(
+        ascending: Boolean,
+        selector: (Song) -> T
+    ): List<Song> =
+        if (ascending) sortedBy(selector) else sortedByDescending(selector)
 
     fun compareSongsWithinAlbum(a: Song, b: Song): Int {
         val byTrack = albumTrackSortKey(a.trackNumber).compareTo(albumTrackSortKey(b.trackNumber))

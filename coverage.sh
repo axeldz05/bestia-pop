@@ -8,18 +8,54 @@ YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m'
 
-USAGE="Usage: $0 [--unit|--android|--all]
+USAGE="Usage: $0 [--unit|--android|--all|--emulator-help]
   --unit     (default) unit tests + JaCoCo HTML report
   --android  instrumented tests on a connected device + report
   --all      unit + instrumented, then unified createCoverageReport
+  --emulator-help
+             show commands to start a headless test emulator
 
 Set COVERAGE_OPEN=1 to open the generated report in a desktop session."
+
+print_emulator_help() {
+  echo -e "${YELLOW}Android emulator setup:${NC}"
+  if command -v emulator >/dev/null 2>&1; then
+    echo "Available AVDs:"
+    emulator -list-avds | sed 's/^/  /'
+  else
+    echo "  emulator is not in PATH; install the Android SDK emulator first."
+  fi
+  cat <<'EOF'
+
+Choose an API 34+ AVD without a PIN/pattern, then run in another terminal:
+
+  export BESTIAPOP_AVD=<AVD_NAME>
+  emulator -avd "$BESTIAPOP_AVD" -no-window -no-audio \
+    -no-boot-anim -gpu swiftshader_indirect -no-snapshot
+
+Wait until Android finishes booting:
+
+  adb wait-for-device
+  adb shell 'until [ "$(getprop sys.boot_completed)" = "1" ]; do sleep 1; done'
+  adb shell input keyevent KEYCODE_WAKEUP
+  adb shell wm dismiss-keyguard
+
+Keep the emulator running, then execute:
+
+  ./coverage.sh --android   # instrumented coverage only
+  ./coverage.sh --all       # unit + instrumented combined
+EOF
+}
 
 MODE="unit"
 case "${1:-}" in
   --unit|-u|"") MODE="unit" ;;
   --android|-a) MODE="android" ;;
   --all) MODE="all" ;;
+  --emulator-help)
+    print_emulator_help
+    exit 0
+    ;;
   -h|--help)
     echo "$USAGE"
     exit 0
@@ -58,6 +94,7 @@ case "$MODE" in
   android)
     if ! adb get-state >/dev/null 2>&1; then
       echo -e "${RED}No hay dispositivo/emulador adb conectado.${NC}" >&2
+      print_emulator_help >&2
       exit 1
     fi
     "${GRADLE[@]}" :app:createDebugAndroidTestCoverageReport
@@ -66,6 +103,7 @@ case "$MODE" in
   all)
     if ! adb get-state >/dev/null 2>&1; then
       echo -e "${RED}--all necesita dispositivo/emulador adb (androidTest).${NC}" >&2
+      print_emulator_help >&2
       exit 1
     fi
     "${GRADLE[@]}" :app:createCoverageReport

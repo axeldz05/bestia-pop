@@ -23,6 +23,7 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -41,6 +42,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import com.bestiapop.android.data.preferences.activeDownloadBadgeCount
 import com.bestiapop.android.data.update.ApkUpdateInstaller
@@ -292,7 +294,13 @@ fun MainScreen(
             hostState = snackbarHostState,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .padding(bottom = bottomChromePadding + 8.dp)
+                .padding(bottom = bottomChromePadding + 8.dp),
+            snackbar = { data ->
+                Snackbar(
+                    snackbarData = data,
+                    modifier = Modifier.testTag("root-exit-confirmation")
+                )
+            }
         )
 
         if (showFullPlayer) {

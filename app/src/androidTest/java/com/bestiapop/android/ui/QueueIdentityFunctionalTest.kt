@@ -1,6 +1,9 @@
 package com.bestiapop.android.ui
 
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Button
 import androidx.compose.material3.Text
 import androidx.compose.runtime.getValue
@@ -59,13 +62,17 @@ class QueueIdentityFunctionalTest {
 
     @Test
     fun exactDuplicate_reorderKeepsCurrentIndicatorOnQueueEntry() {
+        lateinit var listState: LazyListState
+
         composeTestRule.setContent {
             var items by remember {
                 mutableStateOf(listOf(firstOccurrence, secondOccurrence))
             }
             val currentQueueEntryId = secondOccurrence.queueEntryId
+            val queueListState = rememberLazyListState()
+            listState = queueListState
 
-            Column {
+            Column(modifier = Modifier.fillMaxSize()) {
                 Button(
                     onClick = { items = items.reversed() },
                     modifier = Modifier.testTag("reverse-queue")
@@ -80,11 +87,19 @@ class QueueIdentityFunctionalTest {
                     onSkipTo = {},
                     onRemove = {},
                     modifier = Modifier.weight(1f),
+                    listState = queueListState,
+                    compact = true,
                     showIndex = true
                 )
             }
         }
 
+        composeTestRule.runOnIdle {
+            assertEquals(
+                listOf(firstOccurrence.queueEntryId, secondOccurrence.queueEntryId),
+                listState.layoutInfo.visibleItemsInfo.map { it.key }
+            )
+        }
         // The focused second slot replaces index "2" with the playing icon.
         composeTestRule.onNodeWithText("1").assertIsDisplayed()
         composeTestRule.onAllNodesWithText("2").assertCountEquals(0)
@@ -92,6 +107,12 @@ class QueueIdentityFunctionalTest {
 
         composeTestRule.onNodeWithTag("reverse-queue").performClick()
 
+        composeTestRule.runOnIdle {
+            assertEquals(
+                listOf(secondOccurrence.queueEntryId, firstOccurrence.queueEntryId),
+                listState.layoutInfo.visibleItemsInfo.map { it.key }
+            )
+        }
         // After reorder, the same occurrence is first; focus did not follow the old index.
         composeTestRule.onAllNodesWithText("1").assertCountEquals(0)
         composeTestRule.onNodeWithText("2").assertIsDisplayed()

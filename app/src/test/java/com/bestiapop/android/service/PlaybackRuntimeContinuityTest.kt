@@ -212,10 +212,21 @@ class PlaybackRuntimeContinuityTest {
     }
 
     @Test
-    fun autosaveInFlight_isNeutralWithoutErrorEventOrFailureCooldown() = runBlocking {
-        val saver = FakeSaveDownloads {
-            SaveWhileListeningDownloadResult.InFlight("manual-owner")
-        }
+    fun autosaveInFlight_isNeutralAndAllowsRetryAfterOwnerReleasesClaim() = runBlocking {
+        val results = ArrayDeque(
+            listOf(
+                SaveWhileListeningDownloadResult.InFlight("manual-owner"),
+                SaveWhileListeningDownloadResult.Saved(
+                    Song(
+                        id = 99L,
+                        uriString = "/saved/claimed.m4a",
+                        title = "Already downloading",
+                        artist = "Artist"
+                    )
+                )
+            )
+        )
+        val saver = FakeSaveDownloads { results.removeFirst() }
         val listenSettings = MutableStateFlow(
             ListenBrainzSettings(
                 saveWhileListening = true,
@@ -237,12 +248,26 @@ class PlaybackRuntimeContinuityTest {
             )
             fixture.controller.positionMs = 30_000L
             fixture.controller.durationMs = 100_000L
+            fixture.controller.playing = true
+            fixture.controller.wantsPlay = true
             fixture.clock.set(30_000L)
 
             fixture.runtime.tickForTest()
             yield()
-
             assertEquals(1, saver.saveCount.get())
+            assertTrue(events.none { it.startsWith("No se pudo guardar") })
+
+            withTimeout(2_000L) {
+                while (
+                    saver.saveCount.get() < 2 ||
+                    events.none { it.contains("guardada en la biblioteca") }
+                ) {
+                    delay(10L)
+                    fixture.runtime.tickForTest()
+                    yield()
+                }
+            }
+            assertEquals(2, saver.saveCount.get())
             assertTrue(events.none { it.startsWith("No se pudo guardar") })
         } finally {
             eventsJob.cancel()
@@ -1122,6 +1147,8 @@ class PlaybackRuntimeContinuityTest {
 
             fixture.runtime.togglePlayPause()
             assertFalse(fixture.controller.wantsPlay)
+            val prepareAfterPause = fixture.controller.prepareCount
+            val mutationsAfterPause = fixture.controller.timelineMutationCount
             delayed.allowResolution.complete(Unit)
 
             withTimeout(2_000L) {
@@ -1130,7 +1157,12 @@ class PlaybackRuntimeContinuityTest {
             assertFalse(fixture.controller.wantsPlay)
             assertFalse(fixture.controller.playing)
             assertEquals(1, fixture.controller.playCallCount)
-            assertEquals(1, fixture.controller.prepareCount)
+            assertEquals(
+                "pause must cancel in-flight resolve so it cannot prepare/replace",
+                prepareAfterPause,
+                fixture.controller.prepareCount
+            )
+            assertEquals(mutationsAfterPause, fixture.controller.timelineMutationCount)
         } finally {
             fixture.close()
         }

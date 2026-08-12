@@ -23,4 +23,14 @@ object PlaybackServiceLifetimePolicy {
         mediaItemCount: Int,
         playbackState: Int
     ): Boolean = !isPlaybackEngaged(playWhenReady, mediaItemCount, playbackState)
+
+    /**
+     * Paused shade controls stay visible while a queue item is current, including Remote
+     * placeholders that leave ExoPlayer in [Player.STATE_IDLE] during resolve.
+     */
+    fun shouldShowPlaybackNotification(
+        mediaItemCount: Int,
+        playbackState: Int
+    ): Boolean =
+        mediaItemCount > 0 && playbackState != Player.STATE_ENDED
 }

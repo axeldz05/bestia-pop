@@ -42,4 +42,32 @@ class PlaybackServiceLifetimePolicyTest {
             )
         )
     }
+
+    @Test
+    fun pausedNotification_staysVisibleForIdleRemotePlaceholder() {
+        assertTrue(
+            PlaybackServiceLifetimePolicy.shouldShowPlaybackNotification(
+                mediaItemCount = 2,
+                playbackState = Player.STATE_IDLE
+            )
+        )
+        assertTrue(
+            PlaybackServiceLifetimePolicy.shouldShowPlaybackNotification(
+                mediaItemCount = 2,
+                playbackState = Player.STATE_READY
+            )
+        )
+        assertFalse(
+            PlaybackServiceLifetimePolicy.shouldShowPlaybackNotification(
+                mediaItemCount = 2,
+                playbackState = Player.STATE_ENDED
+            )
+        )
+        assertFalse(
+            PlaybackServiceLifetimePolicy.shouldShowPlaybackNotification(
+                mediaItemCount = 0,
+                playbackState = Player.STATE_IDLE
+            )
+        )
+    }
 }

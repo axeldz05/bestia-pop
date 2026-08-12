@@ -260,7 +260,10 @@ class MusicService : MediaLibraryService() {
 
     private fun shouldShowPlaybackNotification(): Boolean {
         val p = player ?: return false
-        return p.mediaItemCount > 0 && p.playbackState != Player.STATE_IDLE
+        return PlaybackServiceLifetimePolicy.shouldShowPlaybackNotification(
+            mediaItemCount = p.mediaItemCount,
+            playbackState = p.playbackState
+        )
     }
 
     private fun maybeRepromotePlaybackForeground() {

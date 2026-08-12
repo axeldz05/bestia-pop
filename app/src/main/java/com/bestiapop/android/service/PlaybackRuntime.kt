@@ -848,8 +848,10 @@ class PlaybackRuntime internal constructor(
         val hasLiveSession = (player?.mediaItemCount ?: 0) > 0
         val liveRepeat = repeatModeFromPlayer(player?.repeatMode ?: Player.REPEAT_MODE_OFF)
         val resolved = PlaybackModeRestore.resolve(settings, hasLiveSession, liveRepeat)
-        _isShuffle.value =
-            if (hasLiveSession) player?.shuffleModeEnabled == true else resolved.shuffle
+        // Live sessions keep prefs as shuffle source of truth (physical queue shuffle + identity
+        // Media3 ShuffleOrder). Reading player.shuffleModeEnabled can falsely clear the flag and
+        // drop shufflePlayOrder on the next persist.
+        _isShuffle.value = resolved.shuffle
         _repeatMode.value = resolved.repeat
         if (resolved.applyRepeatToPlayer) applyRepeatModeToController(resolved.repeat)
         syncShuffleToPlayer()
@@ -1043,6 +1045,9 @@ class PlaybackRuntime internal constructor(
             prefetchJob?.cancel()
             prefetchJob = null
             cancelRemoteRecoveryJob()
+            resolvingTransitionJob?.cancel()
+            resolvingTransitionJob = null
+            resolvingTransitionQueueEntryId = null
             player?.pause()
             return
         }
@@ -1935,7 +1940,11 @@ class PlaybackRuntime internal constructor(
                     saveWhileListeningFailures.remove(key)
                     _events.tryEmit("«${result.song.title}» guardada en la biblioteca")
                 }
-                is SaveWhileListeningDownloadResult.InFlight -> Unit
+                is SaveWhileListeningDownloadResult.InFlight -> {
+                    // Neutral: another owner holds the claim. Clear attempted so autosave can retry
+                    // if that owner fails, is dismissed, or is cancelled.
+                    saveWhileListeningAttempted.remove(key)
+                }
                 is SaveWhileListeningDownloadResult.Failed -> {
                     saveWhileListeningFailures[key] = dependencies.clockMs()
                     saveWhileListeningAttempted.remove(key)

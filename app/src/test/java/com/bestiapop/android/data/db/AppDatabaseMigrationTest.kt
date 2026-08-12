@@ -43,8 +43,8 @@ class AppDatabaseMigrationTest {
     }
 
     @Test
-    fun migration7To8_preservesPersistedStateAndDefaultsLastPlayedAt() = runTest {
-        createLegacyDatabase(version = 7, schema = ::createVersion7Schema) { db ->
+    fun migration8To9_preservesStateAndDefaultsPendingTrackNumber() = runTest {
+        createLegacyDatabase(version = 8, schema = ::createVersion8Schema) { db ->
             db.execSQL(
                 """
                 INSERT INTO songs (
@@ -56,6 +56,7 @@ class AppDatabaseMigrationTest {
                 )
                 """.trimIndent()
             )
+            db.execSQL("UPDATE songs SET lastPlayedAt = 555 WHERE id = 7")
             db.execSQL(
                 "INSERT INTO playlists (playlistId, name, description, coverUri, createdAt) " +
                     "VALUES (3, 'Kept playlist', 'Description', 'file:///playlist.jpg', 222)"
@@ -92,13 +93,12 @@ class AppDatabaseMigrationTest {
         val migratedSong = musicDao.getSongById(7L)
 
         assertEquals("Before migration", migratedSong?.title)
-        assertEquals(0L, migratedSong?.lastPlayedAt)
+        assertEquals(555L, migratedSong?.lastPlayedAt)
         assertEquals(listOf(3L), musicDao.getPlaylistIdsForSong(7L))
         assertEquals("Description", musicDao.getPlaylistById(3L)?.description)
-        assertEquals(
-            "Remote Album",
-            musicDao.getPlaylistPendingTracksFlow(3L).first().single().releaseName
-        )
+        val migratedPending = musicDao.getPlaylistPendingTracksFlow(3L).first().single()
+        assertEquals("Remote Album", migratedPending.releaseName)
+        assertEquals(0, migratedPending.trackNumber)
         assertEquals("Display Album", musicDao.getAlbumOverride("Album")?.displayName)
         assertEquals("offline", database.pendingListenDao().getOldest(10).single().lastError)
 
@@ -107,7 +107,7 @@ class AppDatabaseMigrationTest {
     }
 
     @Test
-    fun migration1To8_runsWholeChainAndKeepsLegacyLibraryDataUsable() = runTest {
+    fun migration1To9_runsWholeChainAndKeepsLegacyLibraryDataUsable() = runTest {
         createLegacyDatabase(version = 1, schema = ::createVersion1Schema) { db ->
             db.execSQL(
                 legacySongInsert(
@@ -172,7 +172,8 @@ class AppDatabaseMigrationTest {
                     playlistId = 5L,
                     title = "Pending remote",
                     artist = "Remote Artist",
-                    releaseName = "Remote Album"
+                    releaseName = "Remote Album",
+                    trackNumber = 5
                 )
             )
         )
@@ -189,6 +190,10 @@ class AppDatabaseMigrationTest {
         assertEquals(
             "Pending remote",
             musicDao.getPlaylistPendingTracksFlow(5L).first().single().title
+        )
+        assertEquals(
+            5,
+            musicDao.getPlaylistPendingTracksFlow(5L).first().single().trackNumber
         )
         assertEquals(1, database.pendingListenDao().count())
     }
@@ -312,6 +317,13 @@ class AppDatabaseMigrationTest {
                 artworkUri TEXT
             )
             """.trimIndent()
+        )
+    }
+
+    private fun createVersion8Schema(db: SupportSQLiteDatabase) {
+        createVersion7Schema(db)
+        db.execSQL(
+            "ALTER TABLE songs ADD COLUMN lastPlayedAt INTEGER NOT NULL DEFAULT 0"
         )
     }
 

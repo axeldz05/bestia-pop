@@ -179,7 +179,8 @@ internal fun PlaylistPendingTrackEntity.toPendingTrack() = PlaylistPendingTrack(
     identity = TrackIdentity(
         title = title,
         artist = artist,
-        album = releaseName.orEmpty()
+        album = releaseName.orEmpty(),
+        trackNumber = trackNumber
     ),
     id = id,
     playlistId = playlistId,
@@ -193,6 +194,7 @@ internal fun PlaylistPendingTrack.toEntity() = PlaylistPendingTrackEntity(
     title = title,
     artist = artist,
     releaseName = album.takeIf { it.isNotBlank() },
+    trackNumber = trackNumber,
     recordingMbid = recordingMbid,
     position = position
 )

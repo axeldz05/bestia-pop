@@ -1,6 +1,5 @@
 package com.bestiapop.android.ui.download
 
-import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasSetTextAction
@@ -9,13 +8,12 @@ import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
-import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
-import androidx.compose.ui.test.printToString
 import androidx.test.espresso.Espresso.closeSoftKeyboard
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.LargeTest
+import com.bestiapop.android.testutil.ComposeE2EProbe
 import com.bestiapop.android.testutil.DeviceAwakeRule
 import org.junit.After
 import org.junit.Before
@@ -29,6 +27,7 @@ import org.junit.runner.RunWith
 class CatalogDownloadFunctionalTest {
     private val composeRule = createEmptyComposeRule()
     private val fixture = CatalogDownloadTestFixture()
+    private val ui = ComposeE2EProbe(composeRule, UI_TIMEOUT_MS, fixture::diagnostic)
 
     @get:Rule
     val rules: RuleChain = RuleChain
@@ -48,8 +47,8 @@ class CatalogDownloadFunctionalTest {
 
     @Test
     fun catalogResult_downloadsThroughDownloadsAndAppearsInLibrary() {
-        awaitUi("Biblioteca root with Agregar action") {
-            nodeExists(hasText("Agregar"))
+        ui.await("Biblioteca root with Agregar action") {
+            ui.exists(hasText("Agregar"))
         }
         composeRule.onNodeWithText("Agregar").performClick()
         composeRule.onNodeWithText("Agregar Música").assertIsDisplayed()
@@ -61,8 +60,8 @@ class CatalogDownloadFunctionalTest {
         composeRule.onNodeWithTag("catalog-search-submit").performClick()
         closeSoftKeyboard()
 
-        awaitUi("catalog fixture result") {
-            nodeExists(hasText(CatalogDownloadTestContract.TITLE))
+        ui.await("catalog fixture result") {
+            ui.exists(hasText(CatalogDownloadTestContract.TITLE))
         }
         composeRule.onNodeWithText(CatalogDownloadTestContract.TITLE).assertIsDisplayed()
         composeRule.onNodeWithContentDescription("Agregar").performClick()
@@ -72,11 +71,11 @@ class CatalogDownloadFunctionalTest {
             .onNodeWithContentDescription("Descargas", useUnmergedTree = true)
             .performClick()
 
-        awaitUi("fixture row downloading in Descargas") {
-            nodeExists(hasText(CatalogDownloadTestContract.TITLE)) &&
+        ui.await("fixture row downloading in Descargas") {
+            ui.exists(hasText(CatalogDownloadTestContract.TITLE)) &&
                 fixture.isDownloadingAt(75) &&
-                nodeExists(hasText("75%")) &&
-                nodeExists(hasContentDescription("Cancelar descarga"))
+                ui.exists(hasText("75%")) &&
+                ui.exists(hasContentDescription("Cancelar descarga"))
         }
         composeRule.onNodeWithText(CatalogDownloadTestContract.TITLE).assertIsDisplayed()
         composeRule.onNodeWithText("75%").assertIsDisplayed()
@@ -86,11 +85,11 @@ class CatalogDownloadFunctionalTest {
 
         fixture.releaseAudioDownload()
 
-        awaitUi("fixture row completed in Descargas") {
+        ui.await("fixture row completed in Descargas") {
             fixture.isDownloadComplete() &&
-                nodeExists(hasText(CatalogDownloadTestContract.TITLE)) &&
-                nodeExists(hasText("Descargada", substring = true)) &&
-                nodeExists(hasContentDescription("Reproducir"))
+                ui.exists(hasText(CatalogDownloadTestContract.TITLE)) &&
+                ui.exists(hasText("Descargada", substring = true)) &&
+                ui.exists(hasContentDescription("Reproducir"))
         }
         composeRule.onNodeWithText("Descargada", substring = true).assertIsDisplayed()
         composeRule.onNodeWithContentDescription("Reproducir").assertIsDisplayed()
@@ -100,8 +99,8 @@ class CatalogDownloadFunctionalTest {
         composeRule
             .onNodeWithContentDescription("Biblioteca", useUnmergedTree = true)
             .performClick()
-        awaitUi("Biblioteca search action") {
-            nodeExists(hasContentDescription("Buscar"))
+        ui.await("Biblioteca search action") {
+            ui.exists(hasContentDescription("Buscar"))
         }
         composeRule.onNodeWithContentDescription("Buscar").performClick()
         composeRule.onNode(hasSetTextAction()).performTextInput(
@@ -110,31 +109,12 @@ class CatalogDownloadFunctionalTest {
 
         val downloadedSongTitle =
             hasText(CatalogDownloadTestContract.TITLE) and hasSetTextAction().not()
-        awaitUi("downloaded Song row in Biblioteca") {
-            nodeExists(downloadedSongTitle)
+        ui.await("downloaded Song row in Biblioteca") {
+            ui.exists(downloadedSongTitle)
         }
         composeRule
             .onNode(downloadedSongTitle, useUnmergedTree = true)
             .assertIsDisplayed()
-    }
-
-    private fun nodeExists(matcher: SemanticsMatcher): Boolean =
-        composeRule.onAllNodes(matcher, useUnmergedTree = true)
-            .fetchSemanticsNodes(atLeastOneRootRequired = false)
-            .isNotEmpty()
-
-    private fun awaitUi(description: String, condition: () -> Boolean) {
-        try {
-            composeRule.waitUntil(timeoutMillis = UI_TIMEOUT_MS, condition = condition)
-        } catch (failure: Throwable) {
-            val tree = runCatching {
-                composeRule.onRoot(useUnmergedTree = true).printToString()
-            }.getOrElse { "Semantics unavailable: ${it.message}" }
-            throw AssertionError(
-                "Timed out waiting for $description. ${fixture.diagnostic()}\n$tree",
-                failure
-            )
-        }
     }
 
     private companion object {

@@ -8,7 +8,6 @@ import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
-import android.os.ParcelFileDescriptor
 import android.os.SystemClock
 import androidx.core.app.NotificationCompat
 import androidx.lifecycle.Lifecycle
@@ -25,9 +24,11 @@ import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.testutil.DeviceAwakeRule
 import com.bestiapop.android.testutil.PcmWavFixture
+import com.bestiapop.android.testutil.SideloadPlaybackAppOps
 import java.io.File
 import java.util.concurrent.FutureTask
 import java.util.concurrent.TimeUnit
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -53,6 +54,7 @@ class LocalPlaybackServiceFunctionalTest {
     private val context
         get() = instrumentation.targetContext
     private var activityScenario: ActivityScenario<MainActivity>? = null
+    private var sideloadPolicy: AutoCloseable? = null
 
     @Before
     fun grantStartupPermissions() {
@@ -78,28 +80,14 @@ class LocalPlaybackServiceFunctionalTest {
             } &&
                 context.getSystemService(NotificationManager::class.java).areNotificationsEnabled()
         }
-        configureSideloadBackgroundPolicy()
+        sideloadPolicy = SideloadPlaybackAppOps.acquire()
     }
 
-    private fun configureSideloadBackgroundPolicy() {
-        val packageName = context.packageName
-        executeShellCommand(
-            "cmd activity set-bg-restriction-level --user 0 $packageName adaptive_bucket"
-        )
-        executeShellCommand("cmd appops set $packageName RUN_ANY_IN_BACKGROUND allow")
-        executeShellCommand("cmd appops write-settings")
-        val appOp = executeShellCommand(
-            "cmd appops get $packageName RUN_ANY_IN_BACKGROUND"
-        )
-        check(appOp.contains("allow", ignoreCase = true)) {
-            "RUN_ANY_IN_BACKGROUND was not enabled for sideload playback: $appOp"
-        }
+    @After
+    fun restoreSideloadPolicy() {
+        sideloadPolicy?.close()
+        sideloadPolicy = null
     }
-
-    private fun executeShellCommand(command: String): String =
-        ParcelFileDescriptor.AutoCloseInputStream(
-            instrumentation.uiAutomation.executeShellCommand(command)
-        ).bufferedReader().use { it.readText() }
 
     @Test
     fun localWav_mediaControllerPlaysMediaKeysAndReconnects() {

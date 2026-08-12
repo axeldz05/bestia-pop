@@ -70,6 +70,7 @@ internal class CatalogDownloadTestFixture : AutoCloseable {
     private val downloadPreferences = DownloadPreferencesRepository(context)
     private val notificationHelper = DownloadNotificationHelper(context)
     private val server = MockWebServer()
+    private val audioRequestStarted = CountDownLatch(1)
     private val releaseAudioResponse = CountDownLatch(1)
     private val audioBytes = PcmWavFixture.generate(durationMs = 3_000, toneHz = 440.0)
 
@@ -131,6 +132,17 @@ internal class CatalogDownloadTestFixture : AutoCloseable {
 
     fun releaseAudioDownload() {
         releaseAudioResponse.countDown()
+    }
+
+    fun awaitAudioRequest() {
+        check(
+            audioRequestStarted.await(
+                NETWORK_BOUNDARY_TIMEOUT_MS,
+                TimeUnit.MILLISECONDS
+            )
+        ) {
+            "MockWebServer audio request did not arrive. ${diagnostic()}"
+        }
     }
 
     fun isDownloadingAt(percent: Int): Boolean =
@@ -375,6 +387,7 @@ internal class CatalogDownloadTestFixture : AutoCloseable {
         }
 
         private fun audioResponse(): MockResponse {
+            audioRequestStarted.countDown()
             val released = releaseAudioResponse.await(
                 NETWORK_BOUNDARY_TIMEOUT_MS,
                 TimeUnit.MILLISECONDS

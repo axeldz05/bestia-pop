@@ -47,6 +47,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
@@ -90,7 +91,9 @@ fun IdentifyReviewScreen(
     }
 
     Surface(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier
+            .fillMaxSize()
+            .testTag("identify-review"),
         color = MaterialTheme.colorScheme.background
     ) {
         Column(
@@ -402,7 +405,10 @@ private fun IdentifyReviewHeader(
             },
             modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp)
         ) {
-            IconButton(onClick = onClose) {
+            IconButton(
+                onClick = onClose,
+                modifier = Modifier.testTag("identify-review-close")
+            ) {
                 Icon(Icons.Default.Close, contentDescription = "Cerrar")
             }
         }

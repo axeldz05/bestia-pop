@@ -91,7 +91,7 @@ Herencia visual en lista: `GetLibrarySongsUseCase.execute` unifica artwork falta
 
 CRUD + membresía vía `IMusicRepository`:
 `createPlaylist`, `updatePlaylist`, `deletePlaylist`, `addSongToPlaylist`, `removeSongFromPlaylist`.
-Import LB: matched + `PlaylistPendingTrack` (`identity` + mbid/playlist extras; `getPlaylistPendingTracksFlow` / `downloadPlaylistPendingTracks`). Entity Room plana: columna `releaseName` ↔ `identity.album`.
+Import LB: matched + `PlaylistPendingTrack` (`identity` + mbid/playlist extras; `getPlaylistPendingTracksFlow` / `downloadPlaylistPendingTracks`). Entity Room plana: columnas `releaseName` ↔ `identity.album` y `trackNumber` ↔ `identity.trackNumber`, para que la descarga conserve el orden de pista.
 Similares multi-select: `BuildSimilarPlaylistPreviewUseCase.createPlaylistFromPlayables` (locales + pending remotos, mismo patrón LB; no CDN en Room).
 Flows: `playlistsFlow`, `getPlaylistSongsFlow`, `getPlaylistDetailsFlow`.
 UI: `PlaylistsScreen`. Detalle abierto = `PlaylistDetailNav` persistido (`openLocalPlaylist` / `closePlaylistDetail`); id inválido al restore → lista general.

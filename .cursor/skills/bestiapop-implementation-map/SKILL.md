@@ -122,12 +122,12 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 | Identidad de track | `data/model/TrackIdentity.kt` (`TrackMeta`, `TrackIdentity`, `mergePreferring`, `youtubeSearchQuery`, `toCatalogTrack`, `toListenBrainzCatalogTrack`, `preferMetaFrom`, `Song.toIdentity`, `Song.withIdentity`, `OnlineCatalogTrack.withIdentity`, `DEFAULT_CATALOG_USER_AGENT`); JSON shared `data/util/TrackIdentityJson.kt` (`putInto` / `decode`, compat `artworkUrl`→`artworkUri`) |
 | Modelos dominio UI | `data/model/Song.kt` (`Song` : `TrackMeta` plano + `@Entity songs` + `UNKNOWN_GENRE`), `data/model/AlbumOverride.kt` (`@Entity album_overrides`), `data/model/Models.kt` (`OnlineCatalogTrack` (`identity` + id/provider/audioUrl + invoke plano), `CatalogGenre`, `CatalogCategory` (+ `GENRES` / `CHARTS`), `CatalogTrackCandidate` (`identity` catálogo + `candidates` YT; `TrackMeta by identity`; chrome descarga solo vía `ActiveDownload`), `ActiveDownload` (`TrackMeta` vía `currentTrack`; `displayLabel` / `titleOverride`), `DownloadConflict.lookupIdentity`, `TrackedBatchItem.lookupIdentity`, `ActiveDownloadSource` incl. `LB_IMPORT` / `DISCOVER`, `CandidateDownloadState` incl. `QUEUED`, `PlaylistPendingTrack(identity, id, playlistId, mbid, position)` + `toOnlineCatalogTrack` → `TrackIdentity.toListenBrainzCatalogTrack`, `WifiTransferItem` / `WifiTransferState`, `Album.displayName`, `LibraryJobProgress` / `LibraryJobKind`, `IdentifyResult.Updated(songId)`, `IdentifyCandidate(track, score, reasons)`, `IdentifyConfidence`, `IdentifyProposal` (`usedListenBrainz`)) |
 | Cola Local/Remote | `data/model/PlayableItem.kt` (`PlayableItem` : `TrackMeta`; Local y Remote llevan `queueEntryId`; `withFreshQueueEntryIds`, `indexOfQueueEntry` / `indexOfRemoteSlot`, `matchesSong` / `matchesItem`, `ResolvedStream`, `Song.toPlayable`, `remoteFrom` identity + args, `fromLibraryOrRemote(identity)` / args, `Remote.toOnlineCatalogTrack` / `withIdentity`) |
-| Room DB | `data/db/AppDatabase.kt` (v8; `MIGRATION_7_8` `lastPlayedAt`) |
+| Room DB | `data/db/AppDatabase.kt` (v9; `MIGRATION_7_8` `lastPlayedAt`, `MIGRATION_8_9` pending `trackNumber`) |
 | DAO | `data/db/MusicDao.kt` (`insertSong` / `insertSongs` = `OnConflictStrategy.IGNORE`, `getSongByUri`, `deletePlaylistRefsForSongs`, `getPlaylistIdsForSong`, `getCoPlaylistSongIds`, `updateLastPlayedAt`) |
 | Song entity + MediaStore | `data/model/Song.kt` (`lastPlayedAt`); `data/db/MediaStoreSongMapper.kt` (`Cursor.toSong`) |
 | Album overrides | `data/model/AlbumOverride.kt`; DAO `getAllAlbumOverridesFlow` / `upsertAlbumOverride`; repo `persistOverride` (sanitize art/name), `setAlbumArtwork` (solo portada), `insertOrUpdateByUri` (alta preservando id) |
 | Album merge | `IMusicRepository.mergeAlbumInto` → `MusicRepository.mergeAlbumInto` + `MusicDao.updateSongsAlbumMetadata` / `getSongsForAlbum` |
-| Playlist entities | `data/db/PlaylistEntities.kt` (`PlaylistPendingTrackEntity` plano, columna `releaseName`); mapper `toPendingTrack` / `toEntity` en `MusicRepository.kt` (`album` ↔ `releaseName`) |
+| Playlist entities | `data/db/PlaylistEntities.kt` (`PlaylistPendingTrackEntity` plano, columnas `releaseName` + `trackNumber`); mapper `toPendingTrack` / `toEntity` en `MusicRepository.kt` (`album`/`trackNumber` ↔ columnas) |
 | Catálogo / lyrics / covers web | `data/network/MetadataFetcher.kt` (`JSONObject.toDeezerTrackIdentity` / `toItunesTrackIdentity`, `parseDeezerTrackArray` → `List<TrackIdentity>`, `parseDeezerSearchTracks`, `parseItunesSongResults`, `parseCatalogGenres`, `listGenres`, `fetchChartTracks`, `searchTracksByGenre`, `fetchFullTrackMetadata` → `TrackIdentity?`, `toCatalogCandidate`, `searchDeezerArtist`, `resolveDeezerArtistId`, `fetchDeezerArtistRadio`, `fetchDeezerRelatedArtistIds`, `fetchDeezerArtistTop`, `fetchItunesArtistSongs`) |
 | YouTube search + stream | `data/network/YouTubeExtractor.kt` (`YouTubeStreamResult(identity, videoId, audioUrl, userAgent)` : `TrackMeta` + invoke L2, `extractYouTubeId`, `searchYouTube`, `parseSearchContents`, `audioPreferenceScore`, `rankByAudioPreference`, `resolveYouTubeQueryOrId`) |
 | Stream resolve + cache TTL | `data/stream/StreamResolver.kt` (`resolveForPlayback(item, maxCachedAgeMs)` limita edad de playback; `resolve` compat; `resolveQuery(forceRefresh)` download; `invalidate(item)` borra claves `id:` + `q:`; `withKeyLock` serializa por query con reserva ref-counted antes del lock; `pruneKeyLocksLocked` nunca poda entregados y `pruneLocked` acota cache). Instancia playback única en `BestiaPopApplication.musicRepository`; `PlaybackRuntime` usa 60s |
@@ -211,7 +211,7 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 | GitHub release parser | `app/src/test/.../GitHubReleaseParserTest.kt` |
 | TrackIdentity JSON | `app/src/test/.../TrackIdentityJsonTest.kt` |
 | TrackIdentity merge / toIdentity / youtubeSearchQuery / preferMetaFrom | `app/src/test/.../TrackIdentityTest.kt` |
-| Pending mapper album↔releaseName | `app/src/test/.../PlaylistPendingTrackMapperTest.kt` |
+| Pending mapper album/trackNumber↔entity | `app/src/test/.../PlaylistPendingTrackMapperTest.kt` |
 | Match LB tracks / similar preview / download use case | `MatchListenBrainzTracksUseCaseTest.kt`, `BuildSimilarPlaylistPreviewUseCaseTest.kt`, `DownloadAudioTrackUseCaseTest.kt` |
 | Listen sync queue | `ListenSyncCoordinatorTest.kt` |
 | WiFi upload name sanitize | `UploadNameSanitizerTest.kt` |
@@ -220,6 +220,7 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 | UI functional library | `app/src/androidTest/.../LibraryScreenFunctionalTest.kt`, `LibraryBrowseFunctionalTest.kt` |
 | UI functional downloads / remote row / cola duplicada | `DownloadsUiFunctionalTest.kt`, `PlaylistRemoteRowFunctionalTest.kt`, `QueueIdentityFunctionalTest.kt` |
 | Continuidad instrumentada | `PlaybackContinuityFunctionalTest.kt` (pause durante resolve) |
+| E2E playlists / Identify / servicios concurrentes | `app/src/androidTest/.../ui/playlist/PlaylistCrudE2ETest.kt`, `PlaylistPendingDownloadE2ETest.kt`; `ui/identify/IdentifyE2EFunctionalTest.kt`; `service/concurrent/ConcurrentServiceOperationsE2ETest.kt` |
 
 ## Símbolos ViewModel frecuentes
 

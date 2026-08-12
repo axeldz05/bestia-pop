@@ -63,6 +63,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -969,7 +970,10 @@ private fun PlaylistDetailScreen(
                         tint = MaterialTheme.colorScheme.primary
                     )
                 }
-                IconButton(onClick = onDeletePlaylist) {
+                IconButton(
+                    onClick = onDeletePlaylist,
+                    modifier = Modifier.testTag("playlist-detail-delete")
+                ) {
                     Icon(
                         imageVector = Icons.Default.Delete,
                         contentDescription = "Eliminar playlist",
@@ -1242,7 +1246,9 @@ private fun PlaylistFormDialog(
                     onValueChange = { nameInput = it },
                     label = { Text("Nombre de la playlist *") },
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("playlist-name-input")
                 )
 
                 OutlinedTextField(
@@ -1250,7 +1256,9 @@ private fun PlaylistFormDialog(
                     onValueChange = { descInput = it },
                     label = { Text("Descripción (opcional)") },
                     maxLines = 3,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("playlist-description-input")
                 )
             }
         },

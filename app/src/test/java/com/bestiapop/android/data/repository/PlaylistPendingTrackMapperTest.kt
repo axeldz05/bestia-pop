@@ -15,6 +15,7 @@ class PlaylistPendingTrackMapperTest {
             title = "Song",
             artist = "Artist",
             releaseName = null,
+            trackNumber = 4,
             recordingMbid = "mbid",
             position = 3
         )
@@ -22,6 +23,7 @@ class PlaylistPendingTrackMapperTest {
         assertEquals("", domain.album)
         assertEquals("Song", domain.title)
         assertEquals("Artist", domain.artist)
+        assertEquals(4, domain.trackNumber)
         assertEquals(1L, domain.id)
         assertEquals(10L, domain.playlistId)
         assertEquals("mbid", domain.recordingMbid)
@@ -31,6 +33,7 @@ class PlaylistPendingTrackMapperTest {
         assertNull(back.releaseName)
         assertEquals("Song", back.title)
         assertEquals("Artist", back.artist)
+        assertEquals(4, back.trackNumber)
         assertEquals(1L, back.id)
         assertEquals(10L, back.playlistId)
         assertEquals("mbid", back.recordingMbid)

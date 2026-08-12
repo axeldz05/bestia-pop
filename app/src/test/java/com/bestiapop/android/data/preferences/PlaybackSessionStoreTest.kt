@@ -198,6 +198,31 @@ class PlaybackSessionStoreTest {
     }
 
     @Test
+    fun hydrateQueue_remoteOnlyWithEmptyLibrary_keepsEveryOccurrenceAndResumePosition() {
+        val repeated = PersistedQueueItem.Remote(
+            identity = TrackIdentity(
+                title = "Remote",
+                artist = "Artist",
+                durationMs = 120_000L
+            ),
+            youtubeQueryOrId = "Artist Remote"
+        )
+        val snapshot = QueueSnapshot(
+            currentIndex = 1,
+            positionMs = 45_000L,
+            items = listOf(repeated, repeated)
+        )
+
+        val hydrated = PlaybackHydration.hydrateQueue(snapshot, emptyList())!!
+
+        assertEquals(2, hydrated.items.size)
+        assertEquals(1, hydrated.currentIndex)
+        assertEquals(45_000L, hydrated.positionMs)
+        assertEquals(2, hydrated.items.map { it.queueEntryId }.toSet().size)
+        assertTrue(hydrated.items.all { it is PlayableItem.Remote })
+    }
+
+    @Test
     fun hydrateQueue_nullOrAllDeleted_returnsNull() {
         assertNull(PlaybackHydration.hydrateQueue(null, listOf(song(1))))
         val gone = QueueSnapshot(

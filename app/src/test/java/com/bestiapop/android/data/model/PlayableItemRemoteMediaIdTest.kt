@@ -9,7 +9,7 @@ import org.junit.Test
 class PlayableItemRemoteMediaIdTest {
 
     @Test
-    fun mediaId_unresolved_usesQueryHash_notVideoPrefix() {
+    fun mediaId_usesStableQueryHash() {
         val remote = PlayableItem.remoteFrom(
             artist = "Artist",
             title = "Song",
@@ -23,7 +23,7 @@ class PlayableItemRemoteMediaIdTest {
     }
 
     @Test
-    fun mediaId_withResolvedVideoId_usesVideoId() {
+    fun mediaId_afterResolve_staysStable_andVideoIdRemainsResolvedData() {
         val unresolved = PlayableItem.remoteFrom(
             artist = "Artist",
             title = "Song",
@@ -37,8 +37,9 @@ class PlayableItemRemoteMediaIdTest {
                 resolvedAtEpochMs = 1L
             )
         )
-        assertEquals("remote:dQw4w9wgXcQ", resolved.mediaId)
-        assertNotEquals(unresolved.mediaId, resolved.mediaId)
+        assertEquals(unresolved.mediaId, resolved.mediaId)
+        assertNotEquals("remote:dQw4w9wgXcQ", resolved.mediaId)
+        assertEquals("dQw4w9wgXcQ", resolved.resolved?.videoId)
     }
 
     @Test
@@ -99,18 +100,71 @@ class PlayableItemRemoteMediaIdTest {
     }
 
     @Test
-    fun freshQueueEntries_distinguishRepeatedRemoteInstance() {
+    fun freshQueueEntries_distinguishRepeatedLocalAndRemoteInstances() {
+        val local = Song(
+            id = 1L,
+            uriString = "content://song/1",
+            title = "Local"
+        ).toPlayable()
         val remote = PlayableItem.remoteFrom(
             artist = "Same",
             title = "Song",
             youtubeQueryOrId = "Same Song"
         )
 
-        val queue = listOf(remote, remote).withFreshRemoteQueueEntryIds()
-        val first = queue[0] as PlayableItem.Remote
-        val second = queue[1] as PlayableItem.Remote
+        val queue = listOf(local, local, remote, remote).withFreshQueueEntryIds()
+        val firstLocal = queue[0] as PlayableItem.Local
+        val secondLocal = queue[1] as PlayableItem.Local
+        val firstRemote = queue[2] as PlayableItem.Remote
+        val secondRemote = queue[3] as PlayableItem.Remote
 
-        assertNotEquals(first.queueEntryId, second.queueEntryId)
-        assertEquals(1, queue.indexOfRemoteSlot(second))
+        assertEquals(4, queue.map { it.queueEntryId }.toSet().size)
+        assertNotEquals(firstLocal.queueEntryId, secondLocal.queueEntryId)
+        assertNotEquals(firstRemote.queueEntryId, secondRemote.queueEntryId)
+        assertEquals(1, queue.indexOfQueueEntry(secondLocal))
+        assertEquals(3, queue.indexOfRemoteSlot(secondRemote))
+    }
+
+    @Test
+    fun queueEntryId_survivesCopyAndReorder_forLocalAndRemote() {
+        val local = Song(
+            id = 1L,
+            uriString = "content://song/1",
+            title = "Local"
+        ).toPlayable()
+        val remote = PlayableItem.remoteFrom(
+            artist = "Artist",
+            title = "Remote"
+        )
+        val updatedLocal = local.copy(song = local.song.copy(title = "Updated"))
+        val resolvedRemote = remote.copy(
+            resolved = ResolvedStream(
+                audioUrl = "https://cdn.example/audio",
+                userAgent = "ua",
+                videoId = "video-id",
+                resolvedAtEpochMs = 2L
+            )
+        )
+
+        assertEquals(local.queueEntryId, updatedLocal.queueEntryId)
+        assertEquals(remote.queueEntryId, resolvedRemote.queueEntryId)
+        assertEquals(
+            listOf(remote.queueEntryId, local.queueEntryId),
+            listOf(resolvedRemote, updatedLocal).map { it.queueEntryId }
+        )
+    }
+
+    @Test
+    fun remoteOnlyFreshIdAlias_refreshesAllQueueOccurrences() {
+        val local = Song(
+            uriString = "content://song/local",
+            title = "Local"
+        ).toPlayable()
+        val remote = PlayableItem.remoteFrom(artist = "Artist", title = "Remote")
+
+        val refreshed = listOf(local, remote).withFreshRemoteQueueEntryIds()
+
+        assertNotEquals(local.queueEntryId, refreshed[0].queueEntryId)
+        assertNotEquals(remote.queueEntryId, refreshed[1].queueEntryId)
     }
 }

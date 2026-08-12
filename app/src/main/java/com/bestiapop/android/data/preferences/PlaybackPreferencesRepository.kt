@@ -99,6 +99,14 @@ object PlaybackModeRestore {
 
 /** Pure shuffle/repeat clears after a manual play or in-app skip. */
 object PlaybackModeClear {
+    /** Starting radio always disables shuffle and Repeat One; Repeat All remains intentional. */
+    @Suppress("UNUSED_PARAMETER")
+    fun afterRadioStart(
+        shuffle: Boolean,
+        repeat: RepeatMode
+    ): Pair<Boolean, RepeatMode> =
+        false to if (repeat == RepeatMode.ONE) RepeatMode.OFF else repeat
+
     fun afterManualPlay(
         shuffle: Boolean,
         repeat: RepeatMode,

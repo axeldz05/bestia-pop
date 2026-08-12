@@ -14,15 +14,26 @@ import kotlinx.coroutines.sync.withLock
  * Resolves YouTube audio stream URLs for remote playable items and downloads.
  * Keeps a short-lived in-memory cache; CDN URLs must not be written to Room.
  */
-class StreamResolver(
+class StreamResolver internal constructor(
     private val extract: suspend (String) -> YouTubeExtractResult = { YouTubeExtractor.extractAudioStreamDetailed(it) },
     private val clockMs: () -> Long = { System.currentTimeMillis() },
-    private val ttlMs: Long = DEFAULT_TTL_MS
+    private val ttlMs: Long = DEFAULT_TTL_MS,
+    private val onKeyLockReserved: suspend (String, Any) -> Unit = { _, _ -> }
 ) {
+    private data class CachedExtraction(
+        val stream: YouTubeStreamResult,
+        val resolved: ResolvedStream
+    )
+
+    private data class KeyLock(
+        val mutex: Mutex = Mutex(),
+        var references: Int = 0
+    )
+
     private val mutex = Mutex()
     private val cache = mutableMapOf<String, ResolvedStream>()
     /** One lock per query so playback, prefetch and the 403 retry cannot extract the same video at once. */
-    private val keyLocks = mutableMapOf<String, Mutex>()
+    private val keyLocks = mutableMapOf<String, KeyLock>()
 
     /**
      * L2: resolve by query or video id. Updates the same TTL cache used by [resolve].
@@ -36,64 +47,89 @@ class StreamResolver(
         }
 
         val qKey = queryCacheKey(query)
-        if (!forceRefresh) {
-            cachedStream(qKey, query)?.let { return Result.success(it) }
-        }
-
         // Serialized per key: without it, ensureRemoteReadyAt + prefetch + retry each ran a full
         // extraction (several HTTP round trips) for the same video and the last writer won.
-        return lockFor(qKey).withLock {
+        return withKeyLock(qKey) {
             if (!forceRefresh) {
-                cachedStream(qKey, query)?.let { return@withLock Result.success(it) }
-            }
-            when (val result = extract(query)) {
-                is YouTubeExtractResult.Success -> {
-                    val stream = result.result
-                    putResolved(qKey, stream)
-                    Result.success(stream)
+                cachedStream(qKey, query, ttlMs)?.let {
+                    return@withKeyLock Result.success(it)
                 }
-                is YouTubeExtractResult.Error -> Result.failure(IllegalStateException(result.message))
+            }
+            extractAndCache(query, qKey).map { it.stream }
+        }
+    }
+
+    private suspend fun cachedStream(
+        qKey: String,
+        query: String,
+        maxCachedAgeMs: Long
+    ): YouTubeStreamResult? =
+        mutex.withLock {
+            freshestCachedLocked(
+                keys = buildList {
+                    add(qKey)
+                    if (looksLikeVideoId(query)) add("id:$query")
+                },
+                maxCachedAgeMs = maxCachedAgeMs
+            )?.toStreamResultStub()
+        }
+
+    private suspend fun <T> withKeyLock(
+        key: String,
+        block: suspend () -> T
+    ): T {
+        val keyLock = mutex.withLock {
+            pruneKeyLocksLocked()
+            keyLocks.getOrPut(key) { KeyLock() }.also { it.references++ }
+        }
+        return try {
+            // Reservation happens before the mutex is handed to the caller. Pruning therefore
+            // cannot replace a lock while a coroutine is suspended between lookup and acquisition.
+            onKeyLockReserved(key, keyLock.mutex)
+            keyLock.mutex.withLock { block() }
+        } finally {
+            mutex.withLock {
+                check(keyLock.references > 0)
+                keyLock.references--
+                pruneKeyLocksLocked()
             }
         }
     }
 
-    private suspend fun cachedStream(qKey: String, query: String): YouTubeStreamResult? =
-        mutex.withLock {
-            freshCached(qKey)?.let { return@withLock it.toStreamResultStub() }
-            if (looksLikeVideoId(query)) {
-                freshCached("id:$query")?.let { return@withLock it.toStreamResultStub() }
-            }
-            null
+    private fun pruneKeyLocksLocked() {
+        if (keyLocks.size <= MAX_CACHE_ENTRIES) return
+        val iterator = keyLocks.entries.iterator()
+        while (keyLocks.size > MAX_CACHE_ENTRIES && iterator.hasNext()) {
+            if (iterator.next().value.references == 0) iterator.remove()
         }
-
-    private suspend fun lockFor(key: String): Mutex = mutex.withLock {
-        if (keyLocks.size > MAX_CACHE_ENTRIES) {
-            keyLocks.entries.removeAll { !it.value.isLocked }
-        }
-        keyLocks.getOrPut(key) { Mutex() }
     }
 
-    suspend fun resolve(item: PlayableItem.Remote): Result<ResolvedStream> {
-        val key = cacheKey(item)
-        mutex.withLock {
-            freshCached(key)?.let { return Result.success(it) }
-        }
-
-        val query = item.youtubeQueryOrId?.takeIf { it.isNotBlank() }
-            ?: item.youtubeSearchQuery()
+    /**
+     * Resolves a stream for a playback selection, accepting cache entries no older than
+     * [maxCachedAgeMs]. The age check and any required extraction share the query lock, so
+     * concurrent playback/prefetch calls cannot put the over-age entry back into use.
+     */
+    suspend fun resolveForPlayback(
+        item: PlayableItem.Remote,
+        maxCachedAgeMs: Long
+    ): Result<ResolvedStream> {
+        val query = queryFor(item)
         if (query.isBlank()) {
             return Result.failure(IllegalArgumentException("Missing YouTube query for remote item"))
         }
 
-        return resolveQuery(query).map { stream ->
-            ResolvedStream(
-                audioUrl = stream.audioUrl,
-                userAgent = stream.userAgent,
-                videoId = stream.videoId,
-                resolvedAtEpochMs = clockMs()
-            )
+        val qKey = queryCacheKey(query)
+        return withKeyLock(qKey) {
+            cachedResolvedForPlayback(item, qKey, query, maxCachedAgeMs)?.let {
+                return@withKeyLock Result.success(it)
+            }
+            extractAndCache(query, qKey).map { it.resolved }
         }
     }
+
+    /** Compatibility API: playback cache remains bounded by the resolver's general TTL. */
+    suspend fun resolve(item: PlayableItem.Remote): Result<ResolvedStream> =
+        resolveForPlayback(item, maxCachedAgeMs = ttlMs)
 
     suspend fun prefetch(items: List<PlayableItem.Remote>) {
         for (item in items) {
@@ -102,9 +138,8 @@ class StreamResolver(
         }
     }
 
-    fun isFresh(resolved: ResolvedStream): Boolean {
-        return clockMs() - resolved.resolvedAtEpochMs < ttlMs
-    }
+    fun isFresh(resolved: ResolvedStream): Boolean =
+        isFreshAt(resolved, clockMs())
 
     /**
      * Drops every entry that could hand [item]'s dead URL back. Each resolution is cached under both
@@ -123,25 +158,60 @@ class StreamResolver(
         }
     }
 
-    private fun freshCached(key: String): ResolvedStream? {
-        val cached = cache[key] ?: return null
-        return if (isFresh(cached)) cached else {
-            cache.remove(key)
-            null
-        }
+    private suspend fun cachedResolvedForPlayback(
+        item: PlayableItem.Remote,
+        qKey: String,
+        query: String,
+        maxCachedAgeMs: Long
+    ): ResolvedStream? = mutex.withLock {
+        freshestCachedLocked(
+            keys = buildList {
+                add(cacheKey(item))
+                add(qKey)
+                if (looksLikeVideoId(query)) add("id:$query")
+            },
+            maxCachedAgeMs = maxCachedAgeMs
+        )
     }
 
-    private suspend fun putResolved(qKey: String, stream: YouTubeStreamResult) {
-        val resolved = ResolvedStream(
-            audioUrl = stream.audioUrl,
-            userAgent = stream.userAgent,
-            videoId = stream.videoId,
-            resolvedAtEpochMs = clockMs()
-        )
+    private fun freshestCachedLocked(
+        keys: List<String>,
+        maxCachedAgeMs: Long
+    ): ResolvedStream? {
+        val now = clockMs()
+        val maxAge = maxCachedAgeMs.coerceAtLeast(0L)
+        return keys.distinct()
+            .mapNotNull { key ->
+                val cached = cache[key] ?: return@mapNotNull null
+                if (!isFreshAt(cached, now)) {
+                    cache.remove(key)
+                    null
+                } else {
+                    cached.takeIf { cacheAgeMs(it, now) <= maxAge }
+                }
+            }
+            .maxByOrNull { it.resolvedAtEpochMs }
+    }
+
+    private suspend fun extractAndCache(
+        query: String,
+        qKey: String
+    ): Result<CachedExtraction> = when (val result = extract(query)) {
+        is YouTubeExtractResult.Success -> {
+            val stream = result.result
+            val resolved = stream.toResolvedStream()
+            putResolved(qKey, resolved)
+            Result.success(CachedExtraction(stream, resolved))
+        }
+        is YouTubeExtractResult.Error ->
+            Result.failure(IllegalStateException(result.message))
+    }
+
+    private suspend fun putResolved(qKey: String, resolved: ResolvedStream) {
         mutex.withLock {
             cache[qKey] = resolved
-            if (stream.videoId.isNotBlank()) {
-                cache["id:${stream.videoId}"] = resolved
+            if (resolved.videoId.isNotBlank()) {
+                cache["id:${resolved.videoId}"] = resolved
             }
             pruneLocked()
         }
@@ -150,18 +220,21 @@ class StreamResolver(
     /** Entries were only dropped when read after expiry, so a long browsing session grew the map. */
     private fun pruneLocked() {
         if (cache.size <= MAX_CACHE_ENTRIES) return
-        cache.entries.removeAll { !isFresh(it.value) }
+        val now = clockMs()
+        cache.entries.removeAll { !isFreshAt(it.value, now) }
         while (cache.size > MAX_CACHE_ENTRIES) {
             val oldest = cache.minByOrNull { it.value.resolvedAtEpochMs }?.key ?: break
             cache.remove(oldest)
         }
     }
 
+    private fun queryFor(item: PlayableItem.Remote): String =
+        item.youtubeQueryOrId?.takeIf { it.isNotBlank() }
+            ?: item.youtubeSearchQuery()
+
     private fun cacheKey(item: PlayableItem.Remote): String {
         item.resolved?.videoId?.takeIf { it.isNotBlank() }?.let { return "id:$it" }
-        val query = item.youtubeQueryOrId?.takeIf { it.isNotBlank() }
-            ?: item.youtubeSearchQuery().lowercase()
-        return queryCacheKey(query)
+        return queryCacheKey(queryFor(item))
     }
 
     private fun queryCacheKey(query: String): String = "q:${query.lowercase().trim()}"
@@ -170,6 +243,19 @@ class StreamResolver(
         val trimmed = value.trim()
         return YouTubeExtractor.extractYouTubeId(trimmed) == trimmed
     }
+
+    private fun cacheAgeMs(resolved: ResolvedStream, now: Long): Long =
+        if (now >= resolved.resolvedAtEpochMs) now - resolved.resolvedAtEpochMs else 0L
+
+    private fun isFreshAt(resolved: ResolvedStream, now: Long): Boolean =
+        cacheAgeMs(resolved, now) < ttlMs
+
+    private fun YouTubeStreamResult.toResolvedStream() = ResolvedStream(
+        audioUrl = audioUrl,
+        userAgent = userAgent,
+        videoId = videoId,
+        resolvedAtEpochMs = clockMs()
+    )
 
     private fun ResolvedStream.toStreamResultStub() = YouTubeStreamResult(
         identity = TrackIdentity(title = ""),

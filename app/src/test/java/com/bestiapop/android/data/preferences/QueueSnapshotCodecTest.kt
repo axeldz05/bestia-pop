@@ -54,6 +54,8 @@ class QueueSnapshotCodecTest {
         val encoded = QueueSnapshotCodec.encode(snapshot)
         assertFalse(encoded.contains("audioUrl"))
         assertFalse(encoded.contains("googlevideo"))
+        assertFalse(encoded.contains(local.queueEntryId))
+        assertFalse(encoded.contains(remote.queueEntryId))
 
         val restored = QueueSnapshotCodec.decode(encoded)!!
         assertEquals(1, restored.currentIndex)

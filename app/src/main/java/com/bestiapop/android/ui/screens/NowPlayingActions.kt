@@ -4,9 +4,9 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import com.bestiapop.android.data.model.DiscoverPlaybackOrigin
 import com.bestiapop.android.data.model.Playlist
 import com.bestiapop.android.ui.components.SongOverflowMenuItems
-import com.bestiapop.android.ui.state.DiscoverPlaybackOrigin
 
 @Composable
 fun NowPlayingActionsMenu(

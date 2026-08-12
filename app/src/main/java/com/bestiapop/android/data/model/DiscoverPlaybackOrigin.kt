@@ -1,10 +1,12 @@
-package com.bestiapop.android.ui.state
+package com.bestiapop.android.data.model
 
 import com.bestiapop.android.data.listenbrainz.MatchedLbPlaylist
 
 /**
- * Session-only origin when the queue was armed from Discover (Para Ti / Recomendados).
- * Not persisted; local playlist membership is resolved separately via Room.
+ * Process-session origin for a queue armed from Discover (Para Ti / Recomendados).
+ *
+ * This is deliberately not persisted across process death. Local playlist membership is resolved
+ * separately through Room.
  */
 sealed interface DiscoverPlaybackOrigin {
     data object None : DiscoverPlaybackOrigin

@@ -1,11 +1,14 @@
 package com.bestiapop.android.ui
 
+import android.app.KeyguardManager
+import android.os.ParcelFileDescriptor
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.ui.components.MultiSelectActionBar
 import com.bestiapop.android.domain.usecase.GetLibrarySongsUseCase
@@ -13,13 +16,19 @@ import com.bestiapop.android.ui.screens.library.LibrarySongList
 import com.bestiapop.android.ui.state.LibraryViewMode
 import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.ExternalResource
+import org.junit.rules.RuleChain
 import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class LibraryScreenFunctionalTest {
 
+    private val composeTestRule = createComposeRule()
+
     @get:Rule
-    val composeTestRule = createComposeRule()
+    val rules: RuleChain = RuleChain
+        .outerRule(DeviceAwakeRule())
+        .around(composeTestRule)
 
     private val sampleSongs = listOf(
         Song(
@@ -123,5 +132,28 @@ class LibraryScreenFunctionalTest {
 
         // Assert user interaction triggered playback callback
         assert(clickedSong?.title == "Bohemian Rhapsody")
+    }
+}
+
+private class DeviceAwakeRule : ExternalResource() {
+    override fun before() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val uiAutomation = instrumentation.uiAutomation
+
+        fun executeShellCommand(command: String) {
+            ParcelFileDescriptor.AutoCloseInputStream(
+                uiAutomation.executeShellCommand(command)
+            ).use { it.readBytes() }
+        }
+
+        executeShellCommand("input keyevent KEYCODE_WAKEUP")
+        executeShellCommand("wm dismiss-keyguard")
+        instrumentation.waitForIdleSync()
+
+        val keyguard = instrumentation.targetContext
+            .getSystemService(KeyguardManager::class.java)
+        check(!keyguard.isDeviceLocked) {
+            "Compose instrumentation tests require an unlocked device"
+        }
     }
 }

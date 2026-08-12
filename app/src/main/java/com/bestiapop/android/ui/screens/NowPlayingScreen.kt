@@ -115,6 +115,7 @@ import com.bestiapop.android.ui.components.ArtworkHero
 import com.bestiapop.android.ui.components.DownloadStateTrailing
 import com.bestiapop.android.ui.components.QueueLazyList
 import com.bestiapop.android.ui.components.findByTrack
+import com.bestiapop.android.ui.components.focusedQueueIndex
 import com.bestiapop.android.ui.components.playPauseVector
 import com.bestiapop.android.ui.components.formatDuration
 import com.bestiapop.android.ui.screens.library.AlbumEditDialogsHost
@@ -338,12 +339,12 @@ fun NowPlayingScreen(
         }
     }
 
-    val currentQueueIndex = remember(queueItems, item.mediaId) {
-        queueItems.indexOfFirst { it.mediaId == item.mediaId }
+    val currentQueueIndex = remember(queueItems, item.queueEntryId) {
+        focusedQueueIndex(queueItems, item.queueEntryId)
     }
 
     // Jump (no animation) so opening Cola stays snappy on long queues
-    LaunchedEffect(selectedTab, queueFocusEpoch) {
+    LaunchedEffect(selectedTab, queueFocusEpoch, item.queueEntryId) {
         if (selectedTab != 2) return@LaunchedEffect
         val index = currentQueueIndex
         if (index >= 0) {

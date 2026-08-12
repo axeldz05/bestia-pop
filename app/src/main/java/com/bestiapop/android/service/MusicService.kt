@@ -1,5 +1,6 @@
 package com.bestiapop.android.service
 
+import android.annotation.SuppressLint
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
@@ -9,7 +10,6 @@ import android.os.Build
 import android.os.Bundle
 import androidx.annotation.OptIn
 import androidx.core.app.NotificationChannelCompat
-import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.ServiceCompat
 import androidx.media3.common.AudioAttributes
@@ -28,7 +28,6 @@ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.MediaSource
 import androidx.media3.exoplayer.source.ShuffleOrder
 import androidx.media3.extractor.DefaultExtractorsFactory
-import androidx.media3.session.DefaultMediaNotificationProvider
 import androidx.media3.session.MediaLibraryService
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaStyleNotificationHelper
@@ -66,13 +65,6 @@ class MusicService : MediaLibraryService() {
     override fun onCreate() {
         super.onCreate()
         ensureMediaNotificationChannel()
-        setMediaNotificationProvider(
-            DefaultMediaNotificationProvider.Builder(this)
-                .setChannelId(PLAYBACK_CHANNEL_ID)
-                .setChannelName(R.string.playback_notification_channel)
-                .setNotificationId(PLAYBACK_NOTIFICATION_ID)
-                .build()
-        )
         val audioAttributes = AudioAttributes.Builder()
             .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
             .setUsage(C.USAGE_MEDIA)
@@ -212,16 +204,19 @@ class MusicService : MediaLibraryService() {
         return mediaLibrarySession
     }
 
+    /**
+     * Owns both foreground and paused notification updates. Calling `super` here would activate
+     * Media3's provider as a second notification/foreground owner.
+     */
     override fun onUpdateNotification(session: MediaSession, startInForegroundRequired: Boolean) {
         val keepForeground = startInForegroundRequired || isPlaybackEngaged()
-        if (keepForeground) {
-            // Do not call super: Media3 1.5 posts on IMPORTANCE_LOW default_channel_id
-            // (cannot be raised) and startForegroundService(), which Android 15 / Moto
-            // demotes as soon as the Activity pauses.
-            promotePlaybackForeground(session)
-            return
+        when {
+            keepForeground -> promotePlaybackForeground(session)
+            shouldShowPlaybackNotification() -> publishPlaybackNotification(
+                playbackNotification(session, ongoing = false)
+            )
+            else -> removePlaybackNotification()
         }
-        super.onUpdateNotification(session, startInForegroundRequired)
     }
 
     /**
@@ -230,13 +225,21 @@ class MusicService : MediaLibraryService() {
      * swiping the task away called [stopSelf] even while local audio was playing.
      */
     override fun onTaskRemoved(rootIntent: Intent?) {
-        if (isPlaybackEngaged()) return
+        if (!PlaybackServiceLifetimePolicy.shouldStopAfterTaskRemoved(
+                playWhenReady = player?.playWhenReady == true,
+                mediaItemCount = player?.mediaItemCount ?: 0,
+                playbackState = player?.playbackState ?: Player.STATE_IDLE
+            )
+        ) {
+            return
+        }
         pauseAllPlayersAndStopSelf()
     }
 
     override fun onDestroy() {
         serviceScope.cancel()
         releaseLoudnessEnhancer()
+        removePlaybackNotification()
         mediaLibrarySession?.run {
             player.release()
             release()
@@ -248,9 +251,16 @@ class MusicService : MediaLibraryService() {
 
     private fun isPlaybackEngaged(): Boolean {
         val p = player ?: return false
-        if (!p.playWhenReady || p.mediaItemCount <= 0) return false
-        // Keep FGS through brief IDLE while resolving/preparing Remote; drop on ENDED/pause.
-        return p.playbackState != Player.STATE_ENDED
+        return PlaybackServiceLifetimePolicy.isPlaybackEngaged(
+            playWhenReady = p.playWhenReady,
+            mediaItemCount = p.mediaItemCount,
+            playbackState = p.playbackState
+        )
+    }
+
+    private fun shouldShowPlaybackNotification(): Boolean {
+        val p = player ?: return false
+        return p.mediaItemCount > 0 && p.playbackState != Player.STATE_IDLE
     }
 
     private fun maybeRepromotePlaybackForeground() {
@@ -291,16 +301,7 @@ class MusicService : MediaLibraryService() {
      */
     private fun promotePlaybackForeground(session: MediaSession) {
         try {
-            val meta = player?.currentMediaItem?.mediaMetadata
-            startPlaybackForeground(
-                playbackNotificationBuilder(
-                    meta?.title?.takeIf { it.isNotBlank() } ?: "Bestia Pop",
-                    meta?.artist?.takeIf { it.isNotBlank() } ?: "",
-                    session.sessionActivity ?: mainActivityPendingIntent()
-                )
-                    .setStyle(MediaStyleNotificationHelper.MediaStyle(session))
-                    .build()
-            )
+            startPlaybackForeground(playbackNotification(session, ongoing = true))
             foregroundPromoteRetryScheduled = false
         } catch (e: Exception) {
             CrashReporter.recordNonFatal(
@@ -325,19 +326,43 @@ class MusicService : MediaLibraryService() {
         }
     }
 
-    private fun playbackNotificationBuilder(
-        title: CharSequence,
-        text: CharSequence,
-        contentIntent: PendingIntent
-    ) = NotificationCompat.Builder(this, PLAYBACK_CHANNEL_ID)
-        .setSmallIcon(android.R.drawable.ic_media_play)
-        .setContentTitle(title)
-        .setContentText(text)
-        .setContentIntent(contentIntent)
-        .setOngoing(true)
-        .setOnlyAlertOnce(true)
-        .setCategory(NotificationCompat.CATEGORY_TRANSPORT)
-        .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+    private fun playbackNotification(
+        session: MediaSession,
+        ongoing: Boolean
+    ): android.app.Notification {
+        val p = player
+        val meta = p?.currentMediaItem?.mediaMetadata
+        val showPauseAction = PlaybackNotificationFactory.shouldShowPauseAction(
+            playWhenReady = p?.playWhenReady == true,
+            playbackState = p?.playbackState ?: Player.STATE_IDLE
+        )
+        return PlaybackNotificationFactory.builder(
+            context = this,
+            title = meta?.title?.takeIf { it.isNotBlank() } ?: "Bestia Pop",
+            text = meta?.artist?.takeIf { it.isNotBlank() } ?: "",
+            contentIntent = session.sessionActivity ?: mainActivityPendingIntent(),
+            showPauseAction = showPauseAction,
+            ongoing = ongoing
+        )
+            .setStyle(
+                MediaStyleNotificationHelper.MediaStyle(session)
+                    .setShowActionsInCompactView(
+                        *PlaybackNotificationFactory.compactActionIndices()
+                    )
+            )
+            .build()
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun publishPlaybackNotification(notification: android.app.Notification) {
+        ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_DETACH)
+        NotificationManagerCompat.from(this).notify(PLAYBACK_NOTIFICATION_ID, notification)
+    }
+
+    private fun removePlaybackNotification() {
+        ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
+        NotificationManagerCompat.from(this).cancel(PLAYBACK_NOTIFICATION_ID)
+    }
 
     private fun startPlaybackForeground(notification: android.app.Notification) {
         val fgsType = if (Build.VERSION.SDK_INT >= 29) {

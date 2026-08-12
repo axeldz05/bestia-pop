@@ -2,7 +2,7 @@ package com.bestiapop.android.data.model
 
 import java.util.UUID
 
-private fun newRemoteQueueEntryId(): String = UUID.randomUUID().toString()
+private fun newQueueEntryId(): String = UUID.randomUUID().toString()
 
 /**
  * Unified queue item: local library song or ephemeral remote stream.
@@ -10,8 +10,13 @@ private fun newRemoteQueueEntryId(): String = UUID.randomUUID().toString()
  */
 sealed class PlayableItem : TrackMeta {
     abstract val mediaId: String
+    /** Ephemeral identity of this occurrence in the playback queue; never persisted. */
+    abstract val queueEntryId: String
 
-    data class Local(val song: Song) : PlayableItem(), TrackMeta by song {
+    data class Local(
+        val song: Song,
+        override val queueEntryId: String = newQueueEntryId()
+    ) : PlayableItem(), TrackMeta by song {
         override val mediaId: String get() = song.uriString
     }
 
@@ -20,13 +25,10 @@ sealed class PlayableItem : TrackMeta {
         val recordingMbid: String? = null,
         val youtubeQueryOrId: String? = null,
         val resolved: ResolvedStream? = null,
-        /** Ephemeral identity of this occurrence in the playback queue; never persisted. */
-        val queueEntryId: String = newRemoteQueueEntryId()
+        override val queueEntryId: String = newQueueEntryId()
     ) : PlayableItem(), TrackMeta by identity {
         override val mediaId: String
             get() {
-                val videoId = resolved?.videoId?.takeIf { it.isNotBlank() }
-                if (videoId != null) return "remote:$videoId"
                 val query = youtubeQueryOrId?.takeIf { it.isNotBlank() }
                     ?: "$artist|$title"
                 return "remote:${query.lowercase().hashCode().toUInt().toString(16)}"
@@ -128,14 +130,17 @@ fun Song.toPlayable(): PlayableItem.Local = PlayableItem.Local(this)
 
 fun List<Song>.toPlayableItems(): List<PlayableItem> = map { it.toPlayable() }
 
-/** Every Remote occurrence entering a queue gets its own identity, even if the same object repeats. */
-fun List<PlayableItem>.withFreshRemoteQueueEntryIds(): List<PlayableItem> = map { item ->
-    if (item is PlayableItem.Remote) {
-        item.copy(queueEntryId = newRemoteQueueEntryId())
-    } else {
-        item
+/** Every occurrence entering a queue gets its own identity, even if the same object repeats. */
+fun List<PlayableItem>.withFreshQueueEntryIds(): List<PlayableItem> = map { item ->
+    when (item) {
+        is PlayableItem.Local -> item.copy(queueEntryId = newQueueEntryId())
+        is PlayableItem.Remote -> item.copy(queueEntryId = newQueueEntryId())
     }
 }
+
+/** Compatibility alias for callers that previously refreshed Remote slots only. */
+fun List<PlayableItem>.withFreshRemoteQueueEntryIds(): List<PlayableItem> =
+    withFreshQueueEntryIds()
 
 fun PlayableItem.matchesSong(song: Song): Boolean {
     if (this is PlayableItem.Local) {
@@ -153,9 +158,13 @@ fun PlayableItem.matchesItem(other: PlayableItem): Boolean {
     return local.song.uriString == otherLocal.song.uriString
 }
 
+/** Exact occurrence before or after copy, resolve, or reorder. */
+fun List<PlayableItem>.indexOfQueueEntry(original: PlayableItem): Int =
+    indexOfFirst { it.queueEntryId == original.queueEntryId }
+
 /**
  * Exact queue occurrence of a Remote before or after resolve. [PlayableItem.Remote.queueEntryId]
- * survives `copy(resolved = …)`, unlike [PlayableItem.Remote.mediaId], which changes to the video id.
+ * survives `copy(resolved = …)`.
  */
 fun List<PlayableItem>.indexOfRemoteSlot(
     original: PlayableItem.Remote

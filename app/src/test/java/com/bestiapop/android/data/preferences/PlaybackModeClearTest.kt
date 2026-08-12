@@ -9,6 +9,39 @@ import org.junit.Test
 class PlaybackModeClearTest {
 
     @Test
+    fun afterRadioStart_disablesShuffleAndRepeatOne() {
+        val result = PlaybackModeClear.afterRadioStart(
+            shuffle = true,
+            repeat = RepeatMode.ONE
+        )
+
+        assertFalse(result.first)
+        assertEquals(RepeatMode.OFF, result.second)
+    }
+
+    @Test
+    fun afterRadioStart_keepsRepeatAll() {
+        val result = PlaybackModeClear.afterRadioStart(
+            shuffle = false,
+            repeat = RepeatMode.ALL
+        )
+
+        assertFalse(result.first)
+        assertEquals(RepeatMode.ALL, result.second)
+    }
+
+    @Test
+    fun afterRadioStart_keepsRepeatOff() {
+        val result = PlaybackModeClear.afterRadioStart(
+            shuffle = true,
+            repeat = RepeatMode.OFF
+        )
+
+        assertFalse(result.first)
+        assertEquals(RepeatMode.OFF, result.second)
+    }
+
+    @Test
     fun defaults_matchIntuitivePolicy() {
         val settings = PlaybackSettings()
         assertTrue(settings.clearShuffleOnManualPlay)

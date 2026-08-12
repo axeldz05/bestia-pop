@@ -6,26 +6,15 @@ import android.content.ComponentName
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
-import android.os.Bundle
 import androidx.annotation.OptIn
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import androidx.media3.common.MediaItem
-import androidx.media3.common.MediaMetadata
-import androidx.media3.common.PlaybackException
-import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.session.MediaController
-import androidx.media3.session.SessionCommand
-import androidx.media3.session.SessionToken
-import com.google.common.util.concurrent.ListenableFuture
-import com.google.common.util.concurrent.MoreExecutors
+import com.bestiapop.android.BestiaPopApplication
 import com.bestiapop.android.data.db.AppDatabase
 import com.bestiapop.android.data.listenbrainz.LbApiResult
 import com.bestiapop.android.data.listenbrainz.LbPlaylistSummary
-import com.bestiapop.android.data.listenbrainz.ListenSyncCoordinator
-import com.bestiapop.android.data.listenbrainz.ListenTracker
 import com.bestiapop.android.data.listenbrainz.MatchedCfRecommendations
 import com.bestiapop.android.data.listenbrainz.MatchedLbPlaylist
 import com.bestiapop.android.data.listenbrainz.rematchLocals
@@ -34,7 +23,6 @@ import com.bestiapop.android.data.network.ConnectivityObserver
 import com.bestiapop.android.data.network.ListenBrainzClient
 import com.bestiapop.android.data.network.MetadataFetcher
 import com.bestiapop.android.data.network.YouTubeExtractor
-import com.bestiapop.android.data.preferences.ActiveDownloadsStore
 import com.bestiapop.android.data.preferences.DownloadPreferencesRepository
 import com.bestiapop.android.data.preferences.DownloadSettings
 import com.bestiapop.android.data.preferences.IdentifyReviewStore
@@ -51,31 +39,14 @@ import com.bestiapop.android.data.preferences.NAV_SETTINGS
 import com.bestiapop.android.data.preferences.UiNavSnapshot
 import com.bestiapop.android.data.preferences.ListenBrainzPreferencesRepository
 import com.bestiapop.android.data.preferences.ListenBrainzSettings
-import com.bestiapop.android.data.preferences.MAX_SAVE_WHILE_LISTENING_PERCENT
-import com.bestiapop.android.data.preferences.MIN_SAVE_WHILE_LISTENING_PERCENT
-import com.bestiapop.android.data.preferences.PlaybackModeClear
-import com.bestiapop.android.data.preferences.PlaybackModeRestore
 import com.bestiapop.android.data.preferences.PlaybackPreferencesRepository
 import com.bestiapop.android.data.preferences.PlaybackSettings
-import com.bestiapop.android.data.playback.PlaybackQueueOrder
-import com.bestiapop.android.data.preferences.HydratedQueue
-import com.bestiapop.android.data.preferences.PlaybackHydration
-import com.bestiapop.android.data.preferences.PlaybackSessionStore
-import com.bestiapop.android.data.preferences.QueueSnapshot
-import com.bestiapop.android.data.preferences.QueueSnapshotCodec
 import com.bestiapop.android.data.preferences.ThemePreferencesRepository
-import com.bestiapop.android.data.repository.MusicRepository
 import com.bestiapop.android.data.util.CrashReporter
-import com.bestiapop.android.data.util.MusicFileStore
 import com.bestiapop.android.data.util.SongPathNormalizer
 import com.bestiapop.android.data.util.looksLikeStoragePath
-import com.bestiapop.android.domain.radio.CfRecommendationsRadio
-import com.bestiapop.android.domain.radio.DeezerSimilarRadio
-import com.bestiapop.android.domain.radio.ListenBrainzRadio
-import com.bestiapop.android.domain.radio.LocalMetadataRadio
-import com.bestiapop.android.domain.radio.RadioEngine
 import com.bestiapop.android.domain.radio.RadioMode
-import com.bestiapop.android.domain.radio.RadioSuggestResult
+import com.bestiapop.android.domain.radio.RadioEngine
 import com.bestiapop.android.domain.usecase.BuildSimilarPlaylistPreviewUseCase
 import com.bestiapop.android.domain.usecase.FetchAndMatchCfRecommendationsUseCase
 import com.bestiapop.android.domain.usecase.ImportListenBrainzPlaylistUseCase
@@ -87,12 +58,11 @@ import com.bestiapop.android.domain.util.clusterIdentifyAlbumGroups
 import com.bestiapop.android.domain.util.findAlbumMergeTarget
 import com.bestiapop.android.domain.util.isTrackNumberLabel
 import com.bestiapop.android.domain.util.normalizeAlbumName
+import com.bestiapop.android.service.CoordinatedDownloadResult
+import com.bestiapop.android.service.DownloadPlaylistTarget
 import com.bestiapop.android.service.DownloadNotificationHelper
-import com.bestiapop.android.service.MusicService
-import com.bestiapop.android.service.StreamPlaybackTag
+import com.bestiapop.android.service.PlaybackRuntime
 import com.bestiapop.android.service.WebServerService
-import com.bestiapop.android.service.setStreamPlaybackTag
-import com.bestiapop.android.ui.state.DiscoverPlaybackOrigin
 import com.bestiapop.android.ui.state.IdentifyReviewItem
 import com.bestiapop.android.ui.state.IdentifyReviewPhase
 import com.bestiapop.android.ui.state.IdentifyReviewState
@@ -129,16 +99,13 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.sync.withPermit
+import kotlin.coroutines.cancellation.CancellationException
 import java.util.concurrent.atomic.AtomicInteger
 
 import android.content.Context
 import android.media.AudioManager
-import android.os.SystemClock
 import android.widget.Toast
 
 enum class SortOption {
@@ -194,38 +161,20 @@ sealed class CfRecommendationsUiState {
 @kotlin.OptIn(FlowPreview::class)
 class MusicPlayerViewModel(application: Application) : AndroidViewModel(application) {
 
-    private val repository = MusicRepository(application)
-    private val streamResolver = repository.streamResolver
-    private val audioStore = MusicFileStore(application)
+    private val app = application as BestiaPopApplication
+    private val repository = app.musicRepository
+    private val playbackRuntime: PlaybackRuntime = app.playbackRuntime
+    private val processDownloads = app.processDownloads
     private val themeRepository = ThemePreferencesRepository(application)
     private val listenBrainzPreferences = ListenBrainzPreferencesRepository(application)
     private val playbackPreferences = PlaybackPreferencesRepository(application)
     private val downloadPreferences = DownloadPreferencesRepository(application)
     private val libraryTagWritePreferences = LibraryTagWritePreferencesRepository(application)
     private val libraryPreferences = LibraryPreferencesRepository(application)
-    private val activeDownloadsStore = ActiveDownloadsStore(application)
     private val identifyReviewStore = IdentifyReviewStore(application)
-    private val playbackSessionStore = PlaybackSessionStore(application)
     private val downloadNotificationHelper = DownloadNotificationHelper(application)
     private val pendingListenDao = AppDatabase.getDatabase(application).pendingListenDao()
     private val connectivityObserver = ConnectivityObserver(application)
-
-    private val listenSyncCoordinator = ListenSyncCoordinator(
-        scope = viewModelScope,
-        pendingListenDao = pendingListenDao,
-        preferences = listenBrainzPreferences,
-        isOnline = { connectivityObserver.isCurrentlyOnline() }
-    )
-
-    private val listenTracker = ListenTracker(
-        scope = viewModelScope,
-        pendingListenDao = pendingListenDao,
-        preferences = listenBrainzPreferences,
-        onListenEnqueued = { listenSyncCoordinator.requestSync() }
-    )
-
-    private var controllerFuture: ListenableFuture<MediaController>? = null
-    private var mediaController: MediaController? = null
 
     // Theme state
     val currentThemeState: StateFlow<CustomTheme> = themeRepository.selectedThemeFlow
@@ -234,11 +183,9 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     // ListenBrainz state
     val listenBrainzSettings: StateFlow<ListenBrainzSettings> =
         listenBrainzPreferences.settingsFlow
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ListenBrainzSettings())
+            .stateIn(viewModelScope, SharingStarted.Eagerly, ListenBrainzSettings())
 
-    private val playbackSettings: StateFlow<PlaybackSettings> =
-        playbackPreferences.settingsFlow
-            .stateIn(viewModelScope, SharingStarted.Eagerly, PlaybackSettings())
+    private val playbackSettings: StateFlow<PlaybackSettings> = playbackRuntime.playbackSettings
 
     val downloadSettings: StateFlow<DownloadSettings> =
         downloadPreferences.settingsFlow
@@ -352,10 +299,6 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private val _playlistDetail = MutableStateFlow<PlaylistDetailNav>(PlaylistDetailNav.None)
     val playlistDetail = _playlistDetail.asStateFlow()
 
-    private val _discoverPlaybackOrigin =
-        MutableStateFlow<DiscoverPlaybackOrigin>(DiscoverPlaybackOrigin.None)
-    val discoverPlaybackOrigin = _discoverPlaybackOrigin.asStateFlow()
-
     private var uiPrefsHydrated = false
     /** Tab to persist. Transient jumps move the live index without touching this. */
     private var persistedNavIndex = NAV_LIBRARY
@@ -454,159 +397,35 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         getLibrarySongsUseCase.extractGenres(songs, sortOption, sortDirection)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    // Player State
+    // Process-owned playback state. ViewModel only exposes/observes it.
+    val currentItem = playbackRuntime.currentItem
+    val currentSong = playbackRuntime.currentSong
+    val isPlaying = playbackRuntime.isPlaying
+    val playbackPositionMs = playbackRuntime.playbackPositionMs
+    val repeatMode = playbackRuntime.repeatMode
+    val isShuffle = playbackRuntime.isShuffle
+    val queue = playbackRuntime.queue
+    val displayQueue = playbackRuntime.displayQueue
+    val discoverPlaybackOrigin = playbackRuntime.discoverPlaybackOrigin
+    val resolvingRemote = playbackRuntime.resolvingRemote
 
-    private val _currentItem = MutableStateFlow<PlayableItem?>(null)
-    val currentItem = _currentItem.asStateFlow()
-
-    private val _currentSong = MutableStateFlow<Song?>(null)
-    val currentSong = _currentSong.asStateFlow()
-
-    private val _isPlaying = MutableStateFlow(false)
-    val isPlaying = _isPlaying.asStateFlow()
-
-    private val _playbackPositionMs = MutableStateFlow(0L)
-    val playbackPositionMs = _playbackPositionMs.asStateFlow()
-
-    private val _repeatMode = MutableStateFlow(RepeatMode.OFF)
-    val repeatMode = _repeatMode.asStateFlow()
-
-    private val _isShuffle = MutableStateFlow(false)
-    val isShuffle = _isShuffle.asStateFlow()
-
-    private val _queue = MutableStateFlow<List<PlayableItem>>(emptyList())
-    val queue = _queue.asStateFlow()
-
-    /**
-     * Order before the last physical shuffle, as mediaIds. Stored as ids rather than as a snapshot of
-     * the queue so turning shuffle off can *reconcile* against the live queue: a stored list of items
-     * silently undid every mutation made while shuffled (enqueue, remove, radio refill).
-     */
-    private var preShuffleOrder: List<String>? = null
-
-    /** [_queue] is already the play order, so the Cola list is the queue itself. */
-    val displayQueue: StateFlow<List<PlayableItem>> = _queue
-
-    private val _resolvingRemote = MutableStateFlow(false)
-    val resolvingRemote = _resolvingRemote.asStateFlow()
-
-    /**
-     * Ref-counted instead of a plain flag: four coroutines drive the resolve spinner, and when one is
-     * cancelled its `finally` used to clear the flag while a newer resolve was still running, so the
-     * UI looked frozen mid-resolve.
-     */
-    private val resolvingRemoteCount = AtomicInteger(0)
-
-    private fun beginResolvingRemote() {
-        resolvingRemoteCount.incrementAndGet()
-        _resolvingRemote.value = true
-    }
-
-    private fun endResolvingRemote() {
-        if (resolvingRemoteCount.decrementAndGet() <= 0) {
-            resolvingRemoteCount.set(0)
-            _resolvingRemote.value = false
-        }
-    }
-
-    /** Keys already attempted for "Guardar al escuchar" in this process (in-flight + done). */
-    private val saveWhileListeningAttempted = mutableSetOf<String>()
-    /** Last auto-save failure per download id, so a retry waits instead of firing on every tick. */
-    private val saveWhileListeningFailures = mutableMapOf<String, Long>()
-    /** In-flight download coroutine per id, so dismissing a row stops the transfer. */
-    private val downloadJobs = mutableMapOf<String, Job>()
     /** Artists already looked up this session (hit or miss) — a miss must not be retried forever. */
     private val artistPhotoAttempted = mutableSetOf<String>()
     /** Song ids already passed to the background metadata/lyrics pass this session. */
     private val metadataEnhanceAttempted = mutableSetOf<Long>()
 
-    private val _radioActive = MutableStateFlow(false)
-    val radioActive = _radioActive.asStateFlow()
-
-    private val _radioLoading = MutableStateFlow(false)
-    val radioLoading = _radioLoading.asStateFlow()
-
-    private val _radioMode = MutableStateFlow(RadioMode.KNOWN)
-    val radioMode = _radioMode.asStateFlow()
-
-    private val _radioStatusLabel = MutableStateFlow<String?>(null)
-    val radioStatusLabel = _radioStatusLabel.asStateFlow()
+    val radioActive = playbackRuntime.radioActive
+    val radioLoading = playbackRuntime.radioLoading
+    val radioMode = playbackRuntime.radioMode
+    val radioStatusLabel = playbackRuntime.radioStatusLabel
 
     /** Stable key of the catalog track being previewed inside Add Music (null = no catalog preview). */
     private val _catalogPreviewKey = MutableStateFlow<String?>(null)
     val catalogPreviewKey = _catalogPreviewKey.asStateFlow()
 
-    private var prefetchJob: Job? = null
-    /** Retry loop for the online track that is failing, plus its per-track deadline. */
-    private var remoteRecoveryJob: Job? = null
-    private var remoteRecoveryMediaId: String? = null
-    private var remoteRecoveryDeadlineMs = 0L
-    private var resolvingTransitionJob: Job? = null
-    /** Item the current transition resolve is working on, so repeat errors do not restart it. */
-    private var resolvingTransitionQueueEntryId: String? = null
-    private var radioRefillJob: Job? = null
-    /** Held so `stopRadio` can cancel an in-flight suggest (NEW mode retries for up to ~45s). */
-    private var radioStartJob: Job? = null
     /** Held so opening another Discover playlist cancels the previous fetch. */
     private var lbDetailJob: Job? = null
-    /** Last empty radio refill; blocks hammering providers once per track when they are down. */
-    private var lastEmptyRadioRefillAtMs = 0L
-    /** Serializes play/shuffle collection so overlapping Mezclar cannot race setMediaItems vs shuffle order. */
-    private var playCollectionJob: Job? = null
-    /** Applies shuffle order only after player timeline size matches the queue. */
-    private var shuffleApplyJob: Job? = null
-    /** Caps silent skip cascades when remotes/locals fail in a row. */
-    private var consecutiveUnplayableSkips = 0
-    private val playedInRadioSession = linkedSetOf<String>()
-    /** Last user-chosen mode (session); auto-start / tap reuse this when set. */
-    private var radioPreferredMode: RadioMode? = null
-
-    /** True after UI was rebuilt from a live MediaController timeline. */
-    private var liveSessionHydrated = false
-    private var idleSeedDone = false
-    private var lastPersistedPositionAtMs = 0L
-
-    private val radioEngine = RadioEngine(
-        localRadio = LocalMetadataRadio(),
-        listenBrainzRadio = ListenBrainzRadio(
-            lookupMetadata = { artist, recording, token ->
-                ListenBrainzClient.lookupRecordingMetadata(artist, recording, token)
-            },
-            fetchLbRadio = { artistMbid, token, mode ->
-                ListenBrainzClient.fetchLbRadioArtist(artistMbid, token, mode = mode)
-            },
-            fetchRecordingMetadata = { mbids, token ->
-                ListenBrainzClient.fetchRecordingMetadata(mbids, token)
-            }
-        ),
-        cfRecommendationsRadio = CfRecommendationsRadio(
-            fetchCf = { username, token, count, offset, artistType ->
-                ListenBrainzClient.fetchCfRecordingRecommendations(
-                    username = username,
-                    token = token,
-                    count = count,
-                    offset = offset,
-                    artistType = artistType
-                )
-            },
-            fetchRecordingMetadata = { mbids, token ->
-                ListenBrainzClient.fetchRecordingMetadata(mbids, token)
-            }
-        ),
-        similarProviders = listOf(
-            DeezerSimilarRadio(
-                resolveArtistId = { MetadataFetcher.resolveDeezerArtistId(it) },
-                fetchArtistRadio = { MetadataFetcher.fetchDeezerArtistRadio(it) },
-                fetchRelatedArtistIds = { id, limit ->
-                    MetadataFetcher.fetchDeezerRelatedArtistIds(id, limit)
-                },
-                fetchArtistTop = { id, limit -> MetadataFetcher.fetchDeezerArtistTop(id, limit) },
-                fetchItunesArtistSongs = { artist, limit ->
-                    MetadataFetcher.fetchItunesArtistSongs(artist, limit)
-                }
-            )
-        )
-    )
+    private val radioEngine = app.radioEngine
     private val buildSimilarPlaylistPreviewUseCase =
         BuildSimilarPlaylistPreviewUseCase(radioEngine, repository)
 
@@ -615,13 +434,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private var similarPreviewJob: Job? = null
     private var similarPreviewSeeds: List<PlayableItem> = emptyList()
 
-    /** Bumped on user-initiated track changes so the queue UI can scroll to the current item. */
-    private val _queueFocusEpoch = MutableStateFlow(0)
-    val queueFocusEpoch = _queueFocusEpoch.asStateFlow()
-
-    private fun bumpQueueFocus() {
-        _queueFocusEpoch.value = _queueFocusEpoch.value + 1
-    }
+    val queueFocusEpoch = playbackRuntime.queueFocusEpoch
 
     private val audioManager = getApplication<Application>().getSystemService(Context.AUDIO_SERVICE) as AudioManager
 
@@ -662,14 +475,10 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private val _isSearchingCatalog = MutableStateFlow(false)
     val isSearchingCatalog = _isSearchingCatalog.asStateFlow()
 
-    private val _activeDownloads = MutableStateFlow<List<ActiveDownload>>(emptyList())
-    val activeDownloads = _activeDownloads.asStateFlow()
+    val activeDownloads: StateFlow<List<ActiveDownload>> = processDownloads.downloads
 
     private val _downloadConflict = MutableStateFlow<DownloadConflict?>(null)
     val downloadConflict = _downloadConflict.asStateFlow()
-
-    /** Caps concurrent online downloads across all sources. */
-    private val downloadSemaphore = Semaphore(3)
 
     /** When set during a batch, subsequent conflicts reuse this policy without another dialog. */
     private var batchConflictPolicy: DownloadConflictPolicy? = null
@@ -867,8 +676,8 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         persistPlayback { setStreamSkipGraceSeconds(seconds) }
     }
 
-    private fun restoreVolumeBoostIfNeeded() {
-        val settings = playbackSettings.value
+    private suspend fun restoreVolumeBoostIfNeeded() {
+        val settings = playbackRuntime.awaitPlaybackSettings()
         if (!settings.volumeBoostEnabled) {
             if (_volumeLevel.value > 1f) {
                 _volumeLevel.value = getDeviceVolumeRatio().coerceAtMost(1f)
@@ -884,227 +693,6 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
-    private fun restorePlaybackModes() {
-        viewModelScope.launch {
-            val settings = playbackPreferences.settingsFlow.first()
-            val controller = mediaController
-            val hasLiveSession = (controller?.mediaItemCount ?: 0) > 0
-            val liveRepeat = repeatModeFromPlayer(controller?.repeatMode ?: Player.REPEAT_MODE_OFF)
-            val resolved = PlaybackModeRestore.resolve(settings, hasLiveSession, liveRepeat)
-            _isShuffle.value = resolved.shuffle
-            _repeatMode.value = resolved.repeat
-            if (resolved.applyRepeatToPlayer) {
-                applyRepeatModeToController(resolved.repeat)
-            }
-            syncShuffleToPlayerWhenReady()
-        }
-    }
-
-    /** L1: flag only. Callers that must also un-permute the queue use [disableShuffleRestoringOrder]. */
-    private fun setShuffleEnabled(enabled: Boolean) {
-        val wasEnabled = _isShuffle.value
-        _isShuffle.value = enabled
-        persistPlayback { setLastShuffleEnabled(enabled) }
-        if (!enabled && wasEnabled) {
-            preShuffleOrder = null
-            sendShuffleOrderToPlayer(null)
-            mediaController?.shuffleModeEnabled = false
-        }
-    }
-
-    /**
-     * L2: turn shuffle off *and* put the queue back in its pre-shuffle order. [setShuffleEnabled]
-     * alone only flipped the flag, so a Next with "apagar aleatorio al saltar" left the queue
-     * permanently shuffled with the original order unrecoverable.
-     */
-    private fun disableShuffleRestoringOrder() {
-        if (!_isShuffle.value) return
-        val restored = preShuffleQueueOrNull()
-        val currentId = _currentItem.value?.mediaId
-        val pos = mediaController?.currentPosition?.coerceAtLeast(0L)
-            ?: _playbackPositionMs.value.coerceAtLeast(0L)
-        val wasPlaying = mediaController?.isPlaying == true || _isPlaying.value
-        setShuffleEnabled(false)
-        if (restored.isNullOrEmpty()) return
-        val idx = restored.indexOfFirst { it.mediaId == currentId }.takeIf { it >= 0 } ?: 0
-        applyQueueReorder(restored, idx, pos, startPlaying = wasPlaying)
-    }
-
-    /**
-     * The pre-shuffle order projected onto the live queue: known ids first in their original order,
-     * then whatever was added while shuffled. Always a permutation of the current queue, so it can be
-     * applied (or persisted) without dropping or resurrecting tracks.
-     */
-    private fun preShuffleQueueOrNull(): List<PlayableItem>? {
-        val order = preShuffleOrder ?: return null
-        val live = _queue.value
-        if (live.isEmpty()) return null
-        val remaining = live.toMutableList()
-        val restored = ArrayList<PlayableItem>(live.size)
-        for (id in order) {
-            val idx = remaining.indexOfFirst { it.mediaId == id }
-            if (idx >= 0) restored.add(remaining.removeAt(idx))
-        }
-        restored.addAll(remaining)
-        return restored
-    }
-
-    private fun sendShuffleOrderToPlayer(order: List<Int>?) {
-        val controller = mediaController ?: return
-        val extras = Bundle()
-        if (order != null && order.isNotEmpty()) {
-            extras.putIntArray(MusicService.EXTRA_SHUFFLE_ORDER, order.toIntArray())
-        }
-        controller.sendCustomCommand(
-            SessionCommand(MusicService.ACTION_SET_SHUFFLE_ORDER, Bundle.EMPTY),
-            extras
-        )
-    }
-
-    /**
-     * Keep ExoPlayer linear: play order lives in [_queue] itself, so Cola and next/prev match
-     * without Media3 ShuffleOrder size races.
-     */
-    private fun syncShuffleToPlayer() {
-        shuffleApplyJob?.cancel()
-        mediaController?.shuffleModeEnabled = false
-        sendShuffleOrderToPlayer(null)
-    }
-
-    private fun syncShuffleToPlayerWhenReady() {
-        shuffleApplyJob?.cancel()
-        syncShuffleToPlayer()
-    }
-
-    /**
-     * Rewrite [_queue] so index 0 is current and the rest are shuffled. Player timeline
-     * matches Cola; next/prev follow the list without ExoPlayer shuffle mode.
-     */
-    private fun permuteQueueToPlayOrder(
-        items: List<PlayableItem>,
-        currentIndex: Int,
-        backupSource: Boolean
-    ): Pair<List<PlayableItem>, Int> {
-        if (items.isEmpty()) return items to 0
-        if (backupSource) preShuffleOrder = items.map { it.mediaId }
-        val order = PlaybackQueueOrder.shufflePlayOrder(items.size, currentIndex)
-        val shuffled = PlaybackQueueOrder.applyPlayOrder(items, order)
-        return shuffled to 0
-    }
-
-    private fun reloadPlayerTimeline(
-        items: List<PlayableItem>,
-        startIndex: Int,
-        startPositionMs: Long,
-        startPlaying: Boolean
-    ) {
-        val controller = mediaController ?: return
-        controller.shuffleModeEnabled = false
-        controller.setMediaItems(
-            items.map { playableToMediaItem(it) },
-            startIndex.coerceIn(0, items.lastIndex.coerceAtLeast(0)),
-            startPositionMs.coerceAtLeast(0L)
-        )
-        controller.prepare()
-        if (startPlaying) playWithForegroundService(controller)
-        syncShuffleToPlayer()
-    }
-
-    /**
-     * Rebuild ExoPlayer playlist to [newOrder] without interrupting the currently playing item
-     * (no [Player.setMediaItems] / prepare). Used by shuffle toggle so NP doesn't hitch.
-     * Returns false when seamless surgery isn't possible — caller should fall back to [reloadPlayerTimeline].
-     */
-    private fun rebuildPlayerQueueAroundCurrent(newOrder: List<PlayableItem>): Boolean {
-        val controller = mediaController ?: return false
-        if (newOrder.isEmpty() || controller.mediaItemCount <= 0) return false
-        val currentId = _currentItem.value?.mediaId
-            ?: controller.currentMediaItem?.mediaId
-            ?: return false
-        val playIndex = newOrder.indexOfFirst { it.mediaId == currentId }
-            .takeIf { it >= 0 }
-            ?: return false
-        val playerIndex = controller.currentMediaItemIndex
-        if (playerIndex !in 0 until controller.mediaItemCount) return false
-        val playingId = controller.currentMediaItem?.mediaId
-        if (playingId != null && playingId != currentId) return false
-
-        suppressPlaylistMutationCallbacks = true
-        try {
-            if (playerIndex + 1 < controller.mediaItemCount) {
-                controller.removeMediaItems(playerIndex + 1, controller.mediaItemCount)
-            }
-            if (playerIndex > 0) {
-                controller.removeMediaItems(0, playerIndex)
-            }
-            // Only the current item remains at index 0.
-            if (playIndex > 0) {
-                controller.addMediaItems(
-                    0,
-                    newOrder.subList(0, playIndex).map { playableToMediaItem(it) }
-                )
-            }
-            if (playIndex < newOrder.lastIndex) {
-                controller.addMediaItems(
-                    newOrder.subList(playIndex + 1, newOrder.size).map { playableToMediaItem(it) }
-                )
-            }
-            lastMediaItemIndex = controller.currentMediaItemIndex.coerceAtLeast(0)
-        } finally {
-            suppressPlaylistMutationCallbacks = false
-        }
-        syncShuffleToPlayer()
-        return true
-    }
-
-    private fun applyQueueReorder(
-        newOrder: List<PlayableItem>,
-        focusIndex: Int,
-        positionMs: Long,
-        startPlaying: Boolean
-    ) {
-        _queue.value = newOrder
-        lastMediaItemIndex = focusIndex
-        setCurrentItem(newOrder[focusIndex], persistLastPlayed = false)
-        setPlaybackPositionUi(positionMs)
-        if (!rebuildPlayerQueueAroundCurrent(newOrder)) {
-            reloadPlayerTimeline(newOrder, focusIndex, positionMs, startPlaying = startPlaying)
-        }
-    }
-
-    private fun setRepeatMode(mode: RepeatMode) {
-        _repeatMode.value = mode
-        applyRepeatModeToController(mode)
-        persistPlayback { setLastRepeatMode(mode) }
-    }
-
-    private fun applyResolvedModes(shuffle: Boolean, repeat: RepeatMode) {
-        if (shuffle != _isShuffle.value) {
-            // Restoring, not just flipping the flag: clear-on-skip / clear-on-play otherwise left the
-            // queue shuffled forever with the icon off and the original order gone.
-            if (shuffle) setShuffleEnabled(true) else disableShuffleRestoringOrder()
-        }
-        if (repeat != _repeatMode.value) setRepeatMode(repeat)
-    }
-
-    private fun applyManualPlayModes() {
-        val (shuffle, repeat) = PlaybackModeClear.afterManualPlay(
-            shuffle = _isShuffle.value,
-            repeat = _repeatMode.value,
-            settings = playbackSettings.value
-        )
-        applyResolvedModes(shuffle, repeat)
-    }
-
-    private fun applySkipModes() {
-        val (shuffle, repeat) = PlaybackModeClear.afterSkip(
-            shuffle = _isShuffle.value,
-            repeat = _repeatMode.value,
-            settings = playbackSettings.value
-        )
-        applyResolvedModes(shuffle, repeat)
-    }
-
     private fun persistPlayback(block: suspend PlaybackPreferencesRepository.() -> Unit) {
         viewModelScope.launch { playbackPreferences.block() }
     }
@@ -1116,23 +704,14 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         .map(select)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), initial)
 
-    private fun applyRepeatModeToController(mode: RepeatMode) {
-        mediaController?.repeatMode = when (mode) {
-            RepeatMode.OFF -> Player.REPEAT_MODE_OFF
-            RepeatMode.ALL -> Player.REPEAT_MODE_ALL
-            RepeatMode.ONE -> Player.REPEAT_MODE_ONE
-        }
-    }
-
-    private fun repeatModeFromPlayer(playerRepeatMode: Int): RepeatMode = when (playerRepeatMode) {
-        Player.REPEAT_MODE_ONE -> RepeatMode.ONE
-        Player.REPEAT_MODE_ALL -> RepeatMode.ALL
-        else -> RepeatMode.OFF
-    }
-
     init {
-        initMediaController()
-        startPositionTracker()
+        playbackRuntime.attachUi()
+        viewModelScope.launch {
+            restoreVolumeBoostIfNeeded()
+        }
+        viewModelScope.launch {
+            playbackRuntime.events.collect { toast(it) }
+        }
         viewModelScope.launch {
             hydrateUiPreferences()
         }
@@ -1217,36 +796,35 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         }
 
         viewModelScope.launch {
-            val restored = withContext(Dispatchers.IO) { activeDownloadsStore.load() }
-            if (restored.isNotEmpty()) {
-                _activeDownloads.value = restored
-            }
-            activeDownloads
-                .debounce(300)
-                .collect { list ->
-                    withContext(Dispatchers.IO) {
-                        activeDownloadsStore.save(list)
-                    }
-                }
-        }
-
-        viewModelScope.launch {
             activeDownloads.collect { list ->
                 downloadNotificationHelper.sync(list)
             }
         }
 
+        // Autosave can finish while no ViewModel exists. A retained/persisted SUCCESS triggers
+        // rematching as soon as LB or CF detail is present again.
         viewModelScope.launch {
-            connectivityObserver.isOnline.collect { online ->
-                if (online) listenSyncCoordinator.requestSync()
+            combine(
+                activeDownloads.map { rows ->
+                    rows.asSequence()
+                        .filter {
+                            it.source == ActiveDownloadSource.SAVE_WHILE_LISTENING &&
+                                it.state == CandidateDownloadState.SUCCESS
+                        }
+                        .mapNotNull { it.resultSongId }
+                        .toSet()
+                },
+                selectedLbPlaylist.map { it != null },
+                cfRecommendations.map { it != null }
+            ) { savedSongIds, hasLbDetail, hasCfDetail ->
+                Triple(savedSongIds, hasLbDetail, hasCfDetail)
             }
-        }
-
-        viewModelScope.launch {
-            // Kick sync on startup if there are pending listens and we're online.
-            if (pendingListenDao.count() > 0 && connectivityObserver.isCurrentlyOnline()) {
-                listenSyncCoordinator.requestSync()
-            }
+                .distinctUntilChanged()
+                .collect { (savedSongIds, hasLbDetail, hasCfDetail) ->
+                    if (savedSongIds.isNotEmpty() && (hasLbDetail || hasCfDetail)) {
+                        rematchDiscoverAfterLibraryChange()
+                    }
+                }
         }
 
         // rawSongs, not songsState: the latter also re-emits on every search keystroke and sort
@@ -1268,29 +846,6 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             }
         }
 
-        viewModelScope.launch {
-            songsState.collect { songs ->
-                _currentItem.value?.let { current ->
-                    if (current is PlayableItem.Local) {
-                        songs.find { it.uriString == current.song.uriString }?.let { updated ->
-                            setCurrentItem(PlayableItem.Local(updated), persistLastPlayed = false)
-                        }
-                    }
-                }
-                val q = _queue.value
-                if (q.any { it is PlayableItem.Local }) {
-                    _queue.value = q.map { item ->
-                        if (item is PlayableItem.Local) {
-                            songs.find { it.uriString == item.song.uriString }?.toPlayable() ?: item
-                        } else {
-                            item
-                        }
-                    }
-                }
-                maybeSeedIdlePlayer()
-            }
-        }
-
         viewModelScope.launch(Dispatchers.IO) {
             rawSongs.collect { songs ->
                 val unenhanced = songs.filter {
@@ -1304,852 +859,6 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                     repository.enhanceSongMetadataAndLyrics(song)
                 }
             }
-        }
-    }
-
-    private fun initMediaController() {
-        val sessionToken = SessionToken(
-            getApplication(),
-            ComponentName(getApplication(), MusicService::class.java)
-        )
-        controllerFuture = MediaController.Builder(getApplication(), sessionToken).buildAsync()
-        controllerFuture?.addListener({
-            try {
-                mediaController = controllerFuture?.get()
-                setupPlayerListener()
-                syncUiFromController()
-                restoreVolumeBoostIfNeeded()
-                restorePlaybackModes()
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
-        }, MoreExecutors.directExecutor())
-    }
-
-    private var lastMediaItemIndex: Int = -1
-    private var suppressShuffleWrapDetection: Boolean = false
-    /**
-     * When true, playlist surgery (shuffle toggle) must not reset UI position / re-stamp
-     * via [onMediaItemTransition] (PLAYLIST_CHANGED while the same track keeps playing).
-     */
-    private var suppressPlaylistMutationCallbacks: Boolean = false
-    /** Dedupes Room lastPlayedAt writes when the same local track is re-set (timeline reload). */
-    private var lastTouchedSongId: Long = -1L
-
-    private fun setCurrentItem(item: PlayableItem?, persistLastPlayed: Boolean = true) {
-        val previousMediaId = _currentItem.value?.mediaId
-        val mediaChanged = item?.mediaId != previousMediaId
-        _currentItem.value = item
-        val localSong = (item as? PlayableItem.Local)?.song
-        _currentSong.value = localSong
-        if (localSong != null) {
-            listenTracker.onTrackChanged(localSong)
-            if (mediaChanged) {
-                requestMetadataEnhancement(localSong)
-            }
-        } else {
-            listenTracker.onTrackChanged(null)
-        }
-        if (persistLastPlayed) {
-            persistPlaybackSession(force = true)
-            if (mediaChanged) {
-                maybeTouchSongLastPlayed(localSong)
-            }
-        }
-    }
-
-    private fun maybeTouchSongLastPlayed(song: Song?) {
-        if (song == null || song.id <= 0L || song.id == lastTouchedSongId) return
-        lastTouchedSongId = song.id
-        viewModelScope.launch(Dispatchers.IO) {
-            repository.touchSongLastPlayed(song.id)
-        }
-    }
-
-    private fun currentQueueIndex(): Int {
-        val queue = _queue.value
-        if (queue.isEmpty()) return 0
-        val fromController = mediaController?.currentMediaItemIndex
-        if (fromController != null && fromController in queue.indices) return fromController
-        if (lastMediaItemIndex in queue.indices) return lastMediaItemIndex
-        val current = _currentItem.value ?: return 0
-        return queue.indexOfFirst { it.mediaId == current.mediaId }.coerceAtLeast(0)
-    }
-
-    private fun persistPlaybackSession(force: Boolean = false) {
-        val now = System.currentTimeMillis()
-        if (!force && now - lastPersistedPositionAtMs < LAST_PLAYED_POSITION_SAVE_INTERVAL_MS) return
-        lastPersistedPositionAtMs = now
-        val positionMs = _playbackPositionMs.value
-        val local = (_currentItem.value as? PlayableItem.Local)?.song
-        val queue = _queue.value
-        val index = currentQueueIndex()
-        viewModelScope.launch(Dispatchers.IO) {
-            val lastPlayed = local?.let { PlaybackHydration.snapshotFromSong(it, positionMs) }
-            if (queue.isEmpty()) {
-                playbackSessionStore.saveSession(lastPlayed = lastPlayed, clearQueue = true)
-            } else {
-                playbackSessionStore.saveSession(
-                    lastPlayed = lastPlayed,
-                    queue = queueSnapshotForPersist(queue, index, positionMs)
-                )
-            }
-        }
-    }
-
-    /**
-     * With shuffle on, persist the original order plus the physical→original play-order map so a
-     * restart can resume the shuffled queue and still unshuffle.
-     *
-     * Trimming happens on the *play* order: trimming the original order by the current track's slot
-     * in it dropped a prefix of that ordering, which under shuffle is mostly still-unplayed tracks
-     * (quitting on original #90 of a shuffled 100-song album persisted 31 items, losing ~69 upcoming).
-     */
-    private fun queueSnapshotForPersist(
-        queue: List<PlayableItem>,
-        index: Int,
-        positionMs: Long
-    ): QueueSnapshot {
-        val original = preShuffleQueueOrNull()
-        if (_isShuffle.value && original != null) {
-            val trimmed = PlaybackQueueOrder.trimHistory(queue, index)
-            val survivors = trimmed.items.map { it.mediaId }.toHashSet()
-            val originalSurviving = original.filter { it.mediaId in survivors }
-            val playOrder = trimmed.items.map { item ->
-                originalSurviving.indexOfFirst { it.mediaId == item.mediaId }
-            }
-            val validOrder = PlaybackQueueOrder.validPlayOrderOrNull(playOrder, originalSurviving.size)
-            if (validOrder != null) {
-                val currentId = trimmed.items.getOrNull(trimmed.currentIndex)?.mediaId
-                val currentInOriginal = originalSurviving
-                    .indexOfFirst { it.mediaId == currentId }
-                    .coerceAtLeast(0)
-                return QueueSnapshotCodec.fromPlayable(
-                    items = originalSurviving,
-                    currentIndex = currentInOriginal,
-                    positionMs = positionMs,
-                    shufflePlayOrder = validOrder
-                )
-            }
-        }
-        val trimmed = PlaybackQueueOrder.trimHistory(queue, index)
-        return QueueSnapshotCodec.fromPlayable(
-            items = trimmed.items,
-            currentIndex = trimmed.currentIndex,
-            positionMs = positionMs,
-            shufflePlayOrder = trimmed.shufflePlayOrder
-        )
-    }
-
-    private fun persistCurrentPosition(force: Boolean = false) {
-        persistPlaybackSession(force = force)
-    }
-
-    /**
-     * Rebuild ViewModel queue / current item from a live MediaController session
-     * (Activity recreate while MusicService keeps playing).
-     */
-    private fun syncUiFromController() {
-        val controller = mediaController ?: return
-        if (controller.mediaItemCount <= 0) {
-            if (_queue.value.isNotEmpty() && _currentItem.value != null) {
-                loadHydratedQueueIntoController()
-                return
-            }
-            maybeSeedIdlePlayer()
-            return
-        }
-
-        liveSessionHydrated = true
-        idleSeedDone = true
-
-        val library = songsState.value
-        val rebuilt = buildList {
-            for (i in 0 until controller.mediaItemCount) {
-                val mediaItem = controller.getMediaItemAt(i)
-                add(mediaItemToPlayable(mediaItem, library))
-            }
-        }
-        if (rebuilt.isEmpty()) {
-            maybeSeedIdlePlayer()
-            return
-        }
-
-        val index = controller.currentMediaItemIndex.coerceIn(0, rebuilt.lastIndex)
-        _queue.value = rebuilt
-        val extrasOrder = controller.sessionExtras
-            .getIntArray(MusicService.EXTRA_SHUFFLE_ORDER)
-            ?.toList()
-        val order = PlaybackQueueOrder.validPlayOrderOrNull(extrasOrder, rebuilt.size)
-        if (order != null && controller.shuffleModeEnabled) {
-            // Live session still using Media3 shuffle — fold into physical queue.
-            preShuffleOrder = rebuilt.map { it.mediaId }
-            val shuffled = PlaybackQueueOrder.applyPlayOrder(rebuilt, order)
-            val displayIdx = PlaybackQueueOrder.toDisplayIndex(order, index, rebuilt.size)
-                .coerceIn(0, shuffled.lastIndex)
-            _queue.value = shuffled
-            lastMediaItemIndex = displayIdx
-            setCurrentItem(shuffled[displayIdx], persistLastPlayed = false)
-            reloadPlayerTimeline(
-                shuffled,
-                displayIdx,
-                controller.currentPosition.coerceAtLeast(0L),
-                startPlaying = controller.playWhenReady
-            )
-        } else {
-            lastMediaItemIndex = index
-            setCurrentItem(rebuilt[index], persistLastPlayed = false)
-        }
-        _isPlaying.value = controller.isPlaying
-        _playbackPositionMs.value = controller.currentPosition.coerceAtLeast(0L)
-        _repeatMode.value = repeatModeFromPlayer(controller.repeatMode)
-
-        ensureRemoteReadyAt(lastMediaItemIndex, startPlaying = controller.playWhenReady)
-        prefetchAround(lastMediaItemIndex)
-    }
-
-    private fun mediaItemToPlayable(mediaItem: MediaItem, library: List<Song>): PlayableItem {
-        val id = mediaItem.mediaId
-        val meta = mediaItem.mediaMetadata
-        val title = meta.title?.toString()?.takeIf { it.isNotBlank() } ?: "Unknown"
-        val artist = meta.artist?.toString()?.takeIf { it.isNotBlank() } ?: "Unknown Artist"
-        val album = meta.albumTitle?.toString()?.takeIf { it.isNotBlank() }
-        val artwork = meta.artworkUri?.toString()
-        val durationMs = 0L
-
-        if (id.startsWith("remote:")) {
-            val remoteKey = id.removePrefix("remote:")
-            val videoId = YouTubeExtractor.extractYouTubeId(remoteKey)
-            return if (videoId != null && videoId == remoteKey) {
-                // Preserve mediaId via resolved.videoId; stale timestamp forces re-resolve.
-                PlayableItem.remoteFrom(
-                    artist = artist,
-                    title = title,
-                    album = album,
-                    artworkUri = artwork,
-                    durationMs = durationMs,
-                    youtubeQueryOrId = remoteKey,
-                    resolved = ResolvedStream(
-                        audioUrl = "",
-                        userAgent = "",
-                        videoId = remoteKey,
-                        resolvedAtEpochMs = 0L
-                    )
-                )
-            } else {
-                PlayableItem.remoteFrom(
-                    artist = artist,
-                    title = title,
-                    album = album,
-                    artworkUri = artwork,
-                    durationMs = durationMs,
-                    youtubeQueryOrId = youtubeSearchQuery(artist, title).ifBlank { remoteKey }
-                )
-            }
-        }
-
-        val local = library.find { it.uriString == id }
-            ?: library.find { it.id.toString() == id }
-        if (local != null) return local.toPlayable()
-
-        return PlayableItem.Local(
-            Song(
-                id = id.toLongOrNull() ?: 0L,
-                uriString = id,
-                title = title,
-                artist = artist,
-                album = album ?: "Unknown Album",
-                artworkUri = artwork,
-                durationMs = durationMs
-            )
-        )
-    }
-
-    private fun loadHydratedQueueIntoController() {
-        val controller = mediaController ?: return
-        if (controller.mediaItemCount > 0) return
-        val items = _queue.value
-        if (items.isEmpty()) return
-        val idx = lastMediaItemIndex.takeIf { it in items.indices }
-            ?: items.indexOfFirst { it.mediaId == _currentItem.value?.mediaId }.takeIf { it >= 0 }
-            ?: 0
-        val pos = _playbackPositionMs.value.coerceAtLeast(0L)
-        controller.setMediaItems(items.map { playableToMediaItem(it) }, idx, pos)
-        controller.prepare()
-    }
-
-    /** Keep UI progress in sync with the active media item (always write, including 0). */
-    private fun setPlaybackPositionUi(positionMs: Long) {
-        _playbackPositionMs.value = positionMs.coerceAtLeast(0L)
-    }
-
-    /**
-     * [restoreShuffle] comes from the same [PlaybackModeRestore.resolve] the mode restore uses, so the
-     * queue and the shuffle toggle cannot disagree: applying the persisted shuffled order while
-     * `rememberShuffleOnLaunch` was off left the queue shuffled with the button reading OFF.
-     */
-    private fun applyHydratedQueue(hydrated: HydratedQueue, restoreShuffle: Boolean = true) {
-        clearDiscoverPlaybackOrigin()
-        val order = PlaybackQueueOrder.validPlayOrderOrNull(
-            hydrated.shufflePlayOrder,
-            hydrated.items.size
-        )
-        if (order != null && restoreShuffle) {
-            preShuffleOrder = hydrated.items.map { it.mediaId }
-            val shuffled = PlaybackQueueOrder.applyPlayOrder(hydrated.items, order)
-            val displayIdx = PlaybackQueueOrder.toDisplayIndex(
-                order,
-                hydrated.currentIndex,
-                hydrated.items.size
-            ).coerceIn(0, shuffled.lastIndex)
-            _queue.value = shuffled
-            lastMediaItemIndex = displayIdx
-            _isShuffle.value = true
-            setCurrentItem(shuffled[displayIdx], persistLastPlayed = false)
-        } else {
-            // Persisted order was shuffled but shuffle is not being restored: come back unshuffled
-            // rather than playing a shuffled queue with the toggle off.
-            preShuffleOrder = null
-            _queue.value = hydrated.items
-            lastMediaItemIndex = hydrated.currentIndex
-            setCurrentItem(hydrated.items[hydrated.currentIndex], persistLastPlayed = false)
-        }
-        setPlaybackPositionUi(hydrated.positionMs)
-        _isPlaying.value = false
-        loadHydratedQueueIntoController()
-        syncShuffleToPlayer()
-    }
-
-    private fun maybeSeedIdlePlayer() {
-        if (liveSessionHydrated || idleSeedDone || _currentItem.value != null) return
-        val songs = songsState.value
-        if (songs.isEmpty()) return
-        // Wait until MediaController connect attempt finished when possible.
-        if (mediaController == null && controllerFuture != null &&
-            !(controllerFuture?.isDone == true)
-        ) {
-            return
-        }
-        if (mediaController != null && (mediaController?.mediaItemCount ?: 0) > 0) {
-            return
-        }
-
-        idleSeedDone = true
-        viewModelScope.launch {
-            val last = withContext(Dispatchers.IO) { playbackSessionStore.load() }
-            val queueSnap = withContext(Dispatchers.IO) { playbackSessionStore.loadQueue() }
-            val settings = playbackPreferences.settingsFlow.first()
-            if (liveSessionHydrated || _currentItem.value != null) return@launch
-            val library = songsState.value
-            val hydrated = PlaybackHydration.hydrateQueue(queueSnap, library)
-            if (hydrated != null && hydrated.items.isNotEmpty()) {
-                if (liveSessionHydrated || _currentItem.value != null) return@launch
-                // Same resolver restorePlaybackModes uses, so queue order and toggle agree.
-                val restoreShuffle = PlaybackModeRestore
-                    .resolve(settings, hasLiveSession = false, liveRepeat = _repeatMode.value)
-                    .shuffle
-                applyHydratedQueue(hydrated, restoreShuffle = restoreShuffle)
-                maybeAutoplayAfterIdleSeed(settings.autoplayOnLaunch)
-                return@launch
-            }
-            val song = PlaybackHydration.resolveIdleSeed(library, last) ?: return@launch
-            if (liveSessionHydrated || _currentItem.value != null) return@launch
-            setCurrentItem(song.toPlayable(), persistLastPlayed = false)
-            _playbackPositionMs.value = PlaybackHydration.resumePositionMs(song, last)
-            _isPlaying.value = false
-            maybeAutoplayAfterIdleSeed(settings.autoplayOnLaunch)
-        }
-    }
-
-    private fun maybeAutoplayAfterIdleSeed(autoplay: Boolean) {
-        if (!autoplay || liveSessionHydrated) return
-        if (mediaController?.isPlaying == true) return
-        if (_currentItem.value == null) return
-        togglePlayPause()
-    }
-
-    private fun setupPlayerListener() {
-        mediaController?.addListener(object : Player.Listener {
-            override fun onIsPlayingChanged(isPlayingNow: Boolean) {
-                _isPlaying.value = isPlayingNow
-                if (isPlayingNow) {
-                    consecutiveUnplayableSkips = 0
-                    clearRemoteRecovery()
-                } else {
-                    listenTracker.onStopped()
-                    persistCurrentPosition(force = true)
-                }
-            }
-
-            override fun onPlayerError(error: PlaybackException) {
-                handlePlayerError(error)
-            }
-
-            override fun onPlaybackStateChanged(playbackState: Int) {
-                if (playbackState == Player.STATE_ENDED) {
-                    (_currentItem.value as? PlayableItem.Remote)?.let { remote ->
-                        maybeEnqueueSaveWhileListening(remote, force = true)
-                    }
-                    maybeAutoStartRadioOnQueueEnd()
-                }
-            }
-
-            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-                val controller = mediaController
-                val newIndex = controller?.currentMediaItemIndex ?: -1
-                if (suppressPlaylistMutationCallbacks) {
-                    lastMediaItemIndex = newIndex
-                    return
-                }
-                val queueSize = _queue.value.size
-                val wrappedShuffleCycle = !suppressShuffleWrapDetection &&
-                    _isShuffle.value &&
-                    _repeatMode.value == RepeatMode.ALL &&
-                    reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO &&
-                    lastMediaItemIndex >= 0 &&
-                    queueSize > 1 &&
-                    lastMediaItemIndex == queueSize - 1 &&
-                    newIndex == 0
-
-                mediaItem?.let { item ->
-                    val idOrUri = item.mediaId
-                    val playable = _queue.value.find { it.mediaId == idOrUri }
-                        ?: _queue.value.find {
-                            it is PlayableItem.Local &&
-                                (it.song.uriString == idOrUri || it.song.id.toString() == idOrUri)
-                        }
-                        ?: mediaItemToPlayable(item, songsState.value)
-                    // New item → progress must not keep the previous track's position.
-                    setPlaybackPositionUi(0L)
-                    setCurrentItem(playable)
-                    clearRemoteRecovery()
-                    // Covers every transition, including landing on a local track or on a Remote whose
-                    // stream is still fresh: ensureRemoteReadyAt returns early in both cases and would
-                    // leave an idle player idle.
-                    val resumeAfterTransition = controller?.playWhenReady == true
-                    ensurePreparedForPlayback()
-                    ensureRemoteReadyAt(
-                        newIndex,
-                        startPlaying = resumeAfterTransition
-                    )
-                    prefetchAround(newIndex)
-                    if (_radioActive.value) {
-                        rememberRadioPlayed(playable)
-                        maybeRefillRadio(newIndex)
-                    }
-                } ?: listenTracker.onTrackChanged(null)
-
-                if (wrappedShuffleCycle) {
-                    val avoidId = _queue.value.getOrNull(lastMediaItemIndex)?.mediaId
-                    val source = _queue.value
-                    val reshuffled = source.shuffled().toMutableList()
-                    if (avoidId != null && reshuffled.size > 1 && reshuffled.first().mediaId == avoidId) {
-                        val swapWith = reshuffled.indexOfFirst { it.mediaId != avoidId }
-                            .takeIf { it > 0 } ?: 1
-                        val tmp = reshuffled[0]
-                        reshuffled[0] = reshuffled[swapWith]
-                        reshuffled[swapWith] = tmp
-                    }
-                    _queue.value = reshuffled
-                    suppressShuffleWrapDetection = true
-                    try {
-                        reloadPlayerTimeline(
-                            reshuffled,
-                            0,
-                            0L,
-                            startPlaying = controller?.playWhenReady == true
-                        )
-                        setCurrentItem(reshuffled[0], persistLastPlayed = false)
-                        lastMediaItemIndex = 0
-                    } finally {
-                        suppressShuffleWrapDetection = false
-                    }
-                    persistPlaybackSession(force = true)
-                } else {
-                    lastMediaItemIndex = newIndex
-                }
-            }
-        })
-    }
-
-    private fun songToMediaItem(s: Song): MediaItem {
-        return MediaItem.Builder()
-            .setMediaId(s.uriString)
-            .setUri(parseToMediaUri(s.uriString))
-            .setMediaMetadata(
-                MediaMetadata.Builder()
-                    .setTitle(s.title)
-                    .setArtist(s.artist)
-                    .setAlbumTitle(s.album)
-                    .setArtworkUri(parseToArtworkUri(s.artworkUri))
-                    .build()
-            )
-            .build()
-    }
-
-    private fun playableToMediaItem(item: PlayableItem): MediaItem {
-        return when (item) {
-            is PlayableItem.Local -> songToMediaItem(item.song)
-            is PlayableItem.Remote -> {
-                val resolved = item.resolved
-                val uri = if (resolved != null) {
-                    parseToMediaUri(resolved.audioUrl)
-                } else {
-                    Uri.EMPTY
-                }
-                val builder = MediaItem.Builder()
-                    .setMediaId(item.mediaId)
-                    .setUri(uri)
-                    .setMediaMetadata(
-                        MediaMetadata.Builder()
-                            .setTitle(item.title)
-                            .setArtist(item.artist)
-                            .setAlbumTitle(item.album)
-                            .setArtworkUri(parseToArtworkUri(item.artworkUri))
-                            .build()
-                    )
-                if (resolved != null) {
-                    builder.setStreamPlaybackTag(
-                        StreamPlaybackTag(resolved.userAgent, resolved.videoId)
-                    )
-                }
-                builder.build()
-            }
-        }
-    }
-
-    /**
-     * Stricter than the resolver's cache TTL on purpose. A URL that prefetch resolved a couple of
-     * minutes ago is usually already rejected by the CDN, and handing it to the player burns ~2s
-     * failing before anything re-extracts it — that was the silence after pressing next. Re-resolving
-     * up front costs one extraction and starts it while the item is loading instead of after it dies.
-     */
-    private fun remoteNeedsResolve(item: PlayableItem.Remote): Boolean {
-        val resolved = item.resolved ?: return true
-        if (!streamResolver.isFresh(resolved)) return true
-        val age = System.currentTimeMillis() - resolved.resolvedAtEpochMs
-        return age > STREAM_READY_MAX_AGE_MS
-    }
-
-    private suspend fun resolveRemote(item: PlayableItem.Remote): PlayableItem.Remote? {
-        val resolved = streamResolver.resolve(item).getOrNull() ?: return null
-        return item.copy(resolved = resolved)
-    }
-
-    /**
-     * Writes a freshly resolved remote into the queue and the player timeline, locating the slot by
-     * mediaId instead of by the index captured before the network call (that index can point at a
-     * different track by the time the resolve returns: removal, radio refill, reshuffle).
-     *
-     * Matched against [original] as well as [resolved], because `Remote.mediaId` is derived from the
-     * videoId once a stream is attached: a resolved copy carries a *different* id than the queue entry
-     * it came from. Searching only for the resolved id never matched, so every resolve was silently
-     * discarded and the player kept retrying an empty URI forever.
-     */
-    private fun applyResolvedRemote(
-        original: PlayableItem.Remote,
-        resolved: PlayableItem.Remote
-    ): Int {
-        val index = _queue.value.indexOfRemoteSlot(original)
-        if (index < 0) return -1
-        updateQueueItem(index, resolved)
-        if (index < (mediaController?.mediaItemCount ?: 0)) {
-            mediaController?.replaceMediaItem(index, playableToMediaItem(resolved))
-        }
-        return index
-    }
-
-    private fun updateQueueItem(index: Int, item: PlayableItem) {
-        val list = _queue.value.toMutableList()
-        if (index !in list.indices) return
-        list[index] = item
-        _queue.value = list
-        if (_currentItem.value?.mediaId == item.mediaId ||
-            (index == (mediaController?.currentMediaItemIndex ?: -1))
-        ) {
-            setCurrentItem(item, persistLastPlayed = false)
-        }
-    }
-
-    private fun ensureRemoteReadyAt(index: Int, startPlaying: Boolean = true) {
-        val item = _queue.value.getOrNull(index) as? PlayableItem.Remote ?: return
-        if (!remoteNeedsResolve(item)) return
-        // Already resolving this exact item: let it finish. ExoPlayer reports the empty-URI failure
-        // several times in a row, and cancelling + restarting the extraction on each report is what
-        // stretched a ~3s resolve into 11s of silence.
-        if (resolvingTransitionJob?.isActive == true &&
-            resolvingTransitionQueueEntryId == item.queueEntryId
-        ) {
-            return
-        }
-        // Preserve the controller's playWhenReady decision while resolving. Preparation waits until
-        // a real URL is applied, so an unresolved Uri.EMPTY is not opened as a local file.
-        resolvingTransitionJob?.cancel()
-        resolvingTransitionQueueEntryId = item.queueEntryId
-        resolvingTransitionJob = viewModelScope.launch {
-            beginResolvingRemote()
-            try {
-                val resolvedItem = resolveRemote(item)
-                if (resolvedItem == null) {
-                    // Defer to the grace window when it owns this track: otherwise this path toasted
-                    // "no se pudo reproducir" and skipped while the retry loop was still working —
-                    // and it often recovered a second later, so the message was simply wrong.
-                    val recoveryOwnsItem = remoteRecoveryMediaId == item.mediaId &&
-                        System.currentTimeMillis() < remoteRecoveryDeadlineMs
-                    if (startPlaying && !recoveryOwnsItem) {
-                        recoverAfterUnplayable("No se pudo resolver el audio online")
-                    }
-                    return@launch
-                }
-                consecutiveUnplayableSkips = 0
-                val slot = applyResolvedRemote(item, resolvedItem)
-                if (slot < 0) {
-                    if (startPlaying) {
-                        recoverAfterUnplayable("No se pudo resolver el audio online")
-                    }
-                    return@launch
-                }
-                val controller = mediaController
-                controller?.prepare()
-                if (startPlaying && controller?.playWhenReady == true) {
-                    controller.play()
-                }
-            } finally {
-                endResolvingRemote()
-            }
-        }
-    }
-
-    /**
-     * After a track cannot play: advance if possible, else pause and optionally start radio.
-     * Shared by local errors, remote resolve failures, and exhausted HTTP retries.
-     */
-    private fun recoverAfterUnplayable(userMessage: String? = null) {
-        userMessage?.let { toast(it) }
-        val controller = mediaController ?: return
-        if (controller.hasNextMediaItem()) {
-            consecutiveUnplayableSkips++
-            if (consecutiveUnplayableSkips >= MAX_CONSECUTIVE_UNPLAYABLE_SKIPS) {
-                consecutiveUnplayableSkips = 0
-                controller.pause()
-                toast("Varias canciones no se pudieron reproducir; se pausó la cola")
-                return
-            }
-            controller.seekToNextMediaItem()
-            // The error that got us here left the player idle, and a seek does not undo that.
-            ensurePreparedForPlayback()
-            return
-        }
-        consecutiveUnplayableSkips = 0
-        controller.pause()
-        maybeAutoStartRadioOnQueueEnd()
-    }
-
-    private fun prefetchAround(index: Int) {
-        prefetchJob?.cancel()
-        prefetchJob = viewModelScope.launch {
-            val queue = _queue.value
-            val targets = listOfNotNull(
-                queue.getOrNull(index + 1),
-                queue.getOrNull(index + 2)
-            ).filterIsInstance<PlayableItem.Remote>()
-                .filter { remoteNeedsResolve(it) }
-            if (targets.isEmpty()) return@launch
-
-            for (remote in targets) {
-                val resolved = resolveRemote(remote) ?: continue
-                applyResolvedRemote(remote, resolved)
-            }
-        }
-    }
-
-    private fun handlePlayerError(error: PlaybackException) {
-        val index = mediaController?.currentMediaItemIndex ?: return
-        val queued = _queue.value.getOrNull(index)
-        val item = queued as? PlayableItem.Remote
-        if (item == null) {
-            val title = (queued as? PlayableItem.Local)?.song?.title?.takeIf { it.isNotBlank() }
-            recoverAfterUnplayable(
-                if (title != null) "No se pudo reproducir «$title»"
-                else "No se pudo reproducir"
-            )
-            return
-        }
-
-        // Expected failure while the URL is still being fetched (Uri.EMPTY → ENOENT). Skipping here
-        // marched through the whole queue and tripped the "too many failures" pause.
-        if (item.resolved == null) {
-            ensureRemoteReadyAt(index, startPlaying = mediaController?.playWhenReady == true)
-            return
-        }
-
-        // Any error code, not a hand-picked list of IO ones. A dead googlevideo URL surfaces as an
-        // HTML error page (invalid content type), a malformed container or a decode failure just as
-        // often as a plain bad status, and those all used to skip the track instantly and silently.
-        val graceMs = playbackSettings.value.streamSkipGraceSeconds
-            .coerceAtLeast(0)
-            .times(1000L)
-        if (graceMs <= 0L) {
-            recoverAfterUnplayable(unplayableRemoteMessage(item))
-            return
-        }
-
-        // One window per track, shared across error rounds, so a permanently broken stream still
-        // gives up instead of retrying forever.
-        if (remoteRecoveryMediaId != item.mediaId) {
-            remoteRecoveryMediaId = item.mediaId
-            remoteRecoveryDeadlineMs = System.currentTimeMillis() + graceMs
-        }
-        if (System.currentTimeMillis() >= remoteRecoveryDeadlineMs) {
-            clearRemoteRecovery()
-            recoverAfterUnplayable(unplayableRemoteMessage(item))
-            return
-        }
-        if (remoteRecoveryJob?.isActive == true) return
-
-        val resumeAfterRecovery = mediaController?.playWhenReady == true
-        remoteRecoveryJob = viewModelScope.launch {
-            beginResolvingRemote()
-            try {
-                while (System.currentTimeMillis() < remoteRecoveryDeadlineMs) {
-                    streamResolver.invalidate(item)
-                    val refreshed = resolveRemote(item.copy(resolved = null))
-                    if (refreshed != null && applyResolvedRemote(item, refreshed) >= 0) {
-                        consecutiveUnplayableSkips = 0
-                        val controller = mediaController
-                        controller?.prepare()
-                        if (resumeAfterRecovery && controller?.playWhenReady == true) {
-                            controller.play()
-                        }
-                        // If it fails again, onPlayerError comes back and reuses the same window.
-                        return@launch
-                    }
-                    delay(STREAM_RECOVERY_RETRY_MS)
-                }
-                clearRemoteRecovery()
-                recoverAfterUnplayable(unplayableRemoteMessage(item))
-            } finally {
-                endResolvingRemote()
-            }
-        }
-    }
-
-    private fun unplayableRemoteMessage(item: PlayableItem.Remote): String =
-        item.title.takeIf { it.isNotBlank() }
-            ?.let { "No se pudo reproducir «$it»" }
-            ?: "No se pudo reproducir el audio online"
-
-    private fun clearRemoteRecovery() {
-        remoteRecoveryJob?.cancel()
-        remoteRecoveryJob = null
-        remoteRecoveryMediaId = null
-        remoteRecoveryDeadlineMs = 0L
-    }
-
-    private var lastSeekTimestamp = 0L
-
-    private fun startPositionTracker() {
-        viewModelScope.launch {
-            while (true) {
-                mediaController?.let { controller ->
-                    // The play/pause icon reads _isPlaying while togglePlayPause acts on
-                    // controller.isPlaying. If those ever disagree the button does the opposite of
-                    // what it shows — you aim at "play" and it pauses. Re-syncing here caps any
-                    // divergence at one tick instead of waiting for onIsPlayingChanged.
-                    if (_isPlaying.value != controller.isPlaying) {
-                        _isPlaying.value = controller.isPlaying
-                    }
-                    if (controller.isPlaying && System.currentTimeMillis() - lastSeekTimestamp > 600) {
-                        _playbackPositionMs.value = controller.currentPosition.coerceAtLeast(0L)
-                        persistCurrentPosition(force = false)
-                        val dur = controller.duration
-                        val curr = _currentItem.value
-                        if (dur > 0 && curr != null && curr.durationMs <= 0) {
-                            when (curr) {
-                                is PlayableItem.Local -> {
-                                    updateSongDuration(curr.song.id, dur)
-                                    listenTracker.onDurationKnown(curr.song.id, dur)
-                                }
-                                is PlayableItem.Remote -> {
-                                    val idx = controller.currentMediaItemIndex
-                                    if (idx in _queue.value.indices) {
-                                        updateQueueItem(idx, curr.withIdentity { copy(durationMs = dur) })
-                                    }
-                                }
-                            }
-                        }
-                        (curr as? PlayableItem.Remote)?.let { remote ->
-                            val durationMs = when {
-                                remote.durationMs > 0 -> remote.durationMs
-                                dur > 0 -> dur
-                                else -> controller.duration
-                            }
-                            maybeEnqueueSaveWhileListening(
-                                remote = remote,
-                                force = false,
-                                durationMs = durationMs
-                            )
-                        }
-                    } else if (!controller.isPlaying && controller.mediaItemCount > 0) {
-                        _playbackPositionMs.value = controller.currentPosition.coerceAtLeast(0L)
-                    }
-                    listenTracker.onPlaybackTick(
-                        isPlaying = controller.isPlaying,
-                        elapsedRealtimeMs = SystemClock.elapsedRealtime()
-                    )
-                }
-                delay(200)
-            }
-        }
-    }
-
-    /**
-     * Background-download a remote into the library when "Guardar al escuchar" is on.
-     * Does not pause or replace the playing MediaItem.
-     * [force] = track ended → save regardless of percent (still requires pref ON).
-     */
-    private fun maybeEnqueueSaveWhileListening(
-        remote: PlayableItem.Remote,
-        force: Boolean,
-        durationMs: Long = remote.durationMs
-    ) {
-        if (!listenBrainzSettings.value.saveWhileListening) return
-        if (!force) {
-            val knownDuration = durationMs.takeIf { it > 0 } ?: return
-            val percent = listenBrainzSettings.value.saveWhileListeningPercent
-                .coerceIn(MIN_SAVE_WHILE_LISTENING_PERCENT, MAX_SAVE_WHILE_LISTENING_PERCENT)
-            val thresholdMs = knownDuration * percent / 100L
-            if (_playbackPositionMs.value < thresholdMs) return
-        }
-        val key = TrackMatchKeys.downloadIdFor(remote.artist, remote.title)
-        if (key.isEmpty() || key in saveWhileListeningAttempted) return
-        // The position tracker calls this every 200ms and the threshold stays met for the rest of the
-        // track, so a failure has to hold a cooldown: clearing the key alone re-enqueued five times
-        // per second (with a toast each) until the track ended.
-        val failedAtMs = saveWhileListeningFailures[key]
-        if (failedAtMs != null &&
-            System.currentTimeMillis() - failedAtMs < SAVE_WHILE_LISTENING_RETRY_COOLDOWN_MS
-        ) {
-            return
-        }
-        // Block auto re-enqueue while downloading or already succeeded this session.
-        val existing = _activeDownloads.value.find { it.id == key }
-        if (existing != null && existing.state == CandidateDownloadState.DOWNLOADING) return
-        saveWhileListeningAttempted.add(key)
-
-        viewModelScope.launch {
-            val result = enqueueRemoteDownload(remote, ActiveDownloadSource.SAVE_WHILE_LISTENING)
-            result.fold(
-                onSuccess = { song ->
-                    saveWhileListeningFailures.remove(key)
-                    toastSongInLibrary(song.title, LibraryToastKind.SAVED)
-                },
-                onFailure = { e ->
-                    saveWhileListeningFailures[key] = System.currentTimeMillis()
-                    saveWhileListeningAttempted.remove(key)
-                    toast("No se pudo guardar «${remote.title}»: ${e.localizedMessage ?: "error"}")
-                }
-            )
         }
     }
 
@@ -2181,23 +890,6 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
-    private fun parseToMediaUri(uriStr: String?): Uri {
-        if (uriStr.isNullOrBlank()) return Uri.EMPTY
-        return audioStore.playableUri(uriStr.trim())
-    }
-
-    private fun parseToArtworkUri(uriStr: String?): Uri? {
-        if (uriStr.isNullOrBlank()) return null
-        val trimmed = uriStr.trim()
-        return if (trimmed.startsWith("http://") || trimmed.startsWith("https://") || trimmed.startsWith("content://")) {
-            Uri.parse(trimmed)
-        } else {
-            null
-        }
-    }
-
-
-
     fun playSong(
         song: Song,
         playlistOrQueue: List<Song> = emptyList(),
@@ -2222,121 +914,16 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         origin: DiscoverPlaybackOrigin = DiscoverPlaybackOrigin.None,
         resumeAtMs: Long? = null
     ) {
-        if (items.isEmpty()) return
-        val queueItems = items.withFreshRemoteQueueEntryIds()
-        _discoverPlaybackOrigin.value = origin
-        if (!fromRadio) clearRadioSession()
-        val validIndex = startIndex.coerceIn(0, queueItems.size - 1)
-        val shouldRotate = rotate && !fromRadio && validIndex > 0
-        val ordered = if (shouldRotate) {
-            PlaybackQueueOrder.rotateToStart(queueItems, validIndex)
-        } else {
-            queueItems
-        }
-        val startAt = if (shouldRotate) 0 else validIndex
-        val shouldApplyManualModes = applyManualModes && !fromRadio
-        // Shuffle / new collection ignore stale UI position unless caller opts in (idle resume).
-        val resumePosition = if (startShuffled) null else resumeAtMs?.takeIf { it > 0L }
-        playCollectionJob?.cancel()
-        playCollectionJob = viewModelScope.launch {
-            var working = ordered.toMutableList()
-            val startItem = working[startAt]
-            if (startItem is PlayableItem.Remote && remoteNeedsResolve(startItem)) {
-                beginResolvingRemote()
-                try {
-                    val resolved = resolveRemote(startItem)
-                    if (resolved == null) {
-                        // Try next items (rest of wrapped circle after rotate)
-                        val nextRemote = working.withIndex()
-                            .filter { it.index != startAt && it.value is PlayableItem.Remote }
-                        var played = false
-                        for ((idx, remote) in nextRemote) {
-                            val r = resolveRemote(remote as PlayableItem.Remote) ?: continue
-                            working[idx] = r
-                            finishPlayPlayableCollection(
-                                working,
-                                idx,
-                                shouldApplyManualModes,
-                                fromRadio,
-                                startShuffled,
-                                resumePosition
-                            )
-                            played = true
-                            break
-                        }
-                        if (!played) return@launch
-                        return@launch
-                    }
-                    working[startAt] = resolved
-                } finally {
-                    endResolvingRemote()
-                }
-            }
-            finishPlayPlayableCollection(
-                working,
-                startAt,
-                shouldApplyManualModes,
-                fromRadio,
-                startShuffled,
-                resumePosition
-            )
-            prefetchAround(startAt)
-            if (fromRadio && _radioActive.value) {
-                maybeRefillRadio(startAt)
-            }
-        }
-    }
-
-    private fun finishPlayPlayableCollection(
-        items: List<PlayableItem>,
-        index: Int,
-        applyManualModes: Boolean,
-        fromRadio: Boolean,
-        startShuffled: Boolean = false,
-        resumeAtMs: Long? = null
-    ) {
-        val (playItems, playIndex) = if (startShuffled) {
-            permuteQueueToPlayOrder(items, index, backupSource = true)
-        } else {
-            if (!fromRadio && (applyManualModes || !_isShuffle.value)) {
-                preShuffleOrder = null
-            }
-            items to index
-        }
-        _queue.value = playItems
-        lastMediaItemIndex = playIndex
-        when {
-            startShuffled -> {
-                setShuffleEnabled(true)
-                val (_, nextRepeat) = PlaybackModeClear.afterManualPlay(
-                    shuffle = true,
-                    repeat = _repeatMode.value,
-                    settings = playbackSettings.value
-                )
-                if (nextRepeat != _repeatMode.value) setRepeatMode(nextRepeat)
-            }
-            applyManualModes -> applyManualPlayModes()
-            fromRadio -> setShuffleEnabled(false)
-        }
-        setCurrentItem(playItems[playIndex], persistLastPlayed = false)
-        clearRemoteRecovery()
-        liveSessionHydrated = true
-        idleSeedDone = true
-        bumpQueueFocus()
-
-        val startPositionMs = when {
-            startShuffled -> 0L
-            else -> resumeAtMs?.coerceAtLeast(0L) ?: 0L
-        }
-        setPlaybackPositionUi(startPositionMs)
-
-        val wasPlaying = true // collection play always starts
-        reloadPlayerTimeline(playItems, playIndex, startPositionMs, startPlaying = wasPlaying)
-        // Timeline reload triggers onMediaItemTransition → stamp once; if no controller, stamp here.
-        if (mediaController == null) {
-            maybeTouchSongLastPlayed((playItems.getOrNull(playIndex) as? PlayableItem.Local)?.song)
-            persistPlaybackSession(force = true)
-        }
+        playbackRuntime.playPlayableCollection(
+            items = items,
+            startIndex = startIndex,
+            fromRadio = fromRadio,
+            rotate = rotate,
+            applyManualModes = applyManualModes,
+            startShuffled = startShuffled,
+            origin = origin,
+            resumeAtMs = resumeAtMs
+        )
     }
 
     fun catalogPreviewKeyFor(track: OnlineCatalogTrack): String {
@@ -2346,7 +933,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     fun playOnlineCatalogTrackAsStream(track: OnlineCatalogTrack) {
         val key = catalogPreviewKeyFor(track)
-        if (_catalogPreviewKey.value == key && _currentItem.value != null) {
+        if (_catalogPreviewKey.value == key && currentItem.value != null) {
             togglePlayPause()
             return
         }
@@ -2361,7 +948,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     /** Preview local file while reviewing identify candidates (toggle if already current). */
     fun previewIdentifyLocalSong(song: Song) {
-        val current = _currentItem.value
+        val current = currentItem.value
         if (current is PlayableItem.Local && current.song.id == song.id) {
             togglePlayPause()
             return
@@ -2488,159 +1075,28 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         addToQueueBatch(songs)
     }
 
-    private fun playWithForegroundService(controller: MediaController) {
-        // Media3 promotes MusicService to mediaPlayback FGS from onUpdateNotification
-        // when play() runs while the Activity is visible. Do not call
-        // startForegroundService here: a second start from cached uidState fails on
-        // Android 12+ and Motorola demotes the existing FGS.
-        controller.play()
-    }
-
     fun togglePlayPause() {
-        val controller = mediaController
-        val current = _currentItem.value
-        val queue = _queue.value
-        // Pausing never needs a live stream URL: gating it on the TTL turned pause into a restart
-        // once a Remote had been playing longer than StreamResolver.DEFAULT_TTL_MS.
-        if (controller != null && controller.isPlaying) {
-            controller.pause()
-            return
-        }
-        val needsResolve = current is PlayableItem.Remote && remoteNeedsResolve(current)
-        if (controller != null && controller.mediaItemCount > 0 && !needsResolve) {
-            playWithForegroundService(controller)
-            return
-        }
-
-        if (current == null) return
-        val resumeMs = _playbackPositionMs.value.takeIf { it > 0L }
-        if (queue.isNotEmpty()) {
-            val index = queue.indexOfFirst { it.mediaId == current.mediaId }
-                .takeIf { it >= 0 }
-                ?: lastMediaItemIndex.coerceIn(0, queue.lastIndex)
-            playPlayableCollection(
-                queue,
-                index,
-                rotate = false,
-                applyManualModes = false,
-                resumeAtMs = resumeMs
-            )
-            return
-        }
-        when (current) {
-            is PlayableItem.Local -> playPlayableCollection(
-                listOf(current),
-                0,
-                applyManualModes = false,
-                resumeAtMs = resumeMs
-            )
-            is PlayableItem.Remote -> playPlayableCollection(
-                listOf(current),
-                0,
-                applyManualModes = false,
-                resumeAtMs = resumeMs
-            )
-        }
+        playbackRuntime.togglePlayPause()
     }
 
     fun skipToNext() {
-        bumpQueueFocus()
-        applySkipModes()
-        mediaController?.seekToNextMediaItem()
-        ensurePreparedForPlayback()
+        playbackRuntime.skipToNext()
     }
 
-    /**
-     * Wraps to the last track when nothing precedes the current one: for manual navigation the queue is
-     * a ring. Only reachable with repeat off — [Player.REPEAT_MODE_ALL] already wraps by itself, and
-     * with it [Player.hasPreviousMediaItem] is already true at index 0.
-     */
     fun skipToPrevious() {
-        bumpQueueFocus()
-        applySkipModes()
-        val controller = mediaController
-        if (controller != null) {
-            if (controller.hasPreviousMediaItem()) {
-                controller.seekToPreviousMediaItem()
-            } else if (controller.mediaItemCount > 1) {
-                controller.seekTo(controller.mediaItemCount - 1, 0L)
-            }
-        }
-        ensurePreparedForPlayback()
-    }
-
-    /**
-     * A seek does not take the player out of [Player.STATE_IDLE], and a failed stream parks it there,
-     * so next/previous looked dead while the play button worked: Media3 prepares an idle player for
-     * the play action (`Util.handlePlayButtonAction`) and nothing did it for a seek. Only prepares —
-     * [Player.getPlayWhenReady] remains the single source of whether playback should continue.
-     */
-    private fun ensurePreparedForPlayback() {
-        val controller = mediaController ?: return
-        if (controller.mediaItemCount == 0) return
-        // An unresolved Remote sits in the timeline as Uri.EMPTY, which ExoPlayer opens with
-        // FileDataSource and fails instantly (ENOENT on an empty path). Preparing it again just
-        // spins that error, so wait for ensureRemoteReadyAt to put a real URL in first.
-        if (currentItemAwaitsStreamUrl()) return
-        if (controller.playbackState == Player.STATE_IDLE) {
-            controller.prepare()
-        }
-    }
-
-    /** True while the playing slot holds a Remote placeholder with no stream URL yet. */
-    private fun currentItemAwaitsStreamUrl(): Boolean {
-        val index = mediaController?.currentMediaItemIndex ?: return false
-        val item = _queue.value.getOrNull(index) as? PlayableItem.Remote ?: return false
-        return item.resolved == null
+        playbackRuntime.skipToPrevious()
     }
 
     fun seekTo(positionMs: Long) {
-        lastSeekTimestamp = System.currentTimeMillis()
-        _playbackPositionMs.value = positionMs
-        mediaController?.seekTo(positionMs)
+        playbackRuntime.seekTo(positionMs)
     }
 
     fun toggleRepeatMode() {
-        val nextMode = when (_repeatMode.value) {
-            RepeatMode.OFF -> RepeatMode.ALL
-            RepeatMode.ALL -> RepeatMode.ONE
-            RepeatMode.ONE -> RepeatMode.OFF
-        }
-        setRepeatMode(nextMode)
+        playbackRuntime.toggleRepeatMode()
     }
 
     fun toggleShuffle() {
-        val enabling = !_isShuffle.value
-        val queue = _queue.value
-        val pos = mediaController?.currentPosition?.coerceAtLeast(0L)
-            ?: _playbackPositionMs.value.coerceAtLeast(0L)
-        val wasPlaying = mediaController?.isPlaying == true || _isPlaying.value
-        if (enabling) {
-            setShuffleEnabled(true)
-            if (queue.isNotEmpty()) {
-                val (shuffled, startIdx) = permuteQueueToPlayOrder(
-                    queue,
-                    currentQueueIndex(),
-                    backupSource = true
-                )
-                applyQueueReorder(shuffled, startIdx, pos, startPlaying = wasPlaying)
-            } else {
-                syncShuffleToPlayer()
-            }
-        } else {
-            val restored = preShuffleQueueOrNull()
-            val currentId = _currentItem.value?.mediaId
-            setShuffleEnabled(false)
-            if (!restored.isNullOrEmpty()) {
-                val idx = restored.indexOfFirst { it.mediaId == currentId }
-                    .takeIf { it >= 0 } ?: 0
-                applyQueueReorder(restored, idx, pos, startPlaying = wasPlaying)
-            } else {
-                syncShuffleToPlayer()
-            }
-        }
-        bumpQueueFocus()
-        persistPlaybackSession(force = true)
+        playbackRuntime.toggleShuffle()
     }
 
     // Queue Management
@@ -2654,19 +1110,11 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     fun addPlayableBatch(items: List<PlayableItem>) {
-        if (items.isEmpty()) return
-        val queueItems = items.withFreshRemoteQueueEntryIds()
-        val currentList = _queue.value.toMutableList()
-        currentList.addAll(queueItems)
-        _queue.value = currentList
-        mediaController?.let { controller ->
-            controller.addMediaItems(queueItems.map { playableToMediaItem(it) })
-        }
-        persistPlaybackSession(force = true)
+        playbackRuntime.addPlayableBatch(items)
     }
 
     fun setRadioPreferredMode(mode: RadioMode) {
-        radioPreferredMode = mode
+        playbackRuntime.setRadioPreferredMode(mode)
     }
 
     private fun resolvePreferredRadioMode(
@@ -2674,7 +1122,8 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         networkOnline: Boolean = connectivityObserver.isCurrentlyOnline()
     ): RadioMode = when {
         mode != null -> mode
-        radioPreferredMode != null -> radioPreferredMode!!
+        playbackRuntime.preferredRadioModeOrNull() != null ->
+            playbackRuntime.preferredRadioModeOrNull()!!
         networkOnline -> RadioMode.BOTH
         else -> RadioMode.KNOWN
     }
@@ -2843,17 +1292,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     fun stopRadio() {
-        radioStartJob?.cancel()
-        radioStartJob = null
-        radioRefillJob?.cancel()
-        radioRefillJob = null
-        // Without this the in-flight fetch kept _radioLoading true, and startRadio's own
-        // `if (_radioLoading.value) return` left the Radio button inert until it timed out.
-        _radioLoading.value = false
-        _radioActive.value = false
-        playedInRadioSession.clear()
-        _radioMode.value = RadioMode.KNOWN
-        updateRadioStatusLabel()
+        playbackRuntime.stopRadio()
     }
 
     fun startRadio(
@@ -2862,289 +1301,12 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         auto: Boolean = false,
         announceMode: Boolean = false
     ) {
-        val seed: PlayableItem = seedSong?.toPlayable()
-            ?: _currentItem.value
-            ?: run {
-                if (!auto) toastRadioNeedsSeed()
-                return
-            }
-        if (seed.artist.isBlank() || seed.title.isBlank()) {
-            if (!auto) toastRadioNeedsSeed()
-            return
-        }
-        if (_radioLoading.value) return
-
-        if (mode != null) {
-            setRadioPreferredMode(mode)
-        }
-
-        val settings = listenBrainzSettings.value
-        val networkOnline = connectivityObserver.isCurrentlyOnline()
-
-        val resolvedMode = resolvePreferredRadioMode(mode, networkOnline)
-
-        val keepCurrentPlaying = !auto && shouldKeepCurrentWhenStartingRadio()
-        val toastMode = announceMode
-
-        radioStartJob?.cancel()
-        radioStartJob = viewModelScope.launch {
-            _radioLoading.value = true
-            try {
-                val library = rawSongs.first()
-                // Always includes the queue: replaceUpcomingWithRadio keeps everything up to the
-                // current track, so excluding only the seed re-suggested songs heard minutes ago.
-                val exclude = buildRadioExcludeKeys(
-                    seed = seed,
-                    includeQueue = true,
-                    extra = _currentItem.value
-                )
-
-                val effectiveMode = resolvedMode
-                val coPlaylistIds = resolveCoPlaylistSongIds(seed)
-                val batch = suggestRadioWithRetry(
-                    seed = seed,
-                    library = library,
-                    mode = effectiveMode,
-                    excludeKeys = exclude,
-                    settings = settings,
-                    coPlaylistSongIds = coPlaylistIds
-                )
-
-                // Cancellation can only surface at a suspension point, so a "Detener radio" landing
-                // right after the fetch would otherwise still revive the session below.
-                if (!isActive) return@launch
-
-                val suggestions = batch.items
-                if (suggestions.isEmpty()) {
-                    if (!auto) {
-                        val emptyMsg = when {
-                            effectiveMode == RadioMode.NEW ->
-                                "Radio online no disponible"
-                            else -> "No encontré canciones parecidas"
-                        }
-                        toast(emptyMsg)
-                    }
-                    return@launch
-                }
-
-                val previousPlayed = if (_radioActive.value) playedInRadioSession.toSet() else emptySet()
-                clearRadioSessionKeepPreference()
-                _radioMode.value = effectiveMode
-                playedInRadioSession.addAll(previousPlayed)
-                playedInRadioSession.addAll(exclude)
-                rememberRadioPlayed(seed)
-                _radioActive.value = true
-                updateRadioStatusLabel()
-
-                if (toastMode && !auto) {
-                    toast(radioModeLabel(effectiveMode))
-                }
-
-                if (keepCurrentPlaying) {
-                    clearDiscoverPlaybackOrigin()
-                    replaceUpcomingWithRadio(suggestions)
-                    toast("Se agregaron canciones de la radio a la cola")
-                    val idx = mediaController?.currentMediaItemIndex ?: lastMediaItemIndex
-                    if (idx >= 0) prefetchAround(idx)
-                } else {
-                    playPlayableCollection(suggestions, startIndex = 0, fromRadio = true, rotate = false)
-                }
-            } finally {
-                _radioLoading.value = false
-            }
-        }
-    }
-
-    /**
-     * For [RadioMode.NEW], retries online providers (LB/CF/Deezer) until Remotes or timeout.
-     * Other modes run once (BOTH already falls back to locales).
-     */
-    private suspend fun suggestRadioWithRetry(
-        seed: PlayableItem,
-        library: List<Song>,
-        mode: RadioMode,
-        excludeKeys: Set<String>,
-        settings: ListenBrainzSettings,
-        timeoutMs: Long = RADIO_ONLINE_RETRY_TIMEOUT_MS,
-        coPlaylistSongIds: Set<Long> = emptySet()
-    ): RadioSuggestResult {
-        fun networkNow(): Boolean = connectivityObserver.isCurrentlyOnline()
-
-        fun canUseLbNow(): Boolean =
-            settings.enabled &&
-                settings.userToken.isNotBlank() &&
-                networkNow()
-
-        suspend fun once() = radioEngine.suggest(
-            seed = seed,
-            library = library,
+        playbackRuntime.startRadio(
+            seedSong = seedSong,
             mode = mode,
-            excludeKeys = excludeKeys,
-            limit = RADIO_BATCH_SIZE,
-            lbToken = settings.userToken.takeIf { it.isNotBlank() },
-            lbAvailable = canUseLbNow(),
-            lbUsername = settings.username,
-            networkAvailable = networkNow(),
-            coPlaylistSongIds = coPlaylistSongIds
+            auto = auto,
+            announceMode = announceMode
         )
-
-        if (mode != RadioMode.NEW) {
-            return once()
-        }
-
-        val deadline = System.currentTimeMillis() + timeoutMs
-        var attempt = 0
-        var last = once()
-        while (last.items.isEmpty() && System.currentTimeMillis() < deadline) {
-            attempt++
-            val backoff = minOf(1_000L * attempt, RADIO_ONLINE_RETRY_MAX_BACKOFF_MS)
-            delay(backoff)
-            last = once()
-        }
-        return last
-    }
-
-    private suspend fun resolveCoPlaylistSongIds(seed: PlayableItem): Set<Long> {
-        val local = seed as? PlayableItem.Local ?: return emptySet()
-        return runCatching { repository.getCoPlaylistSongIds(local.song.id) }
-            .getOrDefault(emptySet())
-    }
-
-    private fun shouldKeepCurrentWhenStartingRadio(): Boolean {
-        val controller = mediaController ?: return false
-        if (_queue.value.isEmpty()) return false
-        val index = controller.currentMediaItemIndex
-        if (index < 0 || index >= _queue.value.size) return false
-        val state = controller.playbackState
-        return state != Player.STATE_ENDED && state != Player.STATE_IDLE
-    }
-
-    /**
-     * Keeps the current track playing; replaces everything after it with [suggestions].
-     */
-    private fun replaceUpcomingWithRadio(suggestions: List<PlayableItem>) {
-        val controller = mediaController
-        val currentIndex = (controller?.currentMediaItemIndex ?: lastMediaItemIndex).coerceAtLeast(0)
-        val currentList = _queue.value
-        if (currentIndex !in currentList.indices) {
-            playPlayableCollection(suggestions, startIndex = 0, fromRadio = true, rotate = false)
-            return
-        }
-
-        val queueSuggestions = suggestions.withFreshRemoteQueueEntryIds()
-        val kept = currentList.subList(0, currentIndex + 1).toMutableList()
-        kept.addAll(queueSuggestions)
-        _queue.value = kept
-
-        controller?.let { c ->
-            val nextIndex = currentIndex + 1
-            if (nextIndex < c.mediaItemCount) {
-                c.removeMediaItems(nextIndex, c.mediaItemCount)
-            }
-            c.addMediaItems(queueSuggestions.map { playableToMediaItem(it) })
-        }
-        persistPlaybackSession(force = true)
-    }
-
-    /**
-     * When the queue finishes naturally and repeat is off, continue with Radio
-     * seeded from the last played item.
-     */
-    private fun maybeAutoStartRadioOnQueueEnd() {
-        if (_repeatMode.value != RepeatMode.OFF) return
-        if (_radioLoading.value) return
-        val seed = _currentItem.value ?: return
-        if (seed.artist.isBlank() || seed.title.isBlank()) return
-        startRadio(auto = true)
-    }
-
-    /** Clears active radio flags but keeps preferred mode for the next start. */
-    private fun clearRadioSessionKeepPreference() {
-        radioRefillJob?.cancel()
-        radioRefillJob = null
-        _radioActive.value = false
-        playedInRadioSession.clear()
-        updateRadioStatusLabel()
-    }
-
-    private fun clearRadioSession() {
-        stopRadio()
-        radioPreferredMode = null
-    }
-
-    private fun updateRadioStatusLabel() {
-        if (!_radioActive.value) {
-            _radioStatusLabel.value = null
-            return
-        }
-        _radioStatusLabel.value = radioModeLabel(_radioMode.value)
-    }
-
-    private fun radioModeLabel(mode: RadioMode): String = when (mode) {
-        RadioMode.KNOWN -> "Radio · Solo conocidos"
-        RadioMode.NEW -> "Radio · Solo nuevos"
-        RadioMode.BOTH -> "Radio · Ambos"
-    }
-
-    private fun rememberRadioPlayed(item: PlayableItem) {
-        val key = TrackMatchKeys.matchKey(item.artist, item.title)
-        if (key.isNotEmpty()) playedInRadioSession.add(key)
-        playedInRadioSession.add(item.mediaId)
-    }
-
-    private fun buildRadioExcludeKeys(
-        seed: PlayableItem,
-        includeQueue: Boolean = true,
-        extra: PlayableItem? = null
-    ): MutableSet<String> {
-        val exclude = playedInRadioSession.toMutableSet()
-        fun remember(item: PlayableItem) {
-            val key = TrackMatchKeys.matchKey(item.artist, item.title)
-            if (key.isNotEmpty()) exclude.add(key)
-            exclude.add(item.mediaId)
-        }
-        remember(seed)
-        extra?.let { remember(it) }
-        if (includeQueue) {
-            for (item in _queue.value) remember(item)
-        }
-        return exclude
-    }
-
-    private fun maybeRefillRadio(currentIndex: Int) {
-        if (!_radioActive.value) return
-        if (radioRefillJob?.isActive == true) return
-        val remaining = _queue.value.size - currentIndex - 1
-        if (remaining >= RADIO_REFILL_THRESHOLD) return
-        val seed = _currentItem.value ?: return
-        // Backoff after an empty refill: the in-flight guard alone let a down provider be retried
-        // (with its own 20s loop) once per track change for the whole tail of the queue.
-        val sinceEmpty = System.currentTimeMillis() - lastEmptyRadioRefillAtMs
-        if (lastEmptyRadioRefillAtMs > 0L && sinceEmpty < RADIO_EMPTY_REFILL_COOLDOWN_MS) return
-
-        radioRefillJob = viewModelScope.launch {
-            val settings = listenBrainzSettings.value
-            val mode = _radioMode.value
-            val library = rawSongs.first()
-            val exclude = buildRadioExcludeKeys(seed)
-            val coPlaylistIds = resolveCoPlaylistSongIds(seed)
-            val batch = suggestRadioWithRetry(
-                seed = seed,
-                library = library,
-                mode = mode,
-                excludeKeys = exclude,
-                settings = settings,
-                timeoutMs = RADIO_ONLINE_REFILL_RETRY_TIMEOUT_MS,
-                coPlaylistSongIds = coPlaylistIds
-            )
-
-            if (batch.items.isNotEmpty() && _radioActive.value) {
-                lastEmptyRadioRefillAtMs = 0L
-                addPlayableBatch(batch.items)
-            } else if (batch.items.isEmpty()) {
-                lastEmptyRadioRefillAtMs = System.currentTimeMillis()
-            }
-        }
     }
 
     fun playNextInQueue(song: Song) {
@@ -3152,18 +1314,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     fun playNextBatch(songs: List<Song>) {
-        if (songs.isEmpty()) return
-        val playables = songs.toPlayableItems()
-        val currentList = _queue.value.toMutableList()
-        val currentIndex = (mediaController?.currentMediaItemIndex ?: 0).coerceAtLeast(0)
-        val insertIndex = (currentIndex + 1).coerceAtMost(currentList.size)
-
-        currentList.addAll(insertIndex, playables)
-        _queue.value = currentList
-        mediaController?.let { controller ->
-            controller.addMediaItems(insertIndex, playables.map { playableToMediaItem(it) })
-        }
-        persistPlaybackSession(force = true)
+        playbackRuntime.playNextBatch(songs.toPlayableItems())
     }
 
     fun addSongsToPlaylist(playlistId: Long, songs: List<Song>) {
@@ -3218,25 +1369,11 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     fun removeFromQueue(index: Int) {
-        val timelineIndex = index
-        if (timelineIndex in _queue.value.indices) {
-            val currentList = _queue.value.toMutableList()
-            currentList.removeAt(timelineIndex)
-            _queue.value = currentList
-            mediaController?.removeMediaItem(timelineIndex)
-            persistPlaybackSession(force = true)
-        }
+        playbackRuntime.removeFromQueue(index)
     }
 
     fun moveQueueItem(fromIndex: Int, toIndex: Int) {
-        val list = _queue.value.toMutableList()
-        if (fromIndex in list.indices && toIndex in list.indices && fromIndex != toIndex) {
-            val item = list.removeAt(fromIndex)
-            list.add(toIndex, item)
-            _queue.value = list
-            mediaController?.moveMediaItem(fromIndex, toIndex)
-            persistPlaybackSession(force = true)
-        }
+        playbackRuntime.moveQueueItem(fromIndex, toIndex)
     }
 
     fun moveDisplayQueueItem(fromIndex: Int, toIndex: Int) {
@@ -3245,44 +1382,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     fun skipToQueueIndex(index: Int) {
-        val timelineIndex = index
-        if (timelineIndex in _queue.value.indices) {
-            bumpQueueFocus()
-            lastMediaItemIndex = timelineIndex
-            setPlaybackPositionUi(0L)
-            val item = _queue.value[timelineIndex]
-            if (item is PlayableItem.Remote && remoteNeedsResolve(item)) {
-                viewModelScope.launch {
-                    beginResolvingRemote()
-                    try {
-                        val resolved = resolveRemote(item)
-                        val slot = if (resolved != null) applyResolvedRemote(item, resolved) else -1
-                        if (slot < 0) {
-                            // Relative to the tapped slot, not controller current: seekToNext would
-                            // advance from whatever was already playing (tap on 10 jumped 2→3).
-                            val next = timelineIndex + 1
-                            if (next in _queue.value.indices) {
-                                mediaController?.seekTo(next, 0L)
-                                mediaController?.play()
-                            }
-                            toast("No se pudo resolver el audio online")
-                            return@launch
-                        }
-                        mediaController?.seekTo(slot, 0L)
-                        mediaController?.prepare()
-                        mediaController?.play()
-                        prefetchAround(slot)
-                    } finally {
-                        endResolvingRemote()
-                    }
-                }
-            } else {
-                mediaController?.seekTo(timelineIndex, 0L)
-                mediaController?.play()
-                prefetchAround(timelineIndex)
-            }
-            persistPlaybackSession(force = true)
-        }
+        playbackRuntime.skipToQueueIndex(index)
     }
 
 
@@ -4500,7 +2600,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     fun setListenBrainzEnabled(enabled: Boolean) {
         viewModelScope.launch {
             listenBrainzPreferences.setEnabled(enabled)
-            if (enabled) listenSyncCoordinator.requestSync()
+            if (enabled) playbackRuntime.requestListenSync()
             if (!enabled) clearDiscoverState()
         }
     }
@@ -4549,7 +2649,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 listenBrainzPreferences.setUsername(result.username)
                 listenBrainzPreferences.setEnabled(true)
                 _tokenValidationState.value = TokenValidationUiState.Success(result.username)
-                listenSyncCoordinator.requestSync()
+                playbackRuntime.requestListenSync()
                 if (listenBrainzSettings.value.discoverEnabled) {
                     refreshListenBrainzDiscoverPlaylists()
                 }
@@ -4757,12 +2857,6 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         _lbPlaylistDetailState.value = LbPlaylistDetailUiState.Idle
     }
 
-    private fun clearDiscoverPlaybackOrigin() {
-        if (_discoverPlaybackOrigin.value != DiscoverPlaybackOrigin.None) {
-            _discoverPlaybackOrigin.value = DiscoverPlaybackOrigin.None
-        }
-    }
-
     /** Saves matched locals + unmatched as pending metadata (no download yet). */
     fun saveListenBrainzPlaylistAsLocal(onCreated: ((Long) -> Unit)? = null) {
         val matched = _selectedLbPlaylist.value ?: return
@@ -4882,30 +2976,25 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         val queued = items.mapNotNull { item ->
             val downloadId = idStrategy(item)
             if (downloadId.isBlank()) return@mapNotNull null
-            val existing = _activeDownloads.value.find { it.id == downloadId }
-            if (existing?.state == CandidateDownloadState.DOWNLOADING ||
-                existing?.state == CandidateDownloadState.QUEUED
-            ) {
-                // Hand the playlist to the in-flight job instead of silently dropping the item: that
-                // job may carry no targetPlaylistId (DISCOVER / save-while-listening share this id
-                // namespace), so the song landed in the library but never in the playlist and its
-                // pending row was never removed.
-                if (playlistId != null && existing.targetPlaylistId == null) {
-                    upsertActiveDownload(existing.copy(targetPlaylistId = playlistId))
-                }
-                return@mapNotNull null
+            val lookup = item.lookupIdentity ?: item.track.identity
+            if (processDownloads.isRunning(downloadId, lookup.artist, lookup.title)) {
+                // Handoff and the claim completion are linearized by the coordinator. If the owner
+                // completed between this hint and the attach, continue into execute() instead of
+                // dropping the pending destination.
+                val attached = playlistId != null &&
+                    processDownloads.attachTargetPlaylist(
+                        downloadId = downloadId,
+                        artist = lookup.artist,
+                        title = lookup.title,
+                        target = DownloadPlaylistTarget(
+                            playlistId = playlistId,
+                            identity = lookup
+                        )
+                    )
+                if (playlistId == null || attached) return@mapNotNull null
             }
             val candidates = item.candidates.ifEmpty { listOf(item.track) }
             val safeIndex = item.currentCandidateIndex.coerceIn(0, candidates.lastIndex)
-            upsertActiveDownload(
-                ActiveDownload.queued(
-                    id = downloadId,
-                    source = source,
-                    candidates = candidates,
-                    currentCandidateIndex = safeIndex,
-                    targetPlaylistId = playlistId
-                )
-            )
             Triple(item, downloadId, safeIndex)
         }
 
@@ -5313,6 +3402,10 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         lookupIdentity: TrackIdentity?,
         titleOverride: String?
     ) {
+        val effectiveTargetPlaylistId = activeDownloads.value
+            .firstOrNull { it.id == downloadId }
+            ?.targetPlaylistId
+            ?: targetPlaylistId
         emitDownloadConflict(
             downloadId = downloadId,
             source = source,
@@ -5320,52 +3413,44 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             existing = existing,
             candidates = candidates,
             safeIndex = safeIndex,
-            targetPlaylistId = targetPlaylistId,
+            targetPlaylistId = effectiveTargetPlaylistId,
             lookupIdentity = lookupIdentity
         )
-        upsertActiveDownload(
+        updateActiveDownload(downloadId) {
             ActiveDownload.conflict(
                 id = downloadId,
                 source = source,
                 candidates = candidates,
                 currentCandidateIndex = safeIndex,
-                targetPlaylistId = targetPlaylistId,
+                targetPlaylistId = effectiveTargetPlaylistId,
                 titleOverride = titleOverride
             )
-        )
+        }
     }
 
-    // All three go through StateFlow.update: onProgress runs on Dispatchers.IO and up to 3 downloads
-    // report concurrently, so a read-modify-write on `.value` lost updates (a row frozen on an old
-    // percent, a SUCCESS reverted to DOWNLOADING, a dismissed row reappearing).
+    // All owners mutate the same process-scoped queue. Its atomic updates and single persistence
+    // path prevent concurrent progress/success writes from dropping another owner's rows.
     private fun upsertActiveDownload(download: ActiveDownload) {
-        _activeDownloads.update { list ->
-            val index = list.indexOfFirst { it.id == download.id }
-            if (index >= 0) list.toMutableList().apply { set(index, download) }
-            else listOf(download) + list
-        }
+        processDownloads.upsert(download)
     }
 
     private fun updateActiveDownload(
         id: String,
         transform: (ActiveDownload) -> ActiveDownload
     ) {
-        _activeDownloads.update { list ->
-            val index = list.indexOfFirst { it.id == id }
-            if (index < 0) list
-            else list.toMutableList().apply { set(index, transform(get(index))) }
-        }
+        processDownloads.update(id, transform)
     }
 
     private fun removeActiveDownload(id: String) {
-        _activeDownloads.update { list -> list.filterNot { it.id == id } }
+        processDownloads.remove(id)
     }
 
     /**
      * Registers/updates [ActiveDownload] (QUEUED → DOWNLOADING) and runs the download
-     * under the global [downloadSemaphore] (max 3 concurrent).
+     * under the process-wide coordinator (max 3 across manual + autosave).
      * On success the job stays as SUCCESS with [ActiveDownload.resultSongId]; on failure as ERROR.
-     * When [targetPlaylistId] is set, the saved song is added to that playlist.
+     * [targetPlaylistId] registers a playlist+identity target on the shared claim; the coordinator
+     * drains every distinct target when whichever owner completes the transfer.
      */
     private suspend fun runTrackedDownload(
         downloadId: String,
@@ -5382,76 +3467,86 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         val safeIndex = currentCandidateIndex.coerceIn(0, (candidates.size - 1).coerceAtLeast(0))
         val lookup = lookupIdentity ?: track.identity
 
-        val existing = _activeDownloads.value.find { it.id == downloadId }
+        val existing = processDownloads.findByTrack(
+            downloadId = downloadId,
+            artist = lookup.artist,
+            title = lookup.title
+        )
         val override = titleOverride
             ?: (conflictPolicy as? DownloadConflictPolicy.SaveAs)?.newTitle
             ?: existing?.titleOverride
 
-        // A track can be enqueued under two ids (plain and `batch:`) that resolve to the same
-        // destination filename, so letting a second job through means two writers on one file.
-        // Gated on a **live job**, not on the row state: a row left QUEUED by a job that died would
-        // otherwise block every future attempt at that song with no way to clear it.
-        val inFlightIds = TrackMatchKeys.downloadIdVariantsFor(lookup.artist, lookup.title) + downloadId
-        if (inFlightIds.any { downloadJobs[it]?.isActive == true }) {
-            return Result.failure(IllegalStateException(DownloadMessages.alreadyQueued))
-        }
-
-        if (existing == null ||
-            existing.state != CandidateDownloadState.DOWNLOADING
-        ) {
-            upsertActiveDownload(
-                ActiveDownload.queued(
-                    id = downloadId,
-                    source = source,
-                    candidates = candidates,
-                    currentCandidateIndex = safeIndex,
-                    targetPlaylistId = targetPlaylistId,
-                    resultSongId = existing?.resultSongId,
-                    titleOverride = override
-                )
-            )
-        }
-
-        // Registered so dismissing the row can actually stop the transfer instead of leaving it
-        // burning data with a terminal update that resurrects or silently drops the row.
-        currentCoroutineContext()[Job]?.let { downloadJobs[downloadId] = it }
-
-        // Waited before taking a permit: doing it inside one meant three downloads hitting the
-        // dialog at once consumed all three permits and froze the queue for 30s with no bytes moving.
-        if (conflictPolicy == null) awaitConflictDialogFree()
-
         return try {
-            downloadSemaphore.withPermit {
-                // Checked here, not before the permit: a batch that cleared the gate on Wi-Fi could
-                // sit queued for minutes and then download over cellular.
-                ensureDownloadNetworkAllowed()?.let { blockedMessage ->
-                    upsertActiveDownload(
-                        ActiveDownload.error(
-                            id = downloadId,
-                            source = source,
-                            candidates = candidates,
-                            errorMessage = blockedMessage,
-                            currentCandidateIndex = safeIndex,
-                            targetPlaylistId = targetPlaylistId,
-                            titleOverride = override
-                        )
-                    )
-                    return@withPermit Result.failure(IllegalStateException(blockedMessage))
-                }
-                runTrackedDownloadLocked(
+            when (
+                val coordinated = processDownloads.execute(
                     downloadId = downloadId,
-                    source = source,
-                    track = track,
-                    candidates = candidates,
-                    safeIndex = safeIndex,
-                    targetPlaylistId = targetPlaylistId,
-                    conflictPolicy = conflictPolicy,
-                    lookupIdentity = lookup,
-                    titleOverride = override
+                    artist = lookup.artist,
+                    title = lookup.title,
+                    playlistTarget = targetPlaylistId?.let {
+                        DownloadPlaylistTarget(playlistId = it, identity = lookup)
+                    },
+                    onRegistered = {
+                        upsertActiveDownload(
+                            ActiveDownload.queued(
+                                id = downloadId,
+                                source = source,
+                                candidates = candidates,
+                                currentCandidateIndex = safeIndex,
+                                targetPlaylistId = targetPlaylistId,
+                                resultSongId = existing?.resultSongId,
+                                titleOverride = override
+                            )
+                        )
+                    },
+                    // Waiting on the manual conflict dialog must not consume one of the three
+                    // transfer permits, but the queued job remains globally claimed/cancelable.
+                    beforePermit = {
+                        if (conflictPolicy == null) awaitConflictDialogFree()
+                    }
+                ) {
+                    // Checked after acquiring the permit: a batch may wait on Wi-Fi and reach the
+                    // front only after the network has become metered.
+                    ensureDownloadNetworkAllowed()?.let { blockedMessage ->
+                        updateActiveDownload(downloadId) { row ->
+                            ActiveDownload.error(
+                                id = downloadId,
+                                source = source,
+                                candidates = candidates,
+                                errorMessage = blockedMessage,
+                                currentCandidateIndex = safeIndex,
+                                targetPlaylistId = row.targetPlaylistId ?: targetPlaylistId,
+                                titleOverride = override
+                            )
+                        }
+                        return@execute Result.failure(IllegalStateException(blockedMessage))
+                    }
+                    runTrackedDownloadLocked(
+                        downloadId = downloadId,
+                        source = source,
+                        track = track,
+                        candidates = candidates,
+                        safeIndex = safeIndex,
+                        targetPlaylistId = targetPlaylistId,
+                        conflictPolicy = conflictPolicy,
+                        lookupIdentity = lookup,
+                        titleOverride = override
+                    )
+                }
+            ) {
+                is CoordinatedDownloadResult.Completed -> coordinated.result
+                is CoordinatedDownloadResult.AlreadyRunning ->
+                    Result.failure(IllegalStateException(DownloadMessages.alreadyQueued))
+            }
+        } catch (cancelled: CancellationException) {
+            updateActiveDownload(downloadId) {
+                it.copy(
+                    state = CandidateDownloadState.ERROR,
+                    progressMessage = null,
+                    progressPercent = 0,
+                    errorMessage = DownloadMessages.interrupted
                 )
             }
-        } finally {
-            downloadJobs.remove(downloadId)
+            throw cancelled
         }
     }
 
@@ -5513,16 +3608,16 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             }
         }
 
-        upsertActiveDownload(
+        updateActiveDownload(downloadId) { row ->
             ActiveDownload.downloading(
                 id = downloadId,
                 source = source,
                 candidates = candidates,
                 currentCandidateIndex = safeIndex,
-                targetPlaylistId = targetPlaylistId,
+                targetPlaylistId = row.targetPlaylistId ?: targetPlaylistId,
                 titleOverride = displayOverride
             )
-        )
+        }
         val trackForDownload = when (val policy = resolvedPolicy) {
             is DownloadConflictPolicy.SaveAs -> activeTrack.withIdentity { copy(title = policy.newTitle) }
             else -> activeTrack
@@ -5561,34 +3656,21 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
         result.fold(
             onSuccess = { song ->
-                upsertActiveDownload(
+                val effectiveTargetPlaylistId = activeDownloads.value
+                    .firstOrNull { it.id == downloadId }
+                    ?.targetPlaylistId
+                    ?: targetPlaylistId
+                updateActiveDownload(downloadId) {
                     ActiveDownload.success(
                         id = downloadId,
                         source = source,
                         song = song,
                         candidates = candidates,
                         currentCandidateIndex = safeIndex,
-                        targetPlaylistId = targetPlaylistId
-                    )
-                )
-                val bytes = runCatching {
-                    SongPathNormalizer.resolveFilePath(song.uriString, song.folderPath)
-                        ?.let { java.io.File(it) }
-                        ?.takeIf { it.isFile }
-                        ?.length()
-                }.getOrNull() ?: 0L
-                downloadPreferences.addDownloadedBytes(
-                    bytes,
-                    metered = connectivityObserver.isMetered()
-                )
-                if (targetPlaylistId != null) {
-                    repository.addSongToPlaylist(targetPlaylistId, song.id)
-                    repository.removePlaylistPendingTrack(
-                        targetPlaylistId,
-                        activeTrack.artist,
-                        activeTrack.title
+                        targetPlaylistId = effectiveTargetPlaylistId
                     )
                 }
+                processDownloads.recordCompletedDownload(song)
                 rematchDiscoverAfterLibraryChange(extraSong = song)
                 if (source == ActiveDownloadSource.CATALOG ||
                     source == ActiveDownloadSource.LINK ||
@@ -5650,13 +3732,12 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             toast(DownloadMessages.missingArtistOrTitle)
             return
         }
-        val existing = _activeDownloads.value.find { it.id == key }
+        val existing = processDownloads.findByTrack(key, remote.artist, remote.title)
+        if (processDownloads.isRunning(key, remote.artist, remote.title)) {
+            toastDownloadsQueued(alreadyQueued = true)
+            return
+        }
         when (existing?.state) {
-            CandidateDownloadState.QUEUED,
-            CandidateDownloadState.DOWNLOADING -> {
-                toastDownloadsQueued(alreadyQueued = true)
-                return
-            }
             CandidateDownloadState.SUCCESS -> {
                 toastSongInLibrary(remote.title, LibraryToastKind.ALREADY)
                 viewModelScope.launch {
@@ -5683,13 +3764,11 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     fun retryActiveDownload(id: String) {
-        val download = _activeDownloads.value.find { it.id == id } ?: return
+        val download = activeDownloads.value.find { it.id == id } ?: return
         val track = download.currentTrack ?: return
-        if (download.source == ActiveDownloadSource.SAVE_WHILE_LISTENING) {
-            saveWhileListeningAttempted.add(id)
-        }
         viewModelScope.launch {
-            val result = runTrackedDownload(
+            processDownloads.cancelAndJoin(id)
+            runTrackedDownload(
                 downloadId = download.id,
                 source = download.source,
                 track = track,
@@ -5697,14 +3776,11 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 currentCandidateIndex = download.currentCandidateIndex,
                 targetPlaylistId = download.targetPlaylistId
             )
-            if (result.isFailure && download.source == ActiveDownloadSource.SAVE_WHILE_LISTENING) {
-                saveWhileListeningAttempted.remove(id)
-            }
         }
     }
 
     fun cycleActiveDownload(id: String) {
-        val download = _activeDownloads.value.find { it.id == id } ?: return
+        val download = activeDownloads.value.find { it.id == id } ?: return
         val current = download.currentTrack ?: return
         val wasPreviewing = _catalogPreviewKey.value == catalogPreviewKeyFor(current) ||
             download.candidates.any { catalogPreviewKeyFor(it) == _catalogPreviewKey.value }
@@ -5725,12 +3801,12 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     fun previewActiveDownload(id: String) {
-        val track = _activeDownloads.value.find { it.id == id }?.currentTrack ?: return
+        val track = activeDownloads.value.find { it.id == id }?.currentTrack ?: return
         playOnlineCatalogTrackAsStream(track)
     }
 
     fun playActiveDownload(id: String) {
-        val download = _activeDownloads.value.find { it.id == id } ?: return
+        val download = activeDownloads.value.find { it.id == id } ?: return
         val songId = download.resultSongId ?: return
         viewModelScope.launch {
             val song = rawSongs.first().find { it.id == songId } ?: return@launch
@@ -5739,20 +3815,11 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     fun dismissActiveDownload(id: String) {
-        downloadJobs.remove(id)?.cancel()
-        removeActiveDownload(id)
-        saveWhileListeningAttempted.remove(id)
-        saveWhileListeningFailures.remove(id)
+        processDownloads.dismiss(id)
     }
 
     fun dismissAllActiveDownloads() {
-        val ids = _activeDownloads.value.map { it.id }
-        _activeDownloads.value = emptyList()
-        ids.forEach {
-            downloadJobs.remove(it)?.cancel()
-            saveWhileListeningAttempted.remove(it)
-            saveWhileListeningFailures.remove(it)
-        }
+        processDownloads.dismissAll()
     }
 
     fun downloadSingleCandidate(index: Int) {
@@ -5864,30 +3931,15 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     override fun onCleared() {
         downloadNotificationHelper.cancel()
-        controllerFuture?.let { MediaController.releaseFuture(it) }
+        playbackRuntime.detachUi()
         super.onCleared()
     }
 
     companion object {
         const val RADIO_LOADING_LABEL = "Armando radio…"
-        private const val RADIO_BATCH_SIZE = 30
-        private const val RADIO_REFILL_THRESHOLD = 5
-        /** How long Solo nuevos keeps retrying LB/CF before giving up. */
-        private const val RADIO_ONLINE_RETRY_TIMEOUT_MS = 45_000L
-        private const val RADIO_ONLINE_REFILL_RETRY_TIMEOUT_MS = 20_000L
-        private const val RADIO_ONLINE_RETRY_MAX_BACKOFF_MS = 5_000L
-        private const val LAST_PLAYED_POSITION_SAVE_INTERVAL_MS = 5_000L
-        private const val MAX_CONSECUTIVE_UNPLAYABLE_SKIPS = 5
-        /** Auto-save backoff after a failure; long enough to outlast the current track. */
-        private const val SAVE_WHILE_LISTENING_RETRY_COOLDOWN_MS = 10 * 60 * 1000L
         private const val METADATA_ENHANCE_BATCH = 20
         private const val CONFLICT_WAIT_TICK_MS = 250L
         private const val CONFLICT_WAIT_TICKS = 120
-        private const val RADIO_EMPTY_REFILL_COOLDOWN_MS = 60_000L
-        /** Gap between re-extract attempts inside the stream grace window. */
-        private const val STREAM_RECOVERY_RETRY_MS = 600L
-        /** Older than this, a resolved stream is re-extracted before playing rather than after failing. */
-        private const val STREAM_READY_MAX_AGE_MS = 60_000L
     }
 }
 

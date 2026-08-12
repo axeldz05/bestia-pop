@@ -13,6 +13,7 @@ import com.bestiapop.android.data.model.TrackIdentity
 import com.bestiapop.android.data.model.TrackMeta
 import com.bestiapop.android.data.model.toIdentity
 import com.bestiapop.android.data.model.toPlayable
+import com.bestiapop.android.data.model.withFreshQueueEntryIds
 import com.bestiapop.android.data.playback.PlaybackQueueOrder
 import com.bestiapop.android.data.util.AudioPersistRef
 import com.bestiapop.android.data.util.SongPathNormalizer
@@ -320,7 +321,7 @@ object PlaybackHydration {
         if (resolved.isEmpty()) return null
         val targetOrig = snapshot.currentIndex.coerceAtLeast(0)
         val currentPair = resolved.firstOrNull { it.first >= targetOrig } ?: resolved.first()
-        val items = resolved.map { it.second }
+        val items = resolved.map { it.second }.withFreshQueueEntryIds()
         val newIndex = resolved.indexOfFirst { it.first == currentPair.first }.coerceAtLeast(0)
         val sameCurrent = currentPair.first == targetOrig
         val current = items[newIndex]

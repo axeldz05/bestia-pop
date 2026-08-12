@@ -18,13 +18,13 @@ Cada feature lista **invariantes** + **entry points**. Si el código diverge, ac
 | Acción | ViewModel | Pipeline |
 |--------|-----------|----------|
 | Reproducir colección | `playCollection(songs, startIndex)` / `playCollection(songs, startSong)` | `playPlayableCollection` (`rotate=true`: tap queda índice 0, prefijo al final) |
-| Reproducir Local\|Remote | `playPlayableCollection(items, startIndex, rotate, origin)` | ViewModel + `StreamResolver`; `origin` marca Discover (CF/LB) en un solo sitio |
+| Reproducir Local\|Remote | `MusicPlayerViewModel.playPlayableCollection(items, startIndex, rotate, origin)` | Façade → `PlaybackRuntime.playPlayableCollection` + `StreamResolver`; `origin` queda process-scoped en el runtime para Discover (CF/LB) |
 | Shuffle | `shuffleCollection(songs)` / `shufflePlayableCollection(items, origin)` | `playPlayableCollection(..., startShuffled=true)` + permutación current-first |
 | Encolar | `enqueueCollection(songs)` | append a cola `PlayableItem` |
-| Una canción | `playSong(song, playlistOrQueue)` | (arma cola + MediaController) |
-| Tap en Cola / NP | `skipToQueueIndex(index)` | display == físico (`displayQueue` es `_queue`); seek timeline; **no** rota ni apaga shuffle. Si el remoto no resuelve, avanza al **slot tocado + 1**, no al siguiente del controller |
+| Una canción | `MusicPlayerViewModel.playSong(song, playlistOrQueue)` | adapta a colección y delega en `PlaybackRuntime.playPlayableCollection` |
+| Tap en Cola / NP | `skipToQueueIndex(index)` | display == físico (`PlaybackRuntime.displayQueue`); **no** rota ni apaga shuffle. `PlaybackSelectionIntentGate` + job process-scoped hacen latest-tap-wins; antes de aplicar recalcula por `queueEntryId`. Compose usa ese mismo id como key/foco/scroll, así duplicados exactos siguen siendo slots distintos. Si un Remote falla, `PlaybackFallbackPlanner.circularPlan` prueba la cola circularmente e incluye Local |
 
-Archivos: `ui/MusicPlayerViewModel.kt` (`playPlayableCollection` / `toggleShuffle` / `permuteQueueToPlayOrder` / `displayQueue` / `moveDisplayQueueItem` / `skipToQueueIndex`); `data/playback/PlaybackQueueOrder.kt` (`shufflePlayOrder`); `service/MusicService.kt` (`ACTION_SET_SHUFFLE_ORDER` legacy); `ui/components/PlayShuffleButtons.kt`.
+Archivos: `ui/MusicPlayerViewModel.kt` (façade pública); `service/PlaybackRuntime.kt` (`playPlayableCollection` / `toggleShuffle` / `displayQueue` / `moveQueueItem` / `skipToQueueIndex`); `data/playback/PlaybackQueueOrder.kt` (`shufflePlayOrder`); `data/playback/PlaybackQueueSlots.kt`; `data/playback/PlaybackFallbackPlanner.kt`; `data/playback/PlaybackSelectionIntentGate.kt`; `service/MusicService.kt` (`ACTION_SET_SHUFFLE_ORDER` legacy); `ui/components/PlayShuffleButtons.kt`.
 
 ## 2. Búsqueda online y descarga de audio
 
@@ -42,11 +42,11 @@ Archivos: `ui/MusicPlayerViewModel.kt` (`playPlayableCollection` / `toggleShuffl
 | Descargar + persistir | `DownloadAudioTrackUseCase.execute` → `IMusicRepository.downloadAndSaveOnlineTrack` (`onProgress: DownloadPhase`; persiste `OnlineCatalogTrack.trackNumber` / `TrackIdentity.trackNumber` de `fetchFullTrackMetadata`); copy/UI labels `DownloadMessages` |
 | UI diálogo | `ui/components/AddMusicDialog.kt` |
 | Centro de descargas | `DownloadsScreen` + `ActiveDownloadRow`; persistencia `ActiveDownloadsStore` / `ActiveDownloadCodec`; notif `DownloadNotificationHelper`; badge `activeDownloadBadgeCount` en tab Descargas (`MainScreen`) |
-| Orquestación VM | `enqueueTrackedBatch` → `runTrackedDownload` ← `downloadSingleCandidate`, `downloadSelectedCandidatesBatch`, `downloadFromUrl`, `downloadOnlineTrack`, `downloadRemoteItem`, `maybeEnqueueSaveWhileListening`; gate metered `ensureDownloadNetworkAllowed` (`DownloadPreferencesRepository.downloadOnMeteredNetwork` default true); candidatos vía `expandCandidates`; acciones `retryActiveDownload` / `cycleActiveDownload` / `previewActiveDownload` / `playActiveDownload` / `dismissActiveDownload` / `dismissAllActiveDownloads`; deep-link `requestOpenDownloads` / `pendingOpenDownloads` |
+| Orquestación | Manual: VM `enqueueTrackedBatch` → `runTrackedDownload` ← `downloadSingleCandidate`, `downloadSelectedCandidatesBatch`, `downloadFromUrl`, `downloadOnlineTrack`, `downloadRemoteItem`; autosave: `ProcessSaveWhileListeningCoordinator.save`; ambos llaman `ProcessDownloadCoordinator.execute`; gate metered tras permit (`DownloadPreferencesRepository.downloadOnMeteredNetwork` default true); candidatos vía `expandCandidates`; acciones `retryActiveDownload` / `cycleActiveDownload` / `previewActiveDownload` / `playActiveDownload` / `dismissActiveDownload` / `dismissAllActiveDownloads`; deep-link `requestOpenDownloads` / `pendingOpenDownloads` |
 
 Modelo clave: `TrackIdentity` / `TrackMeta`, `OnlineCatalogTrack` (`identity` + id/provider/audioUrl), `CatalogTrackCandidate` (`TrackMeta` vía `identity` estable de catálogo; YT en `candidates`/`currentTrack`; chrome de descarga **derivado** de `activeDownloads.findByTrack`), `ActiveDownload` (`TrackMeta` vía `currentTrack`; `displayLabel` / `titleOverride` solo UI; Save As vía `DownloadConflictPolicy` sin mutar candidatos), conflicto/batch lookup = `lookupIdentity` (catálogo) no el hit YT, `ActiveDownloadSource` (`CATALOG`, `LINK`, `SAVE_WHILE_LISTENING`, `BATCH`, `LB_IMPORT`, `DISCOVER`), cola `activeDownloads` (+ `targetPlaylistId` opcional, `resultSongId` en SUCCESS). Batch ids = `TrackMatchKeys.batchDownloadIdFor`. JSON viejo: `displayTitle` blank-fill identity; si difiere → `titleOverride`. Copy UI: `DownloadMessages`.
 
-**Invariante cola:** todas las descargas online se registran en `activeDownloads` (estado `QUEUED` → `DOWNLOADING` → `SUCCESS`/`ERROR`); éxito **se mantiene** con play/limpiar hasta `dismissActiveDownload`. Fallo deja `ERROR`. Concurrencia global `Semaphore(3)` en `runTrackedDownload`. Tras kill: `ActiveDownloadCodec.forPersistence` restaura SUCCESS; DOWNLOADING/QUEUED → ERROR “Interrumpida”. Badge = DOWNLOADING + ERROR. Add Music banners leen `activeDownloads`. `LB_IMPORT` y batch de **playlist del catálogo** añaden a playlist al éxito vía `targetPlaylistId` (`ensureCatalogPlaylistForBatch`).
+**Invariante cola:** todas las descargas online se registran en el único `ProcessDownloadCoordinator.downloads` (estado `QUEUED` → `DOWNLOADING` → `SUCCESS`/`ERROR`); éxito **se mantiene** con play/limpiar hasta `dismissActiveDownload`. Fallo deja `ERROR`. `ProcessDownloadCoordinator.execute` reclama atómicamente variantes plain/`batch:`, retiene el `Job` real y comparte `Semaphore(3)` entre manual + autosave. Cada claim acumula un `Set<DownloadPlaylistTarget>` (`playlistId` + `TrackIdentity`): un solo éxito drena cada destino exactamente una vez, añade la canción y elimina su pending aunque el owner sea manual o autosave; `ActiveDownload.targetPlaylistId` queda como representación UI/persist compatible. Solo el coordinador hidrata/persiste `ActiveDownloadsStore`, sin overwrite entre owners. Tras kill: `ActiveDownloadCodec.forPersistence` restaura SUCCESS; DOWNLOADING/QUEUED → ERROR “Interrumpida”. Badge = DOWNLOADING + ERROR. Add Music banners leen `activeDownloads`.
 
 ## 3. Biblioteca: filtro, orden y vistas
 
@@ -173,7 +173,7 @@ State: `currentThemeState`.
 | Settings UI | `VolumeBoostSettingsScreen` vía `SettingsScreen` sección Sonido |
 | Aplicar boost | `MusicService.applyBoost` + `LoudnessEnhancer` en `ExoPlayer.audioSessionId` |
 | Aplicar balance | `MusicService.applyStereoBalance` + `StereoBalanceAudioProcessor` en `DefaultAudioSink` |
-| UI / persistir boost | `MusicPlayerViewModel.setVolume` / `setVolumeBoostEnabled` / `restoreVolumeBoostIfNeeded` |
+| UI / persistir boost | `MusicPlayerViewModel.setVolume` / `setVolumeBoostEnabled` / `restoreVolumeBoostIfNeeded`; restore espera `PlaybackRuntime.awaitPlaybackSettings` (primera emisión real, no defaults) |
 | UI / persistir balance | `setStereoLeftGain` / `setStereoRightGain` / `resetStereoBalance` |
 | UI slider general | `NowPlayingScreen` (`volumeBoostEnabled`, `valueRange` 0…2) |
 
@@ -181,22 +181,22 @@ State: `currentThemeState`.
 
 **Invariantes:**
 - Último `_isShuffle` + `RepeatMode` se persisten siempre (`lastShuffleEnabled` / `lastRepeatMode`).
-- **Orden pre-shuffle = `preShuffleOrder` (lista de `mediaId`), no un snapshot de items.** Apagar aleatorio *reconcilia* contra la cola viva (`preShuffleQueueOrNull`: ids conocidos en su orden original, después lo agregado mientras estaba mezclado), así que encolar / quitar / refill de radio con shuffle on ya no se deshacen solos. `_shufflePlayOrder` se eliminó: era estado muerto (siempre null) y `displayQueue` es ahora `_queue`.
+- **Orden pre-shuffle = `preShuffleOrder` (lista efímera de `queueEntryId`), no un snapshot de items ni `mediaId`.** `PlaybackQueueSlots.restorePreShuffleOrder` reconcilia contra la cola viva: removidos siguen fuera, copias resueltas conservan datos y lo agregado mientras estaba mezclado queda al final. Duplicados Local/Remote son ocurrencias distintas.
 - **Apagar aleatorio restaura el orden** vía `disableShuffleRestoringOrder` (L2); `setShuffleEnabled` (L1) solo cambia el flag. `applyResolvedModes` usa el L2, así que clear-on-skip / clear-on-play ya no dejan la cola mezclada para siempre.
-- **Persistir con shuffle recorta por posición de reproducción**, no por el índice en el orden original: `queueSnapshotForPersist` trima `queue` por `index` y después proyecta los sobrevivientes al orden original (`items` = original filtrado, `shufflePlayOrder` = físico→original, `currentIndex` en original).
+- **Persistir con shuffle recorta por posición de reproducción**, no por el índice original: `queueSnapshotForPersist` delega en `PlaybackQueueSlots.projectSnapshot`, que proyecta sobrevivientes y `shufflePlayOrder` por ocurrencia; `queueEntryId` y CDN nunca se serializan.
 - **Restaurar shuffle es coherente con el toggle:** `applyHydratedQueue(hydrated, restoreShuffle)` recibe el mismo valor que calcula `PlaybackModeRestore.resolve`; si no se restaura shuffle, la cola vuelve en orden original.
-- Shuffle: al activar (toggle / Mezclar) se **reescribe** `_queue` + timeline; toggle en NP usa `rebuildPlayerQueueAroundCurrent` (cirugía remove/add alrededor del tema actual, sin `setMediaItems`/`prepare`) para no trabar la reproducción; fallback `reloadPlayerTimeline` si no hay controller. ExoPlayer queda lineal (`shuffleModeEnabled=false`). Backup `preShuffleQueueBackup` restaura al apagar shuffle. Persist (`queueSnapshotForPersist`): si shuffle on + backup mismo tamaño → items=backup, `shufflePlayOrder`=índices físicos→backup, `currentIndex` en backup; `applyHydratedQueue` pliega a cola física y restaura backup. `displayQueue` = cola (o remap legacy si hubiera `_shufflePlayOrder`). Play/Mezclar serializado (`playCollectionJob`). Drag en cola: `moveQueueItem` (cola física).
+- Shuffle: `PlaybackRuntime` reescribe su cola + timeline; toggle en NP usa `rebuildPlayerQueueAroundCurrent` (cirugía remove/add alrededor de la ocurrencia actual, sin `setMediaItems`/`prepare`) y fallback `reloadPlayerTimeline`. En hidratación display-only solo reordena memoria. Media3 conserva `shuffleModeEnabled` para interoperar con controllers externos, pero `MediaControllerFacade` instala por custom command un orden identidad: el recorrido real sigue siendo la cola física. `mutateMaterializedTimeline` reaplica ese orden después de append, Reproducir siguiente, refill, remove o move porque Media3 regenera `ShuffleOrder` al mutar la playlist. Callbacks `onShuffleModeEnabledChanged` / `onRepeatModeChanged` / `onTimelineChanged` reconcilian cambios de auriculares, Android Auto u otro controller. `displayQueue` = cola física; drag = `moveQueueItem`.
 - Arranque en frío (sin timeline): restaurar según `rememberShuffleOnLaunch` / `rememberRepeatOnLaunch` (on por defecto). Off → ese modo arranca apagado.
-- **Autoplay al abrir** (`autoplayOnLaunch`, off por defecto): mismo flag para Local y Remote. Off → mini player / cola hidratada sin `play()`. On → `maybeAutoplayAfterIdleSeed` → `togglePlayPause`. Sesión FGS viva que ya suena no se toca.
-- Sesión viva: repeat del `MediaController`; shuffle desde prefs (única fuente). Switches de Ajustes no cambian la sesión actual.
-- Play/tap manual (`playCollection` / `playSong`) aplica `PlaybackModeClear.afterManualPlay`. Default: apaga shuffle + Repeat One; Repeat All se mantiene. Tap en cola (`skipToQueueIndex`) **no** apaga shuffle (índice display→timeline). Next/prev in-app: `afterSkip` (default: solo Repeat One; shuffle intacto). Resume / radio no aplican; radio apaga shuffle al armar cola. `shuffleCollection` enciende shuffle (permutación) y aplica clears de repeat de manual play.
+- **Autoplay al abrir** (`autoplayOnLaunch`, off por defecto): mismo flag para Local y Remote. Restore espera `playbackSettingsReady` (primera emisión real de DataStore; nunca decide con el default de `stateIn`). Off → hidratación solo visual: no carga timeline, `prepare`, resolve ni prefetch hasta Play. On → `maybeSeedIdlePlayer` llama `togglePlayPause`. Sesión FGS viva que ya suena no se toca.
+- Sesión viva: `PlaybackRuntime` sincroniza repeat desde el controller que posee; shuffle viene de prefs (única fuente). Switches de Ajustes no cambian la sesión actual.
+- Play/tap manual (`playCollection` / `playSong`) aplica `PlaybackModeClear.afterManualPlay`. Default: apaga shuffle + Repeat One; Repeat All se mantiene. Tap en cola (`skipToQueueIndex`) **no** apaga shuffle. Next/prev: `afterSkip`. Radio aplica `afterRadioStart` **solo tras obtener sugerencias** en ambos caminos: restaura/apaga shuffle y apaga Repeat One; Repeat All queda. `shuffleCollection` enciende shuffle y aplica clears de repeat de manual play.
 
 | Capacidad | Entry point |
 |-----------|-------------|
-| Prefs | `PlaybackSettings` + `PlaybackModeRestore.resolve` / `PlaybackModeClear.afterManualPlay` / `afterSkip` / `parseRepeatModeName`; writes 1-key `DataStore.put` |
+| Prefs | `PlaybackSettings` + `PlaybackModeRestore.resolve` / `PlaybackModeClear.afterManualPlay` / `afterSkip` / `afterRadioStart` / `parseRepeatModeName`; writes 1-key `DataStore.put` |
 | Settings UI | `PlaybackSettingsScreen` vía `SettingsScreen` sección Reproducción; sección Batería pide `ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` |
-| Restore | `MusicPlayerViewModel.restorePlaybackModes` tras `syncUiFromController` |
-| Persist | `setShuffleEnabled` / `setRepeatMode` / `toggleShuffle` (`applyQueueReorder` / `rebuildPlayerQueueAroundCurrent`) / `toggleRepeatMode` / `finishPlayPlayableCollection` (`startShuffled`) / `persistPlaybackSession` → `queueSnapshotForPersist` / `QueueSnapshot.shufflePlayOrder` |
+| Restore | `PlaybackRuntime.restorePlaybackModes` tras conectar/sincronizar el controller |
+| Persist | `PlaybackRuntime.setShuffleEnabled` / `setRepeatMode` / `toggleShuffle` (`applyQueueReorder` / `rebuildPlayerQueueAroundCurrent`) / `toggleRepeatMode` / `finishPlayPlayableCollection` (`startShuffled`) / `persistPlaybackSession` → `queueSnapshotForPersist` / `QueueSnapshot.shufflePlayOrder` |
 | Remember flags | `setRememberShuffleOnLaunch` / `setRememberRepeatOnLaunch` / `setAutoplayOnLaunch` |
 | Clear-on-play | `setClearShuffleOnManualPlay` / `setClearRepeatAllOnManualPlay` / `setClearRepeatOneOnManualPlay` / `applyManualPlayModes` |
 | Clear-on-skip | `setClearShuffleOnSkip` / `setClearRepeatOneOnSkip` / `applySkipModes` / `skipToNext` / `skipToPrevious` |
@@ -225,33 +225,36 @@ Centro de descargas online → sección 2 (`DownloadsScreen`, tab Descargas).
 | Prefs descarga | `DownloadPreferencesRepository` / `DownloadSettings` (`download_settings`; `downloadOnMeteredNetwork` default **true**; `totalMeteredBytes` / `totalUnmeteredBytes` vía `addDownloadedBytes`) |
 | Settings UI | `DownloadSettingsScreen` vía `SettingsScreen` sección Descargas (path `Música/BestiaPop` + switch datos + totales bytes); deep-link `openDownloadSettings` / `pendingSettingsSection` / `consumePendingSettingsSection` |
 | Gate red | `ConnectivityObserver.isMetered` + `ensureDownloadNetworkAllowed` **dentro** de `withPermit` en `runTrackedDownload` → ERROR `DownloadMessages.blockedOnMetered`. Antes del semáforo no sirve: un batch que pasó el chequeo en WiFi esperaba minutos en cola y bajaba por celular. Al éxito `addDownloadedBytes` con `isMetered()` muestreado en completion (no al start) |
-| Anti-duplicado | `TrackMatchKeys.downloadIdVariantsFor` (plano + `batch:`) es la única fuente de "¿ya está bajando este track?"; la usan `findByTrack` y el gate de `runTrackedDownload`, que aborta (`DownloadMessages.alreadyQueued`) si hay un **job vivo** en `downloadJobs` para cualquiera de esos ids. Se mira el job, no el estado de la fila: una fila QUEUED huérfana bloqueaba el tema para siempre. Los dos ids resuelven al mismo `sanitizedName`, así que dos jobs escribían el mismo archivo |
-| Cancelar | `downloadJobs[downloadId]` guarda la corrutina; `dismissActiveDownload` / `dismissAllActiveDownloads` la cancelan. Sin eso la descarga seguía consumiendo datos y su update final resucitaba la fila (éxito, vía `upsert`) o desaparecía sin rastro (fallo, vía `update` no-op). `DownloadAudioTrackUseCase` re-lanza `CancellationException` para que cancelar no sea un ERROR ni un non-fatal |
+| Anti-duplicado | `TrackMatchKeys.downloadIdVariantsFor` (plano + `batch:`) alimenta `ProcessDownloadCoordinator.execute`: el claim atómico cubre ambos ids y el id explícito antes de publicar QUEUED; `MusicPlayerViewModel` consulta `processDownloads.isRunning/findByTrack`, nunca una lista privada. Se mira el job no completado, no una fila QUEUED huérfana |
+| Cancelar | `ProcessDownloadCoordinator` mapea cada alias al `Job` dueño; `dismiss` / `dismissAll` cancelan ese job y quitan su fila; `cancelAndJoin` espera al writer anterior antes de retry. Updates terminales son `update` (no resucitan una fila descartada). `DownloadAudioTrackUseCase` re-lanza `CancellationException` |
 | Totales UI | Labels “Con límite de datos” / “Sin límite” en `DownloadsScreen` + `DownloadSettingsScreen` (`formatByteCount`) |
-| Persistencia cola | `ActiveDownloadsStore` + `ActiveDownloadCodec` (DataStore JSON; conserva SUCCESS + `resultSongId`) |
+| Persistencia cola | `ProcessDownloadCoordinator` es el único writer de `ActiveDownloadsStore` + `ActiveDownloadCodec` (DataStore JSON; merge de hidratación; conserva SUCCESS + `resultSongId`) |
 | Notif progreso | `DownloadNotificationHelper` (canal `downloads_channel`; tap → tab Descargas) |
 | Badge tab | `activeDownloadBadgeCount` en `MainScreen` NavigationBar Descargas |
 | Deep-link | `requestOpenDownloads` / `pendingOpenDownloads` / `consumeOpenDownloads`; tab UI path + CTA ajustes en `DownloadsScreen` |
-| Límite | `downloadSemaphore` (3) en ViewModel |
+| Límite | `ProcessDownloadCoordinator.MAX_CONCURRENT_DOWNLOADS = 3`, global para todos los callers |
 
 ## 9. ListenBrainz (scrobbling + Para Ti)
 
 **Invariantes:**
-- Scrobbling solo si `ListenBrainzSettings.enabled` + token válido; offline encola en `pending_listens`.
+- Scrobbling solo si `ListenBrainzSettings.enabled` + token válido; offline encola en `pending_listens`. Runtime espera la primera emisión real de `ListenBrainzPreferencesRepository.settingsFlow` antes de decidir autosave o pedir Radio; nunca usa el objeto default del cold start.
 - Sección **Para Ti** / **Recomendados** en Playlists solo si `showDiscoverPlaylists` (`enabled && discoverEnabled && username`).
 - Playlists Discover = `GET /1/user/{user}/playlists/createdfor`; detalle = `GET /1/playlist/{mbid}`.
 - CF Recomendados = `GET /1/cf/recommendation/user/{user}/recording` + metadata → match Local|Remote.
 - Match local por artist+title normalizado (`TrackMatchKeys.normalize` pliega case/puntuación/tildes; `matchMetasAgainstLibrary` / `matchAgainstLibrary`; L1 `buildLibraryIndex` + `lookupLocalSong` para radio); faltantes = `PlayableItem.Remote`. Rematch LB/CF tras descarga = `List.rematchLocals`. Query YT / id catálogo = `TrackMeta.youtubeSearchQuery` / `TrackIdentity.toCatalogTrack`.
 - Reproducción: cola mixta `Local|Remote` vía `playPlayableCollection` (prefetch / 403 retry de stream).
 - **Descarga manual** de un Remote en detalle Para Ti / Recomendados o Now Playing: icono Descargar en `RemoteTrackPlaceholderRow` / CTA `NowPlayingRemoteDownloadAction` → `downloadRemoteItem` (`ActiveDownloadSource.DISCOVER`); progreso en Descargas (+ estados en NP); al éxito rematch LB + CF.
-- **Guardar al escuchar** (`saveWhileListening` + `saveWhileListeningPercent`): al alcanzar ≥N% de la duración (o fin) de un Remote, encola en `activeDownloads` vía `runTrackedDownload` (sin reemplazar el MediaItem). Fallo → `ERROR` en el centro + Toast + timestamp en `saveWhileListeningFailures`: el reintento automático espera `SAVE_WHILE_LISTENING_RETRY_COOLDOWN_MS` (10 min). **Sin el cooldown** el tracker de posición (cada 200 ms, umbral ya superado) re-encolaba 5 veces por segundo con un toast cada vez. El reintento manual y `dismissActiveDownload` limpian el cooldown.
+- **Guardar al escuchar** (`saveWhileListening` + `saveWhileListeningPercent`): `SaveWhileListeningPolicy` evalúa progreso; `STATE_ENDED` y transición automática guardan el Remote saliente aunque faltara el último sample; un salto manual nunca finge completado. `PlaybackRuntime` dispara `ProcessSaveWhileListeningCoordinator` sin reemplazar MediaItem; ambos sobreviven `MusicPlayerViewModel.onCleared`. Autosave comparte claim/permiso/cola con manual, devuelve éxito si ya existe y `SaveWhileListeningDownloadResult.InFlight` si otro owner ya lo descarga (neutral: sin `ERROR`, evento de fallo ni cooldown); contabiliza bytes metered/unmetered al guardar y un SUCCESS retenido vuelve a disparar rematch LB/CF cuando retorna la UI. Un fallo real → `ERROR` + evento UI; cooldown 10 min process-scoped.
+- `ListenTracker.onTrackChanged(..., PlaybackChangeHint)` vive en el scope del runtime: mutaciones de metadata/cola conservan progreso y una transición Media3 real usa `NEW_PLAYBACK`, incluso Repeat One o duplicados; detach de UI no cancela ticks ni sync.
 - **Import a Room:** “Guardar” crea playlist local con matched + metadata pendiente de faltantes (`playlist_pending_tracks`); “Descargar faltantes” / detalle local encola vía `runTrackedDownload` (`LB_IMPORT` + `targetPlaylistId`). Progreso en tab Descargas; nunca CDN en Room.
 
 | Capacidad | Entry point |
 |-----------|-------------|
 | Prefs | `ListenBrainzPreferencesRepository` / `ListenBrainzSettings` (`saveWhileListening`, `saveWhileListeningPercent`) |
 | Settings UI | `ListenBrainzSettingsScreen` — registrar + **Mostrar Para Ti** + **Guardar al escuchar** (+ slider %) |
-| Submit listens | `ListenBrainzClient.submitListens`, `ListenTracker`, `ListenSyncCoordinator` |
+| Política de cambio de track | `PlaybackTrackChangePolicy.resolve` + `PlaybackChangeHint` / `PlaybackTrackChange` en `data/playback/PlaybackTrackChangePolicy.kt` |
+| Política Guardar al escuchar | `SaveWhileListeningPolicy.shouldSave` + `SaveWhileListeningEvent` en `data/listenbrainz/SaveWhileListeningPolicy.kt` |
+| Submit listens | `PlaybackRuntime` → `ListenTracker.onTrackChanged` / `ListenSyncCoordinator` → `ListenBrainzClient.submitListens` |
 | List Discover | `ListenBrainzClient.fetchCreatedForPlaylists` → `MusicPlayerViewModel.refreshListenBrainzDiscoverPlaylists` |
 | Abrir playlist | `openListenBrainzPlaylist` + `MatchListenBrainzTracksUseCase` |
 | Map a cola | `MatchedLbPlaylist.toPlayableItems` / `MatchedRemoteTrack.toPlayableItem` |
@@ -267,44 +270,52 @@ Centro de descargas online → sección 2 (`DownloadsScreen`, tab Descargas).
 
 **Invariantes:**
 - Cola unificada `List<PlayableItem>` (`Local` | `Remote`); APIs `Song` se adaptan con `Song.toPlayable()`.
-- Re-extraer stream YouTube just-in-time (`MusicRepository.streamResolver` → `YouTubeExtractor`); cache memoria TTL ~4 min para **playback**; download llama `resolveQuery(forceRefresh = true)` (no reusa CDN cacheado); **no** guardar `audioUrl` CDN en Room.
-- ExoPlayer usa UA del extract vía `StreamPlaybackTag` en `MusicService`. El tag viaja en `MediaItem.RequestMetadata.extras` (`setStreamPlaybackTag` / `streamPlaybackTag()`), **no** en `localConfiguration.tag`: `LocalConfiguration.toBundle` no serializa `tag`, así que ahí se perdía al cruzar `MediaController` → `MediaSession` y el UA nunca se aplicaba.
-- **Pausar no depende del TTL:** `togglePlayPause` corta con `controller.pause()` antes de evaluar `remoteNeedsResolve`. Si no, pasado el TTL la pausa caía en `playPlayableCollection` y reiniciaba el tema en vez de pausarlo.
-- **Una sola intención de reproducción:** `MediaController.playWhenReady` decide si debe sonar; no hay booleano paralelo en el ViewModel. `ensureRemoteReadyAt(startPlaying)` / `handlePlayerError` capturan la intención al iniciar red y vuelven a comprobar `playWhenReady` antes de `play()`, así una pausa desde notificación o auriculares durante el resolve no se deshace al terminar.
-- Prefetch índices N+1 / N+2 **resuelve la URL**; el audio de los próximos temas lo bufferea ExoPlayer vía `setPreloadConfiguration` (`PRELOAD_TARGET_DURATION_US`, 10s) en `MusicService`. Sin eso no se bajaba ni un byte hasta que el tema arrancaba.
+- Re-extraer stream YouTube just-in-time (`MusicRepository.streamResolver` → `YouTubeExtractor`); playback usa `resolveForPlayback(maxCachedAgeMs = STREAM_READY_MAX_AGE_MS)` (60s) aunque la cache general dure ~4 min; download llama `resolveQuery(forceRefresh = true)`; **no** guardar `audioUrl` CDN en Room. `StreamResolver.withKeyLock` reserva/ref-cuenta el lock antes de suspender y solo poda entradas sin referencias, para no entregar dos mutex del mismo query.
+- `PlaybackMediaItemCodec` v1 codifica Local/Remote con `queueEntryId`, identity, query/mbid, videoId y UA en extras; la URL CDN vive **solo** en `MediaItem.uri`. ExoPlayer usa UA vía `StreamPlaybackTag` en `RequestMetadata.extras` (`setStreamPlaybackTag` / `streamPlaybackTag()`), nunca `localConfiguration.tag`.
+- **Pausar no depende del TTL:** la rama de pausa de `PlaybackRuntime.togglePlayPause` actualiza la intención, cancela resolve/prefetch/recovery, llama `pause()` y retorna antes de `requestPlaybackForCurrent` y de comprobar si el stream necesita resolución. Así una pausa nunca reconstruye ni reinicia el tema.
+- **Una sola intención de reproducción:** `PlaybackRuntime` conserva su propia intención `playWhenReady`, `queueEntryId`/índice y posición muestreada; nunca consulta un facade después de `onDisconnected`. Antes de tener controller/target listo, `pendingPlayIntentEpoch` es un token monotónico. Reconectar sincroniza una sesión viva o rematerializa cola+slot+posición y recién después resuelve/prepara. Pausar durante resolve/buffering no se deshace al completar.
+- `PlaybackRuntime.prefetchAround` resuelve índices N+1 / N+2 y la ventana se desliza aun sin UI (al pasar a N+1 alcanza N+3), pero solo con `playWhenReady=true`; una sesión viva pausada no dispara resolve/prefetch hasta Play. El audio lo bufferea ExoPlayer vía `setPreloadConfiguration` (`PRELOAD_TARGET_DURATION_US`, 10s) en `MusicService`.
 - **Un seek no saca al player de `STATE_IDLE`.** Un stream que falla lo deja ahí, así que next/previous parecían muertos mientras el botón de play funcionaba: Media3 prepara al player idle solo para la acción de play (`Util.handlePlayButtonAction`), no para un seek. `ensurePreparedForPlayback()` cubre el hueco y se llama en `skipToNext` / `skipToPrevious`, en cada `onMediaItemTransition` (donde `ensureRemoteReadyAt` corta temprano si el ítem es Local o si el stream sigue fresco) y en el salteo automático de `recoverAfterUnplayable`. Solo prepara: `playWhenReady` sigue decidiendo si arranca, así que saltar en pausa sigue en pausa.
-- **Ventana de gracia antes de saltear** (`PlaybackSettings.streamSkipGraceSeconds`, default 3s, Ajustes → Reproducción → Canciones online): ante *cualquier* error de un `Remote`, `handlePlayerError` re-extrae y re-prepara en loop hasta que se agote la ventana (`remoteRecoveryJob` + `remoteRecoveryDeadlineMs`, una por tema, compartida entre rondas de error). 0 = saltear al primer error. Antes se miraba una lista corta de códigos IO y cualquier otro (página HTML de error, contenedor mal formado, fallo de decode) salteaba el tema en silencio.
-- **Escribir el stream resuelto va por `applyResolvedRemote(original, resolved)`**, que localiza la ocurrencia exacta con `List.indexOfRemoteSlot(original)` y `Remote.queueEntryId` (efímero; `copy(resolved=…)` lo conserva). `mediaId` no sirve como identidad de slot: cambia de hash del query a `remote:<videoId>` y dos duplicados comparten ambos valores. Toda entrada nueva pasa por `withFreshRemoteQueueEntryIds`, incluso si se encola dos veces el mismo objeto. Índice capturado antes de red también puede quedar obsoleto (borrado/refill/reshuffle). Lo usan `ensureRemoteReadyAt`, `prefetchAround`, `handlePlayerError` y `skipToQueueIndex`; slot ausente con intención de play → recovery / toast+next.
-- **`resolvingRemote` es ref-counted** (`beginResolvingRemote` / `endResolvingRemote`): con un booleano plano, el `finally` de un resolve cancelado apagaba el indicador mientras otro seguía corriendo.
+- **Ventana de gracia antes de saltear** (`PlaybackSettings.streamSkipGraceSeconds`, default 3s, Ajustes → Reproducción → Canciones online): ante *cualquier* error de un `Remote`, `handlePlayerError` re-extrae y re-prepara en loop hasta que se agote la ventana (`remoteRecoveryJob` + `remoteRecoveryDeadlineMs`, una por `queueEntryId`, compartida entre rondas de error). Re-resolver una URL no reinicia el deadline: solo progreso real/`isPlaying` o cambiar de slot limpia la ventana; al vencer usa el fallback circular y pausa si no queda candidato. 0 = saltear al primer error. Antes se miraba una lista corta de códigos IO y cualquier otro (página HTML de error, contenedor mal formado, fallo de decode) salteaba el tema en silencio.
+- **Identidad de ocurrencia = `PlayableItem.queueEntryId` para Local y Remote.** Toda entrada nueva/restaurada pasa por `withFreshQueueEntryIds`; `copy(song/resolved=…)` conserva el id. `mediaId` identifica audio y puede repetirse, nunca un slot. `applyResolvedRemote` usa `indexOfRemoteSlot`; pre-shuffle/snapshot/UI usan `PlaybackQueueSlots`/`indexOfQueueEntry`. El id viaja solo en `MediaMetadata.extras` durante la sesión y no se persiste.
+- **Selección/inicio/recovery:** `PlaybackFallbackPlanner.circularPlan` prueba circularmente cada slot una vez e incluye Local tanto al tocar cola como al inicio normal y tras un error; no corta arbitrariamente al quinto fallo. `rejectedQueueEntries` evita cascadas infinitas hasta que una canción reproduce progreso real. `PlaybackSelectionIntentGate` hace latest-tap-wins.
+- **Completions obsoletos:** todo cambio de colección/slot incrementa `playbackGeneration` y cancela transition resolve, recovery y prefetch. Tras cada suspensión se exige generación + controller + `queueEntryId`, así un trabajo viejo no reemplaza, prepara, saltea ni pausa la reproducción nueva aunque ignore cancelación cooperativa.
+- **Seek pausado persistente:** `seekTo` actualiza el snapshot con debounce (`scheduleSeekPersistence`) y el mismo writer serial de `PlaybackSessionStore`; varios seeks rápidos guardan solo la posición final y una escritura vieja no adelanta a otra nueva.
+- **`resolvingRemote` es ref-counted** (`beginResolving` / `endResolving`): con un booleano plano, el `finally` de un resolve cancelado apagaba el indicador mientras otro seguía corriendo.
 - Descarga explícita (“Agregar”) sigue download-then-play; stream no la reemplaza.
 
 | Capacidad | Entry point |
 |-----------|-------------|
 | Modelo | `PlayableItem` (`TrackMeta`; `Remote` guarda `identity` + mbid/stream), `ResolvedStream` en `data/model/PlayableItem.kt` |
-| Resolver | `MusicRepository.streamResolver` (`StreamResolver.resolve` / `prefetch` en `data/stream/StreamResolver.kt`) |
+| Resolver | `MusicRepository.streamResolver` (`StreamResolver.resolveForPlayback` / `resolve` / `prefetch` en `data/stream/StreamResolver.kt`) |
 | UA ExoPlayer | `StreamPlaybackTag` + `setStreamPlaybackTag` / `streamPlaybackTag()` (`RequestMetadata.extras`) + `MusicService` `UserAgentMediaSourceFactory` |
 | Invalidar stream muerto | `StreamResolver.invalidate(item)` (suspend, bajo el mutex; borra la clave `id:` **y** la `q:` y toda entrada con ese `videoId`) |
-| FGS background | Canal `playback_channel` + `promotePlaybackForeground` (`Service.startForeground` tipo `mediaPlayback`; try/catch + Crashlytics). Re-promote en `onPlayWhenReadyChanged` / `onPlaybackStateChanged` / `onMediaItemTransition` si engaged. `onTaskRemoved` usa únicamente `isPlaybackEngaged` (estado real del player; no Media3 `isPlaybackOngoing`, que queda false al bypassear su notification manager). VM solo `controller.play()`; resolve Remote **no** hace `pause()`. ExoPlayer `WAKE_MODE_NETWORK` + permiso `WAKE_LOCK`. FGS se mantiene con `playWhenReady` aunque el state sea IDLE breve (resolve Remote); se suelta en pause/`STATE_ENDED`. Play Store: FGS basta. Sideload OEM (Moto): `install.sh` alinea `adaptive_bucket` + `RUN_ANY_IN_BACKGROUND allow` vía adb — no viaja en el APK |
-| Cola / play | `playPlayableCollection`, `currentItem`, `resolvingRemote` en `MusicPlayerViewModel` |
+| FGS background | Una sola notif custom (`PlaybackNotificationFactory`, canal `playback_channel`, id 1001): Previous · Play/Pause · Next, compact 0/1/2; acciones = `ACTION_MEDIA_BUTTON` explícito a `MusicService` (Play usa foreground-service PI en API 26+), content tap = `setSessionActivity`. `MusicService.onUpdateNotification` es dueño único (sin provider/super paralelo) y `promotePlaybackForeground` usa `Service.startForeground` tipo `mediaPlayback` con try/catch + Crashlytics. Re-promote en `onPlayWhenReadyChanged` / `onPlaybackStateChanged` / `onMediaItemTransition` si engaged. `onTaskRemoved` usa únicamente `isPlaybackEngaged` (estado real del player; no Media3 `isPlaybackOngoing`, que queda false al bypassear su notification manager). `MusicPlayerViewModel.togglePlayPause` delega en `PlaybackRuntime.togglePlayPause`; resolver un Remote no pausa la intención activa. ExoPlayer `WAKE_MODE_NETWORK` + permiso `WAKE_LOCK`. FGS se mantiene con `playWhenReady` aunque el state sea IDLE breve (resolve Remote); se suelta en pause/`STATE_ENDED`. Play Store: FGS basta. Sideload OEM (Moto): `install.sh` alinea `adaptive_bucket` + `RUN_ANY_IN_BACKGROUND allow` vía adb — no viaja en el APK |
+| Ownership cola/play | `PlaybackRuntime` (único `MediaController`, listener y jobs; `attachUi` / `detachUi` / `events`); `MusicPlayerViewModel` delega comandos, expone StateFlows y consume eventos |
+| Codec Media3 | `PlaybackMediaItemCodec` (`encode` / `decode` / payload v1 sin CDN) |
 | Stream desde catálogo | `playOnlineCatalogTrackAsStream` + preview in-dialog (`CatalogTrackItem` / `CandidateTrackCard` + `CatalogPreviewBar`); `cycleSongCatalogResult` / `cycleTrackCandidate` (“Buscar otro”) |
 | UI player | `BottomPlayerBar` / `NowPlayingScreen` / `QueueScreen` observan `PlayableItem` |
 
 ## 10b. Continuidad del mini player
 
 **Invariantes:**
-- Tras reconnect de `MediaController`, `syncUiFromController` rehidrata `_queue` / `currentItem` / `isPlaying` / posición desde la sesión viva (prioridad sobre snapshot persistido).
-- Sin sesión viva: hidratar cola persistida (`queue_json`: current + upcoming + last `MAX_QUEUE_HISTORY` = 20). Locals rematch por id/uri; Remotes identity+mbid+query/`videoId` **sin** CDN. Si current se borró, avanzar al siguiente (posición 0). Si no hay cola usable: last-played local o aleatoria. Autoplay solo si `autoplayOnLaunch` (Local = Remote). `ensureRemoteReadyAt(..., startPlaying = playWhenReady)` en sync y `onMediaItemTransition` — hydrate/`prepare` no dispara `play()` en remoto.
-- Idle play: si el controller ya tiene items → play/pause. Si current Remote necesita resolve o `mediaItemCount == 0` con `_queue` hidratada → `playPlayableCollection(queue, index, rotate = false)` (no reconstruir biblioteca).
-- Biblioteca vacía y sin sesión → `BottomPlayerBar` oculto (`currentItem == null`).
-- Con playback activo (`playWhenReady`, items en timeline, no `ENDED`), `MusicService` permanece FGS `mediaPlayback` (notif Now playing + `setSessionActivity`) aunque la Activity esté en segundo plano o el player esté un instante en IDLE al resolver Remote; sin FGS el proceso queda cached y LMK lo mata al abrir otras apps. `onTaskRemoved` no hace `stopSelf` mientras engaged (Media3 `isPlaybackOngoing` miente porque bypasseamos su FGS manager). Wake: `WAKE_LOCK` + `ExoPlayer.setWakeMode(NETWORK)`.
+- `MusicPlayerViewModel.init` llama `PlaybackRuntime.attachUi` y colecta `events`; `onCleared` llama `detachUi`. El ViewModel no guarda `MediaController`, cola ni estado de resolución.
+- `PlaybackRuntime` conserva controller/cola durante recreate si hay UI, intención `playWhenReady` o cola pendiente; tras reconnect `syncFromController` prioriza una sesión viva. Si la sesión volvió vacía, rematerializa su cola con el `queueEntryId`/índice y posición muestreada propios. `onDisconnected` primero desasocia el owner y jamás lee propiedades del controller ya inválido; reconecta con backoff.
+- Sin sesión viva: `PlaybackHydration.hydrateQueue` rematchea Local por id/uri y conserva Remotes identity+mbid+query/`videoId` sin CDN. Una cola solo-Remote se hidrata aun con biblioteca vacía; si current local se borró, avanza y pone posición 0.
+- Con autoplay off, `applyHydratedQueue` solo publica mini player/cola/posición: `addPlayableBatch` / `playNextBatch` / `removeFromQueue` / `moveQueueItem` / `toggleShuffle` mutan la cola en memoria sin tocar Media3. El primer Play materializa el snapshot completo e índice/posición antes de resolve/prepare. Con autoplay on usa el mismo camino automáticamente.
+- Persistencia: `persistPlaybackSession` captura un `PlaybackPersistenceRequest` inmutable en el scope Main y un writer único lo guarda en IO en orden; una escritura vieja nunca puede pisar una nueva.
+- Lifecycle: el ticker de 200 ms existe solo mientras `isPlaying`; al quedar sin UI, playback ni cola pendiente, el runtime cancela future/retry/ticker y libera el controller. Playback/cola sobreviven a `onTaskRemoved`.
+- Biblioteca vacía **sin snapshot Remote usable** → `BottomPlayerBar` oculto (`currentItem == null`).
+- Con playback activo (`playWhenReady`, items en timeline, no `ENDED`), `MusicService` permanece FGS aunque se destruya Activity/ViewModel o se remueva la task. `PlaybackServiceLifetimePolicy` conserva el caso `STATE_IDLE` temporal de placeholder Remote; `onTaskRemoved` no hace `stopSelf`. Wake: `WAKE_LOCK` + `ExoPlayer.setWakeMode(NETWORK)`.
 - No persistir CDN de `Remote`. Mini bar: Previous + status (`Resolviendo…` / `Armando radio…` / `radioStatusLabel`).
 
 | Capacidad | Entry point |
 |-----------|-------------|
-| Resync sesión | `MusicPlayerViewModel.syncUiFromController` / `mediaItemToPlayable` / `loadHydratedQueueIntoController` |
+| Lease UI + mensajes | `PlaybackRuntime.attachUi` / `detachUi` / `events`; wiring en `MusicPlayerViewModel.init` / `onCleared` |
+| Resync sesión | `PlaybackRuntime.syncFromController` + `PlaybackMediaItemCodec.decode` |
 | Last-played + cola | `PlaybackSessionStore`, `LastPlayedCodec`, `QueueSnapshotCodec`, `PlaybackHydration.hydrateQueue` en `data/preferences/PlaybackSessionStore.kt` |
 | Wrap / trim | `PlaybackQueueOrder.rotateToStart` / `trimHistory` (+ remap `shufflePlayOrder`) en `data/playback/PlaybackQueueOrder.kt` |
-| Seed idle | `maybeSeedIdlePlayer` / `applyHydratedQueue` / `maybeAutoplayAfterIdleSeed` |
+| Seed idle | `PlaybackRuntime.maybeSeedIdlePlayer` / `applyHydratedQueue` |
 | Mini bar UI | `BottomPlayerBar` (`statusLabel`, Previous); wiring en `MainScreen` |
 
 ## 10c. Acciones de canción/álbum en Now Playing
@@ -315,22 +326,23 @@ Centro de descargas online → sección 2 (`DownloadsScreen`, tab Descargas).
 |--------|--------|-------------|
 | Ir al álbum / artista | Match en `albumsState` / `artistsState` | `openLibraryAlbum` / `openLibraryArtist` + `setSelectedNavIndex(0)` |
 | Ir a playlist local | Membresía Room (`getPlaylistIdsForSong`) | `openLocalPlaylist` + tab Playlists |
-| Ir a Para Ti / Recomendados | `DiscoverPlaybackOrigin` (sesión; no persistido) si play/shuffle desde LB/CF | `openListenBrainzPlaylistDetail` / `openCfRecommendationsDetail` |
+| Ir a Para Ti / Recomendados | `DiscoverPlaybackOrigin` process-scoped (sesión; no persistido) si play/shuffle desde LB/CF | `PlaybackRuntime.discoverPlaybackOrigin` → `openListenBrainzPlaylistDetail` / `openCfRecommendationsDetail` |
 | Añadir a playlist / Identificar / Editar canción | Solo `PlayableItem.Local` | `SongActionDialogsHost` / `identifySongForReview` |
 | Editar álbum | Local + álbum en biblioteca | `AlbumEditDialogsHost`; merge único en `MainScreen` (`pendingAlbumMerge`) |
 | Descargar ahora | Solo `PlayableItem.Remote` (visible bajo título) | `NowPlayingRemoteDownloadAction` → `downloadRemoteItem`; estados vía `activeDownloads` |
 | Iniciar radio | Siempre | `startRadio()` (mismo que icono header) |
 
-Origen Discover: se setea en `playPlayableCollection(..., origin)` (wrappers CF/LB pasan `CfRecommendations` / `ListenBrainz`); `None` al armar cola local / radio que muta cola / `applyHydratedQueue`.
+Origen Discover: `PlaybackRuntime.playPlayableCollection(..., origin)` lo setea (wrappers CF/LB pasan `CfRecommendations` / `ListenBrainz`) y sobrevive `MusicPlayerViewModel.onCleared`/recreate; `None` al armar cola local/manual, al iniciar radio con sugerencias (reemplazo, keep-current o auto), al vaciar cola y en `applyHydratedQueue`.
 
 ## 11. Radio (similares)
 
 **Invariantes:**
 - Seed = canción elegida (`startRadio(seedSong)` o `currentItem`); entry en menú de canción (“Iniciar radio”) y `NowPlayingScreen`.
 - **Modos UI:** Solo conocidos (`KNOWN`) / Solo nuevos (`NEW`) / Ambos (`BOTH`); label `radioStatusLabel` (“Radio · Solo conocidos|Solo nuevos|Ambos”).
-- Long-press Radio en Now Playing: Solo conocidos / Solo nuevos / Ambos / Detener radio (`stopRadio` no vacía cola). `stopRadio` cancela `radioStartJob` **y** `radioRefillJob` y limpia `_radioLoading`; sin eso el fetch en vuelo (hasta ~45s en NEW) revivía la sesión al terminar y el botón quedaba inerte por el guard `if (_radioLoading.value) return`. Tras el fetch, `startRadio` chequea `isActive` antes de mutar estado.
+- Long-press Radio en Now Playing: Solo conocidos / Solo nuevos / Ambos / Detener radio (`PlaybackRuntime.stopRadio` no vacía cola). Cancela `radioStartJob` y `radioRefillJob` process-scoped, limpia `radioLoading` y resetea el cooldown de refill vacío; una nueva radio confirmada también lo resetea. Tras el fetch, `startRadio` chequea `isActive` antes de mutar estado.
 - **Auto:** al llegar a `STATE_ENDED` con `RepeatMode.OFF`, `startRadio(auto = true)` respeta preferred; default sin preferred = `BOTH` si hay red (Deezer usable sin token LB), si no `KNOWN`.
 - **Durante reproducción:** no saltea el tema actual; `replaceUpcomingWithRadio` + toast “Se agregaron canciones de la radio a la cola”.
+- Tras obtener sugerencias, `PlaybackModeClear.afterRadioStart` se aplica tanto al reemplazo de próximos como a la cola nueva: apaga shuffle restaurando orden y Repeat One; no toca Repeat All. Si no hubo sugerencias, no cambia modos.
 - **KNOWN:** solo biblioteca (`LocalMetadataRadio` + boost co-playlist). **NEW:** solo `PlayableItem.Remote` vía LB → CF → Deezer (+ iTunes fill); matches de biblioteca se omiten; reintenta con backoff hasta ~45s (`suggestRadioWithRetry`); toast “Radio online no disponible” solo si tras timeout no hay Remotes. **BOTH:** intercala Remote, Local… (`RadioEngine.interleaveEquitable`); sin red sigue con conocidos (sin toast).
 - Fill remoto: `SimilarTracksProvider` (Deezer); LB/CF siguen cableados en `RadioEngine` con credenciales.
 - Refill con el mismo modo; **NEW** reintenta online ~20s; **no** persistir URLs CDN.
@@ -339,14 +351,14 @@ Origen Discover: se setea en `playPlayableCollection(..., origin)` (wrappers CF/
 | Capacidad | Entry point |
 |-----------|-------------|
 | Modos | `RadioMode.KNOWN` / `NEW` / `BOTH`; `radioMode` / `radioStatusLabel` |
-| Motor | `RadioEngine.suggest` / `suggestFromSeeds` → `RadioSuggestResult`; `interleaveEquitable` / `roundRobinMerge` |
+| Motor | `createBestiaPopRadioEngine` en `domain/radio/BestiaPopRadioEngineFactory.kt` → `RadioEngine.suggest` / `suggestFromSeeds` → `RadioSuggestResult`; `interleaveEquitable` / `roundRobinMerge` |
 | Preview multi-seed | `BuildSimilarPlaylistPreviewUseCase` + VM `previewSimilarFromSelection` / `confirmSimilarPreviewAsPlaylist` / `playSimilarPreview` / `enqueueSimilarPreview`; estado `similarPlaylistPreview` |
 | Contrato fill | `SimilarTracksProvider` |
 | Local | `LocalMetadataRadio.suggest` (+ `coPlaylistSongIds` vía `IMusicRepository.getCoPlaylistSongIds`; unión multi-seed en use case) |
 | LB | `ListenBrainzRadio.suggest` + LB client metadata/lb-radio |
 | CF fill | `CfRecommendationsRadio.suggest` (`artist_type=similar`, cache TTL) |
 | Deezer fill | `DeezerSimilarRadio.suggest` + `MetadataFetcher.resolveDeezerArtistId` / `fetchDeezerArtistRadio` / `fetchDeezerRelatedArtistIds` / `fetchDeezerArtistTop` / `fetchItunesArtistSongs` |
-| Sesión cola | `startRadio` (job en `radioStartJob`), `stopRadio`, `setRadioPreferredMode`, `suggestRadioWithRetry`, `replaceUpcomingWithRadio`, refill/auto |
+| Sesión cola | `PlaybackRuntime.startRadio` / `stopRadio` / `setRadioPreferredMode` / `replaceUpcomingWithRadio` / refill/auto; jobs process-scoped |
 | UI | Now Playing (tap/long-press + ⋮ “Iniciar radio”); mini bar `statusLabel` (radio / resolving); menú canción biblioteca “Iniciar radio”; multi-select `MultiSelectActionBar` “Similares” + `SimilarPlaylistPreviewDialog` |
 
 ## 12. System back (jerarquía UI)

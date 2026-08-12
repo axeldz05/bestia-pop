@@ -8,6 +8,7 @@ import android.os.Environment
 import android.provider.MediaStore
 import java.io.File
 import java.io.IOException
+import java.util.Locale
 
 /**
  * Single app-managed music folder: public [RELATIVE_MUSIC_DIR].
@@ -27,10 +28,10 @@ object StorageUtils {
     fun formatByteCount(bytes: Long): String {
         if (bytes < 1024L) return "$bytes B"
         val kb = bytes / 1024.0
-        if (kb < 1024.0) return String.format("%.1f KB", kb)
+        if (kb < 1024.0) return String.format(Locale.getDefault(), "%.1f KB", kb)
         val mb = kb / 1024.0
-        if (mb < 1024.0) return String.format("%.1f MB", mb)
-        return String.format("%.2f GB", mb / 1024.0)
+        if (mb < 1024.0) return String.format(Locale.getDefault(), "%.1f MB", mb)
+        return String.format(Locale.getDefault(), "%.2f GB", mb / 1024.0)
     }
 
     fun publicBestiaPopDir(): File =

@@ -15,6 +15,8 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.bestiapop.android.ui.MusicPlayerViewModel
@@ -122,7 +124,10 @@ private fun StereoGainSlider(
         Slider(
             value = value.coerceIn(0f, 1f),
             onValueChange = onValueChange,
-            valueRange = 0f..1f
+            valueRange = 0f..1f,
+            modifier = Modifier.semantics {
+                contentDescription = "Balance $label"
+            }
         )
     }
 }

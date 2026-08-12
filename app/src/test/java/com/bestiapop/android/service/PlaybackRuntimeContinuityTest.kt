@@ -20,9 +20,11 @@ import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
@@ -34,12 +36,17 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.yield
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class PlaybackRuntimeContinuityTest {
 
     @Test
@@ -319,6 +326,248 @@ class PlaybackRuntimeContinuityTest {
 
             assertEquals("radio refill must survive ViewModel detach", 2, radioCalls.get())
             assertTrue(fixture.runtime.queue.value.size >= 5)
+        } finally {
+            fixture.close()
+        }
+    }
+
+    @Test
+    fun stopRadio_lateStartCompletionDoesNotMutateQueue() = runBlocking {
+        val started = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val fixture = fixture(
+            radioSuggester = PlaybackRuntimeRadioSuggester {
+                started.complete(Unit)
+                withContext(NonCancellable) { release.await() }
+                RadioSuggestResult(
+                    items = listOf(PlayableItem.Local(song(9, "Late start"))),
+                    usedOnlineDiscovery = false,
+                    onlineDiscoveryFailed = false
+                )
+            }
+        )
+        try {
+            fixture.runtime.playPlayableCollection(
+                listOf(PlayableItem.Local(song(1, "Seed"))),
+                rotate = false
+            )
+            fixture.controller.state = Player.STATE_READY
+            val originalQueue = fixture.runtime.queue.value
+
+            fixture.runtime.startRadio(mode = RadioMode.KNOWN)
+            started.await()
+            fixture.runtime.stopRadio()
+            release.complete(Unit)
+            yield()
+
+            assertEquals(originalQueue, fixture.runtime.queue.value)
+            assertFalse(fixture.runtime.radioActive.value)
+            assertFalse(fixture.runtime.radioLoading.value)
+        } finally {
+            release.complete(Unit)
+            fixture.close()
+        }
+    }
+
+    @Test
+    fun stopRadio_lateRefillCompletionDoesNotMutateQueue() = runBlocking {
+        val refillStarted = CompletableDeferred<Unit>()
+        val releaseRefill = CompletableDeferred<Unit>()
+        val calls = AtomicInteger()
+        val fixture = fixture(
+            radioSuggester = PlaybackRuntimeRadioSuggester {
+                if (calls.incrementAndGet() == 1) {
+                    RadioSuggestResult(
+                        items = listOf(
+                            PlayableItem.Local(song(2, "Initial A")),
+                            PlayableItem.Local(song(3, "Initial B"))
+                        ),
+                        usedOnlineDiscovery = false,
+                        onlineDiscoveryFailed = false
+                    )
+                } else {
+                    refillStarted.complete(Unit)
+                    withContext(NonCancellable) { releaseRefill.await() }
+                    RadioSuggestResult(
+                        items = listOf(PlayableItem.Local(song(4, "Late refill"))),
+                        usedOnlineDiscovery = false,
+                        onlineDiscoveryFailed = false
+                    )
+                }
+            }
+        )
+        try {
+            fixture.runtime.playPlayableCollection(
+                listOf(PlayableItem.Local(song(1, "Seed"))),
+                rotate = false
+            )
+            fixture.controller.state = Player.STATE_READY
+            fixture.runtime.startRadio(mode = RadioMode.KNOWN)
+            fixture.controller.transitionTo(1, Player.MEDIA_ITEM_TRANSITION_REASON_AUTO)
+            refillStarted.await()
+            val queueBeforeStop = fixture.runtime.queue.value
+
+            fixture.runtime.stopRadio()
+            releaseRefill.complete(Unit)
+            yield()
+
+            assertEquals(queueBeforeStop, fixture.runtime.queue.value)
+            assertFalse(fixture.runtime.radioActive.value)
+        } finally {
+            releaseRefill.complete(Unit)
+            fixture.close()
+        }
+    }
+
+    @Test
+    fun startRadioDuringPlayback_keepsCurrentAndReplacesUpcoming() {
+        val fixture = fixture(
+            radioSuggester = PlaybackRuntimeRadioSuggester {
+                RadioSuggestResult(
+                    items = listOf(
+                        PlayableItem.Local(song(10, "Radio A")),
+                        PlayableItem.Local(song(11, "Radio B"))
+                    ),
+                    usedOnlineDiscovery = false,
+                    onlineDiscoveryFailed = false
+                )
+            }
+        )
+        try {
+            fixture.runtime.playPlayableCollection(
+                listOf(
+                    PlayableItem.Local(song(1, "Current")),
+                    PlayableItem.Local(song(2, "Old upcoming A")),
+                    PlayableItem.Local(song(3, "Old upcoming B"))
+                ),
+                rotate = false
+            )
+            fixture.controller.state = Player.STATE_READY
+            val currentQueueEntryId = fixture.runtime.currentItem.value?.queueEntryId
+
+            fixture.runtime.startRadio(mode = RadioMode.KNOWN)
+
+            assertEquals(currentQueueEntryId, fixture.runtime.currentItem.value?.queueEntryId)
+            assertEquals(
+                listOf("Current", "Radio A", "Radio B"),
+                fixture.runtime.queue.value.map { it.title }
+            )
+            assertEquals(
+                fixture.runtime.queue.value.map { it.queueEntryId },
+                fixture.controller.items().map { it.queueEntryId }
+            )
+        } finally {
+            fixture.close()
+        }
+    }
+
+    @Test
+    fun radioModes_publishObservableStatusLabels() {
+        val fixture = fixture(
+            radioSuggester = PlaybackRuntimeRadioSuggester {
+                RadioSuggestResult(
+                    items = listOf(PlayableItem.Local(song(20, "Suggested ${it.mode}"))),
+                    usedOnlineDiscovery = it.mode != RadioMode.KNOWN,
+                    onlineDiscoveryFailed = false
+                )
+            }
+        )
+        try {
+            fixture.runtime.playPlayableCollection(
+                listOf(PlayableItem.Local(song(1, "Seed"))),
+                rotate = false
+            )
+            fixture.controller.state = Player.STATE_READY
+
+            listOf(
+                RadioMode.KNOWN to "Radio · Solo conocidos",
+                RadioMode.NEW to "Radio · Solo nuevos",
+                RadioMode.BOTH to "Radio · Ambos"
+            ).forEach { (mode, label) ->
+                fixture.runtime.startRadio(mode = mode)
+                assertEquals(mode, fixture.runtime.radioMode.value)
+                assertEquals(label, fixture.runtime.radioStatusLabel.value)
+                fixture.runtime.stopRadio()
+                assertEquals(null, fixture.runtime.radioStatusLabel.value)
+            }
+        } finally {
+            fixture.close()
+        }
+    }
+
+    @Test
+    fun emptyNewRadio_retriesWithInjectedClockAndEmitsVisibleEvent() = runTest {
+        val calls = AtomicInteger()
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val fixture = fixture(
+            radioSuggester = PlaybackRuntimeRadioSuggester {
+                calls.incrementAndGet()
+                RadioSuggestResult(emptyList(), false, true)
+            },
+            dispatcher = dispatcher,
+            clockMs = { testScheduler.currentTime }
+        )
+        val events = CopyOnWriteArrayList<String>()
+        val eventsJob = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            fixture.runtime.events.collect(events::add)
+        }
+        try {
+            fixture.runtime.playPlayableCollection(
+                listOf(PlayableItem.Local(song(1, "Seed"))),
+                rotate = false
+            )
+            fixture.controller.state = Player.STATE_READY
+            fixture.runtime.startRadio(mode = RadioMode.NEW)
+
+            advanceUntilIdle()
+
+            assertTrue(calls.get() > 1)
+            assertTrue(testScheduler.currentTime >= 45_000L)
+            assertTrue(events.contains("Radio online no disponible"))
+            assertFalse(fixture.runtime.radioActive.value)
+        } finally {
+            eventsJob.cancel()
+            fixture.close()
+        }
+    }
+
+    @Test
+    fun radioRefill_assignsUniqueQueueEntryIdsToEveryAddedSlot() {
+        val calls = AtomicInteger()
+        val duplicate = PlayableItem.Local(song(4, "Repeated refill"))
+        val fixture = fixture(
+            radioSuggester = PlaybackRuntimeRadioSuggester {
+                if (calls.incrementAndGet() == 1) {
+                    RadioSuggestResult(
+                        items = listOf(
+                            PlayableItem.Local(song(2, "Initial A")),
+                            PlayableItem.Local(song(3, "Initial B"))
+                        ),
+                        usedOnlineDiscovery = false,
+                        onlineDiscoveryFailed = false
+                    )
+                } else {
+                    RadioSuggestResult(
+                        items = listOf(duplicate, duplicate),
+                        usedOnlineDiscovery = false,
+                        onlineDiscoveryFailed = false
+                    )
+                }
+            }
+        )
+        try {
+            fixture.runtime.playPlayableCollection(
+                listOf(PlayableItem.Local(song(1, "Seed"))),
+                rotate = false
+            )
+            fixture.controller.state = Player.STATE_READY
+            fixture.runtime.startRadio(mode = RadioMode.KNOWN)
+            fixture.controller.transitionTo(1, Player.MEDIA_ITEM_TRANSITION_REASON_AUTO)
+
+            val queue = fixture.runtime.queue.value
+            assertEquals(5, queue.size)
+            assertEquals(queue.size, queue.map { it.queueEntryId }.toSet().size)
+            assertEquals(2, queue.count { it.title == "Repeated refill" })
         } finally {
             fixture.close()
         }
@@ -1336,9 +1585,11 @@ class PlaybackRuntimeContinuityTest {
         controller: FakeController = FakeController(),
         attachController: Boolean = true,
         controllerReconnectBackoffMs: (Int) -> Long = { 0L },
-        startTicker: Boolean = false
+        startTicker: Boolean = false,
+        dispatcher: CoroutineDispatcher = Dispatchers.Unconfined,
+        clockMs: (() -> Long)? = null
     ): Fixture {
-        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        val scope = CoroutineScope(SupervisorJob() + dispatcher)
         val clock = AtomicLong(10_000L)
         val runtime = PlaybackRuntime(
             PlaybackRuntimeDependencies(
@@ -1354,7 +1605,7 @@ class PlaybackRuntimeContinuityTest {
                 saveDownloads = saveDownloads,
                 radioSuggester = radioSuggester,
                 isOnline = { true },
-                clockMs = clock::get,
+                clockMs = clockMs ?: clock::get,
                 elapsedRealtimeMs = clock::get,
                 controllerReconnectBackoffMs = controllerReconnectBackoffMs,
                 startTicker = startTicker

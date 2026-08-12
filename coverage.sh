@@ -67,7 +67,9 @@ case "${1:-}" in
     ;;
 esac
 
-if [[ -x ./gradlew ]]; then
+if [[ -x ./scripts/gradle-low-memory.sh ]]; then
+  GRADLE=(./scripts/gradle-low-memory.sh)
+elif [[ -x ./gradlew ]]; then
   GRADLE=(./gradlew)
 elif command -v gradle >/dev/null 2>&1; then
   GRADLE=(gradle)

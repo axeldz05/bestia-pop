@@ -13,7 +13,6 @@ import androidx.activity.viewModels
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.core.content.ContextCompat
-import com.bestiapop.android.data.update.ApkUpdateInstaller
 import com.bestiapop.android.service.DownloadNotificationHelper
 import com.bestiapop.android.ui.MusicPlayerViewModel
 import com.bestiapop.android.ui.screens.MainScreen
@@ -51,12 +50,12 @@ class MainActivity : ComponentActivity() {
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { results ->
-        val audioGranted = results.entries.any { (permission, granted) ->
-            granted && (
-                permission == Manifest.permission.READ_MEDIA_AUDIO ||
-                    permission == Manifest.permission.READ_EXTERNAL_STORAGE
-                )
+        val audioPermission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            Manifest.permission.READ_MEDIA_AUDIO
+        } else {
+            Manifest.permission.READ_EXTERNAL_STORAGE
         }
+        val audioGranted = results[audioPermission] == true
         // First-install import only (updates skip; Room migrations handle schema).
         if (audioGranted || hasAudioPermission()) {
             viewModel.ensureInitialLibraryImport(showRecoveryToast = true)
@@ -80,7 +79,7 @@ class MainActivity : ComponentActivity() {
                         folderPickerLauncher.launch(null)
                     },
                     onRequestUnknownSources = {
-                        unknownSourcesLauncher.launch(ApkUpdateInstaller.unknownSourcesIntent(this))
+                        unknownSourcesLauncher.launch(appUpdateViewModel.unknownSourcesIntent())
                     }
                 )
             }

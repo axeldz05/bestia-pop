@@ -4,7 +4,6 @@ import android.app.PendingIntent
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
-import android.os.Build
 import android.view.KeyEvent
 import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
@@ -108,9 +107,7 @@ internal object PlaybackNotificationFactory {
         action: PlaybackNotificationActionSpec
     ): PendingIntent {
         val intent = mediaButtonIntent(context, action.keyCode)
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
-            action.startsForegroundService
-        ) {
+        return if (action.startsForegroundService) {
             PendingIntent.getForegroundService(
                 context,
                 action.keyCode,

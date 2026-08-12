@@ -3,7 +3,6 @@ package com.bestiapop.android.ui.update
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
 import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -39,6 +38,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.core.net.toUri
 import com.bestiapop.android.BuildConfig
 import com.bestiapop.android.data.update.AppRelease
 import java.text.SimpleDateFormat
@@ -299,17 +299,17 @@ private fun UpdateCard(
 }
 
 private fun releaseSubtitle(release: AppRelease): String? {
-    val date = release.publishedAtMs?.let { DATE_FORMAT.format(Date(it)) }
+    val date = release.publishedAtMs?.let {
+        SimpleDateFormat("d MMM yyyy", Locale.getDefault()).format(Date(it))
+    }
     val code = release.versionCode?.let { "versionCode $it" }
     return listOfNotNull(date, code).joinToString(" · ").ifBlank { null }
 }
 
 private fun openUrl(context: Context, url: String) {
     try {
-        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+        context.startActivity(Intent(Intent.ACTION_VIEW, url.toUri()))
     } catch (_: ActivityNotFoundException) {
         Toast.makeText(context, "No hay navegador para abrir el link", Toast.LENGTH_SHORT).show()
     }
 }
-
-private val DATE_FORMAT = SimpleDateFormat("d MMM yyyy", Locale.getDefault())

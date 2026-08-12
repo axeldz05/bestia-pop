@@ -2,8 +2,8 @@ package com.bestiapop.android.data.db
 
 import android.content.ContentUris
 import android.database.Cursor
-import android.net.Uri
 import android.provider.MediaStore
+import androidx.core.net.toUri
 import com.bestiapop.android.data.model.Song
 
 fun Cursor.toSong(): Song {
@@ -30,7 +30,7 @@ fun Cursor.toSong(): Song {
     val albumId = if (albumIdIdx != -1) getLong(albumIdIdx) else -1L
     val artworkUri = if (albumId > 0) {
         ContentUris.withAppendedId(
-            Uri.parse("content://media/external/audio/albumart"),
+            "content://media/external/audio/albumart".toUri(),
             albumId
         ).toString()
     } else {

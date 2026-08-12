@@ -6,7 +6,6 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.drag
@@ -47,7 +46,6 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Radio
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.RepeatOne
@@ -57,8 +55,6 @@ import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -109,11 +105,11 @@ import com.bestiapop.android.data.model.RepeatMode
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.data.preferences.NAV_LIBRARY
 import com.bestiapop.android.data.preferences.NAV_PLAYLISTS
-import com.bestiapop.android.domain.radio.RadioMode
 import com.bestiapop.android.ui.MusicPlayerViewModel
 import com.bestiapop.android.ui.components.ArtworkHero
 import com.bestiapop.android.ui.components.DownloadStateTrailing
 import com.bestiapop.android.ui.components.QueueLazyList
+import com.bestiapop.android.ui.components.RadioModeControl
 import com.bestiapop.android.ui.components.findByTrack
 import com.bestiapop.android.ui.components.focusedQueueIndex
 import com.bestiapop.android.ui.components.playPauseVector
@@ -180,7 +176,6 @@ fun NowPlayingScreen(
     val playlists by viewModel.playlists.collectAsState(initial = emptyList())
     val discoverOrigin by viewModel.discoverPlaybackOrigin.collectAsState()
     val activeDownloads by viewModel.activeDownloads.collectAsState()
-    var radioMenuExpanded by remember { mutableStateOf(false) }
     var actionsMenuExpanded by remember { mutableStateOf(false) }
     val songDialogs = rememberSongActionDialogs(viewModel = viewModel, playlists = playlists)
     var albumForEdit by remember { mutableStateOf<Album?>(null) }
@@ -400,72 +395,15 @@ fun NowPlayingScreen(
                     color = MaterialTheme.colorScheme.primary
                 )
 
-                Box {
-                    Box(
-                        modifier = Modifier
-                            .size(48.dp)
-                            .combinedClickable(
-                                enabled = !radioLoading,
-                                onClick = { viewModel.startRadio() },
-                                onLongClick = { radioMenuExpanded = true }
-                            ),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        if (radioLoading) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(22.dp),
-                                strokeWidth = 2.dp,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        } else {
-                            Icon(
-                                imageVector = Icons.Default.Radio,
-                                contentDescription = "Radio (mantener para modos)",
-                                modifier = Modifier.size(28.dp),
-                                tint = if (radioActive) {
-                                    MaterialTheme.colorScheme.primary
-                                } else {
-                                    MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f)
-                                }
-                            )
-                        }
-                    }
-                    DropdownMenu(
-                        expanded = radioMenuExpanded,
-                        onDismissRequest = { radioMenuExpanded = false }
-                    ) {
-                        DropdownMenuItem(
-                            text = { Text("Solo conocidos") },
-                            onClick = {
-                                radioMenuExpanded = false
-                                viewModel.startRadio(mode = RadioMode.KNOWN, announceMode = true)
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Solo nuevos") },
-                            onClick = {
-                                radioMenuExpanded = false
-                                viewModel.startRadio(mode = RadioMode.NEW, announceMode = true)
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Ambos") },
-                            onClick = {
-                                radioMenuExpanded = false
-                                viewModel.startRadio(mode = RadioMode.BOTH, announceMode = true)
-                            }
-                        )
-                        if (radioActive) {
-                            DropdownMenuItem(
-                                text = { Text("Detener radio") },
-                                onClick = {
-                                    radioMenuExpanded = false
-                                    viewModel.stopRadio()
-                                }
-                            )
-                        }
-                    }
-                }
+                RadioModeControl(
+                    radioActive = radioActive,
+                    radioLoading = radioLoading,
+                    onStartPreferred = { viewModel.startRadio() },
+                    onStartMode = { mode ->
+                        viewModel.startRadio(mode = mode, announceMode = true)
+                    },
+                    onStop = viewModel::stopRadio
+                )
             }
 
             // Tab Selector (Portada / Letra / Cola)

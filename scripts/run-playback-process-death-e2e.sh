@@ -16,10 +16,11 @@ usage() {
     printf '%s\n' \
         "Usage: $0 [--serial DEVICE_SERIAL]" \
         "" \
-        "Runs the real PlaybackRuntime process-death E2E in two instrumentation phases:" \
-        "  1. Build/install target + test APK once; persist a paused synthetic-WAV queue." \
-        "  2. Host executes 'am force-stop' (no data clear), then starts phase 2 directly." \
-        "  3. Verify cold hydration/no autoplay, clean fixtures, and restore prior app state." \
+        "Runs two real PlaybackRuntime process-death scenarios:" \
+        "  1. Autoplay OFF restores a shuffled + Repeat All display-only snapshot." \
+        "  2. Autoplay ON restores a Repeat One snapshot and resumes real WAV progress." \
+        "  3. Every scenario uses a host 'am force-stop' (no data clear) between phases." \
+        "  4. Fixtures are cleaned and the pre-test Room/DataStore state is restored." \
         "" \
         "Safety:" \
         "  - HostOrchestratedProcessDeathTest is excluded from connectedDebugAndroidTest." \
@@ -219,9 +220,30 @@ run_phase() {
     fi
 }
 
+kill_target_process() {
+    printf '\nKilling %s from the host (data preserved)...\n' "$TARGET_PACKAGE"
+    "${ADB[@]}" shell am force-stop "$TARGET_PACKAGE"
+    local target_pid
+    target_pid="$("${ADB[@]}" shell pidof "$TARGET_PACKAGE" 2>/dev/null || true)"
+    if [[ -n "${target_pid//[[:space:]]/}" ]]; then
+        printf 'Target process survived force-stop: %s\n' "$target_pid" >&2
+        return 1
+    fi
+}
+
+run_process_death_scenario() {
+    local phase_one_method="$1"
+    local phase_two_method="$2"
+    local scenario_label="$3"
+
+    run_phase "$phase_one_method" "$scenario_label — phase 1: persist real paused playback"
+    kill_target_process
+    run_phase "$phase_two_method" "$scenario_label — phase 2: verify new-process restore"
+}
+
 cd "$ROOT_DIR"
 printf 'Building target and instrumentation APKs once...\n'
-gradle :app:assembleDebug :app:assembleDebugAndroidTest
+"$ROOT_DIR/scripts/gradle-low-memory.sh" :app:assembleDebug :app:assembleDebugAndroidTest
 
 [[ -f "$TARGET_APK" ]] || {
     printf 'Missing target APK: %s\n' "$TARGET_APK" >&2
@@ -239,18 +261,14 @@ printf 'Installing APKs on %s without clearing app data...\n' "$SERIAL"
 trap restore_app_state EXIT
 backup_app_state
 
-run_phase "phase1_persistPausedQueueForHostKill" "Phase 1: persist real paused playback"
+run_process_death_scenario \
+    "phase1_persistShuffledRepeatAllForAutoplayOff" \
+    "phase2_restoreShuffledRepeatAllWithoutAutoplayAndCleanUp" \
+    "Autoplay OFF / Shuffle / Repeat All"
 
-printf '\nKilling %s from the host (data preserved)...\n' "$TARGET_PACKAGE"
-"${ADB[@]}" shell am force-stop "$TARGET_PACKAGE"
-TARGET_PID="$("${ADB[@]}" shell pidof "$TARGET_PACKAGE" 2>/dev/null || true)"
-if [[ -n "${TARGET_PID//[[:space:]]/}" ]]; then
-    printf 'Target process survived force-stop: %s\n' "$TARGET_PID" >&2
-    exit 1
-fi
-
-run_phase \
-    "phase2_restoreAfterHostKillWithoutAutoplayAndCleanUp" \
-    "Phase 2: verify cold hydration and cleanup"
+run_process_death_scenario \
+    "phase1_persistRepeatOneForAutoplayOn" \
+    "phase2_restoreRepeatOneWithAutoplayAndCleanUp" \
+    "Autoplay ON / Repeat One"
 
 printf '\nPlayback process-death E2E passed. Restoring prior app state...\n'

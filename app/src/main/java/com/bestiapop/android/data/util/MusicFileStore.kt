@@ -6,6 +6,7 @@ import android.media.MediaMetadataRetriever
 import android.media.MediaPlayer
 import android.net.Uri
 import android.os.ParcelFileDescriptor
+import androidx.core.net.toUri
 import java.io.File
 
 /**
@@ -21,7 +22,7 @@ class MusicFileStore(private val context: Context) {
         directFilePath(ref)?.let { return Uri.fromFile(File(it)) }
         val raw = ref.uriString.trim()
         if (raw.isEmpty()) return Uri.EMPTY
-        return Uri.parse(raw)
+        return raw.toUri()
     }
 
     fun playableUri(uriString: String, folderPath: String = ""): Uri =
@@ -71,7 +72,7 @@ class MusicFileStore(private val context: Context) {
         // meant to drop an app row — saveUploadedSong, the "Sobrescribir" download policy — could
         // delete a foreign file the user never asked to remove.
         if (appManaged && uri.startsWith("content://media/", ignoreCase = true)) {
-            runCatching { context.contentResolver.delete(Uri.parse(uri), null, null) }
+            runCatching { context.contentResolver.delete(uri.toUri(), null, null) }
         }
         if (appManaged) {
             StorageUtils.deleteManagedAudio(context, abs!!)

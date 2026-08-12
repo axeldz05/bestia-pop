@@ -1,9 +1,9 @@
 package com.bestiapop.android.ui.screens
 
+import android.annotation.SuppressLint
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
 import android.os.PowerManager
 import android.provider.Settings
 import androidx.compose.foundation.layout.Spacer
@@ -23,6 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.core.net.toUri
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -219,11 +220,13 @@ private fun isIgnoringBatteryOptimizations(context: Context): Boolean {
     return pm.isIgnoringBatteryOptimizations(context.packageName)
 }
 
+// Explicit, user-triggered exception for uninterrupted media playback; never requested silently.
+@SuppressLint("BatteryLife")
 private fun requestIgnoreBatteryOptimizations(context: Context) {
     try {
         context.startActivity(
             Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
-                data = Uri.parse("package:${context.packageName}")
+                data = "package:${context.packageName}".toUri()
             }
         )
     } catch (_: ActivityNotFoundException) {

@@ -5,6 +5,7 @@ import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.provider.MediaStore
 import androidx.documentfile.provider.DocumentFile
+import androidx.core.net.toUri
 import androidx.room.withTransaction
 import com.bestiapop.android.data.db.AppDatabase
 import com.bestiapop.android.data.db.PlaylistEntity
@@ -1326,7 +1327,7 @@ class MusicRepository private constructor(
     private fun copyUserImageTo(subdir: String, sourceUriStr: String?): File? {
         if (sourceUriStr.isNullOrBlank()) return null
         try {
-            val uri = Uri.parse(sourceUriStr)
+            val uri = sourceUriStr.toUri()
             val coversDir = File(context.filesDir, subdir)
             if (!coversDir.exists()) coversDir.mkdirs()
             val destFile = File(coversDir, "cover_${System.currentTimeMillis()}_${(1000..9999).random()}.jpg")

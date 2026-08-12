@@ -474,6 +474,8 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     private val _isSearchingCatalog = MutableStateFlow(false)
     val isSearchingCatalog = _isSearchingCatalog.asStateFlow()
+    private var catalogSearchJob: Job? = null
+    private var catalogSearchGeneration = 0L
 
     val activeDownloads: StateFlow<List<ActiveDownload>> = processDownloads.downloads
 
@@ -3064,30 +3066,48 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     fun searchCatalog(query: String) {
         lastCatalogQuery = query
         val cleanQ = query.trim()
-        viewModelScope.launch {
+        val generation = ++catalogSearchGeneration
+        catalogSearchJob?.cancel()
+        catalogSearchJob = viewModelScope.launch {
             _isSearchingCatalog.value = true
             when (_catalogCategory.value) {
                 CatalogCategory.SONGS -> {
-                    _catalogSearchResults.value = MetadataFetcher.searchOnlineCatalog(cleanQ)
+                    val results = MetadataFetcher.searchOnlineCatalog(cleanQ)
+                    if (generation == catalogSearchGeneration) {
+                        _catalogSearchResults.value = results
+                    }
                 }
                 CatalogCategory.ALBUMS -> {
-                    _albumSearchResults.value = MetadataFetcher.searchAlbums(cleanQ)
+                    val results = MetadataFetcher.searchAlbums(cleanQ)
+                    if (generation == catalogSearchGeneration) {
+                        _albumSearchResults.value = results
+                    }
                 }
                 CatalogCategory.PLAYLISTS -> {
-                    _playlistSearchResults.value = MetadataFetcher.searchPlaylists(cleanQ)
+                    val results = MetadataFetcher.searchPlaylists(cleanQ)
+                    if (generation == catalogSearchGeneration) {
+                        _playlistSearchResults.value = results
+                    }
                 }
                 CatalogCategory.GENRES -> {
                     val genres = MetadataFetcher.listGenres()
-                    _catalogGenres.value = if (cleanQ.isEmpty()) {
+                    val results = if (cleanQ.isEmpty()) {
                         genres
                     } else {
                         genres.filter { TrackMatchKeys.containsNormalized(it.name, cleanQ) }
                     }
+                    if (generation == catalogSearchGeneration) {
+                        _catalogGenres.value = results
+                    }
                 }
                 CatalogCategory.CHARTS -> {
-                    _catalogSearchResults.value = MetadataFetcher.fetchChartTracks()
+                    val results = MetadataFetcher.fetchChartTracks()
+                    if (generation == catalogSearchGeneration) {
+                        _catalogSearchResults.value = results
+                    }
                 }
             }
+            if (generation != catalogSearchGeneration) return@launch
             _isSearchingCatalog.value = false
             // The fetchers degrade to an empty list on any transport error, so an empty list reads as
             // "this song does not exist". Say it out loud when the reason is simply no connection.

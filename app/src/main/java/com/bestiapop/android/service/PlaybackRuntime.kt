@@ -1999,7 +1999,7 @@ class PlaybackRuntime internal constructor(
             _radioLoading.value = true
             try {
                 val exclude = buildRadioExcludeKeys(seed, includeQueue = true, _currentItem.value)
-                val batch = dependencies.radioSuggester.suggest(
+                val batch = suggestRadioWithRetry(
                     PlaybackRuntimeRadioRequest(
                         seed = seed,
                         library = library,
@@ -2068,7 +2068,7 @@ class PlaybackRuntime internal constructor(
         val sinceEmpty = dependencies.clockMs() - lastEmptyRadioRefillAtMs
         if (lastEmptyRadioRefillAtMs > 0L && sinceEmpty < RADIO_EMPTY_COOLDOWN_MS) return
         radioRefillJob = scope.launch {
-            val batch = dependencies.radioSuggester.suggest(
+            val batch = suggestRadioWithRetry(
                 PlaybackRuntimeRadioRequest(
                     seed = seed,
                     library = library,
@@ -2079,13 +2079,31 @@ class PlaybackRuntime internal constructor(
                     coPlaylistSongIds = dependencies.resolveCoPlaylistSongIds(seed)
                 )
             )
-            if (batch.items.isNotEmpty() && _radioActive.value) {
+            if (!isActive || !_radioActive.value) return@launch
+            if (batch.items.isNotEmpty()) {
                 lastEmptyRadioRefillAtMs = 0L
                 addPlayableBatch(batch.items)
             } else if (batch.items.isEmpty()) {
                 lastEmptyRadioRefillAtMs = dependencies.clockMs()
             }
         }
+    }
+
+    internal suspend fun suggestRadioWithRetry(
+        request: PlaybackRuntimeRadioRequest
+    ): RadioSuggestResult {
+        suspend fun once(): RadioSuggestResult = dependencies.radioSuggester.suggest(request)
+        if (request.mode != RadioMode.NEW) return once()
+
+        val deadline = dependencies.clockMs() + request.timeoutMs
+        var attempt = 0
+        var result = once()
+        while (result.items.isEmpty() && dependencies.clockMs() < deadline) {
+            attempt++
+            delay(minOf(attempt * 1_000L, 5_000L))
+            result = once()
+        }
+        return result
     }
 
     private fun replaceUpcomingWithRadio(suggestions: List<PlayableItem>) {
@@ -2485,10 +2503,21 @@ class PlaybackRuntime internal constructor(
                     ),
                     saveDownloads = saveDownloads,
                     radioSuggester = PlaybackRuntimeRadioSuggester { request ->
-                        suggestRadioWithRetry(
-                            radioEngine = radioEngine,
-                            request = request,
-                            isOnline = connectivity::isCurrentlyOnline
+                        val online = connectivity.isCurrentlyOnline()
+                        val settings = request.settings
+                        radioEngine.suggest(
+                            seed = request.seed,
+                            library = request.library,
+                            mode = request.mode,
+                            excludeKeys = request.excludeKeys,
+                            limit = RADIO_BATCH_SIZE,
+                            lbToken = settings.userToken.takeIf { it.isNotBlank() },
+                            lbAvailable = settings.enabled &&
+                                settings.userToken.isNotBlank() &&
+                                online,
+                            lbUsername = settings.username,
+                            networkAvailable = online,
+                            coPlaylistSongIds = request.coPlaylistSongIds
                         )
                     },
                     resolveCoPlaylistSongIds = { seed ->
@@ -2517,39 +2546,6 @@ class PlaybackRuntime internal constructor(
                 }
             }
             return runtime
-        }
-
-        private suspend fun suggestRadioWithRetry(
-            radioEngine: RadioEngine,
-            request: PlaybackRuntimeRadioRequest,
-            isOnline: () -> Boolean
-        ): RadioSuggestResult {
-            suspend fun once(): RadioSuggestResult {
-                val online = isOnline()
-                val settings = request.settings
-                return radioEngine.suggest(
-                    seed = request.seed,
-                    library = request.library,
-                    mode = request.mode,
-                    excludeKeys = request.excludeKeys,
-                    limit = RADIO_BATCH_SIZE,
-                    lbToken = settings.userToken.takeIf { it.isNotBlank() },
-                    lbAvailable = settings.enabled && settings.userToken.isNotBlank() && online,
-                    lbUsername = settings.username,
-                    networkAvailable = online,
-                    coPlaylistSongIds = request.coPlaylistSongIds
-                )
-            }
-            if (request.mode != RadioMode.NEW) return once()
-            val deadline = System.currentTimeMillis() + request.timeoutMs
-            var attempt = 0
-            var result = once()
-            while (result.items.isEmpty() && System.currentTimeMillis() < deadline) {
-                attempt++
-                delay(minOf(attempt * 1_000L, 5_000L))
-                result = once()
-            }
-            return result
         }
     }
 }

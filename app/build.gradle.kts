@@ -1,4 +1,5 @@
 import java.util.Properties
+import org.gradle.api.tasks.testing.Test
 
 plugins {
     alias(libs.plugins.android.application)
@@ -82,6 +83,7 @@ android {
         }
         release {
             isMinifyEnabled = true
+            isShrinkResources = true
             isDebuggable = false
             signingConfig = sharedSigning
             ndk {
@@ -104,10 +106,17 @@ android {
         unitTests.isIncludeAndroidResources = true
         animationsDisabled = true
     }
+    lint {
+        // SDK/dependency upgrades are compatibility work, not actionable warnings for normal builds.
+        disable += setOf("OldTargetApi", "GradleDependency", "NewerVersionAvailable")
+        // Adaptive icons are minSdk-safe; the foreground bitmap is intentionally density-independent.
+        disable += "IconLocation"
+    }
     sourceSets {
         // Shared JVM helpers keep feature scenarios small without leaking test-only dependencies
         // into the instrumented APK.
         getByName("test").kotlin.directories.add("src/sharedTest/java")
+        getByName("androidTest").kotlin.directories.add("src/sharedTest/java")
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -121,6 +130,10 @@ android {
         jniLibs {
             // Uncompressed + 16 KB-aligned native libs (Play requirement since 2025-11-01).
             useLegacyPackaging = false
+            keepDebugSymbols += setOf(
+                "**/libandroidx.graphics.path.so",
+                "**/libdatastore_shared_counter.so"
+            )
         }
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
@@ -140,9 +153,17 @@ ksp {
     arg("room.generateKotlin", "true")
 }
 
+tasks.withType<Test>().configureEach {
+    // Gradle runs on JDK 26 in this workspace; make third-party native/Unsafe access explicit.
+    jvmArgs(
+        "--enable-native-access=ALL-UNNAMED",
+        "--sun-misc-unsafe-memory-access=allow"
+    )
+}
+
 dependencies {
     // Storage DocumentFile
-    implementation("androidx.documentfile:documentfile:1.0.1")
+    implementation(libs.androidx.documentfile)
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
@@ -188,7 +209,7 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
 
     // Audio file tag write (mp3 / m4a / flac / ogg) — minSdk 26 OK with official JAR
-    implementation("net.jthink:jaudiotagger:3.0.1")
+    implementation(libs.jaudiotagger)
 
     // Functional & Integration UI Testing
     testImplementation(libs.junit4)
@@ -205,6 +226,7 @@ dependencies {
     androidTestImplementation(libs.junit4)
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.androidx.test.espresso.core)
+    androidTestImplementation(libs.androidx.test.espresso.intents)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     androidTestImplementation(libs.okhttp.mockwebserver)

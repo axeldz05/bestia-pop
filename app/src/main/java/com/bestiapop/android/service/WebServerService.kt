@@ -368,15 +368,13 @@ class WebServerService : Service() {
 
     private fun startForegroundServiceNotification() {
         val channelId = "web_server_channel"
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                channelId,
-                "WiFi Web Server",
-                NotificationManager.IMPORTANCE_LOW
-            )
-            val manager = getSystemService(NotificationManager::class.java)
-            manager.createNotificationChannel(channel)
-        }
+        val channel = NotificationChannel(
+            channelId,
+            "WiFi Web Server",
+            NotificationManager.IMPORTANCE_LOW
+        )
+        val manager = getSystemService(NotificationManager::class.java)
+        manager.createNotificationChannel(channel)
 
         val notification: Notification = NotificationCompat.Builder(this, channelId)
             .setContentTitle("Bestia Pop - Servidor WiFi Activo")

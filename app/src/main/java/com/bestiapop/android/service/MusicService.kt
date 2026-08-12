@@ -58,6 +58,7 @@ class MusicService : MediaLibraryService() {
     private var loudnessEnhancer: LoudnessEnhancer? = null
     private var boundAudioSessionId: Int = 0
     private var latestPlaybackSettings: PlaybackSettings = PlaybackSettings()
+    private var appliedSettings = MusicServiceAppliedSettings(1f, 1f, 0)
     private var foregroundPromoteRetryScheduled = false
     private val stereoBalanceProcessor = StereoBalanceAudioProcessor()
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -150,8 +151,13 @@ class MusicService : MediaLibraryService() {
     }
 
     private fun applyStereoBalance(settings: PlaybackSettings) {
-        stereoBalanceProcessor.leftGain = clampStereoGain(settings.stereoLeftGain)
-        stereoBalanceProcessor.rightGain = clampStereoGain(settings.stereoRightGain)
+        appliedSettings = appliedSettings.copy(
+            leftGain = clampStereoGain(settings.stereoLeftGain),
+            rightGain = clampStereoGain(settings.stereoRightGain)
+        )
+        stereoBalanceProcessor.leftGain = appliedSettings.leftGain
+        stereoBalanceProcessor.rightGain = appliedSettings.rightGain
+        publishAppliedSettings()
     }
 
     private fun applyBoost(settings: PlaybackSettings) {
@@ -163,17 +169,29 @@ class MusicService : MediaLibraryService() {
                 loudnessEnhancer?.enabled = false
             } catch (_: Exception) {
             }
+            appliedSettings = appliedSettings.copy(targetGainMb = 0)
+            publishAppliedSettings()
             return
         }
-        ensureLoudnessEnhancer()
-        val enhancer = loudnessEnhancer ?: return
         val gainMb = (clampedAmount * MAX_VOLUME_BOOST_GAIN_MB).toInt()
+        appliedSettings = appliedSettings.copy(targetGainMb = gainMb)
+        ensureLoudnessEnhancer()
+        val enhancer = loudnessEnhancer
+        if (enhancer == null) {
+            publishAppliedSettings()
+            return
+        }
         try {
             enhancer.setTargetGain(gainMb)
             enhancer.enabled = true
         } catch (e: Exception) {
             e.printStackTrace()
         }
+        publishAppliedSettings()
+    }
+
+    private fun publishAppliedSettings() {
+        MusicServiceSettingsProbe.publish(appliedSettings)
     }
 
     private fun ensureLoudnessEnhancer() {

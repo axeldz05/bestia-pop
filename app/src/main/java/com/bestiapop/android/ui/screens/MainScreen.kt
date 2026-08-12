@@ -45,7 +45,6 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import com.bestiapop.android.data.preferences.activeDownloadBadgeCount
-import com.bestiapop.android.data.update.ApkUpdateInstaller
 import com.bestiapop.android.ui.MusicPlayerViewModel
 import com.bestiapop.android.ui.components.BottomPlayerBar
 import com.bestiapop.android.ui.update.AppUpdateDialogs
@@ -129,8 +128,7 @@ fun MainScreen(
     }
     LaunchedEffect(apkReadyToInstall) {
         val apk = apkReadyToInstall ?: return@LaunchedEffect
-        context.startActivity(ApkUpdateInstaller.installIntent(context, apk))
-        appUpdateViewModel.markInstallLaunched()
+        appUpdateViewModel.launchInstaller(apk)
     }
 
     var targetPlaylistForAddition by remember { mutableStateOf<com.bestiapop.android.data.model.Playlist?>(null) }

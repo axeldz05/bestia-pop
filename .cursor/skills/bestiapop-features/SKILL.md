@@ -30,6 +30,10 @@ Archivos: `ui/MusicPlayerViewModel.kt` (façade pública); `service/PlaybackRunt
 
 **Invariante:** Catálogo/metadatos pueden venir de iTunes/Deezer; el stream se resuelve con YouTube. Re-extraer URL CDN antes de descargar (evitar HTTP 403).
 
+**Invariante búsqueda:** `MusicPlayerViewModel.searchCatalog` cancela la consulta anterior y solo
+publica la generación más reciente; la carga inicial vacía del diálogo nunca puede borrar una
+búsqueda escrita por el usuario.
+
 **Invariante bytes (`downloadAndSaveOnlineTrack`):** solo se publica el archivo si la descarga terminó completa. Se exige `downloadSuccess` **y** el total contra `Content-Length` (EOF corto = truncado, no éxito); se concatena solo con `206` (un `200` a un request con `Range` reenvía todo → se trunca y reescribe); el stream va en `use` (sin fugas de descriptor); ante `403`/`410` se re-extrae con `resolveQuery(forceRefresh = true)` y se reinicia de 0, con backoff entre intentos (`MAX_DOWNLOAD_ATTEMPTS` / `DOWNLOAD_RETRY_BACKOFF_MS`). Al fallar se borra el parcial (si no, `resyncAppManagedMusic` lo importaría como canción).
 
 | Paso | Dónde |
@@ -392,7 +396,7 @@ Manifest: `android:enableOnBackInvokedCallback="true"` en `MainActivity`.
 | Versión | `version.properties` (`VERSION_CODE` / `VERSION_NAME`; bump en `./release.sh`) |
 | GitHub Releases | `./release.sh` → APK `BestiaPop-{VERSION_NAME}.apk`; tag `v{VERSION_NAME}` (validado tag-safe y fijado al commit compilado si está en el remoto), `--latest`; notas con `versionCode: N` y body nunca vacío (lo lee la app); tras publicar `verify_published_release` chequea tag / versionCode / asset `BestiaPop*.apk` / ni draft ni prerelease; repo `github-release.properties` `GITHUB_REPOSITORY` → `BuildConfig.GITHUB_REPOSITORY` |
 | Invitar amigos | Ajustes → Invitar amigos: `ACTION_SEND` con `https://github.com/{repo}/releases/latest` (`GitHubReleaseUrls.latestPageUrl`) |
-| Update in-app | Un solo fetch `GitHubUpdateClient.fetchReleases` (`/releases`) → `AppReleaseSelection.from(releases, VERSION_CODE, VERSION_NAME)` = notas de la versión instalada (match por `versionCode`, fallback tag `v{VERSION_NAME}`) + `newer` acumuladas + `updateTarget`. Al abrir (release, máx. 1/12h) muestra `AppUpdateDialogs`; descarga APK + `FileProvider` + `REQUEST_INSTALL_PACKAGES`. UI `AppUpdateViewModel` (no `MusicPlayerViewModel`) |
+| Update in-app | Un solo fetch `GitHubUpdateClient.fetchReleases` (`/releases`) → `AppReleaseSelection.from(releases, VERSION_CODE, VERSION_NAME)` = notas de la versión instalada (match por `versionCode`, fallback tag `v{VERSION_NAME}`) + `newer` acumuladas + `updateTarget`. Al abrir (release, máx. 1/12h) muestra `AppUpdateDialogs`. `AppUpdateViewModel` conserva factory `AndroidViewModel` y recibe internamente gateway/store/clock/debug/installer para tests. `ApkUpdateDownloader` escribe `.part`, exige HTTP exitoso + `Content-Length` exacto si existe + APK válido del mismo package, publica con move atómico y limpia parcial/final ante error o cancelación; recién entonces `FileProvider` + `REQUEST_INSTALL_PACKAGES` abren el instalador |
 | Ajustes → Actualización | `AppUpdateScreen`: versión instalada + `versionCode`, link al repo (`GitHubReleaseUrls.repoUrl`), notas de la versión actual (cacheadas en `AppUpdateCheckStore` para verlas offline), botón Buscar actualización (`refreshReleases(force = true)`) y, si hay versiones nuevas, qué cambia en cada una + Actualizar (`startUpdate`) |
 | Play Console AAB | `./deploy-play.sh --upload --rollout` path legacy (no distribución de producto) |
 

@@ -256,11 +256,7 @@ fun WebServerScreen(viewModel: MusicPlayerViewModel) {
                         onCheckedChange = { start ->
                             val intent = Intent(context, WebServerService::class.java)
                             if (start) {
-                                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                                    context.startForegroundService(intent)
-                                } else {
-                                    context.startService(intent)
-                                }
+                                context.startForegroundService(intent)
                             } else {
                                 context.stopService(intent)
                             }

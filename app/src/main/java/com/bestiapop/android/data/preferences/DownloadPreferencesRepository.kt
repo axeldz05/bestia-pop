@@ -21,7 +21,10 @@ data class DownloadSettings(
     val totalUnmeteredBytes: Long = 0L
 )
 
-class DownloadPreferencesRepository(private val context: Context) {
+class DownloadPreferencesRepository internal constructor(
+    private val dataStore: DataStore<Preferences>
+) {
+    constructor(context: Context) : this(context.downloadDataStore)
 
     private object Keys {
         val DOWNLOAD_ON_METERED = booleanPreferencesKey("download_on_metered_network")
@@ -29,7 +32,7 @@ class DownloadPreferencesRepository(private val context: Context) {
         val TOTAL_UNMETERED_BYTES = longPreferencesKey("total_unmetered_bytes")
     }
 
-    val settingsFlow: Flow<DownloadSettings> = context.downloadDataStore.data.map { prefs ->
+    val settingsFlow: Flow<DownloadSettings> = dataStore.data.map { prefs ->
         DownloadSettings(
             downloadOnMeteredNetwork = prefs[Keys.DOWNLOAD_ON_METERED] ?: true,
             totalMeteredBytes = prefs[Keys.TOTAL_METERED_BYTES] ?: 0L,
@@ -38,12 +41,12 @@ class DownloadPreferencesRepository(private val context: Context) {
     }
 
     suspend fun setDownloadOnMeteredNetwork(enabled: Boolean) {
-        context.downloadDataStore.put(Keys.DOWNLOAD_ON_METERED, enabled)
+        dataStore.put(Keys.DOWNLOAD_ON_METERED, enabled)
     }
 
     suspend fun addDownloadedBytes(byteCount: Long, metered: Boolean) {
         if (byteCount <= 0) return
-        context.downloadDataStore.edit { prefs ->
+        dataStore.edit { prefs ->
             val key = if (metered) Keys.TOTAL_METERED_BYTES else Keys.TOTAL_UNMETERED_BYTES
             prefs[key] = (prefs[key] ?: 0L) + byteCount
         }

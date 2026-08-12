@@ -138,14 +138,17 @@ object IdentifyReviewCodec {
     }
 }
 
-class IdentifyReviewStore(private val context: Context) {
+class IdentifyReviewStore internal constructor(
+    private val dataStore: DataStore<Preferences>
+) {
+    constructor(context: Context) : this(context.identifyReviewDataStore)
 
     private object Keys {
         val QUEUE_JSON = stringPreferencesKey("queue_json")
     }
 
     val queueFlow: Flow<PersistedIdentifyReviewQueue> =
-        context.identifyReviewDataStore.data.map { prefs ->
+        dataStore.data.map { prefs ->
             IdentifyReviewCodec.decode(prefs[Keys.QUEUE_JSON].orEmpty())
         }
 
@@ -153,7 +156,7 @@ class IdentifyReviewStore(private val context: Context) {
 
     suspend fun save(queue: PersistedIdentifyReviewQueue) {
         val json = if (queue.proposals.isEmpty()) "" else IdentifyReviewCodec.encode(queue)
-        context.identifyReviewDataStore.edit { prefs ->
+        dataStore.edit { prefs ->
             prefs[Keys.QUEUE_JSON] = json
         }
     }

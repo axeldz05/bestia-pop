@@ -12,6 +12,7 @@ import com.bestiapop.android.data.model.youtubeSearchQuery
 import com.bestiapop.android.data.util.encodeAlbumTrack
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONArray
 import org.json.JSONObject
@@ -24,12 +25,38 @@ data class DeezerArtistHit(
     val pictureUrl: String?
 )
 
+internal data class MetadataFetcherEndpoints(
+    val deezerBaseUrl: String = "https://api.deezer.com",
+    val itunesBaseUrl: String = "https://itunes.apple.com",
+    val lyricsBaseUrl: String = "https://lrclib.net"
+)
+
 object MetadataFetcher {
 
-    private val client = HttpClients.api.newBuilder()
+    private val defaultClient = HttpClients.api.newBuilder()
         .connectTimeout(8, TimeUnit.SECONDS)
         .readTimeout(8, TimeUnit.SECONDS)
         .build()
+    @Volatile
+    private var client: OkHttpClient = defaultClient
+    @Volatile
+    private var endpoints = MetadataFetcherEndpoints()
+
+    internal fun configureForTest(
+        http: OkHttpClient,
+        endpoints: MetadataFetcherEndpoints
+    ) {
+        client = http
+        this.endpoints = endpoints
+    }
+
+    internal fun resetTestOverrides() {
+        client = defaultClient
+        endpoints = MetadataFetcherEndpoints()
+    }
+
+    private fun endpoint(baseUrl: String, pathAndQuery: String): String =
+        "${baseUrl.trimEnd('/')}/${pathAndQuery.trimStart('/')}"
 
     private fun cleanString(raw: String): String {
         return raw.replace(Regex("\\.(mp3|flac|m4a|wav|ogg|aac)$", RegexOption.IGNORE_CASE), "")
@@ -195,7 +222,10 @@ object MetadataFetcher {
     fun searchDeezerArtist(name: String): DeezerArtistHit? {
         val cleanArtistName = cleanArtist(name)
         if (cleanArtistName.isEmpty()) return null
-        val url = "https://api.deezer.com/search/artist?q=${encodeQuery(cleanArtistName)}&limit=1"
+        val url = endpoint(
+            endpoints.deezerBaseUrl,
+            "search/artist?q=${encodeQuery(cleanArtistName)}&limit=1"
+        )
         val json = getJson(url) ?: return null
         val data = json.optJSONArray("data") ?: return null
         if (data.length() == 0) return null
@@ -209,13 +239,19 @@ object MetadataFetcher {
     }
 
     private fun searchDeezerTrack(queryText: String): TrackIdentity? {
-        val url = "https://api.deezer.com/search?q=${encodeQuery(queryText)}&limit=1"
+        val url = endpoint(
+            endpoints.deezerBaseUrl,
+            "search?q=${encodeQuery(queryText)}&limit=1"
+        )
         val json = getJson(url) ?: return null
         return parseDeezerTrackArray(json.optJSONArray("data")).firstOrNull()
     }
 
     private fun searchItunesSong(queryText: String): TrackIdentity? {
-        val url = "https://itunes.apple.com/search?term=${encodeQuery(queryText)}&entity=song&limit=1"
+        val url = endpoint(
+            endpoints.itunesBaseUrl,
+            "search?term=${encodeQuery(queryText)}&entity=song&limit=1"
+        )
         val json = getJson(url) ?: return null
         val track = parseItunesSongResults(
             json.optJSONArray("results"),
@@ -229,7 +265,10 @@ object MetadataFetcher {
     }
 
     private fun searchDeezerAlbumArt(queryText: String): String? {
-        val url = "https://api.deezer.com/search/album?q=${encodeQuery(queryText)}&limit=1"
+        val url = endpoint(
+            endpoints.deezerBaseUrl,
+            "search/album?q=${encodeQuery(queryText)}&limit=1"
+        )
         val json = getJson(url) ?: return null
         val data = json.optJSONArray("data") ?: return null
         if (data.length() == 0) return null
@@ -272,7 +311,10 @@ object MetadataFetcher {
     /** Deezer genre browse list (`GET /genre`). */
     suspend fun listGenres(): List<CatalogGenre> = withContext(Dispatchers.IO) {
         try {
-            val json = getJson("https://api.deezer.com/genre", userAgent = "Mozilla/5.0")
+            val json = getJson(
+                endpoint(endpoints.deezerBaseUrl, "genre"),
+                userAgent = "Mozilla/5.0"
+            )
             return@withContext parseCatalogGenres(json?.optJSONArray("data"))
         } catch (e: Exception) {
             e.printStackTrace()
@@ -302,7 +344,10 @@ object MetadataFetcher {
         if (cleanName.isEmpty() || limit <= 0) return@withContext emptyList()
         try {
             val q = "genre:\"$cleanName\""
-            val url = "https://api.deezer.com/search?q=${encodeQuery(q)}&limit=$limit"
+            val url = endpoint(
+                endpoints.deezerBaseUrl,
+                "search?q=${encodeQuery(q)}&limit=$limit"
+            )
             return@withContext parseDeezerSearchTracks(
                 getJson(url, userAgent = "Mozilla/5.0")?.optJSONArray("data")
             )
@@ -315,7 +360,10 @@ object MetadataFetcher {
     private fun fetchDeezerChartTracks(chartId: Long, limit: Int): List<OnlineCatalogTrack> {
         if (limit <= 0) return emptyList()
         return try {
-            val url = "https://api.deezer.com/chart/$chartId/tracks?limit=$limit"
+            val url = endpoint(
+                endpoints.deezerBaseUrl,
+                "chart/$chartId/tracks?limit=$limit"
+            )
             parseDeezerSearchTracks(
                 getJson(url, userAgent = "Mozilla/5.0")?.optJSONArray("data")
             )
@@ -338,8 +386,10 @@ object MetadataFetcher {
         val pageIndex = index.coerceAtLeast(0)
 
         // 1. Deezer Song Search API
-        val deezerUrl =
-            "https://api.deezer.com/search?q=${encodeQuery(cleanQ)}&limit=$pageLimit&index=$pageIndex"
+        val deezerUrl = endpoint(
+            endpoints.deezerBaseUrl,
+            "search?q=${encodeQuery(cleanQ)}&limit=$pageLimit&index=$pageIndex"
+        )
         val deezerTracks = parseDeezerSearchTracks(
             getJson(deezerUrl, userAgent = "Mozilla/5.0")?.optJSONArray("data")
         )
@@ -347,8 +397,10 @@ object MetadataFetcher {
 
         // 2. Fallback to iTunes Song Search API (no offset; skip on subsequent pages)
         if (pageIndex > 0) return@withContext emptyList()
-        val itunesUrl =
-            "https://itunes.apple.com/search?term=${encodeQuery(cleanQ)}&entity=song&limit=$pageLimit"
+        val itunesUrl = endpoint(
+            endpoints.itunesBaseUrl,
+            "search?term=${encodeQuery(cleanQ)}&entity=song&limit=$pageLimit"
+        )
         val itunesTracks = parseItunesSongResults(
             getJson(itunesUrl, userAgent = "Mozilla/5.0")?.optJSONArray("results")
         )
@@ -378,7 +430,7 @@ object MetadataFetcher {
     /** Tracks from Deezer artist radio mix. */
     suspend fun fetchDeezerArtistRadio(artistId: Long): List<TrackIdentity> = withContext(Dispatchers.IO) {
         if (artistId <= 0L) return@withContext emptyList()
-        val url = "https://api.deezer.com/artist/$artistId/radio"
+        val url = endpoint(endpoints.deezerBaseUrl, "artist/$artistId/radio")
         val json = getJson(url) ?: return@withContext emptyList()
         return@withContext parseDeezerTrackArray(json.optJSONArray("data"))
     }
@@ -387,7 +439,10 @@ object MetadataFetcher {
     suspend fun fetchDeezerRelatedArtistIds(artistId: Long, limit: Int = 5): List<Long> =
         withContext(Dispatchers.IO) {
             if (artistId <= 0L || limit <= 0) return@withContext emptyList()
-            val url = "https://api.deezer.com/artist/$artistId/related?limit=$limit"
+            val url = endpoint(
+                endpoints.deezerBaseUrl,
+                "artist/$artistId/related?limit=$limit"
+            )
             val json = getJson(url) ?: return@withContext emptyList()
             val data = json.optJSONArray("data") ?: return@withContext emptyList()
             val ids = ArrayList<Long>(minOf(limit, data.length()))
@@ -403,7 +458,10 @@ object MetadataFetcher {
     suspend fun fetchDeezerArtistTop(artistId: Long, limit: Int = 5): List<TrackIdentity> =
         withContext(Dispatchers.IO) {
             if (artistId <= 0L || limit <= 0) return@withContext emptyList()
-            val url = "https://api.deezer.com/artist/$artistId/top?limit=$limit"
+            val url = endpoint(
+                endpoints.deezerBaseUrl,
+                "artist/$artistId/top?limit=$limit"
+            )
             val json = getJson(url) ?: return@withContext emptyList()
             return@withContext parseDeezerTrackArray(json.optJSONArray("data"))
         }
@@ -415,8 +473,10 @@ object MetadataFetcher {
         withContext(Dispatchers.IO) {
             val cleanArtistName = cleanArtist(artist)
             if (cleanArtistName.isEmpty() || limit <= 0) return@withContext emptyList()
-            val url =
-                "https://itunes.apple.com/search?term=${encodeQuery(cleanArtistName)}&entity=song&limit=$limit"
+            val url = endpoint(
+                endpoints.itunesBaseUrl,
+                "search?term=${encodeQuery(cleanArtistName)}&entity=song&limit=$limit"
+            )
             val json = getJson(url) ?: return@withContext emptyList()
             return@withContext parseItunesSongResults(
                 json.optJSONArray("results"),
@@ -456,7 +516,10 @@ object MetadataFetcher {
             if (cleanArtistName.isNotEmpty()) {
                 val artistEnc = encodeQuery(cleanArtistName)
                 val trackEnc = encodeQuery(cleanTitle)
-                val url = "https://lrclib.net/api/get?artist_name=$artistEnc&track_name=$trackEnc"
+                val url = endpoint(
+                    endpoints.lyricsBaseUrl,
+                    "api/get?artist_name=$artistEnc&track_name=$trackEnc"
+                )
                 val request = Request.Builder()
                     .url(url)
                     .header("User-Agent", "BestiaPop/1.0")
@@ -477,7 +540,7 @@ object MetadataFetcher {
             val q = encodeQuery(
                 if (cleanArtistName.isNotEmpty()) "$cleanArtistName $cleanTitle" else cleanTitle
             )
-            val searchUrl = "https://lrclib.net/api/search?q=$q"
+            val searchUrl = endpoint(endpoints.lyricsBaseUrl, "api/search?q=$q")
             val searchReq = Request.Builder()
                 .url(searchUrl)
                 .header("User-Agent", "BestiaPop/1.0")
@@ -510,7 +573,10 @@ object MetadataFetcher {
         val cleanQ = query.trim().ifEmpty { "rock hits" }
         val list = mutableListOf<CatalogAlbum>()
         try {
-            val url = "https://api.deezer.com/search/album?q=${encodeQuery(cleanQ)}&limit=15"
+            val url = endpoint(
+                endpoints.deezerBaseUrl,
+                "search/album?q=${encodeQuery(cleanQ)}&limit=15"
+            )
             val data = getJson(url, userAgent = "Mozilla/5.0")?.optJSONArray("data")
             if (data != null) {
                 for (i in 0 until data.length()) {
@@ -534,8 +600,10 @@ object MetadataFetcher {
         // Fallback to iTunes if Deezer returned empty
         if (list.isEmpty()) {
             try {
-                val url =
-                    "https://itunes.apple.com/search?term=${encodeQuery(cleanQ)}&entity=album&limit=15"
+                val url = endpoint(
+                    endpoints.itunesBaseUrl,
+                    "search?term=${encodeQuery(cleanQ)}&entity=album&limit=15"
+                )
                 val results = getJson(url, userAgent = "Mozilla/5.0")?.optJSONArray("results")
                 if (results != null) {
                     for (i in 0 until results.length()) {
@@ -562,7 +630,10 @@ object MetadataFetcher {
         val cleanQ = query.trim().ifEmpty { "top hits" }
         val list = mutableListOf<CatalogPlaylist>()
         try {
-            val url = "https://api.deezer.com/search/playlist?q=${encodeQuery(cleanQ)}&limit=15"
+            val url = endpoint(
+                endpoints.deezerBaseUrl,
+                "search/playlist?q=${encodeQuery(cleanQ)}&limit=15"
+            )
             val data = getJson(url, userAgent = "Mozilla/5.0")?.optJSONArray("data")
             if (data != null) {
                 for (i in 0 until data.length()) {
@@ -596,7 +667,10 @@ object MetadataFetcher {
     ): List<CatalogTrackCandidate> = withContext(Dispatchers.IO) {
         val resultCandidates = mutableListOf<CatalogTrackCandidate>()
         try {
-            val url = "https://api.deezer.com/album/$albumId/tracks?limit=50"
+            val url = endpoint(
+                endpoints.deezerBaseUrl,
+                "album/$albumId/tracks?limit=50"
+            )
             val data = getJson(url, userAgent = "Mozilla/5.0")?.optJSONArray("data")
             if (data != null && data.length() > 0) {
                 for (i in 0 until data.length()) {
@@ -626,8 +700,10 @@ object MetadataFetcher {
         if (resultCandidates.isEmpty()) {
             try {
                 val queryTerm = "$artistName $albumTitle".trim()
-                val url =
-                    "https://itunes.apple.com/search?term=${encodeQuery(queryTerm)}&entity=song&limit=30"
+                val url = endpoint(
+                    endpoints.itunesBaseUrl,
+                    "search?term=${encodeQuery(queryTerm)}&entity=song&limit=30"
+                )
                 val tracks = parseItunesSongResults(
                     getJson(url, userAgent = "Mozilla/5.0")?.optJSONArray("results"),
                     provider = "YouTube",
@@ -662,7 +738,10 @@ object MetadataFetcher {
     ): List<CatalogTrackCandidate> = withContext(Dispatchers.IO) {
         val resultCandidates = mutableListOf<CatalogTrackCandidate>()
         try {
-            val url = "https://api.deezer.com/playlist/$playlistId/tracks?limit=50"
+            val url = endpoint(
+                endpoints.deezerBaseUrl,
+                "playlist/$playlistId/tracks?limit=50"
+            )
             val data = getJson(url, userAgent = "Mozilla/5.0")?.optJSONArray("data")
             if (data != null) {
                 for (i in 0 until data.length()) {

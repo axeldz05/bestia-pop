@@ -140,7 +140,10 @@ fun clampVolumeBoostAmount(amount: Float): Float = amount.coerceIn(0f, 1f)
 
 fun clampStereoGain(gain: Float): Float = gain.coerceIn(0f, 1f)
 
-class PlaybackPreferencesRepository(private val context: Context) {
+class PlaybackPreferencesRepository internal constructor(
+    private val dataStore: DataStore<Preferences>
+) {
+    constructor(context: Context) : this(context.playbackDataStore)
 
     private object Keys {
         val VOLUME_BOOST_ENABLED = booleanPreferencesKey("volume_boost_enabled")
@@ -160,7 +163,7 @@ class PlaybackPreferencesRepository(private val context: Context) {
         val STREAM_SKIP_GRACE_SECONDS = intPreferencesKey("stream_skip_grace_seconds")
     }
 
-    val settingsFlow: Flow<PlaybackSettings> = context.playbackDataStore.data.map { prefs ->
+    val settingsFlow: Flow<PlaybackSettings> = dataStore.data.map { prefs ->
         PlaybackSettings(
             volumeBoostEnabled = prefs[Keys.VOLUME_BOOST_ENABLED] ?: false,
             volumeBoostAmount = clampVolumeBoostAmount(prefs[Keys.VOLUME_BOOST_AMOUNT] ?: 0f),
@@ -183,70 +186,70 @@ class PlaybackPreferencesRepository(private val context: Context) {
     }
 
     suspend fun setVolumeBoostEnabled(enabled: Boolean) {
-        context.playbackDataStore.put(Keys.VOLUME_BOOST_ENABLED, enabled)
+        dataStore.put(Keys.VOLUME_BOOST_ENABLED, enabled)
     }
 
     suspend fun setVolumeBoostAmount(amount: Float) {
-        context.playbackDataStore.put(Keys.VOLUME_BOOST_AMOUNT, clampVolumeBoostAmount(amount))
+        dataStore.put(Keys.VOLUME_BOOST_AMOUNT, clampVolumeBoostAmount(amount))
     }
 
     suspend fun setStereoLeftGain(gain: Float) {
-        context.playbackDataStore.put(Keys.STEREO_LEFT_GAIN, clampStereoGain(gain))
+        dataStore.put(Keys.STEREO_LEFT_GAIN, clampStereoGain(gain))
     }
 
     suspend fun setStereoRightGain(gain: Float) {
-        context.playbackDataStore.put(Keys.STEREO_RIGHT_GAIN, clampStereoGain(gain))
+        dataStore.put(Keys.STEREO_RIGHT_GAIN, clampStereoGain(gain))
     }
 
     suspend fun resetStereoBalance() {
-        context.playbackDataStore.edit { prefs ->
+        dataStore.edit { prefs ->
             prefs[Keys.STEREO_LEFT_GAIN] = 1f
             prefs[Keys.STEREO_RIGHT_GAIN] = 1f
         }
     }
 
     suspend fun setRememberShuffleOnLaunch(enabled: Boolean) {
-        context.playbackDataStore.put(Keys.REMEMBER_SHUFFLE_ON_LAUNCH, enabled)
+        dataStore.put(Keys.REMEMBER_SHUFFLE_ON_LAUNCH, enabled)
     }
 
     suspend fun setRememberRepeatOnLaunch(enabled: Boolean) {
-        context.playbackDataStore.put(Keys.REMEMBER_REPEAT_ON_LAUNCH, enabled)
+        dataStore.put(Keys.REMEMBER_REPEAT_ON_LAUNCH, enabled)
     }
 
     suspend fun setAutoplayOnLaunch(enabled: Boolean) {
-        context.playbackDataStore.put(Keys.AUTOPLAY_ON_LAUNCH, enabled)
+        dataStore.put(Keys.AUTOPLAY_ON_LAUNCH, enabled)
     }
 
     suspend fun setLastShuffleEnabled(enabled: Boolean) {
-        context.playbackDataStore.put(Keys.LAST_SHUFFLE_ENABLED, enabled)
+        dataStore.put(Keys.LAST_SHUFFLE_ENABLED, enabled)
     }
 
     suspend fun setLastRepeatMode(mode: RepeatMode) {
-        context.playbackDataStore.put(Keys.LAST_REPEAT_MODE, mode.name)
+        dataStore.put(Keys.LAST_REPEAT_MODE, mode.name)
     }
 
     suspend fun setClearShuffleOnManualPlay(enabled: Boolean) {
-        context.playbackDataStore.put(Keys.CLEAR_SHUFFLE_ON_MANUAL_PLAY, enabled)
+        dataStore.put(Keys.CLEAR_SHUFFLE_ON_MANUAL_PLAY, enabled)
     }
 
     suspend fun setClearRepeatAllOnManualPlay(enabled: Boolean) {
-        context.playbackDataStore.put(Keys.CLEAR_REPEAT_ALL_ON_MANUAL_PLAY, enabled)
+        dataStore.put(Keys.CLEAR_REPEAT_ALL_ON_MANUAL_PLAY, enabled)
     }
 
     suspend fun setClearRepeatOneOnManualPlay(enabled: Boolean) {
-        context.playbackDataStore.put(Keys.CLEAR_REPEAT_ONE_ON_MANUAL_PLAY, enabled)
+        dataStore.put(Keys.CLEAR_REPEAT_ONE_ON_MANUAL_PLAY, enabled)
     }
 
     suspend fun setClearShuffleOnSkip(enabled: Boolean) {
-        context.playbackDataStore.put(Keys.CLEAR_SHUFFLE_ON_SKIP, enabled)
+        dataStore.put(Keys.CLEAR_SHUFFLE_ON_SKIP, enabled)
     }
 
     suspend fun setClearRepeatOneOnSkip(enabled: Boolean) {
-        context.playbackDataStore.put(Keys.CLEAR_REPEAT_ONE_ON_SKIP, enabled)
+        dataStore.put(Keys.CLEAR_REPEAT_ONE_ON_SKIP, enabled)
     }
 
     suspend fun setStreamSkipGraceSeconds(seconds: Int) {
-        context.playbackDataStore.put(
+        dataStore.put(
             Keys.STREAM_SKIP_GRACE_SECONDS,
             clampStreamSkipGraceSeconds(seconds)
         )

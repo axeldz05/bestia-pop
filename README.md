@@ -155,6 +155,17 @@ gradle :app:testDebugUnitTest
 
 Los instrumentados van en `app/src/androidTest`.
 
+### Coverage (JaCoCo / AGP)
+
+```bash
+./coverage.sh              # unit tests → HTML
+./coverage.sh --android    # androidTest (requiere adb)
+./coverage.sh --all        # unit + instrumented unificado
+```
+
+Reportes unit/android: `app/build/reports/coverage/…/index.html`; agregado AGP:
+`app/build/reports/code_coverage_html_report/global/index.html`.
+
 ---
 
 Eso incrementa `version.properties`, arma el APK firmado, crea el tag `v{VERSION_NAME}` y sube la release (las notas incluyen `versionCode: N` para el update in-app).

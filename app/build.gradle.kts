@@ -73,6 +73,9 @@ android {
         // install -r keeps Room/DataStore (Android rejects a different signature over -k data).
         debug {
             signingConfig = sharedSigning
+            // JaCoCo via AGP: unit + instrumented coverage reports for debug.
+            enableUnitTestCoverage = true
+            enableAndroidTestCoverage = true
         }
         release {
             isMinifyEnabled = true
@@ -87,6 +90,21 @@ android {
                 "proguard-rules.pro"
             )
         }
+    }
+
+    // Pin latest JaCoCo (JDK 26 / class file 70). AGP applies it when coverage flags above are on.
+    testCoverage {
+        jacocoVersion = libs.versions.jacoco.get()
+    }
+    testOptions {
+        // Robolectric/Room tests need merged Android resources; device UI tests need deterministic motion.
+        unitTests.isIncludeAndroidResources = true
+        animationsDisabled = true
+    }
+    sourceSets {
+        // Shared JVM helpers keep feature scenarios small without leaking test-only dependencies
+        // into the instrumented APK.
+        getByName("test").kotlin.directories.add("src/sharedTest/java")
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -170,15 +188,20 @@ dependencies {
     implementation("net.jthink:jaudiotagger:3.0.1")
 
     // Functional & Integration UI Testing
-    testImplementation("junit:junit:4.13.2")
-    testImplementation("org.json:json:20240303")
-    testImplementation("androidx.compose.ui:ui-test-junit4")
-    debugImplementation("androidx.compose.ui:ui-test-manifest")
-    testImplementation("org.robolectric:robolectric:4.12.2")
+    testImplementation(libs.junit4)
+    testImplementation(libs.json)
+    testImplementation(libs.androidx.test.core)
+    testImplementation(libs.androidx.room.testing)
+    testImplementation(libs.okhttp.mockwebserver)
+    testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.robolectric)
+    // Robolectric 4.16.1 is the latest stable release, but its bundled ASM cannot read JDK 26.
+    testImplementation(libs.asm)
+    debugImplementation(libs.androidx.compose.ui.test.manifest)
 
-    androidTestImplementation("junit:junit:4.13.2")
-    androidTestImplementation("androidx.test.ext:junit:1.3.0")
-    androidTestImplementation("androidx.test.espresso:espresso-core:3.7.0")
+    androidTestImplementation(libs.junit4)
+    androidTestImplementation(libs.androidx.test.ext.junit)
+    androidTestImplementation(libs.androidx.test.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))
-    androidTestImplementation("androidx.compose.ui:ui-test-junit4")
+    androidTestImplementation(libs.androidx.compose.ui.test.junit4)
 }

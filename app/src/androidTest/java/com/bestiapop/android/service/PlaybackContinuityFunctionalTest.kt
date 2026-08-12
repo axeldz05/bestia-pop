@@ -5,6 +5,7 @@ import android.content.Intent
 import androidx.core.app.NotificationCompat
 import androidx.media3.common.Player
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.filters.MediumTest
 import androidx.test.platform.app.InstrumentationRegistry
 import com.bestiapop.android.data.model.ActiveDownload
 import com.bestiapop.android.data.model.PlayableItem
@@ -45,6 +46,7 @@ import org.junit.runner.RunWith
  * Instrumented continuity flows for process-owned playback (not pure policy unit tests).
  */
 @RunWith(AndroidJUnit4::class)
+@MediumTest
 class PlaybackContinuityFunctionalTest {
 
     private val context

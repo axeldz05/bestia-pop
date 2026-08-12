@@ -980,6 +980,42 @@ class PlaybackRuntimeContinuityTest {
     }
 
     @Test
+    fun queueTapWhileShuffled_selectsPhysicalSlotWithoutClearingOrRotatingQueue() {
+        val fixture = fixture()
+        try {
+            fixture.runtime.playPlayableCollection(
+                listOf(
+                    PlayableItem.Local(song(1, "One")),
+                    PlayableItem.Local(song(2, "Two")),
+                    PlayableItem.Local(song(3, "Three")),
+                    PlayableItem.Local(song(4, "Four"))
+                ),
+                rotate = false
+            )
+            fixture.runtime.toggleShuffle()
+            val queueBeforeTap = fixture.runtime.displayQueue.value
+            val selectedIndex = queueBeforeTap.lastIndex
+            val selected = queueBeforeTap[selectedIndex]
+
+            fixture.runtime.skipToQueueIndex(selectedIndex)
+
+            assertTrue(fixture.runtime.isShuffle.value)
+            assertEquals(
+                queueBeforeTap.map { it.queueEntryId },
+                fixture.runtime.displayQueue.value.map { it.queueEntryId }
+            )
+            assertEquals(selected.queueEntryId, fixture.runtime.currentItem.value?.queueEntryId)
+            assertEquals(selectedIndex, fixture.controller.currentMediaItemIndex)
+            assertEquals(
+                queueBeforeTap.map { it.queueEntryId },
+                fixture.controller.items().map { it.queueEntryId }
+            )
+        } finally {
+            fixture.close()
+        }
+    }
+
+    @Test
     fun hydration_waitsForFirstRealPlaybackSettingsEmission() = runBlocking {
         val first = song(1, "First")
         val second = song(2, "Second")
@@ -1135,6 +1171,7 @@ class PlaybackRuntimeContinuityTest {
         )
         try {
             assertEquals(0, fixture.controller.mediaItemCount)
+            assertFalse("autoplay off must not resolve the hydrated Remote", delayed.started.isCompleted)
 
             fixture.runtime.togglePlayPause()
             delayed.started.await()

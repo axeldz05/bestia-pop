@@ -14,26 +14,29 @@ private val Context.appUpdateDataStore: DataStore<Preferences> by preferencesDat
     name = "app_update"
 )
 
-class AppUpdateCheckStore(private val context: Context) {
+class AppUpdateCheckStore internal constructor(
+    private val dataStore: DataStore<Preferences>
+) {
+    constructor(context: Context) : this(context.appUpdateDataStore)
 
     suspend fun lastCheckAtMs(): Long =
-        context.appUpdateDataStore.data.map { prefs ->
+        dataStore.data.map { prefs ->
             prefs[Keys.LAST_CHECK_AT_MS] ?: 0L
         }.first()
 
     suspend fun setLastCheckAtMs(epochMs: Long) {
-        context.appUpdateDataStore.put(Keys.LAST_CHECK_AT_MS, epochMs)
+        dataStore.put(Keys.LAST_CHECK_AT_MS, epochMs)
     }
 
     /** Notes of the installed build, so Ajustes → Actualización shows something offline. */
     suspend fun cachedNotes(versionName: String): String? =
-        context.appUpdateDataStore.data.map { prefs ->
+        dataStore.data.map { prefs ->
             if (prefs[Keys.NOTES_VERSION] == versionName) prefs[Keys.NOTES_BODY] else null
         }.first()
 
     suspend fun setCachedNotes(versionName: String, notes: String) {
-        context.appUpdateDataStore.put(Keys.NOTES_VERSION, versionName)
-        context.appUpdateDataStore.put(Keys.NOTES_BODY, notes)
+        dataStore.put(Keys.NOTES_VERSION, versionName)
+        dataStore.put(Keys.NOTES_BODY, notes)
     }
 
     private object Keys {

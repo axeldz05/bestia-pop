@@ -12,6 +12,7 @@ import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
+import com.bestiapop.android.data.model.TrackIdentity
 import com.bestiapop.android.data.model.WifiTransferItem
 import com.bestiapop.android.data.model.WifiTransferState
 import com.bestiapop.android.data.repository.MusicRepository
@@ -19,8 +20,10 @@ import com.bestiapop.android.data.util.AudioFileMetadata
 import com.bestiapop.android.data.util.CrashReporter
 import com.bestiapop.android.data.util.MusicFileStore
 import com.bestiapop.android.data.util.SongPathNormalizer
+import com.bestiapop.android.data.util.UploadNameSanitizer
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
+import io.ktor.server.application.Application
 import io.ktor.server.application.call
 import io.ktor.server.cio.CIO
 import io.ktor.server.engine.EmbeddedServer
@@ -32,17 +35,281 @@ import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.routing
 import io.ktor.utils.io.readAvailable
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.io.File
 import java.net.NetworkInterface
 import java.util.Collections
+import java.util.Locale
 import java.util.UUID
+
+internal const val WIFI_SYNC_MAX_UPLOAD_BYTES = 512L * 1024 * 1024
+private const val UPLOAD_TOO_LARGE_MESSAGE = "Archivo demasiado grande"
+
+internal data class WifiPendingUpload(
+    val stagingFile: File,
+    val publish: () -> String,
+    val deletePartial: (publishedPath: String?) -> Unit
+)
+
+internal data class WifiPersistedUpload(
+    val identity: TrackIdentity,
+    val songId: Long
+)
+
+/**
+ * Small testable boundary around the WiFi HTTP contract. Android storage and Room stay behind
+ * callbacks so production and localhost tests execute the exact same routes and stream limiter.
+ */
+internal class WifiSyncHttpBoundary(
+    private val port: Int,
+    private val advertisedHost: () -> String?,
+    private val dashboardHtml: () -> String,
+    private val listLibraryNames: suspend () -> Collection<String>,
+    private val listManagedNames: () -> Collection<String>,
+    private val prepareWrite: (safeName: String) -> WifiPendingUpload,
+    private val persistUpload: suspend (publishedPath: String, safeName: String) -> WifiPersistedUpload,
+    private val onTransfer: (WifiTransferItem) -> Unit,
+    private val onFailure: (error: Throwable, phase: String, transferId: String) -> Unit,
+    private val maxUploadBytes: Long = WIFI_SYNC_MAX_UPLOAD_BYTES,
+    private val newTransferId: () -> String = { UUID.randomUUID().toString() },
+    private val nowMillis: () -> Long = System::currentTimeMillis
+) {
+    init {
+        require(port in 1..65535) { "Invalid WiFi Sync port: $port" }
+        require(maxUploadBytes > 0L) { "Upload limit must be positive" }
+    }
+
+    fun install(application: Application) {
+        application.routing {
+            get("/") {
+                call.response.header("Cache-Control", "no-cache, no-store, must-revalidate")
+                call.response.header("Pragma", "no-cache")
+                call.response.header("Expires", "0")
+                call.respondText(dashboardHtml(), ContentType.Text.Html)
+            }
+
+            get("/existing-files") {
+                call.response.header("Cache-Control", "no-cache, no-store, must-revalidate")
+                val existing = (listManagedNames() + listLibraryNames())
+                    .asSequence()
+                    .map(UploadNameSanitizer::sanitize)
+                    .filter(String::isNotBlank)
+                    .map { it.lowercase(Locale.ROOT) }
+                    .distinct()
+                    .sorted()
+                    .toList()
+                call.respondText(
+                    existing.joinToString(prefix = "[", postfix = "]") { jsonString(it) },
+                    ContentType.Application.Json
+                )
+            }
+
+            post("/upload-file") {
+                call.response.header("Connection", "close")
+                call.response.header("Cache-Control", "no-cache, no-store, must-revalidate")
+
+                if (!isAllowedHost(call.request.headers["Host"])) {
+                    call.respondJsonError(HttpStatusCode.Forbidden, "Origen no permitido")
+                    return@post
+                }
+
+                val declaredLength = call.request.headers["Content-Length"]?.toLongOrNull()
+                if (declaredLength != null && declaredLength > maxUploadBytes) {
+                    call.respondJsonError(HttpStatusCode.PayloadTooLarge, UPLOAD_TOO_LARGE_MESSAGE)
+                    return@post
+                }
+
+                val rawName = call.request.queryParameters["name"]
+                    ?: "audio_${nowMillis()}.mp3"
+                val safeName = UploadNameSanitizer.sanitize(rawName)
+                    .ifBlank { "audio_${nowMillis()}.mp3" }
+                val transferId = newTransferId()
+                var transfer = WifiTransferItem(
+                    id = transferId,
+                    fileName = safeName,
+                    title = safeName.substringBeforeLast("."),
+                    artist = "Recibiendo…",
+                    state = WifiTransferState.UPLOADING,
+                    progressPercent = 0
+                )
+
+                fun emit(next: WifiTransferItem) {
+                    transfer = next
+                    onTransfer(next)
+                }
+
+                emit(transfer)
+                var pendingUpload: WifiPendingUpload? = null
+                var publishedPath: String? = null
+                var committed = false
+                var phase = "transfer"
+                try {
+                    pendingUpload = prepareWrite(safeName)
+                    var bytesWritten = 0L
+                    val channel = call.receiveChannel()
+                    pendingUpload.stagingFile.outputStream().buffered(64 * 1024).use { output ->
+                        val buffer = ByteArray(64 * 1024)
+                        while (true) {
+                            val read = channel.readAvailable(buffer, 0, buffer.size)
+                            if (read < 0) break
+                            if (read == 0) continue
+                            if (bytesWritten > maxUploadBytes - read) {
+                                throw WifiUploadTooLargeException()
+                            }
+                            output.write(buffer, 0, read)
+                            bytesWritten += read
+                            if (declaredLength != null && declaredLength > 0L) {
+                                val percent = ((bytesWritten * 100) / declaredLength)
+                                    .toInt()
+                                    .coerceIn(0, 99)
+                                emit(
+                                    transfer.copy(
+                                        state = WifiTransferState.UPLOADING,
+                                        progressPercent = percent
+                                    )
+                                )
+                            }
+                        }
+                        output.flush()
+                    }
+
+                    emit(
+                        transfer.copy(
+                            state = WifiTransferState.PROCESSING,
+                            progressPercent = 100,
+                            artist = "Procesando…"
+                        )
+                    )
+
+                    phase = "save_upload"
+                    publishedPath = pendingUpload.publish()
+                    val persisted = persistUpload(publishedPath, safeName)
+                    emit(
+                        transfer.copy(
+                            title = persisted.identity.title,
+                            artist = persisted.identity.artist,
+                            state = WifiTransferState.DONE,
+                            progressPercent = 100,
+                            songId = persisted.songId,
+                            artworkUri = persisted.identity.artworkUri,
+                            errorMessage = null
+                        )
+                    )
+                    committed = true
+                    call.respondText(
+                        """{"status":"ok","filename":${jsonString(safeName)}}""",
+                        ContentType.Application.Json
+                    )
+                } catch (_: WifiUploadTooLargeException) {
+                    pendingUpload?.deletePartialSafely(publishedPath)
+                    emit(
+                        transfer.copy(
+                            state = WifiTransferState.ERROR,
+                            errorMessage = UPLOAD_TOO_LARGE_MESSAGE
+                        )
+                    )
+                    call.respondJsonError(HttpStatusCode.PayloadTooLarge, UPLOAD_TOO_LARGE_MESSAGE)
+                } catch (error: CancellationException) {
+                    if (!committed) pendingUpload?.deletePartialSafely(publishedPath)
+                    throw error
+                } catch (error: Exception) {
+                    // A client can disconnect after the file and Room row are already durable.
+                    // Transporting the final JSON response must not roll that commit back.
+                    if (committed) throw error
+                    pendingUpload?.deletePartialSafely(publishedPath)
+                    runCatching { onFailure(error, phase, transferId) }
+                    val message = if (phase == "save_upload") {
+                        "No se pudo guardar el archivo"
+                    } else {
+                        "Error de transferencia"
+                    }
+                    emit(
+                        transfer.copy(
+                            state = WifiTransferState.ERROR,
+                            errorMessage = error.localizedMessage ?: message
+                        )
+                    )
+                    call.respondJsonError(HttpStatusCode.InternalServerError, message)
+                }
+            }
+        }
+    }
+
+    internal fun isAllowedHost(hostHeader: String?): Boolean {
+        val authority = hostHeader?.trim()?.lowercase(Locale.ROOT) ?: return false
+        val parsed = parseAuthority(authority) ?: return false
+        if (parsed.second != port) return false
+        val host = parsed.first
+        val advertised = advertisedHost()
+            ?.trim()
+            ?.removePrefix("[")
+            ?.removeSuffix("]")
+            ?.lowercase(Locale.ROOT)
+        return host == advertised ||
+            host == "localhost" ||
+            host == "127.0.0.1" ||
+            host == "::1"
+    }
+
+    private fun parseAuthority(authority: String): Pair<String, Int>? {
+        if (authority.startsWith("[")) {
+            val closeBracket = authority.indexOf(']')
+            if (closeBracket <= 1) return null
+            val host = authority.substring(1, closeBracket)
+            val portValue = authority.substring(closeBracket + 1)
+                .removePrefix(":")
+                .takeIf(String::isNotBlank)
+                ?.toIntOrNull()
+                ?: return null
+            return host to portValue
+        }
+        if (authority.count { it == ':' } != 1) return null
+        val host = authority.substringBefore(':').takeIf(String::isNotBlank) ?: return null
+        val portValue = authority.substringAfter(':').toIntOrNull() ?: return null
+        return host to portValue
+    }
+}
+
+private class WifiUploadTooLargeException : Exception()
+
+private fun WifiPendingUpload.deletePartialSafely(publishedPath: String?) {
+    runCatching { deletePartial(publishedPath) }
+}
+
+private fun jsonString(value: String): String = buildString {
+    append('"')
+    value.forEach { char ->
+        when (char) {
+            '\\' -> append("\\\\")
+            '"' -> append("\\\"")
+            '\n' -> append("\\n")
+            '\r' -> append("\\r")
+            '\t' -> append("\\t")
+            else -> append(char)
+        }
+    }
+    append('"')
+}
+
+private suspend fun io.ktor.server.application.ApplicationCall.respondJsonError(
+    status: HttpStatusCode,
+    message: String
+) {
+    respondText(
+        """{"status":"error","message":${jsonString(message)}}""",
+        ContentType.Application.Json,
+        status
+    )
+}
 
 class WebServerService : Service() {
 
@@ -52,8 +319,6 @@ class WebServerService : Service() {
     companion object {
         private const val TAG = "WebServerService"
         const val PORT = 8080
-        /** Per-file cap: a lossless album track sits far below this; an attacker cannot fill storage. */
-        private const val MAX_UPLOAD_BYTES = 512L * 1024 * 1024
         private val _serverState = MutableStateFlow<String?>(null)
         val serverState: StateFlow<String?> = _serverState
 
@@ -61,26 +326,20 @@ class WebServerService : Service() {
         val transfers: StateFlow<List<WifiTransferItem>> = _transfers.asStateFlow()
 
         fun dismissTransfer(id: String) {
-            _transfers.value = _transfers.value.filterNot { it.id == id }
+            _transfers.update { transfers -> transfers.filterNot { it.id == id } }
         }
 
         fun clearTransfers() {
-            _transfers.value = emptyList()
+            _transfers.update { emptyList() }
         }
 
         private fun upsertTransfer(item: WifiTransferItem) {
-            val list = _transfers.value.toMutableList()
-            val index = list.indexOfFirst { it.id == item.id }
-            if (index >= 0) list[index] = item else list.add(0, item)
-            _transfers.value = list
-        }
-
-        private fun updateTransfer(id: String, transform: (WifiTransferItem) -> WifiTransferItem) {
-            val list = _transfers.value.toMutableList()
-            val index = list.indexOfFirst { it.id == id }
-            if (index < 0) return
-            list[index] = transform(list[index])
-            _transfers.value = list
+            _transfers.update { current ->
+                val list = current.toMutableList()
+                val index = list.indexOfFirst { it.id == item.id }
+                if (index >= 0) list[index] = item else list.add(0, item)
+                list
+            }
         }
 
         fun getLocalIpAddress(@Suppress("UNUSED_PARAMETER") context: Context): String? {
@@ -134,224 +393,73 @@ class WebServerService : Service() {
         ServiceCompat.startForeground(this, 2001, notification, fgsType)
     }
 
-    /**
-     * Accepts only requests addressed to this server's own host:port. A browser on any site can reach
-     * a LAN address, but it cannot forge the `Host` header, so this blocks drive-by uploads while
-     * leaving the intended `http://<lan-ip>:8080` peers working.
-     */
-    private fun isLocalRequest(host: String?): Boolean {
-        val value = host?.trim()?.lowercase() ?: return false
-        val hostName = value.substringBeforeLast(':', value)
-        val port = value.substringAfterLast(':', "").toIntOrNull()
-        if (port != null && port != PORT) return false
-        val advertised = _serverState.value?.substringBeforeLast(':')?.lowercase()
-        return hostName == advertised ||
-            hostName == "localhost" ||
-            hostName == "127.0.0.1" ||
-            hostName == "[::1]"
-    }
-
-    /**
-     * Same transform the dashboard applies before checking `/existing-files`, and the one uploads are
-     * stored under. Also strips any path, so `name` cannot escape the music folder.
-     */
-    private fun sanitizeUploadName(rawName: String): String =
-        rawName.substringAfterLast("/")
-            .substringAfterLast("\\")
-            .replace(Regex("[^a-zA-Z0-9._-]"), "_")
-
     private fun startServer() {
         serviceScope.launch {
             try {
                 val repository = MusicRepository(applicationContext)
                 val audioStore = MusicFileStore(applicationContext)
+                val ip = getLocalIpAddress(applicationContext) ?: "localhost"
+                val boundary = WifiSyncHttpBoundary(
+                    port = PORT,
+                    advertisedHost = { ip },
+                    dashboardHtml = ::getWebDashboardHtml,
+                    listLibraryNames = {
+                        repository.getAllSongsSync().mapNotNull { song ->
+                            SongPathNormalizer.fileName(song.uriString, song.folderPath)
+                                .takeIf(String::isNotBlank)
+                        }
+                    },
+                    listManagedNames = audioStore::listManagedNames,
+                    prepareWrite = { safeName ->
+                        val pending = audioStore.prepareWrite(safeName)
+                        WifiPendingUpload(
+                            stagingFile = pending.stagingFile,
+                            publish = pending::publish,
+                            deletePartial = { publishedPath ->
+                                pending.stagingFile.delete()
+                                publishedPath?.let { path ->
+                                    audioStore.delete(audioStore.canonicalize(path))
+                                }
+                            }
+                        )
+                    },
+                    persistUpload = { path, safeName ->
+                        val ref = audioStore.canonicalize(path)
+                        val metadata = AudioFileMetadata.fromPath(
+                            context = applicationContext,
+                            path = ref.uriString,
+                            fallbackTitle = safeName.substringBeforeLast("."),
+                            artworkIdentifier = File(ref.uriString).name,
+                            extractEmbeddedArtwork = repository::extractAndSaveEmbeddedArtwork
+                        )
+                        val songId = repository.saveUploadedSong(
+                            metadata.toSong(
+                                uriString = ref.uriString,
+                                folderPath = ref.folderPath
+                            )
+                        )
+                        WifiPersistedUpload(
+                            identity = metadata.identity,
+                            songId = songId
+                        )
+                    },
+                    onTransfer = ::upsertTransfer,
+                    onFailure = { error, phase, transferId ->
+                        Log.e(TAG, "WiFi upload failed phase=$phase", error)
+                        CrashReporter.recordNonFatal(
+                            error,
+                            mapOf(
+                                "wifi_phase" to phase,
+                                "transfer_id" to transferId
+                            )
+                        )
+                    }
+                )
 
                 server = embeddedServer(CIO, port = PORT) {
-                    routing {
-                        get("/") {
-                            call.response.header("Cache-Control", "no-cache, no-store, must-revalidate")
-                            call.response.header("Pragma", "no-cache")
-                            call.response.header("Expires", "0")
-                            call.respondText(getWebDashboardHtml(), ContentType.Text.Html)
-                        }
-
-                        get("/existing-files") {
-                            call.response.header("Cache-Control", "no-cache, no-store, must-revalidate")
-                            // Sanitized on both sides: uploads are stored through sanitizeUploadName
-                            // and the dashboard compares against that form, so returning raw basenames
-                            // meant "01 - Canción.mp3" never matched "01_-_Canci_n.mp3" and the file
-                            // was re-uploaded as a second copy.
-                            val fromFolder = audioStore.listManagedNames().map { sanitizeUploadName(it) }
-                            val fromRoom = repository.getAllSongsSync().mapNotNull { song ->
-                                SongPathNormalizer.fileName(song.uriString, song.folderPath)
-                                    .takeIf { it.isNotBlank() }
-                                    ?.let { sanitizeUploadName(it) }
-                            }.toSet()
-                            val existingList = (fromFolder + fromRoom).map { it.lowercase() }.distinct()
-                            val jsonArray = existingList.joinToString(prefix = "[", postfix = "]") {
-                                "\"${it.replace("\"", "\\\"")}\""
-                            }
-                            call.respondText(jsonArray, ContentType.Application.Json)
-                        }
-
-                        // Direct High-Performance Binary Stream Upload
-                        post("/upload-file") {
-                            call.response.header("Connection", "close")
-                            call.response.header("Cache-Control", "no-cache, no-store, must-revalidate")
-
-                            // Any page the user visits can POST to the phone's LAN IP (DNS rebinding /
-                            // CSRF against a LAN server), so only requests aimed at this server's own
-                            // host:port are accepted, and the body is capped.
-                            if (!isLocalRequest(call.request.headers["Host"])) {
-                                call.respondText(
-                                    """{"status":"error","message":"Origen no permitido"}""",
-                                    ContentType.Application.Json,
-                                    HttpStatusCode.Forbidden
-                                )
-                                return@post
-                            }
-                            val declaredLength = call.request.headers["Content-Length"]?.toLongOrNull()
-                            if (declaredLength != null && declaredLength > MAX_UPLOAD_BYTES) {
-                                call.respondText(
-                                    """{"status":"error","message":"Archivo demasiado grande"}""",
-                                    ContentType.Application.Json,
-                                    HttpStatusCode.PayloadTooLarge
-                                )
-                                return@post
-                            }
-
-                            val rawName = call.request.queryParameters["name"] ?: "audio_${System.currentTimeMillis()}.mp3"
-                            val safeName = sanitizeUploadName(rawName)
-                            val pendingWrite = audioStore.prepareWrite(safeName)
-                            val destinationFile = pendingWrite.stagingFile
-                            val transferId = UUID.randomUUID().toString()
-                            val displayTitle = safeName.substringBeforeLast(".")
-                            val contentLength = call.request.headers["Content-Length"]?.toLongOrNull()?.takeIf { it > 0L }
-
-                            upsertTransfer(
-                                WifiTransferItem(
-                                    id = transferId,
-                                    fileName = safeName,
-                                    title = displayTitle,
-                                    artist = "Recibiendo…",
-                                    state = WifiTransferState.UPLOADING,
-                                    progressPercent = 0
-                                )
-                            )
-
-                            try {
-                                var bytesWritten = 0L
-                                val channel = call.receiveChannel()
-                                destinationFile.outputStream().buffered(64 * 1024).use { output ->
-                                    val buffer = ByteArray(64 * 1024)
-                                    while (!channel.isClosedForRead) {
-                                        val read = channel.readAvailable(buffer, 0, buffer.size)
-                                        if (read <= 0) break
-                                        output.write(buffer, 0, read)
-                                        bytesWritten += read
-                                        // Enforced on the stream too: Content-Length can lie or be absent.
-                                        if (bytesWritten > MAX_UPLOAD_BYTES) {
-                                            throw IllegalStateException("Archivo demasiado grande")
-                                        }
-                                        if (contentLength != null) {
-                                            val percent = ((bytesWritten * 100) / contentLength).toInt().coerceIn(0, 99)
-                                            updateTransfer(transferId) {
-                                                it.copy(
-                                                    state = WifiTransferState.UPLOADING,
-                                                    progressPercent = percent
-                                                )
-                                            }
-                                        }
-                                    }
-                                    output.flush()
-                                }
-
-                                updateTransfer(transferId) {
-                                    it.copy(
-                                        state = WifiTransferState.PROCESSING,
-                                        progressPercent = 100,
-                                        artist = "Procesando…"
-                                    )
-                                }
-
-                                try {
-                                    val path = pendingWrite.publish()
-                                    val ref = audioStore.canonicalize(path)
-                                    val metadata = AudioFileMetadata.fromPath(
-                                        context = applicationContext,
-                                        path = ref.uriString,
-                                        fallbackTitle = safeName.substringBeforeLast("."),
-                                        artworkIdentifier = File(ref.uriString).name,
-                                        extractEmbeddedArtwork = repository::extractAndSaveEmbeddedArtwork
-                                    )
-                                    val songId = repository.saveUploadedSong(
-                                        metadata.toSong(
-                                            uriString = ref.uriString,
-                                            folderPath = ref.folderPath
-                                        )
-                                    )
-                                    updateTransfer(transferId) {
-                                        it.copy(
-                                            title = metadata.title,
-                                            artist = metadata.artist,
-                                            state = WifiTransferState.DONE,
-                                            progressPercent = 100,
-                                            songId = songId,
-                                            artworkUri = metadata.artworkUri,
-                                            errorMessage = null
-                                        )
-                                    }
-                                } catch (e: Exception) {
-                                    Log.e(TAG, "save upload failed name=$safeName", e)
-                                    e.printStackTrace()
-                                    CrashReporter.recordNonFatal(
-                                        e,
-                                        mapOf(
-                                            "wifi_phase" to "save_upload",
-                                            "transfer_id" to transferId
-                                        )
-                                    )
-                                    updateTransfer(transferId) {
-                                        it.copy(
-                                            state = WifiTransferState.ERROR,
-                                            errorMessage = e.localizedMessage ?: "Error al guardar"
-                                        )
-                                    }
-                                    // The browser used to get {"status":"ok"} here, mark the file done
-                                    // and add it to its dedupe set, so a retry was skipped while the
-                                    // phone showed an error and the song was missing.
-                                    destinationFile.delete()
-                                    call.respondText(
-                                        """{"status":"error","message":"No se pudo guardar el archivo"}""",
-                                        ContentType.Application.Json,
-                                        HttpStatusCode.InternalServerError
-                                    )
-                                    return@post
-                                }
-
-                                call.respondText("""{"status":"ok","filename":"$safeName"}""", ContentType.Application.Json)
-                            } catch (e: Exception) {
-                                Log.e(TAG, "upload-file failed name=$safeName", e)
-                                CrashReporter.recordNonFatal(
-                                    e,
-                                    mapOf(
-                                        "wifi_phase" to "transfer",
-                                        "transfer_id" to transferId
-                                    )
-                                )
-                                updateTransfer(transferId) {
-                                    it.copy(
-                                        state = WifiTransferState.ERROR,
-                                        errorMessage = e.localizedMessage ?: "Error de transferencia"
-                                    )
-                                }
-                                call.respondText("""{"status":"error","message":"${e.localizedMessage}"}""", ContentType.Application.Json, HttpStatusCode.InternalServerError)
-                            }
-                        }
-                    }
+                    boundary.install(this)
                 }.start(wait = false)
 
-                val ip = getLocalIpAddress(applicationContext) ?: "localhost"
                 _serverState.value = "$ip:$PORT"
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -797,10 +905,13 @@ class WebServerService : Service() {
 
     override fun onDestroy() {
         server?.stop(1000, 2000)
+        serviceScope.cancel()
         _serverState.value = null
         // Keep received items visible after stop; only clear in-progress ones.
-        _transfers.value = _transfers.value.filter {
-            it.state == WifiTransferState.DONE || it.state == WifiTransferState.ERROR
+        _transfers.update { transfers ->
+            transfers.filter {
+                it.state == WifiTransferState.DONE || it.state == WifiTransferState.ERROR
+            }
         }
         super.onDestroy()
     }

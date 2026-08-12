@@ -148,12 +148,12 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 | Download prefs | `data/preferences/DownloadPreferencesRepository.kt` (`DownloadSettings`, `downloadOnMeteredNetwork` default true, `addDownloadedBytes`, `totalMeteredBytes` / `totalUnmeteredBytes`) |
 | Tag-write prefs | `data/preferences/LibraryTagWritePreferencesRepository.kt` (`LibraryTagWriteSettings.autoWriteTagsEnabled` default false) |
 | ListenBrainz API | `data/network/ListenBrainzClient.kt` (`submitListens`, createdfor, playlist, `lookupRecordingMetadata`, `fetchLbRadioArtist`, `fetchRecordingMetadata`, `fetchCfRecordingRecommendations`, `parseCfRecommendations`) |
-| LB models + sync | `data/listenbrainz/LbPlaylistModels.kt` (`LbPlaylistTrack(identity, mbid)` + invoke plano, `MatchedLbPlaylist.toPlayableItems`, `streamCount`), `data/listenbrainz/MatchedRemoteTrack.kt` (mappers/match/rematch), `data/listenbrainz/LbRadioModels.kt`, `data/listenbrainz/CfRecommendationModels.kt`, `data/listenbrainz/ListenTracker.kt` (`onTrackChanged`), `data/listenbrainz/ListenSyncCoordinator.kt` |
+| LB models + sync | `data/listenbrainz/LbPlaylistModels.kt` (`LbPlaylistTrack(identity, mbid)` + invoke plano, `MatchedLbPlaylist.toPlayableItems`, `streamCount`), `data/listenbrainz/MatchedRemoteTrack.kt` (mappers/match/rematch), `data/listenbrainz/LbRadioModels.kt`, `data/listenbrainz/CfRecommendationModels.kt`, `data/listenbrainz/ListenTracker.kt` (`onTrackChanged`), `data/listenbrainz/ListenSyncCoordinator.kt` (`requestSync`) |
 | Guardar al escuchar policy | `data/listenbrainz/SaveWhileListeningPolicy.kt` (`SaveWhileListeningEvent`; `SaveWhileListeningPolicy.shouldSave`) |
 | Connectivity | `data/network/ConnectivityObserver.kt` (`isCurrentlyOnline`, `isMetered`, `networkTypeLabel`) |
 | GitHub Releases update | `data/update/GitHubReleaseParser.kt` (`parseReleases` / `parseRelease` / `parseVersionCode` / `stripVersionCodeLine`); `GitHubUpdateClient.fetchReleases`; `data/update/AppReleaseSelection.kt` (`from`, `updateTarget`); `ApkUpdateInstaller` (download + FileProvider → instalador del sistema); `AppUpdateCheckStore` (`lastCheckAtMs`, `cachedNotes` / `setCachedNotes`); `data/update/AppRelease.kt` (`AppRelease`, `GitHubReleaseUrls.repoUrl` / `latestPageUrl` / `apiReleasesUrl`) |
 | Pending listens Room | `data/db/PendingListenEntity.kt`, `PendingListenDao.kt` |
-| Storage helpers | `data/util/MusicFileStore.kt` (`canonicalize`, `playableUri`, `openRead`, `applyDataSource`, `prepareWrite`, `delete`, `listManaged`, `writableFile`), `data/util/AudioPersistRef.kt` (`canonicalize`), `data/util/StorageUtils.kt` (`RELATIVE_MUSIC_DIR`, `userVisibleMusicDirLabel`, `formatByteCount`, `publicBestiaPopDir`, `prepareWrite`, `listAudioFileNames`, `listManagedAudioFiles`, `deleteManagedAudio`), `data/util/SongPathNormalizer.kt` (`toAbsolutePath`, `safTreeDocumentToAbsolutePath`, `fileName`, `hasUsableArtwork`, path normalize / app-owned checks), `data/util/JsonExt.kt` (`optNullableString`), `data/util/AudioFileMetadata.kt` (`identity` + genre, `fromPath` / `applyFilenameHints` / `toSong` / `withIdentity`, `looksLikeStoragePath`), `data/util/AudioTagWriter.kt` (`write` / `TagWriteResult` / `TagSyncSummary`) |
+| Storage helpers | `data/util/MusicFileStore.kt` (`canonicalize`, `playableUri`, `openRead`, `applyDataSource`, `prepareWrite`, `delete`, `listManaged`, `writableFile`), `data/util/AudioPersistRef.kt` (`canonicalize`), `data/util/StorageUtils.kt` (`RELATIVE_MUSIC_DIR`, `userVisibleMusicDirLabel`, `formatByteCount`, `publicBestiaPopDir`, `prepareWrite`, `listAudioFileNames`, `listManagedAudioFiles`, `deleteManagedAudio`), `data/util/SongPathNormalizer.kt` (`toAbsolutePath`, `safTreeDocumentToAbsolutePath`, `fileName`, `hasUsableArtwork`, path normalize / app-owned checks), `data/util/UploadNameSanitizer.kt` (`sanitize` — WiFi upload /existing-files), `data/util/JsonExt.kt` (`optNullableString`), `data/util/AudioFileMetadata.kt` (`identity` + genre, `fromPath` / `applyFilenameHints` / `toSong` / `withIdentity`, `looksLikeStoragePath`), `data/util/AudioTagWriter.kt` (`write` / `TagWriteResult` / `TagSyncSummary`) |
 | Download conflict models | `data/model/Models.kt` (`DownloadConflictPolicy`, `DuplicateSongException`, `DownloadConflict`) |
 | One-shot dedup archive | branch `archive/library-dedup-v1-migrator` (`LibraryDedupMigrator` / `LibraryDedupLogic` / prefs; not on LB) |
 
@@ -166,9 +166,9 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 | Playback Media3 + notif/lifecycle FGS | `service/MusicService.kt` (`onUpdateNotification` dueño único, `promotePlaybackForeground`, `onTaskRemoved`, `maybeRepromotePlaybackForeground`, `setWakeMode(NETWORK)`, `applyShuffleOrder` legacy, `setSessionActivity`); `service/PlaybackNotificationFactory.kt` (Previous/Play-Pause/Next, compact 0/1/2, `ACTION_MEDIA_BUTTON` → service); `service/PlaybackServiceLifetimePolicy.kt` conserva `playWhenReady`+cola durante `STATE_IDLE` de placeholder |
 | Registry de descargas process-scoped | `service/ProcessDownloadCoordinator.kt` (`ProcessDownloadCoordinator.create`; `execute`, `isRunning` / `findByTrack`, `upsert` / `update`, `attachTargetPlaylist`, `dismiss` / `dismissAll` / `cancelAndJoin`, `recordCompletedDownload`; claims de variantes + `Set<DownloadPlaylistTarget>(playlistId, identity)` drenado exactamente una vez al éxito + límite 3 + cola/persistencia única + métricas bytes). `BestiaPopApplication` instala el callback add-song/remove-pending |
 | Guardar al escuchar process-scoped | `service/ProcessSaveWhileListeningCoordinator.kt` (`save` / `dismiss`; usa el registry compartido, éxito inmediato si ya existe, `SaveWhileListeningDownloadResult.InFlight` neutral si el claim pertenece a otro owner) |
-| Stereo balance (PCM) | `service/StereoBalanceAudioProcessor.kt` + `MusicService.applyStereoBalance` |
+| Stereo balance (PCM) | `service/StereoBalanceAudioProcessor.kt` (`queueInput`) + `MusicService.applyStereoBalance` |
 | Volume boost (LoudnessEnhancer) | `MusicService.applyBoost` + `PlaybackPreferencesRepository` |
-| Ktor WiFi server | `service/WebServerService.kt` (`serverState`, `transfers`, `dismissTransfer`, `/existing-files` Room+BestiaPop); identify post-upload en VM vía `transfers` |
+| Ktor WiFi server | `service/WebServerService.kt` (`WifiSyncHttpBoundary.install` / `isAllowedHost`, `WIFI_SYNC_MAX_UPLOAD_BYTES`; `WebServerService.serverState` / `transfers` / `dismissTransfer`; `/existing-files` Room+BestiaPop); identify post-upload en VM vía `transfers` |
 | Download progress notif | `service/DownloadNotificationHelper.kt` (`EXTRA_OPEN_TAB` / `TAB_DOWNLOADS`) |
 
 ## Tests de referencia
@@ -212,7 +212,14 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 | TrackIdentity JSON | `app/src/test/.../TrackIdentityJsonTest.kt` |
 | TrackIdentity merge / toIdentity / youtubeSearchQuery / preferMetaFrom | `app/src/test/.../TrackIdentityTest.kt` |
 | Pending mapper album↔releaseName | `app/src/test/.../PlaylistPendingTrackMapperTest.kt` |
-| UI functional library | `app/src/androidTest/.../LibraryScreenFunctionalTest.kt` |
+| Match LB tracks / similar preview / download use case | `MatchListenBrainzTracksUseCaseTest.kt`, `BuildSimilarPlaylistPreviewUseCaseTest.kt`, `DownloadAudioTrackUseCaseTest.kt` |
+| Listen sync queue | `ListenSyncCoordinatorTest.kt` |
+| WiFi upload name sanitize | `UploadNameSanitizerTest.kt` |
+| Stereo PCM pipeline | `StereoBalanceAudioProcessorTest.kt` |
+| Library execute filter/sort / album override projection | `GetLibrarySongsUseCaseExecuteTest.kt`, `AlbumCoverVsPlaylistCoverTest.kt` |
+| UI functional library | `app/src/androidTest/.../LibraryScreenFunctionalTest.kt`, `LibraryBrowseFunctionalTest.kt` |
+| UI functional downloads / remote row / cola duplicada | `DownloadsUiFunctionalTest.kt`, `PlaylistRemoteRowFunctionalTest.kt`, `QueueIdentityFunctionalTest.kt` |
+| Continuidad instrumentada | `PlaybackContinuityFunctionalTest.kt` (pause durante resolve) |
 
 ## Símbolos ViewModel frecuentes
 

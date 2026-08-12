@@ -38,10 +38,12 @@ import com.bestiapop.android.data.network.MetadataFetcher
 import com.bestiapop.android.data.preferences.LibraryTagWritePreferencesRepository
 import com.bestiapop.android.data.stream.StreamResolver
 import com.bestiapop.android.data.util.AudioFileMetadata
+import com.bestiapop.android.data.util.AudioPersistRef
 import com.bestiapop.android.data.util.AudioTagWriter
 import com.bestiapop.android.data.util.CrashReporter
 import com.bestiapop.android.data.util.MusicFileStore
 import com.bestiapop.android.data.util.SongPathNormalizer
+import com.bestiapop.android.data.util.StorageUtils
 import com.bestiapop.android.data.util.TagSyncSummary
 import com.bestiapop.android.data.util.TagWriteResult
 import com.bestiapop.android.data.util.looksLikeStoragePath
@@ -56,15 +58,19 @@ import com.bestiapop.android.domain.util.parseFilenameMetadataHints
 import com.bestiapop.android.domain.util.resolveWeakIdentityHints
 import com.bestiapop.android.domain.util.isTrackNumberLabel
 import com.bestiapop.android.domain.util.stripLeadingTitleJunk
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.concurrent.atomic.AtomicInteger
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
 private class ScanProgressTicker(
     private val total: Int,
@@ -73,6 +79,99 @@ private class ScanProgressTicker(
     private val done = AtomicInteger(0)
     fun tick(fileName: String) {
         onProgress?.invoke(done.incrementAndGet(), total, fileName)
+    }
+}
+
+/**
+ * Internal I/O seam used by repository integration tests. Production still delegates every
+ * operation to the single [MusicFileStore] implementation.
+ */
+internal interface RepositoryFileStore {
+    fun canonicalize(uriString: String, folderPath: String = ""): AudioPersistRef
+    fun applyDataSource(retriever: MediaMetadataRetriever, ref: AudioPersistRef)
+    fun applyDataSource(extractor: android.media.MediaExtractor, ref: AudioPersistRef)
+    fun applyDataSource(player: android.media.MediaPlayer, ref: AudioPersistRef)
+    fun prepareWrite(displayName: String): StorageUtils.PendingWrite
+    fun delete(ref: AudioPersistRef)
+    fun listManaged(): List<File>
+    fun writableFile(uriString: String, folderPath: String = ""): File?
+}
+
+private class AndroidRepositoryFileStore(
+    private val delegate: MusicFileStore
+) : RepositoryFileStore {
+    override fun canonicalize(uriString: String, folderPath: String): AudioPersistRef =
+        delegate.canonicalize(uriString, folderPath)
+
+    override fun applyDataSource(retriever: MediaMetadataRetriever, ref: AudioPersistRef) =
+        delegate.applyDataSource(retriever, ref)
+
+    override fun applyDataSource(
+        extractor: android.media.MediaExtractor,
+        ref: AudioPersistRef
+    ) = delegate.applyDataSource(extractor, ref)
+
+    override fun applyDataSource(player: android.media.MediaPlayer, ref: AudioPersistRef) =
+        delegate.applyDataSource(player, ref)
+
+    override fun prepareWrite(displayName: String): StorageUtils.PendingWrite =
+        delegate.prepareWrite(displayName)
+
+    override fun delete(ref: AudioPersistRef) = delegate.delete(ref)
+
+    override fun listManaged(): List<File> = delegate.listManaged()
+
+    override fun writableFile(uriString: String, folderPath: String): File? =
+        delegate.writableFile(uriString, folderPath)
+}
+
+/** Network metadata seam; keeps repository tests hermetic without changing production behavior. */
+internal interface RepositoryMetadataSource {
+    suspend fun fetchAlbumArtUrl(artist: String, titleOrAlbum: String): String?
+    suspend fun fetchLyrics(artist: String, title: String): String?
+    suspend fun fetchTrackDurationMs(artist: String, title: String): Long
+    suspend fun fetchFullTrackMetadata(artist: String, title: String): TrackIdentity?
+    suspend fun searchOnlineCatalog(
+        query: String,
+        limit: Int = 25,
+        index: Int = 0
+    ): List<OnlineCatalogTrack>
+}
+
+private object ProductionRepositoryMetadataSource : RepositoryMetadataSource {
+    override suspend fun fetchAlbumArtUrl(artist: String, titleOrAlbum: String): String? =
+        MetadataFetcher.fetchAlbumArtUrl(artist, titleOrAlbum)
+
+    override suspend fun fetchLyrics(artist: String, title: String): String? =
+        MetadataFetcher.fetchLyrics(artist, title)
+
+    override suspend fun fetchTrackDurationMs(artist: String, title: String): Long =
+        MetadataFetcher.fetchTrackDurationMs(artist, title)
+
+    override suspend fun fetchFullTrackMetadata(artist: String, title: String): TrackIdentity? =
+        MetadataFetcher.fetchFullTrackMetadata(artist, title)
+
+    override suspend fun searchOnlineCatalog(
+        query: String,
+        limit: Int,
+        index: Int
+    ): List<OnlineCatalogTrack> = MetadataFetcher.searchOnlineCatalog(query, limit, index)
+}
+
+/**
+ * OkHttp's blocking execute is not coroutine-aware. Keep cancellation wired to [okhttp3.Call.cancel]
+ * for the entire response-body copy so cancelling a download closes the socket and releases the
+ * partial file cleanup path immediately.
+ */
+private suspend fun <T> okhttp3.Call.useCancellable(
+    block: (okhttp3.Response) -> T
+): T = suspendCancellableCoroutine { continuation ->
+    continuation.invokeOnCancellation { cancel() }
+    try {
+        val value = execute().use(block)
+        continuation.resume(value)
+    } catch (error: Throwable) {
+        continuation.resumeWithException(error)
     }
 }
 
@@ -98,15 +197,65 @@ internal fun PlaylistPendingTrack.toEntity() = PlaylistPendingTrackEntity(
     position = position
 )
 
-class MusicRepository(private val context: Context) : IMusicRepository {
+private data class MusicRepositoryDependencies(
+    val db: AppDatabase,
+    val streamResolver: StreamResolver,
+    val audioStore: RepositoryFileStore,
+    val downloadCallFactory: okhttp3.Call.Factory,
+    val metadataSource: RepositoryMetadataSource,
+    val downloadRetryDelay: suspend (Long) -> Unit
+)
 
-    private val db = AppDatabase.getDatabase(context)
+private fun productionDependencies(context: Context) = MusicRepositoryDependencies(
+    db = AppDatabase.getDatabase(context),
+    streamResolver = StreamResolver(),
+    audioStore = AndroidRepositoryFileStore(MusicFileStore(context)),
+    downloadCallFactory = com.bestiapop.android.data.network.HttpClients.transfer,
+    metadataSource = ProductionRepositoryMetadataSource,
+    downloadRetryDelay = { millis -> delay(millis) }
+)
+
+class MusicRepository private constructor(
+    private val context: Context,
+    dependencies: MusicRepositoryDependencies
+) : IMusicRepository {
+
+    constructor(context: Context) : this(
+        context = context.applicationContext,
+        dependencies = productionDependencies(context.applicationContext)
+    )
+
+    internal constructor(
+        context: Context,
+        database: AppDatabase,
+        streamResolver: StreamResolver = StreamResolver(),
+        audioStore: RepositoryFileStore = AndroidRepositoryFileStore(
+            MusicFileStore(context.applicationContext)
+        ),
+        downloadCallFactory: okhttp3.Call.Factory =
+            com.bestiapop.android.data.network.HttpClients.transfer,
+        metadataSource: RepositoryMetadataSource = ProductionRepositoryMetadataSource,
+        downloadRetryDelay: suspend (Long) -> Unit = { millis -> delay(millis) }
+    ) : this(
+        context = context.applicationContext,
+        dependencies = MusicRepositoryDependencies(
+            db = database,
+            streamResolver = streamResolver,
+            audioStore = audioStore,
+            downloadCallFactory = downloadCallFactory,
+            metadataSource = metadataSource,
+            downloadRetryDelay = downloadRetryDelay
+        )
+    )
+
+    private val db = dependencies.db
+    val streamResolver = dependencies.streamResolver
+    private val audioStore = dependencies.audioStore
+    private val downloadCallFactory = dependencies.downloadCallFactory
+    private val metadataSource = dependencies.metadataSource
+    private val downloadRetryDelay = dependencies.downloadRetryDelay
     private val musicDao = db.musicDao()
-    val streamResolver = StreamResolver()
-    private val audioStore = MusicFileStore(context)
     private val tagWritePreferences = LibraryTagWritePreferencesRepository(context)
-
-    private val sharedDownloadClient = com.bestiapop.android.data.network.HttpClients.transfer
 
     override val allSongsFlow: Flow<List<Song>> = musicDao.getAllSongsFlow()
 
@@ -564,13 +713,13 @@ class MusicRepository(private val context: Context) : IMusicRepository {
                 artUrl = embedded
             } else {
                 val queryTerm = if (albumName != "Unknown Album") albumName else song.title
-                artUrl = MetadataFetcher.fetchAlbumArtUrl(song.artist, queryTerm)
+                artUrl = metadataSource.fetchAlbumArtUrl(song.artist, queryTerm)
             }
         }
 
         var lyricsStr = song.lyrics
         if (lyricsStr.isNullOrEmpty()) {
-            lyricsStr = MetadataFetcher.fetchLyrics(song.artist, song.title)
+            lyricsStr = metadataSource.fetchLyrics(song.artist, song.title)
         }
 
         if (artUrl != song.artworkUri || lyricsStr != song.lyrics) {
@@ -593,7 +742,7 @@ class MusicRepository(private val context: Context) : IMusicRepository {
             val ref = audioStore.canonicalize(song.uriString, song.folderPath)
             var calculatedDur = calculateAudioDurationMs(ref.uriString)
             if (calculatedDur <= 0) {
-                calculatedDur = MetadataFetcher.fetchTrackDurationMs(song.artist, song.title)
+                calculatedDur = metadataSource.fetchTrackDurationMs(song.artist, song.title)
             }
             if (calculatedDur > 0) {
                 musicDao.updateSongDuration(song.id, calculatedDur)
@@ -698,7 +847,7 @@ class MusicRepository(private val context: Context) : IMusicRepository {
         val pageIndex = catalogIndex.coerceAtLeast(0)
         var fetchedCount = 0
         var tracks = if (refineSearch) {
-            val page = MetadataFetcher.searchOnlineCatalog(
+            val page = metadataSource.searchOnlineCatalog(
                 query = catalogQuery,
                 limit = IdentifyRanking.CATALOG_PAGE,
                 index = pageIndex
@@ -826,15 +975,15 @@ class MusicRepository(private val context: Context) : IMusicRepository {
         artistPlaceholder: Boolean
     ): List<OnlineCatalogTrack> {
         val tracks = ArrayList<OnlineCatalogTrack>()
-        MetadataFetcher.fetchFullTrackMetadata(artist, title)?.let { meta ->
+        metadataSource.fetchFullTrackMetadata(artist, title)?.let { meta ->
             tracks.add(meta.toIdentifyCatalogTrack())
         }
         val primaryQuery = if (artistPlaceholder) title else youtubeSearchQuery(artist, title)
-        tracks.addAll(MetadataFetcher.searchOnlineCatalog(primaryQuery.trim()))
+        tracks.addAll(metadataSource.searchOnlineCatalog(primaryQuery.trim()))
         if (!artistPlaceholder) {
             val titleOnly = title.trim()
             if (titleOnly.isNotEmpty() && !titleOnly.equals(primaryQuery.trim(), ignoreCase = true)) {
-                tracks.addAll(MetadataFetcher.searchOnlineCatalog(titleOnly))
+                tracks.addAll(metadataSource.searchOnlineCatalog(titleOnly))
             }
         }
         return mergeIdentifyCatalogTracks(emptyList(), tracks)
@@ -1373,16 +1522,16 @@ class MusicRepository(private val context: Context) : IMusicRepository {
                     reqBuilder.header("Range", "bytes=$downloadedBytes-")
                 }
 
-                sharedDownloadClient.newCall(reqBuilder.build()).execute().use { response ->
+                downloadCallFactory.newCall(reqBuilder.build()).useCancellable { response ->
                     lastResponseCode = response.code
                     if (!response.isSuccessful) {
                         lastHttpError = "HTTP ${response.code} (${response.message.ifBlank { "Error de servidor" }})"
-                        return@use
+                        return@useCancellable
                     }
                     val body = response.body
                     if (body == null) {
                         lastHttpError = "Respuesta sin cuerpo"
-                        return@use
+                        return@useCancellable
                     }
                     // 200 to a ranged request = the server ignored Range and is resending the whole
                     // body; appending it after the partial bytes would corrupt the file.
@@ -1409,6 +1558,9 @@ class MusicRepository(private val context: Context) : IMusicRepository {
                         lastHttpError = "Descarga incompleta ($downloadedBytes/$expectedTotalBytes bytes)"
                     }
                 }
+            } catch (e: CancellationException) {
+                file.delete()
+                throw e
             } catch (e: Exception) {
                 e.printStackTrace()
                 lastHttpError = e.localizedMessage ?: "Error de red"
@@ -1427,7 +1579,12 @@ class MusicRepository(private val context: Context) : IMusicRepository {
                             expectedTotalBytes = -1L
                         }
                 }
-                delay(DOWNLOAD_RETRY_BACKOFF_MS * attempts)
+                try {
+                    downloadRetryDelay(DOWNLOAD_RETRY_BACKOFF_MS * attempts)
+                } catch (e: CancellationException) {
+                    file.delete()
+                    throw e
+                }
             }
         }
 
@@ -1448,7 +1605,7 @@ class MusicRepository(private val context: Context) : IMusicRepository {
         val hasArtwork = !finalArtwork.isNullOrEmpty()
 
         if (!hasUsefulAlbum || !hasArtwork) {
-            val fullMeta = MetadataFetcher.fetchFullTrackMetadata(finalArtist, finalTitle)
+            val fullMeta = metadataSource.fetchFullTrackMetadata(finalArtist, finalTitle)
             if (fullMeta != null) {
                 val lookedUpAlbum = fullMeta.album
                 if (lookedUpAlbum.isNotBlank() && !IdentifyRanking.isGenericAlbum(lookedUpAlbum)) {
@@ -1476,7 +1633,7 @@ class MusicRepository(private val context: Context) : IMusicRepository {
             )
         }
 
-        val lyrics = MetadataFetcher.fetchLyrics(finalArtist, finalTitle)
+        val lyrics = metadataSource.fetchLyrics(finalArtist, finalTitle)
 
         onProgress?.invoke(DownloadPhase.Saving)
 

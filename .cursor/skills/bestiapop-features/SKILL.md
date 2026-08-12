@@ -208,8 +208,8 @@ State: `currentThemeState`.
 | Capacidad | Entry point |
 |-----------|-------------|
 | Servidor local | `WebServerService` + toggle en `WebServerScreen` |
-| Omitir existentes | `GET /existing-files` = Room basename ∪ `MusicFileStore.listManagedNames`, **saneados con `sanitizeUploadName`** igual que el dashboard y que el nombre con el que se guarda (si no, acentos y espacios nunca matcheaban y el archivo se volvía a subir) |
-| Guard de subida | `isLocalRequest` (Host) + `MAX_UPLOAD_BYTES`; al fallar el guardado responde 500 y borra el parcial, en vez de decirle «ok» al navegador |
+| Omitir existentes | `GET /existing-files` = Room basename ∪ `MusicFileStore.listManagedNames`, **saneados con `UploadNameSanitizer.sanitize`** (`data/util/UploadNameSanitizer.kt`) igual que el dashboard y que el nombre con el que se guarda (si no, acentos y espacios nunca matcheaban y el archivo se volvía a subir) |
+| Guard de subida | `WifiSyncHttpBoundary.isAllowedHost` (Host+puerto) + `WIFI_SYNC_MAX_UPLOAD_BYTES` (Content-Length y stream); al fallar persistencia responde 500 y borra el parcial/publicado, pero una desconexión posterior al commit no borra archivo ni fila Room |
 | Transferencias en app | `WebServerService.transfers` (`WifiTransferItem` / `WifiTransferState`); lista en `WebServerScreen` (progreso + `SongListItem` al completar) |
 | Identify al importar | Tags embebidos (ID3) → Room → mismo `identifySongs(force=true, showReview=false)`; conflictos en cola persistida compartida (omite ya pending) |
 | Revisar conflictos | Botón `Revisar conflictos de información (N)` → `showIdentifyReview()`; N = `identifyReview.pendingCount` (sobrevive process death) |

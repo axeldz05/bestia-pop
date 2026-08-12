@@ -5,8 +5,11 @@ import com.bestiapop.android.data.model.ActiveDownload
 import com.bestiapop.android.data.model.ActiveDownloadSource
 import com.bestiapop.android.data.model.CandidateDownloadState
 import com.bestiapop.android.data.model.DownloadMessages
+import com.bestiapop.android.data.model.DownloadPhase
 import com.bestiapop.android.data.model.DuplicateSongException
+import com.bestiapop.android.data.model.OnlineCatalogTrack
 import com.bestiapop.android.data.model.PlayableItem
+import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.data.network.ConnectivityObserver
 import com.bestiapop.android.data.preferences.DownloadPreferencesRepository
 import com.bestiapop.android.data.repository.MusicRepository
@@ -27,14 +30,32 @@ import kotlinx.coroutines.flow.stateIn
  * cancellation with manual/catalog downloads through [ProcessDownloadCoordinator].
  */
 internal class ProcessSaveWhileListeningCoordinator(
-    context: Context,
     private val scope: CoroutineScope,
-    private val repository: MusicRepository,
-    private val connectivity: ConnectivityObserver,
-    private val processDownloads: ProcessDownloadCoordinator
+    private val processDownloads: ProcessDownloadCoordinator,
+    private val dependencies: Dependencies
 ) : PlaybackRuntimeSaveDownloads {
-    private val useCase = DownloadAudioTrackUseCase(repository)
-    private val preferences = DownloadPreferencesRepository(context)
+    internal data class Dependencies(
+        val findSong: suspend (artist: String, title: String) -> Song?,
+        val download: suspend (
+            track: OnlineCatalogTrack,
+            onProgress: (DownloadPhase) -> Unit
+        ) -> Result<Song>,
+        val isMetered: () -> Boolean,
+        val downloadOnMeteredNetwork: suspend () -> Boolean
+    )
+
+    constructor(
+        context: Context,
+        scope: CoroutineScope,
+        repository: MusicRepository,
+        connectivity: ConnectivityObserver,
+        processDownloads: ProcessDownloadCoordinator
+    ) : this(
+        scope = scope,
+        processDownloads = processDownloads,
+        dependencies = productionDependencies(context, repository, connectivity)
+    )
+
     override val downloads: StateFlow<List<ActiveDownload>> = processDownloads.downloads
         .map { rows -> rows.filter { it.source == ActiveDownloadSource.SAVE_WHILE_LISTENING } }
         .stateIn(scope, SharingStarted.Eagerly, emptyList())
@@ -46,7 +67,7 @@ internal class ProcessSaveWhileListeningCoordinator(
                 IllegalArgumentException("Identidad de canción incompleta")
             )
         }
-        repository.findSongByArtistTitle(remote.artist, remote.title)?.let {
+        dependencies.findSong(remote.artist, remote.title)?.let {
             return SaveWhileListeningDownloadResult.Saved(it)
         }
 
@@ -68,12 +89,12 @@ internal class ProcessSaveWhileListeningCoordinator(
                     }
                 ) {
                     // A track may enter the library while this autosave waits for the global permit.
-                    repository.findSongByArtistTitle(remote.artist, remote.title)?.let { existing ->
+                    dependencies.findSong(remote.artist, remote.title)?.let { existing ->
                         processDownloads.remove(id)
                         return@execute Result.success(existing)
                     }
-                    if (connectivity.isMetered() &&
-                        !preferences.settingsFlow.first().downloadOnMeteredNetwork
+                    if (dependencies.isMetered() &&
+                        !dependencies.downloadOnMeteredNetwork()
                     ) {
                         val message = DownloadMessages.blockedOnMetered
                         processDownloads.update(id) {
@@ -95,18 +116,15 @@ internal class ProcessSaveWhileListeningCoordinator(
                             targetPlaylistId = it.targetPlaylistId
                         )
                     }
-                    val result = useCase.execute(
-                        track = track,
-                        onProgress = { phase ->
-                            processDownloads.update(id) {
-                                it.copy(
-                                    state = CandidateDownloadState.DOWNLOADING,
-                                    progressMessage = phase.userMessage,
-                                    progressPercent = phase.percent
-                                )
-                            }
+                    val result = dependencies.download(track) { phase ->
+                        processDownloads.update(id) {
+                            it.copy(
+                                state = CandidateDownloadState.DOWNLOADING,
+                                progressMessage = phase.userMessage,
+                                progressPercent = phase.percent
+                            )
                         }
-                    )
+                    }
                     result.fold(
                         onSuccess = { song ->
                             val targetPlaylistId = processDownloads.downloads.value
@@ -166,5 +184,24 @@ internal class ProcessSaveWhileListeningCoordinator(
         is DuplicateSongException ->
             "Ya existe en la biblioteca: ${error.existing.artist} — ${error.existing.title}"
         else -> DownloadMessages.downloadFailed(error.localizedMessage ?: "Error de red.")
+    }
+
+    companion object {
+        private fun productionDependencies(
+            context: Context,
+            repository: MusicRepository,
+            connectivity: ConnectivityObserver
+        ): Dependencies {
+            val useCase = DownloadAudioTrackUseCase(repository)
+            val preferences = DownloadPreferencesRepository(context)
+            return Dependencies(
+                findSong = repository::findSongByArtistTitle,
+                download = { track, onProgress -> useCase.execute(track, onProgress) },
+                isMetered = connectivity::isMetered,
+                downloadOnMeteredNetwork = {
+                    preferences.settingsFlow.first().downloadOnMeteredNetwork
+                }
+            )
+        }
     }
 }

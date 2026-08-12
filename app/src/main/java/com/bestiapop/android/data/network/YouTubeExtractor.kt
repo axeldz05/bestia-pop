@@ -3,6 +3,7 @@ package com.bestiapop.android.data.network
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
@@ -51,11 +52,38 @@ sealed class YouTubeExtractResult {
     data class Error(val message: String) : YouTubeExtractResult()
 }
 
+internal data class YouTubeEndpoints(
+    val webBaseUrl: String = "https://www.youtube.com",
+    val googleApiBaseUrl: String = "https://youtubei.googleapis.com"
+)
+
 object YouTubeExtractor {
 
-    private val client = HttpClients.api.newBuilder()
+    private val defaultClient = HttpClients.api.newBuilder()
         .readTimeout(10, TimeUnit.SECONDS)
         .build()
+    @Volatile
+    private var client: OkHttpClient = defaultClient
+    @Volatile
+    private var endpoints = YouTubeEndpoints()
+
+    internal fun configureForTest(
+        http: OkHttpClient,
+        endpoints: YouTubeEndpoints
+    ) {
+        client = http
+        this.endpoints = endpoints
+        cachedVisitorData = null
+    }
+
+    internal fun resetTestOverrides() {
+        client = defaultClient
+        endpoints = YouTubeEndpoints()
+        cachedVisitorData = null
+    }
+
+    private fun endpoint(baseUrl: String, pathAndQuery: String): String =
+        "${baseUrl.trimEnd('/')}/${pathAndQuery.trimStart('/')}"
 
     data class ClientProfile(
         val name: String,
@@ -314,7 +342,7 @@ object YouTubeExtractor {
             }
 
             val request = Request.Builder()
-                .url("https://www.youtube.com/youtubei/v1/search")
+                .url(endpoint(endpoints.webBaseUrl, "youtubei/v1/search"))
                 .header("X-YouTube-Client-Name", ANDROID_VR.clientId)
                 .header("X-YouTube-Client-Version", ANDROID_VR.version)
                 .header("User-Agent", ANDROID_VR.userAgent)
@@ -347,7 +375,7 @@ object YouTubeExtractor {
         if (results.isEmpty()) {
             try {
                 val encodedQ = java.net.URLEncoder.encode(trimmed, "UTF-8")
-                val url = "https://www.youtube.com/results?search_query=$encodedQ"
+                val url = endpoint(endpoints.webBaseUrl, "results?search_query=$encodedQ")
                 val request = Request.Builder()
                     .url(url)
                     .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36")
@@ -485,7 +513,7 @@ object YouTubeExtractor {
     private fun fetchVisitorData(videoId: String): String? {
         cachedVisitorData?.let { return it }
         return try {
-            val url = "https://www.youtube.com/watch?v=$videoId"
+            val url = endpoint(endpoints.webBaseUrl, "watch?v=$videoId")
             val req = Request.Builder()
                 .url(url)
                 .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36")
@@ -512,10 +540,13 @@ object YouTubeExtractor {
 
 
     private fun callPlayerApi(clientProfile: ClientProfile, videoId: String): Pair<YouTubeStreamResult?, String?> {
-        val endpoint = if (clientProfile.apiKey.isEmpty()) {
-            "https://www.youtube.com/youtubei/v1/player"
+        val playerEndpoint = if (clientProfile.apiKey.isEmpty()) {
+            endpoint(endpoints.webBaseUrl, "youtubei/v1/player")
         } else {
-            "https://youtubei.googleapis.com/youtubei/v1/player?key=${clientProfile.apiKey}"
+            endpoint(
+                endpoints.googleApiBaseUrl,
+                "youtubei/v1/player?key=${clientProfile.apiKey}"
+            )
         }
 
         val visitorData = fetchVisitorData(videoId)
@@ -551,7 +582,7 @@ object YouTubeExtractor {
         }
 
         val request = Request.Builder()
-            .url(endpoint)
+            .url(playerEndpoint)
             .header("X-YouTube-Client-Name", clientProfile.clientId)
             .header("X-YouTube-Client-Version", clientProfile.version)
             .header("User-Agent", clientProfile.userAgent)

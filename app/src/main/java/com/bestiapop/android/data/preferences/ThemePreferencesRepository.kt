@@ -13,9 +13,14 @@ import com.bestiapop.android.ui.theme.ThemePresets
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
-private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "theme_settings")
+private val Context.themeDataStore: DataStore<Preferences> by preferencesDataStore(
+    name = "theme_settings"
+)
 
-class ThemePreferencesRepository(private val context: Context) {
+class ThemePreferencesRepository internal constructor(
+    private val dataStore: DataStore<Preferences>
+) {
+    constructor(context: Context) : this(context.themeDataStore)
 
     private object Keys {
         val SELECTED_THEME_ID = stringPreferencesKey("selected_theme_id")
@@ -28,7 +33,7 @@ class ThemePreferencesRepository(private val context: Context) {
         val CUSTOM_ACCENT = longPreferencesKey("custom_accent")
     }
 
-    val selectedThemeFlow: Flow<CustomTheme> = context.dataStore.data.map { prefs ->
+    val selectedThemeFlow: Flow<CustomTheme> = dataStore.data.map { prefs ->
         val themeId = prefs[Keys.SELECTED_THEME_ID] ?: ThemePresets.MidnightDark.id
 
         if (themeId == "custom") {
@@ -53,11 +58,11 @@ class ThemePreferencesRepository(private val context: Context) {
     }
 
     suspend fun selectPreset(themeId: String) {
-        context.dataStore.put(Keys.SELECTED_THEME_ID, themeId)
+        dataStore.put(Keys.SELECTED_THEME_ID, themeId)
     }
 
     suspend fun saveCustomColors(colors: ColorSchemeData) {
-        context.dataStore.edit { prefs ->
+        dataStore.edit { prefs ->
             prefs[Keys.SELECTED_THEME_ID] = "custom"
             prefs[Keys.CUSTOM_PRIMARY] = colors.primary
             prefs[Keys.CUSTOM_ON_PRIMARY] = colors.onPrimary

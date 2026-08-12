@@ -1,18 +1,13 @@
 package com.bestiapop.android.domain.usecase
 
-import android.net.Uri
 import com.bestiapop.android.data.listenbrainz.LbPlaylistDetail
 import com.bestiapop.android.data.listenbrainz.LbPlaylistSummary
 import com.bestiapop.android.data.listenbrainz.LbPlaylistTrack
 import com.bestiapop.android.data.listenbrainz.MatchedLbPlaylist
 import com.bestiapop.android.data.listenbrainz.toMatchedRemote
-import com.bestiapop.android.data.model.OnlineCatalogTrack
-import com.bestiapop.android.data.model.Playlist
 import com.bestiapop.android.data.model.PlaylistPendingTrack
 import com.bestiapop.android.data.model.Song
-import com.bestiapop.android.domain.repository.IMusicRepository
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.emptyFlow
+import com.bestiapop.android.testutil.FakeMusicRepository
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -120,69 +115,11 @@ class ImportListenBrainzPlaylistUseCaseTest {
         assertNull(useCase.createLocalFromMatched(matched, allowEmpty = false))
     }
 
-    private class FakeRepo : IMusicRepository {
+    private class FakeRepo : FakeMusicRepository() {
         var createdName: String? = null
         var createdDescription: String? = null
         val addedSongIds = mutableListOf<Long>()
         val pendingTracks = mutableListOf<PlaylistPendingTrack>()
-
-        override val allSongsFlow: Flow<List<Song>> = emptyFlow()
-        override val playlistsFlow: Flow<List<Playlist>> = emptyFlow()
-        override val albumOverridesFlow: Flow<List<com.bestiapop.android.data.model.AlbumOverride>> = emptyFlow()
-        override fun getPlaylistSongsFlow(playlistId: Long): Flow<List<Song>> = emptyFlow()
-        override fun getPlaylistDetailsFlow(playlistId: Long): Flow<Pair<Playlist, List<Song>>?> = emptyFlow()
-        override suspend fun scanMediaStore(onProgress: com.bestiapop.android.domain.repository.LibraryScanProgress?) = Unit
-        override suspend fun resyncAppManagedMusic(onProgress: com.bestiapop.android.domain.repository.LibraryScanProgress?): Int = 0
-        override suspend fun scanFolderUri(
-            treeUri: Uri,
-            onProgress: com.bestiapop.android.domain.repository.LibraryScanProgress?
-        ) = 0
-        override suspend fun getAllSongsSync(): List<Song> = emptyList()
-        override suspend fun findSongByArtistTitle(artist: String, title: String): Song? = null
-        override suspend fun saveUploadedSong(song: Song): Long = 0L
-        override suspend fun deleteSongsFromApp(songs: List<Song>) = Unit
-        override suspend fun deleteSongsFromDevice(songs: List<Song>) = Unit
-        override suspend fun enhanceSongMetadataAndLyrics(song: Song) = Unit
-        override suspend fun proposeSongIdentity(
-            song: Song,
-            customQuery: String?,
-            force: Boolean,
-            listenBrainzToken: String?,
-            filters: com.bestiapop.android.data.model.IdentifySearchFilters,
-            catalogIndex: Int,
-            existingCandidates: List<com.bestiapop.android.data.model.IdentifyCandidate>
-        ) =
-            com.bestiapop.android.data.model.IdentifyProposal(
-                songId = song.id,
-                queryArtist = song.artist,
-                queryTitle = song.title,
-                alreadyIdentified = true
-            )
-        override suspend fun applySongIdentity(
-            songId: Long,
-            candidate: com.bestiapop.android.data.model.IdentifyCandidate
-        ) = com.bestiapop.android.data.model.IdentifyResult.Skipped
-        override suspend fun identifySongMetadata(song: Song) =
-            com.bestiapop.android.data.model.IdentifyResult.Skipped
-        override suspend fun updateSongDuration(songId: Long, durationMs: Long) = Unit
-        override suspend fun touchSongLastPlayed(songId: Long, playedAt: Long) = Unit
-        override suspend fun updateSongMetadata(
-            songId: Long,
-            title: String,
-            artist: String,
-            album: String,
-            genre: String,
-            year: Int,
-            trackNumber: Int
-        ) = Unit
-        override suspend fun upsertAlbumOverride(override: com.bestiapop.android.data.model.AlbumOverride) = Unit
-        override suspend fun updateAlbumMetadataPropagateToSongs(override: com.bestiapop.android.data.model.AlbumOverride) = Unit
-        override suspend fun setAlbumArtwork(albumKey: String, artworkUri: String?) = Unit
-        override suspend fun mergeAlbumInto(sourceAlbumKey: String, targetAlbumKey: String) = Unit
-        override suspend fun getAlbumOverride(albumKey: String): com.bestiapop.android.data.model.AlbumOverride? = null
-        override fun extractAndSaveEmbeddedArtwork(audioPathOrUri: String, identifier: String): String? = null
-        override fun savePlaylistCoverImage(sourceUriStr: String?): String? = null
-        override fun saveAlbumCoverImage(sourceUriStr: String?): String? = null
 
         override suspend fun createPlaylist(
             name: String,
@@ -194,46 +131,12 @@ class ImportListenBrainzPlaylistUseCaseTest {
             return 10L
         }
 
-        override suspend fun updatePlaylist(
-            id: Long,
-            name: String,
-            description: String?,
-            coverUri: String?
-        ) = Unit
-
-        override suspend fun deletePlaylist(id: Long) = Unit
-
         override suspend fun addSongToPlaylist(playlistId: Long, songId: Long) {
             addedSongIds.add(songId)
         }
 
-        override suspend fun removeSongFromPlaylist(playlistId: Long, songId: Long) = Unit
-
-        override suspend fun getPlaylistIdsForSong(songId: Long): List<Long> = emptyList()
-
-        override suspend fun getCoPlaylistSongIds(songId: Long): Set<Long> = emptySet()
-
-        override fun getPlaylistPendingTracksFlow(playlistId: Long): Flow<List<PlaylistPendingTrack>> =
-            emptyFlow()
-
         override suspend fun addPlaylistPendingTracks(tracks: List<PlaylistPendingTrack>) {
             pendingTracks.addAll(tracks)
         }
-
-        override suspend fun removePlaylistPendingTrack(
-            playlistId: Long,
-            artist: String,
-            title: String
-        ) = Unit
-
-        override suspend fun downloadAndSaveOnlineTrack(
-            track: OnlineCatalogTrack,
-            onProgress: ((com.bestiapop.android.data.model.DownloadPhase) -> Unit)?,
-            conflictPolicy: com.bestiapop.android.data.model.DownloadConflictPolicy?
-        ): Song = error("not used")
-
-        override suspend fun syncTagsToFiles(
-            onProgress: com.bestiapop.android.domain.repository.LibraryScanProgress?
-        ) = com.bestiapop.android.data.util.TagSyncSummary()
     }
 }

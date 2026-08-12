@@ -31,6 +31,7 @@ class ProcessDownloadCoordinatorTest {
         val entered = CompletableDeferred<Unit>()
         val release = CompletableDeferred<Unit>()
         val executions = AtomicInteger(0)
+        val expectedSong = downloadedSong()
         try {
             fixture.coordinator.awaitHydrated()
             val manual = async(Dispatchers.Default) {
@@ -42,7 +43,7 @@ class ProcessDownloadCoordinatorTest {
                     executions.incrementAndGet()
                     entered.complete(Unit)
                     release.await()
-                    Result.success(downloadedSong())
+                    Result.success(expectedSong)
                 }
             }
             withTimeout(TEST_TIMEOUT_MS) { entered.await() }
@@ -69,7 +70,7 @@ class ProcessDownloadCoordinatorTest {
             release.complete(Unit)
             val completed = withTimeout(TEST_TIMEOUT_MS) { manual.await() }
             assertEquals(
-                downloadedSong(),
+                expectedSong,
                 (completed as CoordinatedDownloadResult.Completed).result.getOrThrow()
             )
         } finally {

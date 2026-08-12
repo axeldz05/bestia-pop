@@ -13,6 +13,7 @@ import com.bestiapop.android.data.model.TrackIdentity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
@@ -62,14 +63,37 @@ sealed class SubmitListensResult {
     ) : SubmitListensResult()
 }
 
+internal data class ListenBrainzEndpoints(
+    val apiBaseUrl: String = "https://api.listenbrainz.org/1"
+)
+
 object ListenBrainzClient {
 
-    private const val BASE_URL = "https://api.listenbrainz.org/1"
     private val JSON = "application/json; charset=utf-8".toMediaType()
 
-    private val client = HttpClients.api.newBuilder()
+    private val defaultClient = HttpClients.api.newBuilder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .build()
+    @Volatile
+    private var client: OkHttpClient = defaultClient
+    @Volatile
+    private var endpoints = ListenBrainzEndpoints()
+
+    internal fun configureForTest(
+        http: OkHttpClient,
+        endpoints: ListenBrainzEndpoints
+    ) {
+        client = http
+        this.endpoints = endpoints
+    }
+
+    internal fun resetTestOverrides() {
+        client = defaultClient
+        endpoints = ListenBrainzEndpoints()
+    }
+
+    private fun endpoint(pathAndQuery: String): String =
+        "${endpoints.apiBaseUrl.trimEnd('/')}/${pathAndQuery.trimStart('/')}"
 
     suspend fun validateToken(token: String): TokenValidationResult = withContext(Dispatchers.IO) {
         if (token.isBlank()) {
@@ -77,7 +101,7 @@ object ListenBrainzClient {
         }
         try {
             val request = Request.Builder()
-                .url("$BASE_URL/validate-token")
+                .url(endpoint("validate-token"))
                 .header("Authorization", "Token ${token.trim()}")
                 .get()
                 .build()
@@ -147,7 +171,7 @@ object ListenBrainzClient {
             }
 
             val request = Request.Builder()
-                .url("$BASE_URL/submit-listens")
+                .url(endpoint("submit-listens"))
                 .header("Authorization", "Token ${token.trim()}")
                 .post(payload.toString().toRequestBody(JSON))
                 .build()
@@ -197,7 +221,7 @@ object ListenBrainzClient {
             return@withContext LbApiResult.Failure("Usuario vacío")
         }
         val encodedUser = URLEncoder.encode(username.trim(), Charsets.UTF_8.name())
-        val url = "$BASE_URL/user/$encodedUser/playlists/createdfor?count=$count&offset=$offset"
+        val url = endpoint("user/$encodedUser/playlists/createdfor?count=$count&offset=$offset")
         lbGet(url, token) { body -> parsePlaylistSummaries(JSONObject(body)) }
     }
 
@@ -209,7 +233,7 @@ object ListenBrainzClient {
             return@withContext LbApiResult.Failure("Playlist inválida")
         }
         val encodedMbid = URLEncoder.encode(playlistMbid.trim(), Charsets.UTF_8.name())
-        val url = "$BASE_URL/playlist/$encodedMbid"
+        val url = endpoint("playlist/$encodedMbid")
         lbCall(buildGetRequest(url, token)) { code, body ->
             if (code !in 200..299) {
                 LbApiResult.Failure(message = errorMessageFromBody(body, code))
@@ -241,7 +265,7 @@ object ListenBrainzClient {
                 append("&release_name=").append(URLEncoder.encode(releaseName.trim(), utf8))
             }
         }
-        val url = "$BASE_URL/metadata/lookup/?$params"
+        val url = endpoint("metadata/lookup/?$params")
         lbGet(url, token) { body -> parseMetadataLookup(JSONObject(body)) }
     }
 
@@ -263,7 +287,7 @@ object ListenBrainzClient {
         val utf8 = Charsets.UTF_8.name()
         val encodedMbid = URLEncoder.encode(artistMbid.trim(), utf8)
         val encodedMode = URLEncoder.encode(mode.trim().ifBlank { "medium" }, utf8)
-        val url = "$BASE_URL/lb-radio/artist/$encodedMbid" +
+        val url = endpoint("lb-radio/artist/$encodedMbid") +
             "?mode=$encodedMode" +
             "&max_similar_artists=$maxSimilarArtists" +
             "&max_recordings_per_artist=$maxRecordingsPerArtist" +
@@ -285,7 +309,7 @@ object ListenBrainzClient {
         val utf8 = Charsets.UTF_8.name()
         val encodedUser = URLEncoder.encode(username.trim(), utf8)
         val encodedType = URLEncoder.encode(artistType.trim().ifBlank { "top" }, utf8)
-        val url = "$BASE_URL/cf/recommendation/user/$encodedUser/recording" +
+        val url = endpoint("cf/recommendation/user/$encodedUser/recording") +
             "?count=$count&offset=$offset&artist_type=$encodedType"
         val empty = CfRecommendationsPayload(userName = username.trim(), recordings = emptyList())
         lbCall(buildGetRequest(url, token)) { code, body ->
@@ -312,7 +336,7 @@ object ListenBrainzClient {
             put("inc", inc)
         }
         val builder = Request.Builder()
-            .url("$BASE_URL/metadata/recording/")
+            .url(endpoint("metadata/recording/"))
             .post(payload.toString().toRequestBody(JSON))
         if (!token.isNullOrBlank()) {
             builder.header("Authorization", "Token ${token.trim()}")

@@ -7,13 +7,11 @@ import android.app.NotificationManager
 import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.net.Uri
 import android.os.Build
+import android.os.ParcelFileDescriptor
 import android.os.SystemClock
 import androidx.core.app.NotificationCompat
 import androidx.lifecycle.Lifecycle
-import androidx.media3.common.MediaItem
-import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
@@ -21,10 +19,13 @@ import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.LargeTest
 import androidx.test.platform.app.InstrumentationRegistry
+import com.bestiapop.android.BestiaPopApplication
 import com.bestiapop.android.MainActivity
+import com.bestiapop.android.data.model.PlayableItem
+import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.testutil.DeviceAwakeRule
+import com.bestiapop.android.testutil.PcmWavFixture
 import java.io.File
-import java.io.FileOutputStream
 import java.util.concurrent.FutureTask
 import java.util.concurrent.TimeUnit
 import org.junit.Assert.assertEquals
@@ -77,7 +78,28 @@ class LocalPlaybackServiceFunctionalTest {
             } &&
                 context.getSystemService(NotificationManager::class.java).areNotificationsEnabled()
         }
+        configureSideloadBackgroundPolicy()
     }
+
+    private fun configureSideloadBackgroundPolicy() {
+        val packageName = context.packageName
+        executeShellCommand(
+            "cmd activity set-bg-restriction-level --user 0 $packageName adaptive_bucket"
+        )
+        executeShellCommand("cmd appops set $packageName RUN_ANY_IN_BACKGROUND allow")
+        executeShellCommand("cmd appops write-settings")
+        val appOp = executeShellCommand(
+            "cmd appops get $packageName RUN_ANY_IN_BACKGROUND"
+        )
+        check(appOp.contains("allow", ignoreCase = true)) {
+            "RUN_ANY_IN_BACKGROUND was not enabled for sideload playback: $appOp"
+        }
+    }
+
+    private fun executeShellCommand(command: String): String =
+        ParcelFileDescriptor.AutoCloseInputStream(
+            instrumentation.uiAutomation.executeShellCommand(command)
+        ).bufferedReader().use { it.readText() }
 
     @Test
     fun localWav_mediaControllerPlaysMediaKeysAndReconnects() {
@@ -88,8 +110,8 @@ class LocalPlaybackServiceFunctionalTest {
 
         try {
             assertTrue(fixtureDir.mkdirs())
-            writePcmWav(firstFile)
-            writePcmWav(secondFile)
+            PcmWavFixture.write(firstFile, durationMs = PLAYBACK_DURATION_MS)
+            PcmWavFixture.write(secondFile, durationMs = PLAYBACK_DURATION_MS)
 
             val launchedActivity = ActivityScenario.launch(MainActivity::class.java)
             activityScenario = launchedActivity
@@ -101,14 +123,14 @@ class LocalPlaybackServiceFunctionalTest {
             val firstController = connectController()
             controller = firstController
             val items = listOf(
-                mediaItem("local-first", "Instrumented first", firstFile),
-                mediaItem("local-second", "Instrumented second", secondFile)
+                localPlayable(1L, "Instrumented first", firstFile),
+                localPlayable(2L, "Instrumented second", secondFile)
             )
             onMain {
                 firstController.volume = 0f
-                firstController.setMediaItems(items)
-                firstController.prepare()
-                firstController.play()
+                (context.applicationContext as BestiaPopApplication)
+                    .playbackRuntime
+                    .playPlayableCollection(items, rotate = false)
             }
 
             await("local WAV reaches READY") {
@@ -135,9 +157,41 @@ class LocalPlaybackServiceFunctionalTest {
                 musicServiceInfo()?.foreground == true
             }
 
-            sendNotificationAction(playingNotification, PLAY_PAUSE_ACTION_INDEX)
+            val positionBeforeReconnect = onMain { firstController.currentPosition }
+            onMain { firstController.release() }
+            controller = null
+
+            launchedActivity.close()
+            await("MainActivity destroyed while playback continues") {
+                launchedActivity.state == Lifecycle.State.DESTROYED
+            }
+            val reconnectedController = connectController()
+            controller = reconnectedController
+            await("new controller receives the live session after UI destruction") {
+                onMain {
+                    reconnectedController.mediaItemCount == 2 &&
+                        reconnectedController.currentMediaItemIndex == 0 &&
+                        reconnectedController.playWhenReady &&
+                        reconnectedController.isPlaying &&
+                        reconnectedController.currentPosition >= positionBeforeReconnect
+                }
+            }
+            await("service remains foreground after UI destruction") {
+                musicServiceInfo()?.foreground == true
+            }
+            val notificationWithoutUi = awaitValue(
+                "playback notification remains after UI destruction"
+            ) {
+                playbackNotification()
+            }
+            assertTrue(
+                notificationWithoutUi.flags and Notification.FLAG_ONGOING_EVENT != 0
+            )
+            assertEquals(3, NotificationCompat.getActionCount(notificationWithoutUi))
+
+            sendNotificationAction(notificationWithoutUi, PLAY_PAUSE_ACTION_INDEX)
             await("notification pause reaches ExoPlayer") {
-                onMain { !firstController.playWhenReady && !firstController.isPlaying }
+                onMain { !reconnectedController.playWhenReady && !reconnectedController.isPlaying }
             }
             await("MusicService leaves foreground while paused") {
                 musicServiceInfo()?.foreground == false
@@ -150,7 +204,7 @@ class LocalPlaybackServiceFunctionalTest {
             }
             sendNotificationAction(pausedNotification, PLAY_PAUSE_ACTION_INDEX)
             await("notification play reaches ExoPlayer") {
-                onMain { firstController.playWhenReady }
+                onMain { reconnectedController.playWhenReady }
             }
             await("notification play re-enters foreground") {
                 musicServiceInfo()?.foreground == true
@@ -158,29 +212,11 @@ class LocalPlaybackServiceFunctionalTest {
 
             sendNotificationAction(requireNotNull(playbackNotification()), NEXT_ACTION_INDEX)
             await("notification Next advances the queue") {
-                onMain { firstController.currentMediaItemIndex == 1 }
+                onMain { reconnectedController.currentMediaItemIndex == 1 }
             }
             sendNotificationAction(requireNotNull(playbackNotification()), PREVIOUS_ACTION_INDEX)
             await("notification Previous returns to first item") {
-                onMain { firstController.currentMediaItemIndex == 0 }
-            }
-
-            val positionBeforeReconnect = onMain { firstController.currentPosition }
-            onMain { firstController.release() }
-            controller = null
-            await("service remains foreground across controller release") {
-                musicServiceInfo()?.foreground == true
-            }
-
-            val reconnectedController = connectController()
-            controller = reconnectedController
-            await("new controller receives the live session") {
-                onMain {
-                    reconnectedController.mediaItemCount == 2 &&
-                        reconnectedController.currentMediaItemIndex == 0 &&
-                        reconnectedController.playWhenReady &&
-                        reconnectedController.currentPosition >= positionBeforeReconnect
-                }
+                onMain { reconnectedController.currentMediaItemIndex == 0 }
             }
 
             onMain { reconnectedController.pause() }
@@ -219,17 +255,16 @@ class LocalPlaybackServiceFunctionalTest {
             .get(CONNECTION_TIMEOUT_SECONDS, TimeUnit.SECONDS)
     }
 
-    private fun mediaItem(mediaId: String, title: String, file: File): MediaItem =
-        MediaItem.Builder()
-            .setMediaId(mediaId)
-            .setUri(Uri.fromFile(file))
-            .setMediaMetadata(
-                MediaMetadata.Builder()
-                    .setTitle(title)
-                    .setArtist("BestiaPop instrumentation")
-                    .build()
+    private fun localPlayable(id: Long, title: String, file: File): PlayableItem.Local =
+        PlayableItem.Local(
+            Song(
+                id = id,
+                uriString = file.absolutePath,
+                title = title,
+                artist = "BestiaPop instrumentation",
+                durationMs = PLAYBACK_DURATION_MS.toLong()
             )
-            .build()
+        )
 
     private fun playbackNotification(): Notification? =
         context.getSystemService(NotificationManager::class.java)
@@ -304,11 +339,14 @@ class LocalPlaybackServiceFunctionalTest {
         val activityForeground = scenario?.let {
             runCatching { mainActivityIsForeground(it) }.getOrNull()
         }
+        val runtime = (context.applicationContext as? BestiaPopApplication)?.playbackRuntime
         return "permission=$permission, " +
             "notificationsEnabled=${notificationManager.areNotificationsEnabled()}, " +
             "channelImportance=${channel?.importance}, " +
             "activeNotifications=$activeNotifications, " +
             "activityState=${scenario?.state}, activityForeground=$activityForeground, " +
+            "runtimeQueueSize=${runtime?.queue?.value?.size}, " +
+            "runtimeIsPlaying=${runtime?.isPlaying?.value}, " +
             "serviceRunning=${service != null}, serviceForeground=${service?.foreground}"
     }
 
@@ -316,37 +354,6 @@ class LocalPlaybackServiceFunctionalTest {
         val task = FutureTask(block)
         instrumentation.runOnMainSync(task)
         return task.get()
-    }
-
-    private fun writePcmWav(file: File) {
-        val dataSize = SAMPLE_RATE_HZ * DURATION_SECONDS * CHANNEL_COUNT * BYTES_PER_SAMPLE
-        FileOutputStream(file).buffered().use { output ->
-            output.write("RIFF".toByteArray(Charsets.US_ASCII))
-            output.writeLittleEndianInt(36 + dataSize)
-            output.write("WAVEfmt ".toByteArray(Charsets.US_ASCII))
-            output.writeLittleEndianInt(16)
-            output.writeLittleEndianShort(PCM_FORMAT)
-            output.writeLittleEndianShort(CHANNEL_COUNT)
-            output.writeLittleEndianInt(SAMPLE_RATE_HZ)
-            output.writeLittleEndianInt(SAMPLE_RATE_HZ * CHANNEL_COUNT * BYTES_PER_SAMPLE)
-            output.writeLittleEndianShort(CHANNEL_COUNT * BYTES_PER_SAMPLE)
-            output.writeLittleEndianShort(BITS_PER_SAMPLE)
-            output.write("data".toByteArray(Charsets.US_ASCII))
-            output.writeLittleEndianInt(dataSize)
-            output.write(ByteArray(dataSize))
-        }
-    }
-
-    private fun java.io.OutputStream.writeLittleEndianInt(value: Int) {
-        repeat(Int.SIZE_BYTES) { byteIndex ->
-            write(value ushr (byteIndex * Byte.SIZE_BITS) and 0xff)
-        }
-    }
-
-    private fun java.io.OutputStream.writeLittleEndianShort(value: Int) {
-        repeat(Short.SIZE_BYTES) { byteIndex ->
-            write(value ushr (byteIndex * Byte.SIZE_BITS) and 0xff)
-        }
     }
 
     private companion object {
@@ -357,12 +364,6 @@ class LocalPlaybackServiceFunctionalTest {
         const val ASYNC_TIMEOUT_MS = 10_000L
         const val POLL_INTERVAL_MS = 25L
         const val MIN_POSITION_ADVANCE_MS = 100L
-
-        const val PCM_FORMAT = 1
-        const val CHANNEL_COUNT = 1
-        const val SAMPLE_RATE_HZ = 16_000
-        const val BITS_PER_SAMPLE = 16
-        const val BYTES_PER_SAMPLE = BITS_PER_SAMPLE / Byte.SIZE_BITS
-        const val DURATION_SECONDS = 20
+        const val PLAYBACK_DURATION_MS = 20_000
     }
 }

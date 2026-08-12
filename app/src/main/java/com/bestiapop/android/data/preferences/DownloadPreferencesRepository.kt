@@ -51,4 +51,12 @@ class DownloadPreferencesRepository internal constructor(
             prefs[key] = (prefs[key] ?: 0L) + byteCount
         }
     }
+
+    internal suspend fun restoreForTest(settings: DownloadSettings) {
+        dataStore.edit { prefs ->
+            prefs[Keys.DOWNLOAD_ON_METERED] = settings.downloadOnMeteredNetwork
+            prefs[Keys.TOTAL_METERED_BYTES] = settings.totalMeteredBytes
+            prefs[Keys.TOTAL_UNMETERED_BYTES] = settings.totalUnmeteredBytes
+        }
+    }
 }

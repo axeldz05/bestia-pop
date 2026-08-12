@@ -49,6 +49,9 @@ android {
         )
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        // These tests require a host kill between phases; never discover them in a normal run.
+        testInstrumentationRunnerArguments["notAnnotation"] =
+            "com.bestiapop.android.persistence.HostOrchestratedProcessDeathTest"
     }
 
     signingConfigs {
@@ -204,4 +207,5 @@ dependencies {
     androidTestImplementation(libs.androidx.test.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
+    androidTestImplementation(libs.okhttp.mockwebserver)
 }

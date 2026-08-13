@@ -92,6 +92,17 @@ import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.data.model.isFailed
 import com.bestiapop.android.data.model.isInFlight
 import com.bestiapop.android.ui.MusicPlayerViewModel
+import kotlinx.coroutines.flow.StateFlow
+
+internal fun shouldLoadInitialCatalog(
+    songResults: List<OnlineCatalogTrack>,
+    albumResults: List<com.bestiapop.android.data.model.CatalogAlbum>,
+    playlistResults: List<com.bestiapop.android.data.model.CatalogPlaylist>,
+    genreResults: List<CatalogGenre>
+): Boolean = songResults.isEmpty() &&
+    albumResults.isEmpty() &&
+    playlistResults.isEmpty() &&
+    genreResults.isEmpty()
 
 
 
@@ -122,7 +133,6 @@ fun AddMusicDialog(
     val currentItem by viewModel.currentItem.collectAsState()
     val isPlaying by viewModel.isPlaying.collectAsState()
     val resolvingRemote by viewModel.resolvingRemote.collectAsState()
-    val playbackPositionMs by viewModel.playbackPositionMs.collectAsState()
 
     fun dismissDialog() {
         viewModel.clearSelectedCollection()
@@ -266,7 +276,7 @@ fun AddMusicDialog(
                             previewItem = (currentItem as? PlayableItem.Remote)?.takeIf { catalogPreviewKey != null },
                             isPreviewPlaying = isPlaying && catalogPreviewKey != null,
                             isPreviewResolving = resolvingRemote && catalogPreviewKey != null,
-                            previewPositionMs = playbackPositionMs,
+                            previewPositionMsFlow = viewModel.playbackPositionMs,
                             previewKeyFor = { track -> viewModel.catalogPreviewKeyFor(track) },
                             onSearch = { viewModel.searchCatalog(catalogSearchInput) },
                             onAddTrack = { track -> viewModel.downloadOnlineTrack(track) },
@@ -530,7 +540,7 @@ private fun OnlineCatalogTab(
     previewItem: PlayableItem?,
     isPreviewPlaying: Boolean,
     isPreviewResolving: Boolean,
-    previewPositionMs: Long,
+    previewPositionMsFlow: StateFlow<Long>,
     previewKeyFor: (OnlineCatalogTrack) -> String,
     onSearch: () -> Unit,
     onAddTrack: (OnlineCatalogTrack) -> Unit,
@@ -551,9 +561,7 @@ private fun OnlineCatalogTab(
     onOpenDownloads: () -> Unit
 ) {
     androidx.compose.runtime.LaunchedEffect(Unit) {
-        if (songResults.isEmpty() && albumResults.isEmpty() && playlistResults.isEmpty() &&
-            genreResults.isEmpty()
-        ) {
+        if (shouldLoadInitialCatalog(songResults, albumResults, playlistResults, genreResults)) {
             onSearch()
         }
     }
@@ -569,7 +577,7 @@ private fun OnlineCatalogTab(
             previewItem = previewItem,
             isPreviewPlaying = isPreviewPlaying,
             isPreviewResolving = isPreviewResolving,
-            previewPositionMs = previewPositionMs,
+            previewPositionMsFlow = previewPositionMsFlow,
             previewKeyFor = previewKeyFor,
             onBack = onClearCollection,
             onCycleCandidate = onCycleCandidate,
@@ -713,7 +721,7 @@ private fun OnlineCatalogTab(
                                         isPreviewing = flags.isThisPreview,
                                         isPlaying = flags.isPlaying,
                                         isResolving = flags.isResolving,
-                                        progressMs = if (flags.isThisPreview) previewPositionMs else 0L,
+                                        positionMsFlow = previewPositionMsFlow,
                                         onStreamClick = { onStreamTrack(track) },
                                         onCycleClick = { onCycleSong(index) },
                                         onAddClick = { onAddTrack(track) }
@@ -779,7 +787,7 @@ private fun OnlineCatalogTab(
                 durationMs = previewItem?.durationMs?.takeIf { it > 0 }
                     ?: previewTrack?.durationMs
                     ?: 0L,
-                positionMs = previewPositionMs,
+                positionMsFlow = previewPositionMsFlow,
                 isPlaying = isPreviewPlaying,
                 isResolving = isPreviewResolving,
                 onPlayPause = onTogglePreviewPlayPause,
@@ -831,7 +839,7 @@ private fun CollectionTrackInspectionView(
     previewItem: PlayableItem?,
     isPreviewPlaying: Boolean,
     isPreviewResolving: Boolean,
-    previewPositionMs: Long,
+    previewPositionMsFlow: StateFlow<Long>,
     previewKeyFor: (OnlineCatalogTrack) -> String,
     onBack: () -> Unit,
     onCycleCandidate: (Int) -> Unit,
@@ -921,7 +929,7 @@ private fun CollectionTrackInspectionView(
                         isPreviewing = flags.isThisPreview,
                         isPlaying = flags.isPlaying,
                         isResolving = flags.isResolving,
-                        progressMs = if (flags.isThisPreview) previewPositionMs else 0L,
+                        positionMsFlow = previewPositionMsFlow,
                         onToggleSelect = { onToggleSelection(index) },
                         onCycleCandidate = { onCycleCandidate(index) },
                         onStreamClick = { onStreamCandidate(item) },
@@ -962,7 +970,7 @@ private fun CollectionTrackInspectionView(
                     durationMs = previewItem?.durationMs?.takeIf { it > 0 }
                         ?: previewCandidate?.currentTrack?.durationMs
                         ?: 0L,
-                    positionMs = previewPositionMs,
+                    positionMsFlow = previewPositionMsFlow,
                     isPlaying = isPreviewPlaying,
                     isResolving = isPreviewResolving,
                     onPlayPause = onTogglePreviewPlayPause,
@@ -979,7 +987,8 @@ private fun CatalogPreviewableRow(
     subtitle: String,
     artworkUri: String?,
     isPreviewing: Boolean,
-    progressFraction: Float,
+    positionMsFlow: StateFlow<Long>,
+    durationMs: Long,
     isResolving: Boolean,
     modifier: Modifier = Modifier,
     selected: Boolean = false,
@@ -1001,13 +1010,10 @@ private fun CatalogPreviewableRow(
     ) {
         Column {
             if (isPreviewing) {
-                LinearProgressIndicator(
-                    progress = { if (isResolving) 0f else progressFraction },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(3.dp),
-                    color = MaterialTheme.colorScheme.primary,
-                    trackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+                CatalogPreviewProgress(
+                    positionMsFlow = positionMsFlow,
+                    durationMs = durationMs,
+                    isResolving = isResolving
                 )
             }
             Row(
@@ -1044,13 +1050,31 @@ private fun CatalogPreviewableRow(
 }
 
 @Composable
+private fun CatalogPreviewProgress(
+    positionMsFlow: StateFlow<Long>,
+    durationMs: Long,
+    isResolving: Boolean
+) {
+    val positionMs by positionMsFlow.collectAsState()
+    val progressFraction = previewProgressFraction(positionMs, durationMs)
+    LinearProgressIndicator(
+        progress = { if (isResolving) 0f else progressFraction },
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(3.dp),
+        color = MaterialTheme.colorScheme.primary,
+        trackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+    )
+}
+
+@Composable
 private fun CandidateTrackCard(
     item: com.bestiapop.android.data.model.CatalogTrackCandidate,
     trackedDownload: ActiveDownload?,
     isPreviewing: Boolean,
     isPlaying: Boolean,
     isResolving: Boolean,
-    progressMs: Long,
+    positionMsFlow: StateFlow<Long>,
     onToggleSelect: () -> Unit,
     onCycleCandidate: () -> Unit,
     onStreamClick: () -> Unit,
@@ -1058,7 +1082,6 @@ private fun CandidateTrackCard(
 ) {
     val currentYt = item.currentTrack
     val durationMs = currentYt?.durationMs ?: 0L
-    val progressFraction = previewProgressFraction(progressMs, durationMs)
     val downloadState = trackedDownload?.state ?: CandidateDownloadState.IDLE
     val downloadPercent = trackedDownload?.progressPercent ?: 0
     val downloadError = trackedDownload?.errorMessage
@@ -1086,7 +1109,8 @@ private fun CandidateTrackCard(
         artworkUri = currentYt?.artworkUri ?: item.artworkUri,
         isPreviewing = isPreviewing,
         selected = item.isSelected,
-        progressFraction = progressFraction,
+        positionMsFlow = positionMsFlow,
+        durationMs = durationMs,
         isResolving = isResolving,
         subtitleColor = if (downloadState.isFailed) {
             MaterialTheme.colorScheme.error
@@ -1240,12 +1264,11 @@ private fun CatalogTrackItem(
     isPreviewing: Boolean,
     isPlaying: Boolean,
     isResolving: Boolean,
-    progressMs: Long,
+    positionMsFlow: StateFlow<Long>,
     onStreamClick: () -> Unit,
     onCycleClick: () -> Unit,
     onAddClick: () -> Unit
 ) {
-    val progressFraction = previewProgressFraction(progressMs, track.durationMs)
     val subtitle = when {
         isResolving -> "Resolviendo stream…"
         isPreviewing && isPlaying -> "Reproduciendo preview"
@@ -1257,7 +1280,8 @@ private fun CatalogTrackItem(
         subtitle = subtitle,
         artworkUri = track.artworkUri,
         isPreviewing = isPreviewing,
-        progressFraction = progressFraction,
+        positionMsFlow = positionMsFlow,
+        durationMs = track.durationMs,
         isResolving = isResolving,
         modifier = Modifier.padding(vertical = 4.dp)
     ) {
@@ -1302,12 +1326,13 @@ private fun CatalogPreviewBar(
     artist: String,
     artworkUri: String?,
     durationMs: Long,
-    positionMs: Long,
+    positionMsFlow: StateFlow<Long>,
     isPlaying: Boolean,
     isResolving: Boolean,
     onPlayPause: () -> Unit,
     onStop: () -> Unit
 ) {
+    val positionMs by positionMsFlow.collectAsState()
     val progressFraction = previewProgressFraction(positionMs, durationMs)
 
     Surface(

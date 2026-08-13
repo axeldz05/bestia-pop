@@ -62,7 +62,10 @@ class MusicService : MediaLibraryService() {
     private val stereoBalanceProcessor = StereoBalanceAudioProcessor()
     private val audioStore by lazy { MusicFileStore(this) }
     private val libraryBrowseProvider by lazy {
-        MediaLibraryBrowseProvider((application as BestiaPopApplication).musicRepository)
+        MediaLibraryBrowseProvider(
+            repository = (application as BestiaPopApplication).musicRepository,
+            scope = serviceScope
+        )
     }
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 

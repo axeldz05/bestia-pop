@@ -403,32 +403,49 @@ class MusicRepository private constructor(
             val existing = musicDao.getAllSongs()
             val dedup = libraryDedupSets(existing)
 
-            val total = countAudioDocuments(rootFolder)
-            val ticker = ScanProgressTicker(total, onProgress)
+            val documents = collectAudioDocuments(rootFolder)
+            val ticker = ScanProgressTicker(documents.size, onProgress)
             val scanned = mutableListOf<Song>()
-            scanDocumentFolderRecursively(
-                folder = rootFolder,
-                list = scanned,
-                existingKeys = dedup.existingKeys,
-                existingPaths = dedup.existingPaths,
-                onFileVisited = ticker::tick
-            )
+            for (document in documents) {
+                val file = document.file
+                val fileName = file.name ?: "audio"
+                ticker.tick(fileName)
+                tryIndexOneFile(
+                    sourcePath = file.uri.toString(),
+                    folderHint = document.folderName,
+                    fallbackTitle = file.name?.substringBeforeLast(".") ?: "Unknown Track",
+                    fileName = file.name ?: "",
+                    existingKeys = dedup.existingKeys,
+                    existingPaths = dedup.existingPaths,
+                    list = scanned,
+                    useCanonicalPathForMetadata = false,
+                    scanPhase = "folder_import_file",
+                    crashPathKey = "uri"
+                )
+            }
             if (scanned.isNotEmpty()) {
                 musicDao.insertSongs(scanned)
             }
             scanned.size
         }
 
-    private fun countAudioDocuments(folder: DocumentFile): Int {
-        var count = 0
+    private data class AudioDocument(
+        val file: DocumentFile,
+        val folderName: String
+    )
+
+    private fun collectAudioDocuments(
+        folder: DocumentFile,
+        destination: MutableList<AudioDocument> = mutableListOf()
+    ): List<AudioDocument> {
         for (file in folder.listFiles()) {
             if (file.isDirectory) {
-                count += countAudioDocuments(file)
+                collectAudioDocuments(file, destination)
             } else if (file.isFile && isAudioFile(file.name ?: "")) {
-                count++
+                destination += AudioDocument(file, folder.name ?: "")
             }
         }
-        return count
+        return destination
     }
 
     private data class LibraryDedupSets(
@@ -471,7 +488,7 @@ class MusicRepository private constructor(
                 context = context,
                 path = if (useCanonicalPathForMetadata) ref.uriString else sourcePath,
                 fallbackTitle = fallbackTitle,
-                extractEmbeddedArtwork = ::extractAndSaveEmbeddedArtwork
+                persistEmbeddedArtwork = ::persistEmbeddedArtwork
             )
             if (!isRealMusicTrack(
                     durationMs = metadata.durationMs,
@@ -528,57 +545,32 @@ class MusicRepository private constructor(
         }
     }
 
-    private fun scanDocumentFolderRecursively(
-        folder: DocumentFile,
-        list: MutableList<Song>,
-        existingKeys: MutableSet<String>,
-        existingPaths: MutableSet<String>,
-        onFileVisited: ((String) -> Unit)? = null
-    ) {
-        for (file in folder.listFiles()) {
-            if (file.isDirectory) {
-                scanDocumentFolderRecursively(
-                    file, list, existingKeys, existingPaths, onFileVisited
-                )
-            } else if (file.isFile && isAudioFile(file.name ?: "")) {
-                val fileName = file.name ?: "audio"
-                onFileVisited?.invoke(fileName)
-                tryIndexOneFile(
-                    sourcePath = file.uri.toString(),
-                    folderHint = folder.name ?: "",
-                    fallbackTitle = file.name?.substringBeforeLast(".") ?: "Unknown Track",
-                    fileName = file.name ?: "",
-                    existingKeys = existingKeys,
-                    existingPaths = existingPaths,
-                    list = list,
-                    useCanonicalPathForMetadata = false,
-                    scanPhase = "folder_import_file",
-                    crashPathKey = "uri"
-                )
-            }
-        }
-    }
-
     override fun extractAndSaveEmbeddedArtwork(audioPathOrUri: String, identifier: String): String? {
         val retriever = MediaMetadataRetriever()
         try {
             audioStore.applyDataSource(retriever, audioStore.canonicalize(audioPathOrUri))
-            val pictureBytes = retriever.embeddedPicture
-            if (pictureBytes != null && pictureBytes.isNotEmpty()) {
-                val artDir = File(context.cacheDir, "album_art")
-                if (!artDir.exists()) artDir.mkdirs()
-                val artFile = File(artDir, "art_${identifier.hashCode()}.jpg")
-                artFile.outputStream().use { out ->
-                    out.write(pictureBytes)
-                }
-                return artFile.toURI().toString()
-            }
+            return retriever.embeddedPicture
+                ?.takeIf(ByteArray::isNotEmpty)
+                ?.let { persistEmbeddedArtwork(it, identifier) }
         } catch (e: Exception) {
             // ignore
         } finally {
             try { retriever.release() } catch (ignored: Exception) {}
         }
         return null
+    }
+
+    internal fun persistEmbeddedArtwork(pictureBytes: ByteArray, identifier: String): String? {
+        if (pictureBytes.isEmpty()) return null
+        return try {
+            val artDir = File(context.cacheDir, "album_art")
+            if (!artDir.exists()) artDir.mkdirs()
+            val artFile = File(artDir, "art_${identifier.hashCode()}.jpg")
+            artFile.outputStream().use { out -> out.write(pictureBytes) }
+            artFile.toURI().toString()
+        } catch (_: Exception) {
+            null
+        }
     }
 
     private fun isRealMusicTrack(

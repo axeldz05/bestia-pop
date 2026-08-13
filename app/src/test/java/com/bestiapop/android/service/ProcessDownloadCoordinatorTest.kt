@@ -286,6 +286,35 @@ class ProcessDownloadCoordinatorTest {
     }
 
     @Test
+    fun progressUpdatesAreCoalescedAndDurableFlushCancelsDelayedWrite() = runBlocking {
+        val id = "artist|song"
+        val persistence = FakePersistence(
+            initial = listOf(row(id, ActiveDownloadSource.CATALOG))
+        )
+        val fixture = fixture(
+            persistence = persistence,
+            progressPersistDelayMs = 250L
+        )
+        try {
+            fixture.coordinator.awaitHydrated()
+
+            fixture.coordinator.updateProgress(id) { it.copy(progressPercent = 10) }
+            fixture.coordinator.updateProgress(id) { it.copy(progressPercent = 20) }
+            delay(50L)
+            assertEquals(0, persistence.saveCount.get())
+
+            fixture.coordinator.flushDurably()
+            assertEquals(1, persistence.saveCount.get())
+            assertEquals(20, persistence.saved().single().progressPercent)
+
+            delay(300L)
+            assertEquals(1, persistence.saveCount.get())
+        } finally {
+            fixture.close()
+        }
+    }
+
+    @Test
     fun globalPermitCapsAllCallersAtThree() = runBlocking {
         val fixture = fixture()
         val entered = Channel<Unit>(Channel.UNLIMITED)
@@ -444,7 +473,8 @@ class ProcessDownloadCoordinatorTest {
 
     private fun fixture(
         persistence: FakePersistence = FakePersistence(),
-        onPlaylistTargetCompleted: suspend (DownloadPlaylistDestination, Song) -> Unit = { _, _ -> }
+        onPlaylistTargetCompleted: suspend (DownloadPlaylistDestination, Song) -> Unit = { _, _ -> },
+        progressPersistDelayMs: Long = 750L
     ): Fixture {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         return Fixture(
@@ -452,7 +482,8 @@ class ProcessDownloadCoordinatorTest {
             coordinator = ProcessDownloadCoordinator(
                 scope = scope,
                 persistence = persistence,
-                onPlaylistTargetCompleted = onPlaylistTargetCompleted
+                onPlaylistTargetCompleted = onPlaylistTargetCompleted,
+                progressPersistDelayMs = progressPersistDelayMs
             )
         )
     }
@@ -506,6 +537,7 @@ class ProcessDownloadCoordinatorTest {
         }
         private val lock = Any()
         private var stored = initial.toList()
+        val saveCount = AtomicInteger(0)
 
         override suspend fun load(): List<ActiveDownload> {
             loadStarted.complete(Unit)
@@ -516,6 +548,7 @@ class ProcessDownloadCoordinatorTest {
         override suspend fun save(downloads: List<ActiveDownload>) {
             synchronized(lock) {
                 stored = downloads.toList()
+                saveCount.incrementAndGet()
             }
         }
 

@@ -13,6 +13,7 @@ import com.bestiapop.android.ui.SortOption
 import com.bestiapop.android.ui.state.LibraryBrowseFilter
 import com.bestiapop.android.ui.state.LibraryListItem
 import com.bestiapop.android.ui.state.LibraryViewMode
+import java.util.TreeMap
 
 class GetLibrarySongsUseCase {
 
@@ -38,11 +39,16 @@ class GetLibrarySongsUseCase {
         val filtered = if (query.isBlank()) {
             unifiedList
         } else {
-            unifiedList.filter { song ->
-                TrackMatchKeys.containsNormalized(song.title, query) ||
-                    TrackMatchKeys.containsNormalized(song.artist, query) ||
-                    TrackMatchKeys.containsNormalized(song.album, query) ||
-                    TrackMatchKeys.containsNormalized(song.genre, query)
+            val normalizedQuery = TrackMatchKeys.normalize(query)
+            if (normalizedQuery.isEmpty()) {
+                emptyList()
+            } else {
+                unifiedList.filter { song ->
+                    TrackMatchKeys.normalize(song.title).contains(normalizedQuery) ||
+                        TrackMatchKeys.normalize(song.artist).contains(normalizedQuery) ||
+                        TrackMatchKeys.normalize(song.album).contains(normalizedQuery) ||
+                        TrackMatchKeys.normalize(song.genre).contains(normalizedQuery)
+                }
             }
         }
 
@@ -246,23 +252,32 @@ class GetLibrarySongsUseCase {
                 songs.filter { it.lastPlayedAt > 0 }.sortedByDescending { it.lastPlayedAt }
             LibraryBrowseFilter.ALBUMS -> {
                 val albumList = albums ?: extractAlbums(songs)
+                val byAlbum = songs.caseInsensitiveBuckets(Song::album)
                 albumList.flatMap { album ->
-                    sortSongsWithinAlbum(
-                        songs.filter { it.album.equals(album.name, ignoreCase = true) }
-                    )
+                    sortSongsWithinAlbum(byAlbum[album.name].orEmpty())
                 }
             }
             LibraryBrowseFilter.ARTISTS -> {
                 val artistList = artists ?: extractArtists(songs)
-                artistList.flatMap { artist ->
-                    songs.filter { it.artist.equals(artist.name, ignoreCase = true) }
-                }
+                val byArtist = songs.caseInsensitiveBuckets(Song::artist)
+                artistList.flatMap { artist -> byArtist[artist.name].orEmpty() }
             }
             LibraryBrowseFilter.GENRES -> {
                 val genreList = genres ?: extractGenres(songs)
-                genreList.flatMap { genre -> songsMatchingGenre(songs, genre.name) }
+                val byGenre = songs.caseInsensitiveBuckets(::genreKey)
+                genreList.flatMap { genre -> byGenre[genre.name].orEmpty() }
             }
         }
+    }
+
+    private fun List<Song>.caseInsensitiveBuckets(
+        keyOf: (Song) -> String
+    ): Map<String, List<Song>> {
+        val buckets = TreeMap<String, MutableList<Song>>(String.CASE_INSENSITIVE_ORDER)
+        for (song in this) {
+            buckets.getOrPut(keyOf(song)) { ArrayList() }.add(song)
+        }
+        return buckets
     }
 
     private fun firstArtwork(songs: List<Song>): String? =

@@ -1,13 +1,22 @@
 package com.bestiapop.android.service.library
 
 import androidx.media3.common.MediaItem
+import com.bestiapop.android.data.model.AlbumOverride
+import com.bestiapop.android.data.model.Playlist
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.domain.repository.IMusicRepository
 import com.bestiapop.android.domain.usecase.BrowseLocalLibrarySnapshot
 import com.bestiapop.android.domain.usecase.BrowseLocalLibraryUseCase
-import kotlinx.coroutines.async
-import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 
 internal data class MediaLibraryPlaybackSelection(
     val songs: List<Song>,
@@ -17,8 +26,34 @@ internal data class MediaLibraryPlaybackSelection(
 
 internal class MediaLibraryBrowseProvider(
     private val repository: IMusicRepository,
+    scope: CoroutineScope,
     private val useCase: BrowseLocalLibraryUseCase = BrowseLocalLibraryUseCase()
 ) {
+    private data class Sources(
+        val revision: Long,
+        val songs: List<Song>,
+        val overrides: List<AlbumOverride>,
+        val playlists: List<Playlist>
+    )
+
+    private data class CachedSnapshot(
+        val revision: Long,
+        val value: BrowseLocalLibrarySnapshot
+    )
+
+    private var nextRevision = 0L
+    private val sources = combine(
+        repository.allSongsFlow,
+        repository.albumOverridesFlow,
+        repository.playlistsFlow
+    ) { songs, overrides, playlists ->
+        Sources(++nextRevision, songs, overrides, playlists)
+    }
+        .stateIn(scope, SharingStarted.Eagerly, null)
+    private val snapshotMutex = Mutex()
+    @Volatile
+    private var cachedSnapshot: CachedSnapshot? = null
+
     suspend fun root(): MediaItem = MediaLibraryBrowseMapper.root()
 
     suspend fun item(mediaId: String): MediaItem? {
@@ -126,10 +161,17 @@ internal class MediaLibraryBrowseProvider(
         )
     }
 
-    private suspend fun snapshot(): BrowseLocalLibrarySnapshot = coroutineScope {
-        val songs = async { repository.getAllSongsSync() }
-        val overrides = async { repository.albumOverridesFlow.first() }
-        val playlists = async { repository.playlistsFlow.first() }
-        useCase.snapshot(songs.await(), overrides.await(), playlists.await())
+    private suspend fun snapshot(): BrowseLocalLibrarySnapshot {
+        val current = sources.filterNotNull().first()
+        cachedSnapshot?.takeIf { it.revision == current.revision }?.let { return it.value }
+        return snapshotMutex.withLock {
+            val latest = sources.filterNotNull().first()
+            cachedSnapshot?.takeIf { it.revision == latest.revision }?.value
+                ?: withContext(Dispatchers.Default) {
+                    useCase.snapshot(latest.songs, latest.overrides, latest.playlists)
+                }.also { built ->
+                    cachedSnapshot = CachedSnapshot(latest.revision, built)
+                }
+        }
     }
 }

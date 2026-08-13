@@ -18,6 +18,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.RuleChain
 import org.junit.runner.RunWith
+import kotlinx.coroutines.flow.MutableStateFlow
 
 @RunWith(AndroidJUnit4::class)
 @SmallTest
@@ -48,7 +49,7 @@ class AccessibilityFunctionalTest {
             BottomPlayerBar(
                 currentItem = currentItem,
                 isPlaying = false,
-                progressMs = 25_000L,
+                positionMsFlow = MutableStateFlow(25_000L),
                 onPlayPauseClick = { calls += "play-pause" },
                 onPreviousClick = { calls += "previous" },
                 onNextClick = { calls += "next" },

@@ -617,7 +617,7 @@ internal class ProcessDownloadRuntime(
             else -> activeTrack
         }
         val result = dependencies.download(trackForDownload, resolvedPolicy) { phase ->
-            processDownloads.update(request.downloadId) {
+            processDownloads.updateProgress(request.downloadId) {
                 it.copy(
                     state = CandidateDownloadState.DOWNLOADING,
                     progressMessage = phase.userMessage,

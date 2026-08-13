@@ -91,6 +91,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -319,7 +320,9 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         _sortDirection
     ) { list, query, sort, direction ->
         getLibrarySongsUseCase.execute(list, query, sort, direction)
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    }
+        .flowOn(Dispatchers.Default)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     data class PendingAlbumMerge(
         val source: Album,
@@ -379,7 +382,9 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         _sortDirection
     ) { songs, overrides, sortOption, sortDirection ->
         getLibrarySongsUseCase.extractAlbums(songs, overrides, sortOption, sortDirection)
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    }
+        .flowOn(Dispatchers.Default)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     private val _artistPhotos = MutableStateFlow<Map<String, String>>(emptyMap())
 
@@ -390,7 +395,9 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         _sortDirection
     ) { songs: List<Song>, photoMap: Map<String, String>, sortOption, sortDirection ->
         getLibrarySongsUseCase.extractArtists(songs, photoMap, sortOption, sortDirection)
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    }
+        .flowOn(Dispatchers.Default)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val genresState: StateFlow<List<GenreGroup>> = combine(
         songsState,
@@ -398,7 +405,9 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         _sortDirection
     ) { songs, sortOption, sortDirection ->
         getLibrarySongsUseCase.extractGenres(songs, sortOption, sortDirection)
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    }
+        .flowOn(Dispatchers.Default)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     // Process-owned playback state. ViewModel only exposes/observes it.
     val currentItem = playbackRuntime.currentItem
@@ -732,11 +741,6 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
         viewModelScope.launch {
             ensureInitialLibraryImport(showRecoveryToast = true)
-        }
-        viewModelScope.launch {
-            _catalogSearchResults.value = MetadataFetcher.getFeaturedDemoCatalog()
-            _albumSearchResults.value = MetadataFetcher.searchAlbums("")
-            _playlistSearchResults.value = MetadataFetcher.searchPlaylists("")
         }
 
         viewModelScope.launch {

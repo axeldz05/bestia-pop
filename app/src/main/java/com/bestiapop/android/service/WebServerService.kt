@@ -12,10 +12,10 @@ import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
+import com.bestiapop.android.BestiaPopApplication
 import com.bestiapop.android.data.model.TrackIdentity
 import com.bestiapop.android.data.model.WifiTransferItem
 import com.bestiapop.android.data.model.WifiTransferState
-import com.bestiapop.android.data.repository.MusicRepository
 import com.bestiapop.android.data.util.AudioFileMetadata
 import com.bestiapop.android.data.util.CrashReporter
 import com.bestiapop.android.data.util.MusicFileStore
@@ -171,12 +171,14 @@ internal class WifiSyncHttpBoundary(
                                 val percent = ((bytesWritten * 100) / declaredLength)
                                     .toInt()
                                     .coerceIn(0, 99)
-                                emit(
-                                    transfer.copy(
-                                        state = WifiTransferState.UPLOADING,
-                                        progressPercent = percent
+                                if (percent != transfer.progressPercent) {
+                                    emit(
+                                        transfer.copy(
+                                            state = WifiTransferState.UPLOADING,
+                                            progressPercent = percent
+                                        )
                                     )
-                                )
+                                }
                             }
                         }
                         output.flush()
@@ -413,7 +415,7 @@ class WebServerService : Service() {
     private fun startServer() {
         serviceScope.launch {
             try {
-                val repository = MusicRepository(applicationContext)
+                val repository = (application as BestiaPopApplication).musicRepository
                 val audioStore = MusicFileStore(applicationContext)
                 val ip = getLocalIpAddress(applicationContext) ?: "localhost"
                 val boundary = WifiSyncHttpBoundary(
@@ -447,7 +449,7 @@ class WebServerService : Service() {
                             path = ref.uriString,
                             fallbackTitle = safeName.substringBeforeLast("."),
                             artworkIdentifier = File(ref.uriString).name,
-                            extractEmbeddedArtwork = repository::extractAndSaveEmbeddedArtwork
+                            persistEmbeddedArtwork = repository::persistEmbeddedArtwork
                         )
                         val songId = repository.saveUploadedSong(
                             metadata.toSong(

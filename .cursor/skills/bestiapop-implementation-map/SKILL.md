@@ -59,11 +59,11 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 
 | Concern | Archivo |
 |---------|---------|
-| ViewModel central | `ui/MusicPlayerViewModel.kt` (façade playback/download: adjunta `PlaybackRuntime`, expone `ProcessDownloadRuntime.downloads`/conflict/events, `runTrackedDownload` solo adapta `ProcessDownloadRequest`; no posee jobs ni notificación de descarga) |
-| Mini player | `ui/components/BottomPlayerBar.kt` (`statusLabel`, Previous/Next/Play); wiring `ui/screens/MainScreen.kt`; estado desde los flows de `PlaybackRuntime` reexpuestos por `MusicPlayerViewModel` |
+| ViewModel central | `ui/MusicPlayerViewModel.kt` (façade playback/download: adjunta `PlaybackRuntime`, expone `ProcessDownloadRuntime.downloads`/conflict/events, `runTrackedDownload` solo adapta `ProcessDownloadRequest`; derivados de biblioteca corren en `Dispatchers.Default`; catálogo inicial carga on-demand desde `AddMusicDialog`; no posee jobs ni notificación de descarga) |
+| Mini player | `ui/components/BottomPlayerBar.kt` (`statusLabel`, Previous/Next/Play; `BottomPlayerProgress` es el único collector del tick 200 ms); wiring `ui/screens/MainScreen.kt`; estado desde los flows de `PlaybackRuntime` reexpuestos por `MusicPlayerViewModel` |
 | Active download row | `ui/components/ActiveDownloadRow.kt` |
 | Download conflict dialog | `ui/components/DownloadConflictDialog.kt` |
-| Add / download music | `ui/components/AddMusicDialog.kt` (banners vía `activeDownloads` + `ActiveDownloadsSummaryBanner`; `BackHandler` step-back colección) |
+| Add / download music | `ui/components/AddMusicDialog.kt` (carga catálogo al componer por primera vez el tab; preview colecta posición solo en progress/preview activos; banners vía `activeDownloads` + `ActiveDownloadsSummaryBanner`; `BackHandler` step-back colección) |
 | Song row | `ui/components/SongListItem.kt` (`SongOverflowMenuItems`) |
 | Track meta row | `ui/components/TrackMetaRow.kt` (`joinMeta`, `TrackMeta.artistAlbumLabel`, `playingRowColors` / `playingTitleStyle`, `TrackTextColumn`, `TrackMetaRow`) |
 | Song queue actions | `ui/components/SongQueueActions.kt` (`SongQueueActions`, `rememberSongQueueActions`) |
@@ -93,7 +93,7 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 
 | Use case | Archivo | Responsabilidad |
 |----------|---------|-----------------|
-| `GetLibrarySongsUseCase` | `domain/usecase/GetLibrarySongsUseCase.kt` | filter, sort (`SortOption` + `SortDirection`), album groups (`compareSongsWithinAlbum` / `sortSongsWithinAlbum` / `songsFromListItems`), `extractAlbums` / `extractArtists` / `extractGenres` (aggregate sort + `sortedAggregates`), `songsForBrowseProjection` |
+| `GetLibrarySongsUseCase` | `domain/usecase/GetLibrarySongsUseCase.kt` | filter (query normalizada una vez), sort (`SortOption` + `SortDirection`), album groups (`compareSongsWithinAlbum` / `sortSongsWithinAlbum` / `songsFromListItems`), `extractAlbums` / `extractArtists` / `extractGenres` (aggregate sort + `sortedAggregates`), `songsForBrowseProjection` por buckets case-insensitive O(n) |
 | `LibraryBrowseFilter` | `ui/state/LibraryBrowseFilter.kt` | chips SONGS/ALBUMS/ARTISTS/GENRES/RECENT |
 | `DownloadAudioTrackUseCase` | `domain/usecase/DownloadAudioTrackUseCase.kt` | wrap download Result (re-lanza `CancellationException`) |
 | `MatchListenBrainzTracksUseCase` | `domain/usecase/MatchListenBrainzTracksUseCase.kt` | match LB tracks → local `Song` (delega a `TrackMatchKeys`) |
@@ -157,7 +157,7 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 | Background execution | `data/system/BackgroundExecutionStatus.kt` (`BackgroundExecutionProbe.current`; señales `backgroundRestricted` / `ignoringBatteryOptimizations`) |
 | GitHub Releases update | `data/update/GitHubReleaseParser.kt` (`parseReleases` / `parseRelease` / `parseVersionCode` / `stripVersionCodeLine`); `GitHubUpdateClient.fetchReleases`; `data/update/AppReleaseSelection.kt` (`from`, `updateTarget`); `data/update/ApkUpdateInstaller.kt` (`ApkUpdateDownloader.download`: `.part`, HTTP/length, `ApkValidator` / `PackageManagerApkValidator`, move atómico + cleanup; `ApkUpdateInstaller` FileProvider/instalador); `AppUpdateCheckStore` (`lastCheckAtMs`, `cachedNotes` / `setCachedNotes`); `data/update/AppRelease.kt` (`AppRelease`, `GitHubReleaseUrls.repoUrl` / `latestPageUrl` / `apiReleasesUrl`) |
 | Pending listens Room | `data/db/PendingListenEntity.kt`, `PendingListenDao.kt` |
-| Storage / transfer helpers | `data/util/MusicFileStore.kt`, `AudioPersistRef.kt`, `StorageUtils.kt` (PendingWrite/publish/list/delete), `TransferIo.kt` (`copyTransferToFile`: L1 compartido música+APK; políticas quedan arriba), `SongPathNormalizer.kt`, `UploadNameSanitizer.kt`, `AudioFileMetadata.kt`, `AudioTagWriter.kt` |
+| Storage / transfer helpers | `data/util/MusicFileStore.kt`, `AudioPersistRef.kt`, `StorageUtils.kt` (PendingWrite/publish/list/delete), `TransferIo.kt` (`copyTransferToFile`: L1 compartido música+APK; políticas quedan arriba), `SongPathNormalizer.kt`, `UploadNameSanitizer.kt`, `AudioFileMetadata.fromPath` (un retriever para tags+embedded art, callback `persistEmbeddedArtwork`), `AudioTagWriter.kt` |
 | Download conflict models | `data/model/Models.kt` (`DownloadConflictPolicy`, `DuplicateSongException`, `DownloadConflict`) |
 | One-shot dedup archive | branch `archive/library-dedup-v1-migrator` (`LibraryDedupMigrator` / `LibraryDedupLogic` / prefs; not on LB) |
 
@@ -168,8 +168,8 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 | Playback runtime process-scoped | `service/PlaybackRuntime.kt` (`playPlayableCollection`; `systemResumptionMetadataSnapshot` puro / `restoreSystemPlaybackSnapshot` mutante bajo mutex compartido; `stageExternalPlayableCollection` para browse; reconnect/generaciones/fallback/prefetch; writer serial; ticker/tracker/autosave/radio) |
 | Frontera Media3 portable | `service/PlaybackMediaItemCodec.kt` (`encode` / `decode`, payload v1 Local/Remote; CDN solo URI); `service/PlaybackMediaMetadata.kt` (builder común desde `TrackMeta`); `service/StreamPlaybackTag.kt` (UA en extras) |
 | Playback Media3 + notif/lifecycle FGS | `service/MusicService.kt` (`onUpdateNotificationAsync`; `onTaskRemoved`; shuffle; HTTP googlevideo) + `service/RefreshingMediaNotificationProvider.kt` (delegate `DefaultMediaNotificationProvider`; artwork async vuelve por el hook para conservar Remote IDLE); `service/library/BestiaPopMediaLibraryCallback.kt` (`onConnectAsync` + `untrustedTransportPlayerCommands` para transporte-only de launchers/widgets; resumption/browse/search/set items); `PlaybackSystemResumption.kt`; `PlaybackServiceLifetimePolicy` |
-| Browse Auto/AVRCP | `service/library/MediaLibraryIds.kt`, `MediaLibraryBrowseMapper.kt`, `MediaLibraryBrowseProvider.kt`, `BestiaPopMediaLibraryCallback.kt`; playlist ordenada `MusicDao.getPlaylistSongsOrdered`; manifest `automotive_app_desc.xml` |
-| Registry de descargas process-scoped | `service/ProcessDownloadCoordinator.kt` (`execute`, claim aliases, permit 3, `DownloadPlaylistDestination`, persist, cancel; `interruptNow(lane)` / `dismissRunning(lane)`). `BestiaPopApplication` instala callback add/remove pending |
+| Browse Auto/AVRCP | `service/library/MediaLibraryIds.kt`, `MediaLibraryBrowseMapper.kt`, `MediaLibraryBrowseProvider.kt` (sources versionadas con `stateIn`; snapshot lazy cacheado bajo mutex y construido en Default), `BestiaPopMediaLibraryCallback.kt`; playlist ordenada `MusicDao.getPlaylistSongsOrdered`; manifest `automotive_app_desc.xml` |
+| Registry de descargas process-scoped | `service/ProcessDownloadCoordinator.kt` (`execute`, claim aliases, permit 3, `DownloadPlaylistDestination`, persist, cancel; `updateProgress` coalesced + writes estructurales inmediatos; `interruptNow(lane)` / `dismissRunning(lane)`). `BestiaPopApplication` instala callback add/remove pending |
 | Runtime de descargas process-scoped | `service/ProcessDownloadRuntime.kt` (`ProcessDownloadRequest`, private `DownloadExecutionContext`, submit/retry/resume/conflict, durable lease/reconcile; façade UI `isRunning` / `findClaimedDownload` / `attachPlaylistDestination` / `upsertRow`; lane settle/stop) |
 | Lifetime descargas Android | `OnlineDownloadServiceLauncher.kt` (backend→lane, lease ref-counted, `settleBackend`, shared `scheduleJob`); `OnlineDownloadServiceSupport.kt` (`settleOnlineDownloadLifetime`, notification collector, stop policy); tres servicios conservan primitives UIDT/FGS/job |
 | Guardar al escuchar process-scoped | `service/ProcessSaveWhileListeningCoordinator.kt` (`save` / `dismiss`; usa el registry compartido, éxito inmediato si ya existe, `SaveWhileListeningDownloadResult.InFlight` neutral si el claim pertenece a otro owner) |

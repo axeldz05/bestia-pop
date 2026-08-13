@@ -98,6 +98,16 @@ class SafImportFunctionalTest {
             listOf(Triple(1, 1, "BestiaPop SAF fixture.wav")),
             progress
         )
+        assertEquals(
+            "Each import must enumerate the SAF tree once",
+            2,
+            TestAudioDocumentsProvider.childQueryCount(namespace)
+        )
+        assertEquals(
+            "Tag and artwork extraction must share one audio descriptor",
+            1,
+            TestAudioDocumentsProvider.audioOpenCount(namespace)
+        )
 
         val player = MediaPlayer()
         try {

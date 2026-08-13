@@ -26,6 +26,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -35,12 +37,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.bestiapop.android.data.model.PlayableItem
+import kotlinx.coroutines.flow.StateFlow
 
 @Composable
 fun BottomPlayerBar(
     currentItem: PlayableItem?,
     isPlaying: Boolean,
-    progressMs: Long,
+    positionMsFlow: StateFlow<Long>,
     onPlayPauseClick: () -> Unit,
     onPreviousClick: () -> Unit,
     onNextClick: () -> Unit,
@@ -48,8 +51,6 @@ fun BottomPlayerBar(
     statusLabel: String? = null
 ) {
     if (currentItem == null) return
-
-    val progressFraction = playbackProgressFraction(progressMs, currentItem.durationMs)
 
     val subtitle = if (!statusLabel.isNullOrBlank()) {
         statusLabel
@@ -76,13 +77,9 @@ fun BottomPlayerBar(
                         indication = ripple()
                     ) { onBarClick() }
             ) {
-                LinearProgressIndicator(
-                    progress = { progressFraction },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(3.dp),
-                    color = MaterialTheme.colorScheme.primary,
-                    trackColor = MaterialTheme.colorScheme.surfaceVariant
+                BottomPlayerProgress(
+                    positionMsFlow = positionMsFlow,
+                    durationMs = currentItem.durationMs
                 )
 
                 Row(
@@ -141,4 +138,21 @@ fun BottomPlayerBar(
             }
         }
     }
+}
+
+@Composable
+private fun BottomPlayerProgress(
+    positionMsFlow: StateFlow<Long>,
+    durationMs: Long
+) {
+    val positionMs by positionMsFlow.collectAsState()
+    val progressFraction = playbackProgressFraction(positionMs, durationMs)
+    LinearProgressIndicator(
+        progress = { progressFraction },
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(3.dp),
+        color = MaterialTheme.colorScheme.primary,
+        trackColor = MaterialTheme.colorScheme.surfaceVariant
+    )
 }

@@ -21,6 +21,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -67,7 +68,8 @@ internal class ProcessDownloadCoordinator(
     private val persistence: ActiveDownloadsPersistence,
     maxConcurrentDownloads: Int = MAX_CONCURRENT_DOWNLOADS,
     private val onDownloadCompleted: suspend (Song) -> Unit = {},
-    private val onPlaylistTargetCompleted: suspend (DownloadPlaylistDestination, Song) -> Unit = { _, _ -> }
+    private val onPlaylistTargetCompleted: suspend (DownloadPlaylistDestination, Song) -> Unit = { _, _ -> },
+    private val progressPersistDelayMs: Long = PROGRESS_PERSIST_DELAY_MS
 ) {
     private class Claim(
         val downloadId: String,
@@ -82,12 +84,15 @@ internal class ProcessDownloadCoordinator(
     private val claimsByAlias = mutableMapOf<String, Claim>()
     private val permits = Semaphore(maxConcurrentDownloads)
     private val persistMutex = Mutex()
+    private val persistScheduleLock = Any()
+    private var progressPersistJob: Job? = null
     private val hydrated = CompletableDeferred<Unit>()
     private val _downloads = MutableStateFlow<List<ActiveDownload>>(emptyList())
     val downloads: StateFlow<List<ActiveDownload>> = _downloads.asStateFlow()
 
     init {
         require(maxConcurrentDownloads > 0) { "maxConcurrentDownloads must be positive" }
+        require(progressPersistDelayMs >= 0L) { "Progress persist delay must not be negative" }
         scope.launch(Dispatchers.IO) {
             val restored = try {
                 persistence.load()
@@ -197,6 +202,24 @@ internal class ProcessDownloadCoordinator(
         id: String,
         transform: (ActiveDownload) -> ActiveDownload
     ): Boolean {
+        val changed = updateRow(id, transform)
+        if (changed) schedulePersist()
+        return changed
+    }
+
+    fun updateProgress(
+        id: String,
+        transform: (ActiveDownload) -> ActiveDownload
+    ): Boolean {
+        val changed = updateRow(id, transform)
+        if (changed) scheduleProgressPersist()
+        return changed
+    }
+
+    private fun updateRow(
+        id: String,
+        transform: (ActiveDownload) -> ActiveDownload
+    ): Boolean {
         var changed = false
         _downloads.update { rows ->
             val index = rows.indexOfFirst { it.id == id }
@@ -207,7 +230,6 @@ internal class ProcessDownloadCoordinator(
                 rows.toMutableList().apply { set(index, transform(get(index))) }
             }
         }
-        if (changed) schedulePersist()
         return changed
     }
 
@@ -316,12 +338,14 @@ internal class ProcessDownloadCoordinator(
 
     internal suspend fun flush() {
         hydrated.await()
+        cancelScheduledProgressPersist()
         persistLatest()
     }
 
     /** Transfer boundary: unlike background snapshots, failure must stop bytes from starting. */
     internal suspend fun flushDurably() {
         hydrated.await()
+        cancelScheduledProgressPersist()
         persistMutex.withLock {
             persistence.save(downloads.value)
         }
@@ -396,9 +420,28 @@ internal class ProcessDownloadCoordinator(
         }
 
     private fun schedulePersist() {
+        cancelScheduledProgressPersist()
         scope.launch(Dispatchers.IO) {
             hydrated.await()
             persistLatest()
+        }
+    }
+
+    private fun scheduleProgressPersist() {
+        synchronized(persistScheduleLock) {
+            if (progressPersistJob?.isActive == true) return
+            progressPersistJob = scope.launch(Dispatchers.IO) {
+                delay(progressPersistDelayMs)
+                hydrated.await()
+                persistLatest()
+            }
+        }
+    }
+
+    private fun cancelScheduledProgressPersist() {
+        synchronized(persistScheduleLock) {
+            progressPersistJob?.cancel()
+            progressPersistJob = null
         }
     }
 
@@ -458,6 +501,7 @@ internal class ProcessDownloadCoordinator(
 
     companion object {
         const val MAX_CONCURRENT_DOWNLOADS = 3
+        private const val PROGRESS_PERSIST_DELAY_MS = 750L
 
         fun create(
             context: Context,

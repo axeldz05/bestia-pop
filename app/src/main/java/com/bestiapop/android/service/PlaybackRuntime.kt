@@ -84,6 +84,32 @@ private fun controllerReconnectBackoffMs(attempt: Int): Long {
     return 500L * (1L shl exponent)
 }
 
+internal fun refreshLocalQueueMetadata(
+    queue: List<PlayableItem>,
+    songs: List<Song>
+): List<PlayableItem> {
+    if (queue.none { it is PlayableItem.Local }) return queue
+    val byId = HashMap<Long, IndexedValue<Song>>(songs.size)
+    val byUri = HashMap<String, IndexedValue<Song>>(songs.size)
+    songs.forEachIndexed { index, song ->
+        val indexed = IndexedValue(index, song)
+        if (song.id > 0L) byId.putIfAbsent(song.id, indexed)
+        byUri.putIfAbsent(song.uriString, indexed)
+    }
+    return queue.map { item ->
+        if (item !is PlayableItem.Local) return@map item
+        val idMatch = item.song.id.takeIf { it > 0L }?.let(byId::get)
+        val uriMatch = byUri[item.song.uriString]
+        val refreshed = when {
+            idMatch == null -> uriMatch
+            uriMatch == null -> idMatch
+            idMatch.index <= uriMatch.index -> idMatch
+            else -> uriMatch
+        }?.value
+        refreshed?.let { item.copy(song = it) } ?: item
+    }
+}
+
 internal interface PlaybackControllerFacade {
     interface Listener {
         fun onIsPlayingChanged(isPlaying: Boolean) = Unit
@@ -756,17 +782,8 @@ class PlaybackRuntime internal constructor(
 
     private fun refreshLocalMetadata(songs: List<Song>) {
         val oldQueue = _queue.value
-        if (oldQueue.none { it is PlayableItem.Local }) return
-        val updated = oldQueue.map { item ->
-            if (item !is PlayableItem.Local) {
-                item
-            } else {
-                songs.firstOrNull {
-                    (item.song.id > 0L && it.id == item.song.id) ||
-                        it.uriString == item.song.uriString
-                }?.let { item.copy(song = it) } ?: item
-            }
-        }
+        val updated = refreshLocalQueueMetadata(oldQueue, songs)
+        if (updated === oldQueue) return
         _queue.value = updated
         val currentSlot = _currentItem.value?.queueEntryId
         updated.firstOrNull { it.queueEntryId == currentSlot }?.let {

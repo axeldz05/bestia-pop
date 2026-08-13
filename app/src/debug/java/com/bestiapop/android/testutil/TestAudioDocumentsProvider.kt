@@ -15,6 +15,8 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileNotFoundException
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Debug-only SAF boundary for instrumented tests.
@@ -51,9 +53,10 @@ class TestAudioDocumentsProvider : DocumentsProvider() {
         sortOrder: String?
     ): Cursor {
         if (parentDocumentId == ROOT_ID) return MatrixCursor(projection ?: DOCUMENT_COLUMNS)
-        require(rootNamespace(parentDocumentId) != null) {
+        val namespace = requireNotNull(rootNamespace(parentDocumentId)) {
             "Unknown parent document: $parentDocumentId"
         }
+        childQueryCounts.getOrPut(namespace) { AtomicInteger() }.incrementAndGet()
         return MatrixCursor(projection ?: DOCUMENT_COLUMNS).apply {
             addDocumentRow(audioDocumentId(parentDocumentId))
             addDocumentRow(imageDocumentId(parentDocumentId))
@@ -73,6 +76,9 @@ class TestAudioDocumentsProvider : DocumentsProvider() {
                 throw FileNotFoundException("Provider namespace invalidated: $namespace")
             }
         }
+        if (documentId.endsWith(AUDIO_SUFFIX)) {
+            audioOpenCounts.getOrPut(namespace) { AtomicInteger() }.incrementAndGet()
+        }
         return ParcelFileDescriptor.open(
             fixtureFile(namespace, documentId),
             ParcelFileDescriptor.MODE_READ_ONLY
@@ -86,10 +92,16 @@ class TestAudioDocumentsProvider : DocumentsProvider() {
     override fun call(method: String, arg: String?, extras: Bundle?): Bundle {
         val namespace = requireNotNull(arg) { "Namespace is required for $method" }
         when (method) {
-            METHOD_ACTIVATE -> synchronized(invalidNamespaces) { invalidNamespaces.remove(namespace) }
+            METHOD_ACTIVATE -> {
+                synchronized(invalidNamespaces) { invalidNamespaces.remove(namespace) }
+                childQueryCounts[namespace] = AtomicInteger(0)
+                audioOpenCounts[namespace] = AtomicInteger(0)
+            }
             METHOD_INVALIDATE -> synchronized(invalidNamespaces) { invalidNamespaces.add(namespace) }
             METHOD_DELETE -> {
                 synchronized(invalidNamespaces) { invalidNamespaces.remove(namespace) }
+                childQueryCounts.remove(namespace)
+                audioOpenCounts.remove(namespace)
                 val dir = namespaceDir(namespace)
                 check(!dir.exists() || dir.deleteRecursively()) {
                     "Could not delete provider namespace ${dir.absolutePath}"
@@ -231,6 +243,8 @@ class TestAudioDocumentsProvider : DocumentsProvider() {
         private val AUDIO_SIZE_BYTES =
             WAV_HEADER_BYTES +
                 WAV_SAMPLE_RATE_HZ * AUDIO_DURATION_MS / 1_000L * WAV_BYTES_PER_SAMPLE
+        private val childQueryCounts = ConcurrentHashMap<String, AtomicInteger>()
+        private val audioOpenCounts = ConcurrentHashMap<String, AtomicInteger>()
 
         private val ROOT_COLUMNS = arrayOf(
             DocumentsContract.Root.COLUMN_ROOT_ID,
@@ -272,6 +286,12 @@ class TestAudioDocumentsProvider : DocumentsProvider() {
 
         fun delete(context: Context, namespace: UUID) =
             call(context.contentResolver, namespace, METHOD_DELETE)
+
+        fun childQueryCount(namespace: UUID): Int =
+            childQueryCounts[namespace.toString()]?.get() ?: 0
+
+        fun audioOpenCount(namespace: UUID): Int =
+            audioOpenCounts[namespace.toString()]?.get() ?: 0
 
         private fun call(resolver: ContentResolver, namespace: UUID, method: String) {
             requireNotNull(

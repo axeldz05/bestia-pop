@@ -78,7 +78,7 @@ data class AudioFileMetadata(
             path: String,
             fallbackTitle: String,
             artworkIdentifier: String = path,
-            extractEmbeddedArtwork: (path: String, identifier: String) -> String?
+            persistEmbeddedArtwork: (bytes: ByteArray, identifier: String) -> String?
         ): AudioFileMetadata {
             val store = MusicFileStore(context)
             val ref = AudioPersistRef.canonicalize(path)
@@ -98,7 +98,9 @@ data class AudioFileMetadata(
                         .extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
                         ?.toLongOrNull()
                         ?: 0L,
-                    artworkUri = extractEmbeddedArtwork(ref.uriString, artworkIdentifier),
+                    artworkUri = retriever.embeddedPicture
+                        ?.takeIf(ByteArray::isNotEmpty)
+                        ?.let { persistEmbeddedArtwork(it, artworkIdentifier) },
                     trackNumber = parseCdTrackNumber(
                         retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_CD_TRACK_NUMBER),
                         retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DISC_NUMBER)

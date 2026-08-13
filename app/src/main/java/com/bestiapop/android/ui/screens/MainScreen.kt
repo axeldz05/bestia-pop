@@ -73,7 +73,6 @@ fun MainScreen(
 
     val currentItem by viewModel.currentItem.collectAsState()
     val isPlaying by viewModel.isPlaying.collectAsState()
-    val positionMs by viewModel.playbackPositionMs.collectAsState()
     val radioStatusLabel by viewModel.radioStatusLabel.collectAsState()
     val resolvingRemote by viewModel.resolvingRemote.collectAsState()
     val radioLoading by viewModel.radioLoading.collectAsState()
@@ -240,7 +239,7 @@ fun MainScreen(
             BottomPlayerBar(
                 currentItem = currentItem,
                 isPlaying = isPlaying,
-                progressMs = positionMs,
+                positionMsFlow = viewModel.playbackPositionMs,
                 onPlayPauseClick = { viewModel.togglePlayPause() },
                 onPreviousClick = { viewModel.skipToPrevious() },
                 onNextClick = { viewModel.skipToNext() },

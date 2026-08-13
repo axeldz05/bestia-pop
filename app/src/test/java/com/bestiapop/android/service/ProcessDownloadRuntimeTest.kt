@@ -162,6 +162,50 @@ class ProcessDownloadRuntimeTest {
     }
 
     @Test
+    fun concurrentForegroundResumes_doNotDuplicateInterruptedTransfer() = runBlocking {
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val executions = AtomicInteger(0)
+        val fixture = fixture(
+            initial = listOf(
+                row(
+                    id = "interrupted",
+                    state = CandidateDownloadState.ERROR,
+                    interrupted = true,
+                    error = DownloadMessages.interrupted
+                )
+            ),
+            download = { track, _, _ ->
+                executions.incrementAndGet()
+                entered.complete(Unit)
+                release.await()
+                Result.success(song(track, 51L))
+            }
+        )
+        try {
+            fixture.coordinator.awaitHydrated()
+
+            val first = fixture.runtime.resumeInterrupted()
+            withTimeout(TIMEOUT_MS) { entered.await() }
+            val second = fixture.runtime.resumeInterrupted()
+            release.complete(Unit)
+            withTimeout(TIMEOUT_MS) {
+                first.join()
+                second.join()
+            }
+
+            assertEquals(1, executions.get())
+            assertEquals(
+                CandidateDownloadState.SUCCESS,
+                fixture.coordinator.downloads.value.single().state
+            )
+        } finally {
+            release.complete(Unit)
+            fixture.close()
+        }
+    }
+
+    @Test
     fun resumeAllErrors_retriesEveryErrorThroughSharedPermit() = runBlocking {
         val executions = AtomicInteger(0)
         val fixture = fixture(

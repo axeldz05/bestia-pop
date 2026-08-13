@@ -302,6 +302,11 @@ class MusicRepository private constructor(
         }
     }
 
+    override suspend fun getPlaylistSongsOrdered(playlistId: Long): List<Song> =
+        withContext(Dispatchers.IO) {
+            musicDao.getPlaylistSongsOrdered(playlistId)
+        }
+
     override suspend fun scanMediaStore(onProgress: LibraryScanProgress?) = withContext(Dispatchers.IO) {
         val existing = musicDao.getAllSongs()
         val dedup = libraryDedupSets(existing)

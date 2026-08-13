@@ -1,13 +1,11 @@
 package com.bestiapop.android.persistence
 
 import android.app.NotificationManager
-import android.content.ComponentName
 import android.content.Intent
 import android.os.Process
 import android.os.SystemClock
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
-import androidx.media3.session.SessionToken
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.LargeTest
 import androidx.test.platform.app.InstrumentationRegistry
@@ -25,9 +23,8 @@ import com.bestiapop.android.service.MusicService
 import com.bestiapop.android.service.PlaybackRuntime
 import com.bestiapop.android.testutil.DeviceAwakeRule
 import com.bestiapop.android.testutil.PcmWavFixture
+import com.bestiapop.android.testutil.PlaybackDeviceProbe
 import java.io.File
-import java.util.concurrent.FutureTask
-import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
@@ -51,6 +48,7 @@ class PlaybackProcessDeathE2ETest {
 
     private val instrumentation
         get() = InstrumentationRegistry.getInstrumentation()
+    private val deviceProbe = PlaybackDeviceProbe()
     private val context
         get() = instrumentation.targetContext
     private val application
@@ -530,12 +528,7 @@ class PlaybackProcessDeathE2ETest {
         check(!fixtureDir.exists()) { "Could not delete process-death fixtures" }
     }
 
-    private fun connectController(): MediaController {
-        val token = SessionToken(context, ComponentName(context, MusicService::class.java))
-        return MediaController.Builder(context, token)
-            .buildAsync()
-            .get(CONNECTION_TIMEOUT_SECONDS, TimeUnit.SECONDS)
-    }
+    private fun connectController(): MediaController = deviceProbe.connectController()
 
     private fun await(description: String, condition: () -> Boolean) {
         val deadline = SystemClock.elapsedRealtime() + ASYNC_TIMEOUT_MS
@@ -573,11 +566,7 @@ class PlaybackProcessDeathE2ETest {
         return requireNotNull(result)
     }
 
-    private fun <T> onMain(block: () -> T): T {
-        val task = FutureTask(block)
-        instrumentation.runOnMainSync(task)
-        return task.get()
-    }
+    private fun <T> onMain(block: () -> T): T = deviceProbe.onMain(block)
 
     private companion object {
         const val FIXTURE_DIRECTORY = "playback-process-death-e2e"
@@ -590,7 +579,6 @@ class PlaybackProcessDeathE2ETest {
         const val EXPECTED_POSITION_MS = 5_432L
         const val POSITION_TOLERANCE_MS = 100L
         const val MIN_POSITION_ADVANCE_MS = 100L
-        const val CONNECTION_TIMEOUT_SECONDS = 10L
         const val ASYNC_TIMEOUT_MS = 15_000L
         const val POLL_INTERVAL_MS = 25L
 

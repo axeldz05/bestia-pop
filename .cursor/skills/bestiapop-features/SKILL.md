@@ -50,7 +50,7 @@ búsqueda escrita por el usuario.
 
 Modelo clave: `TrackIdentity` / `TrackMeta`, `OnlineCatalogTrack`, `CatalogTrackCandidate`; chrome UI derivado de `activeDownloads.findUiDownloadByTrack`, mientras claims usan `ProcessDownloadRuntime.findClaimedDownload`. `ActiveDownload` conserva `currentTrack`, policy/stages y transiciones (`asDownloading`/`asConflict`/`asSuccess`/`asError`); `DownloadLane` separa EXPLICIT/AUTOSAVE; `DownloadPlaylistDestination` es el único target playlist+identity. `ActiveDownloadSource`: CATALOG/LINK/SAVE_WHILE_LISTENING/BATCH/LB_IMPORT/DISCOVER. JSON legacy mantiene `displayTitle`/artwork compat. Copy: `DownloadMessages`.
 
-**Invariante cola:** todas las descargas online se registran en `ProcessDownloadCoordinator.downloads` (`QUEUED` → `DOWNLOADING` → `SUCCESS`/`ERROR`); éxito se retiene hasta dismiss. `ProcessDownloadRuntime` posee jobs fuera del VM; coordinator reclama plain/`batch:` y comparte `Semaphore(3)`. Cada row persiste todos los destinos playlist+identity, lookup, batch/policy y `downloadStarted`/`storageCommitted`; flush durable ocurre antes del lifetime/bytes. SUCCESS se publica después de callbacks playlist; si uno falla, queda resumible y el commit local se reconcilia sin bajar de nuevo. Tras kill, active → ERROR interrumpido; `resumeInterrupted` reencola al abrir salvo último exit `REASON_USER_REQUESTED`. Errores reales usan retry/`resumeAllDownloads`; IDLE nunca auto. Explícitas: UIDT API34+ / FGS dataSync API26–33; Guardar al escuchar: constrained `OnlineAutomaticDownloadJobService`. Badge = DOWNLOADING + ERROR.
+**Invariante cola:** todas las descargas online se registran en `ProcessDownloadCoordinator.downloads` (`QUEUED` → `DOWNLOADING` → `SUCCESS`/`ERROR`); éxito se retiene hasta dismiss. `ProcessDownloadRuntime` posee jobs fuera del VM; coordinator reclama plain/`batch:` y comparte `Semaphore(3)`. Cada row persiste destinos, lookup, batch/policy y stages; flush durable ocurre antes del lifetime/bytes. Tras kill o stop de Job, active → ERROR interrumpido; `resumeInterrupted` reencola tanto en cold start como en `MainActivity.onStart` warm salvo salida `REASON_USER_REQUESTED`. Explícitas: UIDT API34+ / FGS dataSync API26–33; Guardar al escuchar: constrained job. `BackgroundExecutionStatus` separa restricción Android de exención Doze y la UI guía al ajuste correcto.
 
 ## 3. Biblioteca: filtro, orden y vistas
 
@@ -198,7 +198,7 @@ State: `currentThemeState`.
 | Capacidad | Entry point |
 |-----------|-------------|
 | Prefs | `PlaybackSettings` + `PlaybackModeRestore.resolve` / `PlaybackModeClear.afterManualPlay` / `afterSkip` / `afterRadioStart` / `parseRepeatModeName`; writes 1-key `DataStore.put` |
-| Settings UI | `PlaybackSettingsScreen` vía `SettingsScreen` sección Reproducción; sección Batería pide `ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` |
+| Settings UI | `PlaybackSettingsScreen` vía `SettingsScreen` sección Reproducción; Batería muestra por separado `ActivityManager.isBackgroundRestricted` y `PowerManager.isIgnoringBatteryOptimizations` |
 | Restore | `PlaybackRuntime.restorePlaybackModes` tras conectar/sincronizar el controller |
 | Persist | `PlaybackRuntime.setShuffleEnabled` / `setRepeatMode` / `toggleShuffle` (`applyQueueReorder` / `rebuildPlayerQueueAroundCurrent`) / `toggleRepeatMode` / `finishPlayPlayableCollection` (`startShuffled`) / `persistPlaybackSession` → `queueSnapshotForPersist` / `QueueSnapshot.shufflePlayOrder` |
 | Remember flags | `setRememberShuffleOnLaunch` / `setRememberRepeatOnLaunch` / `setAutoplayOnLaunch` |
@@ -295,7 +295,7 @@ Centro de descargas online → sección 2 (`DownloadsScreen`, tab Descargas).
 | Resolver | `MusicRepository.streamResolver` (`StreamResolver.resolveForPlayback` / `resolve` / `prefetch` en `data/stream/StreamResolver.kt`) |
 | HTTP ExoPlayer | `StreamPlaybackTag` + `setStreamPlaybackTag` / `streamPlaybackTag()` (`RequestMetadata.extras`) + `MusicService` `UserAgentMediaSourceFactory` / `boundGoogleVideoRequest` (UA + `clen`→`DataSpec.length`) |
 | Invalidar stream muerto | `StreamResolver.invalidate(item)` (suspend, bajo el mutex; borra la clave `id:` **y** la `q:` y toda entrada con ese `videoId`) |
-| FGS background | Una sola notif custom (`PlaybackNotificationFactory`, canal `playback_channel`, id 1001): Previous · Play/Pause · Next, compact 0/1/2; acciones = `ACTION_MEDIA_BUTTON` explícito a `MusicService` (Play usa foreground-service PI en API 26+), content tap = `setSessionActivity`. `MusicService.onUpdateNotification` es dueño único (sin provider/super paralelo) y `promotePlaybackForeground` usa `Service.startForeground` tipo `mediaPlayback` con try/catch + Crashlytics. Re-promote en `onPlayWhenReadyChanged` / `onPlaybackStateChanged` / `onMediaItemTransition` si engaged. `onTaskRemoved` usa únicamente `isPlaybackEngaged` (estado real del player; no Media3 `isPlaybackOngoing`, que queda false al bypassear su notification manager). `MusicPlayerViewModel.togglePlayPause` delega en `PlaybackRuntime.togglePlayPause`; resolver un Remote no pausa la intención activa. ExoPlayer `WAKE_MODE_NETWORK` + permiso `WAKE_LOCK`. FGS se mantiene con `playWhenReady` aunque el state sea IDLE breve (resolve Remote); se suelta en pause/`STATE_ENDED`. Play Store: FGS basta. Sideload OEM (Moto): `install.sh` alinea `adaptive_bucket` + `RUN_ANY_IN_BACKGROUND allow` vía adb — no viaja en el APK |
+| FGS background | Una sola notif Media3 (`RefreshingMediaNotificationProvider` → `DefaultMediaNotificationProvider`, canal `playback_channel`, id 1001): portada + Previous · Play/Pause · Next. Artwork async vuelve por `triggerNotificationUpdate`, así no despromueve Remote IDLE. `MusicService.onUpdateNotificationAsync` fuerza foreground cuando `PlaybackServiceLifetimePolicy.isPlaybackEngaged`; Media3 mantiene 10 min de gracia tras pausa/error. `onTaskRemoved` conserva política propia. Start denegado usa retry acotado y se omite si `backgroundRestricted`. |
 | Ownership cola/play | `PlaybackRuntime` (único `MediaController`, listener y jobs; `attachUi` / `detachUi` / `events`); `MusicPlayerViewModel` delega comandos, expone StateFlows y consume eventos |
 | Codec Media3 | `PlaybackMediaItemCodec` (`encode` / `decode` / payload v1 sin CDN) |
 | Stream desde catálogo | `playOnlineCatalogTrackAsStream` + preview in-dialog (`CatalogTrackItem` / `CandidateTrackCard` + `CatalogPreviewBar`); `cycleSongCatalogResult` / `cycleTrackCandidate` (“Buscar otro”) |
@@ -312,6 +312,7 @@ Centro de descargas online → sección 2 (`DownloadsScreen`, tab Descargas).
 - Lifecycle: el ticker de 200 ms existe solo mientras `isPlaying`; al quedar sin UI, playback ni cola pendiente, el runtime cancela future/retry/ticker y libera el controller. Playback/cola sobreviven a `onTaskRemoved`.
 - Biblioteca vacía **sin snapshot Remote usable** → `BottomPlayerBar` oculto (`currentItem == null`).
 - Con playback activo (`playWhenReady`, items en timeline, no `ENDED`), `MusicService` permanece FGS aunque se destruya Activity/ViewModel o se remueva la task. `PlaybackServiceLifetimePolicy` conserva el caso `STATE_IDLE` temporal de placeholder Remote; `onTaskRemoved` no hace `stopSelf`. Wake: `WAKE_LOCK` + `ExoPlayer.setWakeMode(NETWORK)`.
+- System resumption: `MediaButtonReceiver` → `BestiaPopMediaLibraryCallback.onPlaybackResumption`; metadata-only usa `systemResumptionMetadataSnapshot` sin mutar runtime/red y Play usa `restoreSystemPlaybackSnapshot` + codec. `autoplayOnLaunch` sigue siendo solo para launch de UI.
 - No persistir CDN de `Remote`. Mini bar: Previous + status (`Resolviendo…` / `Armando radio…` / `radioStatusLabel`).
 
 | Capacidad | Entry point |
@@ -323,7 +324,15 @@ Centro de descargas online → sección 2 (`DownloadsScreen`, tab Descargas).
 | Seed idle | `PlaybackRuntime.maybeSeedIdlePlayer` / `applyHydratedQueue` |
 | Mini bar UI | `BottomPlayerBar` (`statusLabel`, Previous); wiring en `MainScreen` |
 
-## 10c. Acciones de canción/álbum en Now Playing
+## 10c. Android Auto / Bluetooth browse
+
+**Invariante:** el árbol externo expone solo catálogo local reproducible offline: Canciones, Álbumes, Artistas y Playlists. Discover, Radio y pendientes remotos quedan fuera; Now Playing remoto sigue visible por la sesión activa.
+
+**Invariante controles externos:** controllers no confiables (launchers/widgets) reciben solo transporte — Play/Pause, Prepare, Anterior y Siguiente— además de lectura; no reciben mutación de cola/biblioteca, repeat ni shuffle. `BestiaPopMediaLibraryCallback.onConnectAsync` aplica `untrustedTransportPlayerCommands`; los controllers confiables conservan el set completo.
+
+Entry points: `MediaLibraryBrowseProvider` + `MediaLibraryIds` / `MediaLibraryBrowseMapper` y `BestiaPopMediaLibraryCallback` (`service/library`); callbacks connect/root/children/item/search/set-items; agregados en `BrowseLocalLibraryUseCase`; playlist ordenada vía `MusicDao.getPlaylistSongsOrdered`. Selección externa se stagea en `PlaybackRuntime.stageExternalPlayableCollection`, sin MediaController reentrante ni pipeline paralelo.
+
+## 10d. Acciones de canción/álbum en Now Playing
 
 **Invariante:** ⋮ junto al título (radio sigue en el header). Nav a biblioteca/playlist **cierra** NP + limpia search. Editar / añadir a playlist / identificar / radio no cierran NP.
 

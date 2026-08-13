@@ -12,6 +12,7 @@ import com.bestiapop.android.data.model.PlaylistPendingTrack
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.data.util.TagSyncSummary
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 
 /** Scan/import progress: done, total, current file label. */
 typealias LibraryScanProgress = (done: Int, total: Int, fileName: String) -> Unit
@@ -23,6 +24,8 @@ interface IMusicRepository {
 
     fun getPlaylistSongsFlow(playlistId: Long): Flow<List<Song>>
     fun getPlaylistDetailsFlow(playlistId: Long): Flow<Pair<Playlist, List<Song>>?>
+    suspend fun getPlaylistSongsOrdered(playlistId: Long): List<Song> =
+        getPlaylistSongsFlow(playlistId).first()
 
     suspend fun scanMediaStore(onProgress: LibraryScanProgress? = null)
     /** Indexes audio under public Music/BestiaPop after reinstall (Room wipe). Returns inserted count. */

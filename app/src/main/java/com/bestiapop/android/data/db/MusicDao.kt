@@ -161,6 +161,16 @@ interface MusicDao {
     @Query("SELECT * FROM playlists WHERE playlistId = :playlistId")
     fun getPlaylistWithSongsFlow(playlistId: Long): Flow<PlaylistWithSongs?>
 
+    @Query(
+        """
+        SELECT songs.* FROM songs
+        INNER JOIN playlist_song_cross_ref AS refs ON refs.songId = songs.id
+        WHERE refs.playlistId = :playlistId
+        ORDER BY refs.position ASC, songs.id ASC
+        """
+    )
+    suspend fun getPlaylistSongsOrdered(playlistId: Long): List<Song>
+
     // Pending playlist tracks (metadata until download)
     @Query("SELECT * FROM playlist_pending_tracks WHERE playlistId = :playlistId ORDER BY position ASC, id ASC")
     fun getPlaylistPendingTracksFlow(playlistId: Long): Flow<List<PlaylistPendingTrackEntity>>

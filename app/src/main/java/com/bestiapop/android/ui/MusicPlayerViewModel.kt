@@ -42,6 +42,8 @@ import com.bestiapop.android.data.preferences.ListenBrainzSettings
 import com.bestiapop.android.data.preferences.PlaybackPreferencesRepository
 import com.bestiapop.android.data.preferences.PlaybackSettings
 import com.bestiapop.android.data.preferences.ThemePreferencesRepository
+import com.bestiapop.android.data.system.BackgroundExecutionProbe
+import com.bestiapop.android.data.system.BackgroundExecutionStatus
 import com.bestiapop.android.data.util.CrashReporter
 import com.bestiapop.android.data.util.SongPathNormalizer
 import com.bestiapop.android.data.util.looksLikeStoragePath
@@ -188,6 +190,11 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     val downloadSettings: StateFlow<DownloadSettings> =
         downloadPreferences.settingsFlow
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), DownloadSettings())
+
+    private val _backgroundExecutionStatus =
+        MutableStateFlow(BackgroundExecutionProbe.current(application))
+    val backgroundExecutionStatus: StateFlow<BackgroundExecutionStatus> =
+        _backgroundExecutionStatus.asStateFlow()
 
     val libraryTagWriteSettings: StateFlow<LibraryTagWriteSettings> =
         libraryTagWritePreferences.settingsFlow
@@ -492,6 +499,13 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         _pendingOpenDownloads.value = true
     }
 
+    fun onAppForeground() {
+        _backgroundExecutionStatus.value = BackgroundExecutionProbe.current(getApplication())
+        if (app.shouldAutoResumeDownloads) {
+            processDownloadRuntime.resumeInterrupted()
+        }
+    }
+
     fun consumeOpenDownloads() {
         _pendingOpenDownloads.value = false
     }
@@ -601,8 +615,16 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
      * came from so closing the section brings them back instead of stranding them on Settings.
      */
     fun openDownloadSettings() {
+        openSettingsSection("downloads")
+    }
+
+    fun openPlaybackSettings() {
+        openSettingsSection("playback")
+    }
+
+    private fun openSettingsSection(section: String) {
         navIndexBeforeTransient = _selectedNavIndex.value
-        _pendingSettingsSection.value = "downloads"
+        _pendingSettingsSection.value = section
         _selectedNavIndex.value = NAV_SETTINGS
     }
 
@@ -787,10 +809,6 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 }
         }
 
-        // Opening the UI is a platform-safe point to restart requests interrupted by process death.
-        if (app.shouldAutoResumeDownloads) {
-            processDownloadRuntime.resumeInterrupted()
-        }
         viewModelScope.launch {
             processDownloadRuntime.events.collect { event ->
                 when (event) {

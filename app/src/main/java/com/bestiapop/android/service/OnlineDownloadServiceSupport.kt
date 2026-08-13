@@ -1,9 +1,11 @@
 package com.bestiapop.android.service
 
 import android.app.Notification
+import android.app.job.JobParameters
 import com.bestiapop.android.data.model.ActiveDownload
 import com.bestiapop.android.data.model.DownloadLane
 import com.bestiapop.android.data.model.forLane
+import com.bestiapop.android.data.util.CrashReporter
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.StateFlow
@@ -43,4 +45,26 @@ internal fun handleOnlineDownloadJobStop(
         interruptNow()
     }
     return !userStopped
+}
+
+internal fun reportOnlineDownloadJobStop(
+    backend: OnlineDownloadBackend,
+    stopReason: Int
+) {
+    val reason = onlineDownloadStopReasonName(stopReason)
+    CrashReporter.setKey("download_job_stop_reason", reason)
+    CrashReporter.log("download_job_stopped backend=${backend.name} reason=$reason")
+}
+
+internal fun onlineDownloadStopReasonName(stopReason: Int): String = when (stopReason) {
+    JobParameters.STOP_REASON_USER -> "user"
+    JobParameters.STOP_REASON_BACKGROUND_RESTRICTION -> "background_restriction"
+    JobParameters.STOP_REASON_CONSTRAINT_CONNECTIVITY -> "connectivity"
+    JobParameters.STOP_REASON_QUOTA -> "quota"
+    JobParameters.STOP_REASON_TIMEOUT -> "timeout"
+    JobParameters.STOP_REASON_APP_STANDBY -> "app_standby"
+    JobParameters.STOP_REASON_CANCELLED_BY_APP -> "cancelled_by_app"
+    JobParameters.STOP_REASON_PREEMPT -> "preempt"
+    JobParameters.STOP_REASON_DEVICE_STATE -> "device_state"
+    else -> "other_$stopReason"
 }

@@ -63,6 +63,10 @@ class OnlineDownloadJobService : JobService() {
     override fun onStopJob(params: JobParameters): Boolean {
         runner?.cancel()
         notificationCollector?.cancel()
+        reportOnlineDownloadJobStop(
+            OnlineDownloadBackend.USER_INITIATED_JOB,
+            params.stopReason
+        )
         return handleOnlineDownloadJobStop(
             backend = OnlineDownloadBackend.USER_INITIATED_JOB,
             userStopped = params.stopReason == JobParameters.STOP_REASON_USER,

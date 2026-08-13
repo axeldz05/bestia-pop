@@ -4,7 +4,6 @@ import android.annotation.SuppressLint
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
-import android.os.PowerManager
 import android.provider.Settings
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
@@ -13,20 +12,13 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.bestiapop.android.data.preferences.MAX_STREAM_SKIP_GRACE_SECONDS
 import com.bestiapop.android.ui.MusicPlayerViewModel
 import com.bestiapop.android.ui.components.SettingsScrollColumn
@@ -44,21 +36,9 @@ fun PlaybackSettingsScreen(viewModel: MusicPlayerViewModel) {
     val clearShuffleOnSkip by viewModel.clearShuffleOnSkip.collectAsState()
     val clearRepeatOneOnSkip by viewModel.clearRepeatOneOnSkip.collectAsState()
     val streamGraceSeconds by viewModel.streamSkipGraceSeconds.collectAsState()
+    val backgroundExecutionStatus by viewModel.backgroundExecutionStatus.collectAsState()
 
     val context = LocalContext.current
-    val lifecycleOwner = LocalLifecycleOwner.current
-    var ignoringBatteryOptimizations by remember {
-        mutableStateOf(isIgnoringBatteryOptimizations(context))
-    }
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
-                ignoringBatteryOptimizations = isIgnoringBatteryOptimizations(context)
-            }
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
-    }
 
     SettingsScrollColumn(
         intro = "Elegí qué se restaura al abrir la app y si al reproducir o saltar se sale del aleatorio y la repetición. Los switches de recordar no cambian la sesión actual."
@@ -190,16 +170,42 @@ fun PlaybackSettingsScreen(viewModel: MusicPlayerViewModel) {
         PlaybackSettingsSectionTitle("Batería")
         Spacer(modifier = Modifier.height(4.dp))
         Text(
-            text = "Algunos celulares pausan apps en segundo plano. Permití la excepción para que la reproducción no se corte con la pantalla apagada.",
+            text = "Android administra por separado la actividad en segundo plano y la optimización de batería.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Spacer(modifier = Modifier.height(12.dp))
 
-        if (ignoringBatteryOptimizations) {
+        if (backgroundExecutionStatus.backgroundRestricted) {
+            Text(
+                text = "Actividad en segundo plano restringida",
+                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                color = MaterialTheme.colorScheme.error
+            )
+            Text(
+                text = "El sistema puede ocultar la notificación, detener jobs y pausar descargas al bloquear el celular.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            TextButton(onClick = { openAppDetailsSettings(context) }) {
+                Text("Abrir información de la app")
+            }
+        } else {
             SettingsSwitchRow(
-                title = "Sin restricciones de batería",
-                subtitle = "La app puede seguir reproduciendo en segundo plano",
+                title = "Actividad en segundo plano permitida",
+                subtitle = "Android no marcó la app como restringida",
+                checked = true,
+                onCheckedChange = {},
+                enabled = false
+            )
+        }
+
+        Spacer(modifier = Modifier.height(20.dp))
+
+        if (backgroundExecutionStatus.ignoringBatteryOptimizations) {
+            SettingsSwitchRow(
+                title = "Optimización de batería desactivada",
+                subtitle = "Doze no debería suspender la reproducción ni las transferencias",
                 checked = true,
                 onCheckedChange = {},
                 enabled = false
@@ -207,17 +213,19 @@ fun PlaybackSettingsScreen(viewModel: MusicPlayerViewModel) {
         } else {
             TextButton(onClick = {
                 requestIgnoreBatteryOptimizations(context)
-                ignoringBatteryOptimizations = isIgnoringBatteryOptimizations(context)
             }) {
-                Text("Permitir ejecución en segundo plano")
+                Text("Desactivar optimización de batería")
             }
         }
     }
 }
 
-private fun isIgnoringBatteryOptimizations(context: Context): Boolean {
-    val pm = context.getSystemService(Context.POWER_SERVICE) as PowerManager
-    return pm.isIgnoringBatteryOptimizations(context.packageName)
+private fun openAppDetailsSettings(context: Context) {
+    context.startActivity(
+        Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+            data = "package:${context.packageName}".toUri()
+        }
+    )
 }
 
 // Explicit, user-triggered exception for uninterrupted media playback; never requested silently.

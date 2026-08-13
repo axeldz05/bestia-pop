@@ -36,8 +36,16 @@ class OnlineAutomaticDownloadJobService : JobService() {
 
     override fun onStopJob(params: JobParameters): Boolean {
         runner?.cancel()
-        val userStopped = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
-            params.stopReason == JobParameters.STOP_REASON_USER
+        val stopReason = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            params.stopReason
+        } else {
+            JobParameters.STOP_REASON_UNDEFINED
+        }
+        reportOnlineDownloadJobStop(
+            OnlineDownloadBackend.BACKGROUND_JOB,
+            stopReason
+        )
+        val userStopped = stopReason == JobParameters.STOP_REASON_USER
         return handleOnlineDownloadJobStop(
             backend = OnlineDownloadBackend.BACKGROUND_JOB,
             userStopped = userStopped,

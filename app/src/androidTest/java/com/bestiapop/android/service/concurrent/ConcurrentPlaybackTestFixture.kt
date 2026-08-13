@@ -3,7 +3,6 @@ package com.bestiapop.android.service.concurrent
 import android.app.ActivityManager
 import android.app.Notification
 import android.app.NotificationManager
-import android.content.ComponentName
 import android.content.Intent
 import android.os.SystemClock
 import androidx.core.app.NotificationCompat
@@ -11,7 +10,6 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ViewModelProvider
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
-import androidx.media3.session.SessionToken
 import androidx.test.core.app.ActivityScenario
 import androidx.test.platform.app.InstrumentationRegistry
 import com.bestiapop.android.BestiaPopApplication
@@ -20,11 +18,10 @@ import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.service.MusicService
 import com.bestiapop.android.testutil.PcmWavFixture
+import com.bestiapop.android.testutil.PlaybackDeviceProbe
 import com.bestiapop.android.testutil.SideloadPlaybackAppOps
 import com.bestiapop.android.ui.MusicPlayerViewModel
 import java.io.File
-import java.util.concurrent.FutureTask
-import java.util.concurrent.TimeUnit
 
 /**
  * Real Media3 playback owner shared by the concurrent service scenarios.
@@ -35,6 +32,7 @@ import java.util.concurrent.TimeUnit
 internal class ConcurrentPlaybackTestFixture : AutoCloseable {
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val context = instrumentation.targetContext
+    private val deviceProbe = PlaybackDeviceProbe()
     private val application = context.applicationContext as BestiaPopApplication
     private val fixtureDir = File(
         context.cacheDir,
@@ -130,13 +128,10 @@ internal class ConcurrentPlaybackTestFixture : AutoCloseable {
             musicServiceInfo()?.takeIf(ActivityManager.RunningServiceInfo::foreground)
         }
         val notification = awaitConcurrentValue(
-            "ongoing playback notification",
+            "playback notification",
             diagnostics = ::diagnostics,
             value = ::playbackNotification
         )
-        check(notification.flags and Notification.FLAG_ONGOING_EVENT != 0) {
-            "Playback notification is not ongoing: flags=${notification.flags}"
-        }
         check(NotificationCompat.getActionCount(notification) == 3) {
             "Playback notification action count changed"
         }
@@ -230,38 +225,19 @@ internal class ConcurrentPlaybackTestFixture : AutoCloseable {
         }
     }
 
-    private fun connectController(): MediaController {
-        val token = SessionToken(context, ComponentName(context, MusicService::class.java))
-        return MediaController.Builder(context, token)
-            .buildAsync()
-            .get(CONNECTION_TIMEOUT_SECONDS, TimeUnit.SECONDS)
-    }
+    private fun connectController(): MediaController = deviceProbe.connectController()
 
-    private fun playbackNotification(): Notification? =
-        context.getSystemService(NotificationManager::class.java)
-            .activeNotifications
-            .firstOrNull { it.id == MusicService.PLAYBACK_NOTIFICATION_ID }
-            ?.notification
+    private fun playbackNotification(): Notification? = deviceProbe.playbackNotification()
 
-    @Suppress("DEPRECATION")
-    private fun musicServiceInfo(): ActivityManager.RunningServiceInfo? {
-        val component = ComponentName(context, MusicService::class.java)
-        return context.getSystemService(ActivityManager::class.java)
-            .getRunningServices(Int.MAX_VALUE)
-            .firstOrNull { it.service == component }
-    }
+    private fun musicServiceInfo(): ActivityManager.RunningServiceInfo? =
+        deviceProbe.musicServiceInfo()
 
-    private fun <T> onMain(block: () -> T): T {
-        val task = FutureTask(block)
-        instrumentation.runOnMainSync(task)
-        return task.get()
-    }
+    private fun <T> onMain(block: () -> T): T = deviceProbe.onMain(block)
 
     private companion object {
         const val FIXTURE_SONG_ID = -7_001L
         const val PLAYBACK_TITLE = "Concurrent operations playback"
         const val PLAYBACK_DURATION_MS = 40_000
-        const val CONNECTION_TIMEOUT_SECONDS = 10L
         const val MIN_POSITION_ADVANCE_MS = 150L
     }
 }

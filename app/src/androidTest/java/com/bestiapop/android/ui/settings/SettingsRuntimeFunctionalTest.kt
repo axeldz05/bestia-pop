@@ -1,6 +1,5 @@
 package com.bestiapop.android.ui.settings
 
-import android.content.ComponentName
 import android.content.Intent
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsOff
@@ -16,7 +15,6 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
-import androidx.media3.session.SessionToken
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.LargeTest
 import androidx.test.platform.app.InstrumentationRegistry
@@ -32,11 +30,10 @@ import com.bestiapop.android.service.MusicServiceAppliedSettings
 import com.bestiapop.android.service.MusicServiceSettingsProbe
 import com.bestiapop.android.testutil.DeviceAwakeRule
 import com.bestiapop.android.testutil.PcmWavFixture
+import com.bestiapop.android.testutil.PlaybackDeviceProbe
 import com.bestiapop.android.ui.persistence.MainActivityStateRule
 import com.bestiapop.android.ui.theme.ThemePresets
 import java.io.File
-import java.util.concurrent.FutureTask
-import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -56,6 +53,7 @@ class SettingsRuntimeFunctionalTest {
         get() = InstrumentationRegistry.getInstrumentation()
     private val context
         get() = instrumentation.targetContext
+    private val deviceProbe = PlaybackDeviceProbe()
 
     @get:Rule
     val rules: RuleChain = RuleChain
@@ -208,24 +206,14 @@ class SettingsRuntimeFunctionalTest {
             }
     }
 
-    private fun connectController(): MediaController {
-        val token = SessionToken(context, ComponentName(context, MusicService::class.java))
-        return MediaController.Builder(context, token)
-            .buildAsync()
-            .get(CONNECTION_TIMEOUT_SECONDS, TimeUnit.SECONDS)
-    }
+    private fun connectController(): MediaController = deviceProbe.connectController()
 
-    private fun <T> onMain(block: () -> T): T {
-        val task = FutureTask(block)
-        instrumentation.runOnMainSync(task)
-        return task.get()
-    }
+    private fun <T> onMain(block: () -> T): T = deviceProbe.onMain(block)
 
     private fun Float.closeTo(expected: Float): Boolean =
         kotlin.math.abs(this - expected) <= FLOAT_TOLERANCE
 
     private companion object {
-        const val CONNECTION_TIMEOUT_SECONDS = 10L
         const val ASYNC_TIMEOUT_MS = 10_000L
         const val PLAYBACK_DURATION_MS = 20_000
         const val FLOAT_TOLERANCE = 0.02f

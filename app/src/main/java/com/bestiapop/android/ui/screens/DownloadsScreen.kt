@@ -8,11 +8,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -38,6 +40,7 @@ fun DownloadsScreen(viewModel: MusicPlayerViewModel) {
     val isPlaying by viewModel.isPlaying.collectAsState()
     val resolvingRemote by viewModel.resolvingRemote.collectAsState()
     val currentItem by viewModel.currentItem.collectAsState()
+    val backgroundExecutionStatus by viewModel.backgroundExecutionStatus.collectAsState()
 
     val totalBytes = downloadSettings.totalMeteredBytes + downloadSettings.totalUnmeteredBytes
     Column(
@@ -52,6 +55,32 @@ fun DownloadsScreen(viewModel: MusicPlayerViewModel) {
             onResumeAll = viewModel::resumeAllDownloads,
             onClearAll = viewModel::dismissAllActiveDownloads
         )
+
+        if (backgroundExecutionStatus.backgroundRestricted) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Surface(
+                color = MaterialTheme.colorScheme.errorContainer,
+                contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                    Text(
+                        text = "Descargas limitadas en segundo plano",
+                        style = MaterialTheme.typography.titleSmall.copy(
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    )
+                    Text(
+                        text = "Android marcó la app como restringida. Las transferencias pueden pausarse al bloquear el celular.",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    TextButton(onClick = viewModel::openPlaybackSettings) {
+                        Text("Revisar ajustes")
+                    }
+                }
+            }
+        }
 
         Spacer(modifier = Modifier.height(8.dp))
         Text(

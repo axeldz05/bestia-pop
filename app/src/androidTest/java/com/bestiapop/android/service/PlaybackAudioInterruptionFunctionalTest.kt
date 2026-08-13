@@ -1,7 +1,6 @@
 package com.bestiapop.android.service
 
 import android.Manifest
-import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.AudioDeviceInfo
@@ -9,12 +8,9 @@ import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.os.Build
-import android.os.ParcelFileDescriptor
-import android.os.SystemClock
 import androidx.lifecycle.Lifecycle
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
-import androidx.media3.session.SessionToken
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.LargeTest
@@ -25,10 +21,9 @@ import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.testutil.DeviceAwakeRule
 import com.bestiapop.android.testutil.PcmWavFixture
+import com.bestiapop.android.testutil.PlaybackDeviceProbe
 import com.bestiapop.android.testutil.SideloadPlaybackAppOps
 import java.io.File
-import java.util.concurrent.FutureTask
-import java.util.concurrent.TimeUnit
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -54,6 +49,7 @@ class PlaybackAudioInterruptionFunctionalTest {
         get() = InstrumentationRegistry.getInstrumentation()
     private val context
         get() = instrumentation.targetContext
+    private val deviceProbe = PlaybackDeviceProbe()
     private var sideloadPolicy: AutoCloseable? = null
 
     @Before
@@ -208,36 +204,17 @@ class PlaybackAudioInterruptionFunctionalTest {
         }
     }
 
-    private fun connectController(): MediaController {
-        val token = SessionToken(context, ComponentName(context, MusicService::class.java))
-        return MediaController.Builder(context, token)
-            .buildAsync()
-            .get(CONNECTION_TIMEOUT_SECONDS, TimeUnit.SECONDS)
-    }
+    private fun connectController(): MediaController = deviceProbe.connectController()
 
-    private fun executeShell(command: String): String =
-        ParcelFileDescriptor.AutoCloseInputStream(
-            instrumentation.uiAutomation.executeShellCommand(command)
-        ).bufferedReader().use { it.readText() }
+    private fun executeShell(command: String): String = deviceProbe.executeShell(command)
 
-    private fun await(description: String, condition: () -> Boolean) {
-        val deadline = SystemClock.elapsedRealtime() + ASYNC_TIMEOUT_MS
-        while (SystemClock.elapsedRealtime() < deadline) {
-            if (condition()) return
-            SystemClock.sleep(POLL_INTERVAL_MS)
-        }
-        throw AssertionError("Timed out waiting for $description")
-    }
+    private fun await(description: String, condition: () -> Boolean) =
+        deviceProbe.await(description, ASYNC_TIMEOUT_MS, POLL_INTERVAL_MS, condition)
 
-    private fun <T> onMain(block: () -> T): T {
-        val task = FutureTask(block)
-        instrumentation.runOnMainSync(task)
-        return task.get()
-    }
+    private fun <T> onMain(block: () -> T): T = deviceProbe.onMain(block)
 
     private companion object {
         const val PLAYBACK_DURATION_MS = 30_000
-        const val CONNECTION_TIMEOUT_SECONDS = 10L
         const val ASYNC_TIMEOUT_MS = 10_000L
         const val POLL_INTERVAL_MS = 25L
     }

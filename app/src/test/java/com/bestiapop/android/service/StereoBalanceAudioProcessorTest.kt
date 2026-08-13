@@ -52,7 +52,7 @@ class StereoBalanceAudioProcessorTest {
         configure(AudioProcessor.AudioFormat(48_000, channels, C.ENCODING_PCM_16BIT))
         this.leftGain = leftGain
         this.rightGain = rightGain
-        flush()
+        flush(AudioProcessor.StreamMetadata.DEFAULT)
     }
 
     private fun queue(

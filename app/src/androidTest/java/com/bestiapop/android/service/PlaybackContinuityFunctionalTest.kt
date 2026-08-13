@@ -1,8 +1,5 @@
 package com.bestiapop.android.service
 
-import android.app.PendingIntent
-import android.content.Intent
-import androidx.core.app.NotificationCompat
 import androidx.media3.common.Player
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.MediumTest
@@ -223,7 +220,7 @@ class PlaybackContinuityFunctionalTest {
     }
 
     @Test
-    fun pausedIdleRemote_keepsShadeNotificationWithThreeActions() {
+    fun remoteIdle_keepsNotificationAndForegroundPolicy() {
         assertTrue(
             PlaybackServiceLifetimePolicy.shouldShowPlaybackNotification(
                 mediaItemCount = 1,
@@ -242,21 +239,22 @@ class PlaybackContinuityFunctionalTest {
                 playbackState = Player.STATE_IDLE
             )
         )
-
-        val notification = PlaybackNotificationFactory.builder(
-            context = context,
-            title = "Resolving",
-            text = "Artist",
-            contentIntent = PendingIntent.getActivity(
-                context,
-                42,
-                Intent("com.bestiapop.android.TEST_OPEN").setPackage(context.packageName),
-                PendingIntent.FLAG_IMMUTABLE
-            ),
-            showPauseAction = false,
-            ongoing = false
-        ).build()
-        assertEquals(3, NotificationCompat.getActionCount(notification))
+        assertTrue(
+            playbackForegroundRequired(
+                startInForegroundRequired = false,
+                playWhenReady = true,
+                mediaItemCount = 1,
+                playbackState = Player.STATE_IDLE
+            )
+        )
+        assertFalse(
+            playbackForegroundRequired(
+                startInForegroundRequired = false,
+                playWhenReady = false,
+                mediaItemCount = 1,
+                playbackState = Player.STATE_IDLE
+            )
+        )
     }
 
     private fun fixture(

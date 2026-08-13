@@ -243,11 +243,7 @@ object PlaybackMediaItemCodec {
             EXTRA_IDENTITY_JSON,
             JSONObject().also { TrackIdentityJson.putInto(it, identity) }.toString()
         )
-        return MediaMetadata.Builder()
-            .setTitle(identity.title)
-            .setArtist(identity.artist)
-            .setAlbumTitle(identity.album)
-            .setArtworkUri(identity.artworkUri?.takeIf { it.isNotBlank() }?.let(Uri::parse))
+        return identity.mediaMetadataBuilder()
             .setExtras(extras)
             .build()
     }

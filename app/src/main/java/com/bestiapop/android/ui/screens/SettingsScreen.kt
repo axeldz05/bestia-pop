@@ -73,6 +73,10 @@ fun SettingsScreen(viewModel: MusicPlayerViewModel, appUpdateViewModel: AppUpdat
                 section = SettingsSection.Downloads
                 viewModel.consumePendingSettingsSection()
             }
+            "playback" -> {
+                section = SettingsSection.Playback
+                viewModel.consumePendingSettingsSection()
+            }
         }
     }
 

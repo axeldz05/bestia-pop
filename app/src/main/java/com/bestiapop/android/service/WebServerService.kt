@@ -311,6 +311,25 @@ private suspend fun io.ktor.server.application.ApplicationCall.respondJsonError(
     )
 }
 
+internal const val WIFI_TIMEOUT_MESSAGE =
+    "Android detuvo el servidor por el límite de actividad en segundo plano"
+
+internal fun markWifiTransfersTimedOut(
+    transfers: List<WifiTransferItem>
+): List<WifiTransferItem> = transfers.map { transfer ->
+    if (transfer.state == WifiTransferState.PENDING ||
+        transfer.state == WifiTransferState.UPLOADING ||
+        transfer.state == WifiTransferState.PROCESSING
+    ) {
+        transfer.copy(
+            state = WifiTransferState.ERROR,
+            errorMessage = WIFI_TIMEOUT_MESSAGE
+        )
+    } else {
+        transfer
+    }
+}
+
 class WebServerService : Service() {
 
     private val serviceScope = CoroutineScope(Dispatchers.IO + Job())
@@ -468,6 +487,20 @@ class WebServerService : Service() {
                 _serverState.value = null
             }
         }
+    }
+
+    override fun onTimeout(startId: Int, fgsType: Int) {
+        CrashReporter.recordNonFatal(
+            IllegalStateException("WiFi dataSync foreground timeout"),
+            mapOf(
+                "wifi_phase" to "foreground_timeout",
+                "fgs_type" to fgsType.toString()
+            )
+        )
+        _serverState.value = null
+        _transfers.update(::markWifiTransfersTimedOut)
+        ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
+        stopSelf(startId)
     }
 
     private fun getWebDashboardHtml(): String {
@@ -915,4 +948,5 @@ class WebServerService : Service() {
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
+
 }

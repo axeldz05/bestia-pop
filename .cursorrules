@@ -54,4 +54,19 @@ Leer las skills de refactorizacion y aplicalos en los cambios que hiciste.
 - Compresión semántica .cursor/skills/semantic-compression/SKILL.md
 - Granularidad continua .cursor/skills/continuous-granularity/SKILL.md
 Busca principalmente comportamiento repetido que creaste ya sea en tus cambios o con el resto del codigo que podria estar teniendo comportamientos similares (ejemplo, si cambiaste como se descarga algo, busca en todas las partes de descargas si tienen comportamiento repetido).
-Una regla de oro para saber si tenes comportamiento repetido es pensar en cuantos sitios tendrías que tocar código para cambiar algo de lo que implementaste, si son más de 2 veces es que tenés código repetido. Ejemplos: cambiar un algoritmo específico para las recomendaciones, cambiar texto de "descarga completada", botones como reproducir cancion o agregar a playlist.  
+Una regla de oro para saber si tenes comportamiento repetido es pensar en cuantos sitios tendrías que tocar código para cambiar algo de lo que implementaste, si son más de 2 veces es que tenés código repetido. Ejemplos: cambiar un algoritmo específico para las recomendaciones, cambiar texto de "descarga completada", botones como reproducir cancion o agregar a playlist.
+
+## Limpieza obligatoria al terminar
+
+Después de completar **toda** la implementación, la verificación final, living docs y refactorización:
+
+1. Ejecutar `gradle --stop`.
+2. Revisar los JVM restantes (`jps -lv`) y terminar con `TERM` cualquier
+   `org.gradle.launcher.daemon.bootstrap.GradleDaemon` o
+   `org.jetbrains.kotlin.daemon.KotlinCompileDaemon` que haya quedado del build.
+3. Verificar que ya no queden Gradle Daemons ni Kotlin Compile Daemons.
+
+Hacer esta limpieza solo después de la última tarea Gradle esperada, para no provocar reinicios
+innecesarios durante la implementación. No matar los language servers de Cursor/IntelliJ/JDT ni
+el `com.github.badsyntax.gradle.GradleServer`; tampoco borrar caches `~/.gradle` o artefactos de
+build salvo pedido explícito del usuario.

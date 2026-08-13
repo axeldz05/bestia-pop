@@ -3,7 +3,6 @@ package com.bestiapop.android.persistence
 import android.Manifest
 import android.app.ActivityManager
 import android.app.NotificationManager
-import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
@@ -11,7 +10,6 @@ import android.os.Process
 import android.os.SystemClock
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
-import androidx.media3.session.SessionToken
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.LargeTest
 import androidx.test.platform.app.InstrumentationRegistry
@@ -27,10 +25,9 @@ import com.bestiapop.android.service.MusicService
 import com.bestiapop.android.service.PlaybackRuntime
 import com.bestiapop.android.testutil.DeviceAwakeRule
 import com.bestiapop.android.testutil.PcmWavFixture
+import com.bestiapop.android.testutil.PlaybackDeviceProbe
 import com.bestiapop.android.testutil.SideloadPlaybackAppOps
 import java.io.File
-import java.util.concurrent.FutureTask
-import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
@@ -57,6 +54,7 @@ class PlaybackTaskRemovalE2ETest {
 
     private val instrumentation
         get() = InstrumentationRegistry.getInstrumentation()
+    private val deviceProbe = PlaybackDeviceProbe()
     private val context
         get() = instrumentation.targetContext
     private val application
@@ -308,20 +306,10 @@ class PlaybackTaskRemovalE2ETest {
         }
     }
 
-    private fun connectController(): MediaController {
-        val token = SessionToken(context, ComponentName(context, MusicService::class.java))
-        return MediaController.Builder(context, token)
-            .buildAsync()
-            .get(CONNECTION_TIMEOUT_SECONDS, TimeUnit.SECONDS)
-    }
+    private fun connectController(): MediaController = deviceProbe.connectController()
 
-    @Suppress("DEPRECATION")
-    private fun musicServiceInfo(): ActivityManager.RunningServiceInfo? {
-        val component = ComponentName(context, MusicService::class.java)
-        return context.getSystemService(ActivityManager::class.java)
-            .getRunningServices(Int.MAX_VALUE)
-            .firstOrNull { it.service == component }
-    }
+    private fun musicServiceInfo(): ActivityManager.RunningServiceInfo? =
+        deviceProbe.musicServiceInfo()
 
     private fun await(description: String, condition: () -> Boolean) {
         val deadline = SystemClock.elapsedRealtime() + ASYNC_TIMEOUT_MS
@@ -343,11 +331,7 @@ class PlaybackTaskRemovalE2ETest {
         firstFailure?.let { throw it }
     }
 
-    private fun <T> onMain(block: () -> T): T {
-        val task = FutureTask(block)
-        instrumentation.runOnMainSync(task)
-        return task.get()
-    }
+    private fun <T> onMain(block: () -> T): T = deviceProbe.onMain(block)
 
     private companion object {
         const val FIXTURE_DIRECTORY = "playback-task-removal-e2e"
@@ -357,7 +341,6 @@ class PlaybackTaskRemovalE2ETest {
         const val WAV_DURATION_MS = 120_000
         const val EXPECTED_CURRENT_INDEX = 1
         const val MIN_POSITION_ADVANCE_MS = 150L
-        const val CONNECTION_TIMEOUT_SECONDS = 10L
         const val ASYNC_TIMEOUT_MS = 15_000L
         const val POLL_INTERVAL_MS = 25L
 

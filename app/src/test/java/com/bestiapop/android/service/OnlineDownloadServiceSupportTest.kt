@@ -1,5 +1,7 @@
 package com.bestiapop.android.service
 
+import android.app.job.JobParameters
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -38,5 +40,18 @@ class OnlineDownloadServiceSupportTest {
         assertFalse(dismissed)
         assertTrue(interrupted)
         assertTrue(shouldReschedule)
+    }
+
+    @Test
+    fun stopReasons_haveStableDiagnosticLabels() {
+        assertEquals(
+            "background_restriction",
+            onlineDownloadStopReasonName(JobParameters.STOP_REASON_BACKGROUND_RESTRICTION)
+        )
+        assertEquals(
+            "user",
+            onlineDownloadStopReasonName(JobParameters.STOP_REASON_USER)
+        )
+        assertEquals("other_999", onlineDownloadStopReasonName(999))
     }
 }

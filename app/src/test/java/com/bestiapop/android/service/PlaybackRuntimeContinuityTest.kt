@@ -1337,6 +1337,86 @@ class PlaybackRuntimeContinuityTest {
     }
 
     @Test
+    fun metadataOnlySystemResumption_doesNotMutateRuntimeOrResolve() = runBlocking {
+        val local = song(2, "Local")
+        val persistence = FakePersistence(
+            queueToLoad = QueueSnapshot(
+                currentIndex = 0,
+                positionMs = 9_876L,
+                items = listOf(
+                    PersistedQueueItem.Remote(
+                        identity = TrackIdentity(title = "Remote", artist = "Artist"),
+                        youtubeQueryOrId = "remote query"
+                    ),
+                    persistedLocal(local)
+                )
+            )
+        )
+        val streamAccess = FakeStreamAccess()
+        val fixture = fixture(
+            streamAccess = streamAccess,
+            persistence = persistence,
+            libraryUpdates = MutableStateFlow(listOf(local)),
+            attachController = false
+        )
+        try {
+            val snapshot = fixture.runtime.systemResumptionMetadataSnapshot()
+
+            assertNotNull(snapshot)
+            assertEquals(1, persistence.loadQueueCount.get())
+            assertEquals(0, fixture.controller.mediaItemCount)
+            assertTrue(fixture.runtime.queue.value.isEmpty())
+            assertEquals(null, fixture.runtime.currentItem.value)
+            assertTrue(streamAccess.resolvedQueries.isEmpty())
+        } finally {
+            fixture.close()
+        }
+    }
+
+    @Test
+    fun externalCollectionStaging_doesNotInventPlayIntentOrMutateTimeline() {
+        val fixture = fixture()
+        try {
+            val plan = fixture.runtime.stageExternalPlayableCollection(
+                items = listOf(PlayableItem.Local(song(1, "External"))),
+                startIndex = 0,
+                startPositionMs = 321L
+            )
+
+            assertNotNull(plan)
+            assertEquals("External", fixture.runtime.currentItem.value?.title)
+            assertEquals(321L, fixture.runtime.playbackPositionMs.value)
+            assertFalse(fixture.controller.wantsPlay)
+            assertEquals(0, fixture.controller.timelineMutationCount)
+        } finally {
+            fixture.close()
+        }
+    }
+
+    @Test
+    fun externalCollectionStaging_preservesActivePlayIntentUntilMedia3UpdatesIt() {
+        val fixture = fixture()
+        try {
+            fixture.runtime.playPlayableCollection(
+                listOf(PlayableItem.Local(song(1, "Playing"))),
+                rotate = false
+            )
+            assertTrue(fixture.controller.wantsPlay)
+
+            fixture.runtime.stageExternalPlayableCollection(
+                items = listOf(PlayableItem.Local(song(2, "External"))),
+                startIndex = 0,
+                startPositionMs = 0L
+            )
+            fixture.runtime.togglePlayPause()
+
+            assertFalse(fixture.controller.wantsPlay)
+        } finally {
+            fixture.close()
+        }
+    }
+
+    @Test
     fun displayOnlyHydration_queueActionsStayInMemoryUntilFirstPlay() {
         val first = song(1, "First")
         val current = song(2, "Current")

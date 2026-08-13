@@ -58,10 +58,9 @@ import com.bestiapop.android.domain.util.clusterIdentifyAlbumGroups
 import com.bestiapop.android.domain.util.findAlbumMergeTarget
 import com.bestiapop.android.domain.util.isTrackNumberLabel
 import com.bestiapop.android.domain.util.normalizeAlbumName
-import com.bestiapop.android.service.CoordinatedDownloadResult
-import com.bestiapop.android.service.DownloadPlaylistTarget
-import com.bestiapop.android.service.DownloadNotificationHelper
 import com.bestiapop.android.service.PlaybackRuntime
+import com.bestiapop.android.service.ProcessDownloadEvent
+import com.bestiapop.android.service.ProcessDownloadRequest
 import com.bestiapop.android.service.WebServerService
 import com.bestiapop.android.ui.state.IdentifyReviewItem
 import com.bestiapop.android.ui.state.IdentifyReviewPhase
@@ -164,7 +163,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private val app = application as BestiaPopApplication
     private val repository = app.musicRepository
     private val playbackRuntime: PlaybackRuntime = app.playbackRuntime
-    private val processDownloads = app.processDownloads
+    private val processDownloadRuntime = app.processDownloadRuntime
     private val themeRepository = ThemePreferencesRepository(application)
     private val listenBrainzPreferences = ListenBrainzPreferencesRepository(application)
     private val playbackPreferences = PlaybackPreferencesRepository(application)
@@ -172,7 +171,6 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private val libraryTagWritePreferences = LibraryTagWritePreferencesRepository(application)
     private val libraryPreferences = LibraryPreferencesRepository(application)
     private val identifyReviewStore = IdentifyReviewStore(application)
-    private val downloadNotificationHelper = DownloadNotificationHelper(application)
     private val pendingListenDao = AppDatabase.getDatabase(application).pendingListenDao()
     private val connectivityObserver = ConnectivityObserver(application)
 
@@ -306,8 +304,6 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private var navIndexBeforeTransient: Int? = null
 
     private val getLibrarySongsUseCase = com.bestiapop.android.domain.usecase.GetLibrarySongsUseCase()
-    private val downloadAudioTrackUseCase =
-        com.bestiapop.android.domain.usecase.DownloadAudioTrackUseCase(repository)
 
     val songsState: StateFlow<List<Song>> = combine(
         rawSongs,
@@ -477,14 +473,8 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private var catalogSearchJob: Job? = null
     private var catalogSearchGeneration = 0L
 
-    val activeDownloads: StateFlow<List<ActiveDownload>> = processDownloads.downloads
-
-    private val _downloadConflict = MutableStateFlow<DownloadConflict?>(null)
-    val downloadConflict = _downloadConflict.asStateFlow()
-
-    /** When set during a batch, subsequent conflicts reuse this policy without another dialog. */
-    private var batchConflictPolicy: DownloadConflictPolicy? = null
-    private var batchSaveAsCounter: Int = 1
+    val activeDownloads: StateFlow<List<ActiveDownload>> = processDownloadRuntime.downloads
+    val downloadConflict: StateFlow<DownloadConflict?> = processDownloadRuntime.downloadConflict
 
     /** Set when MainActivity should switch to Descargas (notification / dialog deep-link). */
     private val _pendingOpenDownloads = MutableStateFlow(false)
@@ -797,9 +787,23 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 }
         }
 
+        // Opening the UI is a platform-safe point to restart requests interrupted by process death.
+        if (app.shouldAutoResumeDownloads) {
+            processDownloadRuntime.resumeInterrupted()
+        }
         viewModelScope.launch {
-            activeDownloads.collect { list ->
-                downloadNotificationHelper.sync(list)
+            processDownloadRuntime.events.collect { event ->
+                when (event) {
+                    is ProcessDownloadEvent.Completed -> {
+                        rematchDiscoverAfterLibraryChange(extraSong = event.song)
+                        if (event.source == ActiveDownloadSource.CATALOG ||
+                            event.source == ActiveDownloadSource.LINK ||
+                            event.source == ActiveDownloadSource.DISCOVER
+                        ) {
+                            toastSongInLibrary(event.song.title, LibraryToastKind.ADDED)
+                        }
+                    }
+                }
             }
         }
 
@@ -810,7 +814,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 activeDownloads.map { rows ->
                     rows.asSequence()
                         .filter {
-                            it.source == ActiveDownloadSource.SAVE_WHILE_LISTENING &&
+                            it.source.lane == DownloadLane.AUTOSAVE &&
                                 it.state == CandidateDownloadState.SUCCESS
                         }
                         .mapNotNull { it.resultSongId }
@@ -2974,21 +2978,22 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         if (toastQueued) {
             toastDownloadsQueued(count = items.size)
         }
+        val batchId = "${source.name}:${System.nanoTime()}"
 
         val queued = items.mapNotNull { item ->
             val downloadId = idStrategy(item)
             if (downloadId.isBlank()) return@mapNotNull null
             val lookup = item.lookupIdentity ?: item.track.identity
-            if (processDownloads.isRunning(downloadId, lookup.artist, lookup.title)) {
+            if (processDownloadRuntime.isRunning(downloadId, lookup.artist, lookup.title)) {
                 // Handoff and the claim completion are linearized by the coordinator. If the owner
                 // completed between this hint and the attach, continue into execute() instead of
                 // dropping the pending destination.
                 val attached = playlistId != null &&
-                    processDownloads.attachTargetPlaylist(
+                    processDownloadRuntime.attachPlaylistDestination(
                         downloadId = downloadId,
                         artist = lookup.artist,
                         title = lookup.title,
-                        target = DownloadPlaylistTarget(
+                        destination = DownloadPlaylistDestination(
                             playlistId = playlistId,
                             identity = lookup
                         )
@@ -3011,7 +3016,8 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                         existingCandidates = item.candidates,
                         currentCandidateIndex = safeIndex,
                         targetPlaylistId = playlistId,
-                        lookupIdentity = item.lookupIdentity
+                        lookupIdentity = item.lookupIdentity,
+                        batchId = batchId
                     )
                     if (result.isSuccess) successCount.incrementAndGet()
                 }
@@ -3272,82 +3278,20 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         _isLoadingCollection.value = false
     }
 
-    private fun mapDownloadError(e: Throwable): String = when {
-        e is DuplicateSongException ->
-            "Ya existe en la biblioteca: ${e.existing.artist} — ${e.existing.title}"
-        e.message?.contains("403") == true ->
-            "Error HTTP 403 Forbidden: Enlace o firma expirada de YouTube."
-        e.message?.contains("YouTube") == true ->
-            e.message ?: "No se pudo obtener audio de YouTube."
-        else ->
-            DownloadMessages.downloadFailed(e.localizedMessage ?: "Error de red.")
-    }
-
-    private suspend fun downloadTrack(
-        track: OnlineCatalogTrack,
-        onProgress: ((DownloadPhase) -> Unit)? = null,
-        conflictPolicy: DownloadConflictPolicy? = null
-    ): Result<Song> = downloadAudioTrackUseCase.execute(track, onProgress, conflictPolicy)
-
     fun resolveDownloadConflictOverwrite(applyToRemainingBatch: Boolean = false) {
-        resumeConflictDownload(
-            policy = { DownloadConflictPolicy.Overwrite(it.existing.id) },
-            applyToRemainingBatch = applyToRemainingBatch
-        )
+        processDownloadRuntime.resolveConflictOverwrite(applyToRemainingBatch)
     }
 
     fun resolveDownloadConflictSaveAs(newTitle: String, applyToRemainingBatch: Boolean = false) {
-        val conflict = _downloadConflict.value ?: return
-        val title = newTitle.trim().ifBlank { "${conflict.existing.title} (2)" }
-        resumeConflictDownload(
-            policy = { DownloadConflictPolicy.SaveAs(title) },
-            applyToRemainingBatch = applyToRemainingBatch,
-            titleOverride = title,
-            onApplyAll = {
-                batchConflictPolicy = DownloadConflictPolicy.SaveAs(title)
-                batchSaveAsCounter = 2
-            }
-        )
-    }
-
-    private fun resumeConflictDownload(
-        policy: (DownloadConflict) -> DownloadConflictPolicy,
-        applyToRemainingBatch: Boolean = false,
-        titleOverride: String? = null,
-        onApplyAll: (() -> Unit)? = null
-    ) {
-        val conflict = _downloadConflict.value ?: return
-        val applyAll = applyToRemainingBatch || conflict.applyToRemainingBatch
-        _downloadConflict.value = null
-        val resolved = policy(conflict)
-        if (applyAll) {
-            if (onApplyAll != null) onApplyAll()
-            else batchConflictPolicy = resolved
-        }
-        viewModelScope.launch {
-            runTrackedDownload(
-                downloadId = conflict.downloadId,
-                source = conflict.source,
-                track = conflict.track,
-                existingCandidates = conflict.candidates,
-                currentCandidateIndex = conflict.currentCandidateIndex,
-                targetPlaylistId = conflict.targetPlaylistId,
-                conflictPolicy = resolved,
-                lookupIdentity = conflict.lookupIdentity,
-                titleOverride = titleOverride
-            )
-        }
+        processDownloadRuntime.resolveConflictSaveAs(newTitle, applyToRemainingBatch)
     }
 
     fun cancelDownloadConflict() {
-        val conflict = _downloadConflict.value ?: return
-        _downloadConflict.value = null
-        removeActiveDownload(conflict.downloadId)
+        processDownloadRuntime.cancelConflict()
     }
 
     fun clearBatchConflictPolicy() {
-        batchConflictPolicy = null
-        batchSaveAsCounter = 1
+        processDownloadRuntime.clearBatchConflictPolicy()
     }
 
     private fun activeDownloadIdFor(
@@ -3361,117 +3305,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         return catalogPreviewKeyFor(track).ifBlank { track.audioUrl.ifBlank { track.id } }
     }
 
-    private suspend fun resolveExistingSong(
-        activeTrack: OnlineCatalogTrack,
-        lookup: TrackIdentity?
-    ): Song? {
-        val artist = lookup?.artist?.ifBlank { null } ?: activeTrack.artist
-        val title = lookup?.title?.ifBlank { null } ?: activeTrack.title
-        return repository.findSongByArtistTitle(artist, title)
-    }
-
-    private suspend fun applyBatchPolicy(
-        activeTrack: OnlineCatalogTrack,
-        lookup: TrackIdentity?
-    ): DownloadConflictPolicy? {
-        val cached = batchConflictPolicy ?: return null
-        return when (cached) {
-            is DownloadConflictPolicy.Overwrite -> {
-                resolveExistingSong(activeTrack, lookup)?.let { DownloadConflictPolicy.Overwrite(it.id) }
-            }
-            is DownloadConflictPolicy.SaveAs -> {
-                batchSaveAsCounter++
-                val base = lookup?.title?.ifBlank { null } ?: activeTrack.title.ifBlank { "Track" }
-                DownloadConflictPolicy.SaveAs("$base ($batchSaveAsCounter)")
-            }
-        }
-    }
-
-    private fun emitDownloadConflict(
-        downloadId: String,
-        source: ActiveDownloadSource,
-        activeTrack: OnlineCatalogTrack,
-        existing: Song,
-        candidates: List<OnlineCatalogTrack>,
-        safeIndex: Int,
-        targetPlaylistId: Long?,
-        lookupIdentity: TrackIdentity?
-    ) {
-        val isBatch = source == ActiveDownloadSource.BATCH || source == ActiveDownloadSource.LB_IMPORT
-        _downloadConflict.value = DownloadConflict(
-            downloadId = downloadId,
-            source = source,
-            track = activeTrack,
-            existing = existing,
-            candidates = candidates,
-            currentCandidateIndex = safeIndex,
-            targetPlaylistId = targetPlaylistId,
-            applyToRemainingBatch = isBatch,
-            lookupIdentity = lookupIdentity
-        )
-    }
-
-    private fun markDownloadConflict(
-        downloadId: String,
-        source: ActiveDownloadSource,
-        activeTrack: OnlineCatalogTrack,
-        existing: Song,
-        candidates: List<OnlineCatalogTrack>,
-        safeIndex: Int,
-        targetPlaylistId: Long?,
-        lookupIdentity: TrackIdentity?,
-        titleOverride: String?
-    ) {
-        val effectiveTargetPlaylistId = activeDownloads.value
-            .firstOrNull { it.id == downloadId }
-            ?.targetPlaylistId
-            ?: targetPlaylistId
-        emitDownloadConflict(
-            downloadId = downloadId,
-            source = source,
-            activeTrack = activeTrack,
-            existing = existing,
-            candidates = candidates,
-            safeIndex = safeIndex,
-            targetPlaylistId = effectiveTargetPlaylistId,
-            lookupIdentity = lookupIdentity
-        )
-        updateActiveDownload(downloadId) {
-            ActiveDownload.conflict(
-                id = downloadId,
-                source = source,
-                candidates = candidates,
-                currentCandidateIndex = safeIndex,
-                targetPlaylistId = effectiveTargetPlaylistId,
-                titleOverride = titleOverride
-            )
-        }
-    }
-
-    // All owners mutate the same process-scoped queue. Its atomic updates and single persistence
-    // path prevent concurrent progress/success writes from dropping another owner's rows.
-    private fun upsertActiveDownload(download: ActiveDownload) {
-        processDownloads.upsert(download)
-    }
-
-    private fun updateActiveDownload(
-        id: String,
-        transform: (ActiveDownload) -> ActiveDownload
-    ) {
-        processDownloads.update(id, transform)
-    }
-
-    private fun removeActiveDownload(id: String) {
-        processDownloads.remove(id)
-    }
-
-    /**
-     * Registers/updates [ActiveDownload] (QUEUED → DOWNLOADING) and runs the download
-     * under the process-wide coordinator (max 3 across manual + autosave).
-     * On success the job stays as SUCCESS with [ActiveDownload.resultSongId]; on failure as ERROR.
-     * [targetPlaylistId] registers a playlist+identity target on the shared claim; the coordinator
-     * drains every distinct target when whichever owner completes the transfer.
-     */
+    /** Submit to the process runtime; cancelling this caller only stops waiting for the result. */
     private suspend fun runTrackedDownload(
         downloadId: String,
         source: ActiveDownloadSource,
@@ -3481,250 +3315,22 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         targetPlaylistId: Long? = null,
         conflictPolicy: DownloadConflictPolicy? = null,
         lookupIdentity: TrackIdentity? = null,
+        batchId: String? = null,
         titleOverride: String? = null
-    ): Result<Song> {
-        val candidates = existingCandidates?.takeIf { it.isNotEmpty() } ?: listOf(track)
-        val safeIndex = currentCandidateIndex.coerceIn(0, (candidates.size - 1).coerceAtLeast(0))
-        val lookup = lookupIdentity ?: track.identity
-
-        val existing = processDownloads.findByTrack(
+    ): Result<Song> = processDownloadRuntime.submit(
+        ProcessDownloadRequest(
             downloadId = downloadId,
-            artist = lookup.artist,
-            title = lookup.title
+            source = source,
+            track = track,
+            candidates = existingCandidates?.takeIf { it.isNotEmpty() } ?: listOf(track),
+            currentCandidateIndex = currentCandidateIndex,
+            targetPlaylistId = targetPlaylistId,
+            conflictPolicy = conflictPolicy,
+            lookupIdentity = lookupIdentity,
+            batchId = batchId,
+            titleOverride = titleOverride
         )
-        val override = titleOverride
-            ?: (conflictPolicy as? DownloadConflictPolicy.SaveAs)?.newTitle
-            ?: existing?.titleOverride
-
-        return try {
-            when (
-                val coordinated = processDownloads.execute(
-                    downloadId = downloadId,
-                    artist = lookup.artist,
-                    title = lookup.title,
-                    playlistTarget = targetPlaylistId?.let {
-                        DownloadPlaylistTarget(playlistId = it, identity = lookup)
-                    },
-                    onRegistered = {
-                        upsertActiveDownload(
-                            ActiveDownload.queued(
-                                id = downloadId,
-                                source = source,
-                                candidates = candidates,
-                                currentCandidateIndex = safeIndex,
-                                targetPlaylistId = targetPlaylistId,
-                                resultSongId = existing?.resultSongId,
-                                titleOverride = override
-                            )
-                        )
-                    },
-                    // Waiting on the manual conflict dialog must not consume one of the three
-                    // transfer permits, but the queued job remains globally claimed/cancelable.
-                    beforePermit = {
-                        if (conflictPolicy == null) awaitConflictDialogFree()
-                    }
-                ) {
-                    // Checked after acquiring the permit: a batch may wait on Wi-Fi and reach the
-                    // front only after the network has become metered.
-                    ensureDownloadNetworkAllowed()?.let { blockedMessage ->
-                        updateActiveDownload(downloadId) { row ->
-                            ActiveDownload.error(
-                                id = downloadId,
-                                source = source,
-                                candidates = candidates,
-                                errorMessage = blockedMessage,
-                                currentCandidateIndex = safeIndex,
-                                targetPlaylistId = row.targetPlaylistId ?: targetPlaylistId,
-                                titleOverride = override
-                            )
-                        }
-                        return@execute Result.failure(IllegalStateException(blockedMessage))
-                    }
-                    runTrackedDownloadLocked(
-                        downloadId = downloadId,
-                        source = source,
-                        track = track,
-                        candidates = candidates,
-                        safeIndex = safeIndex,
-                        targetPlaylistId = targetPlaylistId,
-                        conflictPolicy = conflictPolicy,
-                        lookupIdentity = lookup,
-                        titleOverride = override
-                    )
-                }
-            ) {
-                is CoordinatedDownloadResult.Completed -> coordinated.result
-                is CoordinatedDownloadResult.AlreadyRunning ->
-                    Result.failure(IllegalStateException(DownloadMessages.alreadyQueued))
-            }
-        } catch (cancelled: CancellationException) {
-            updateActiveDownload(downloadId) {
-                it.copy(
-                    state = CandidateDownloadState.ERROR,
-                    progressMessage = null,
-                    progressPercent = 0,
-                    errorMessage = DownloadMessages.interrupted
-                )
-            }
-            throw cancelled
-        }
-    }
-
-    /** Blocks while another download owns the conflict dialog, so batches ask one question at a time. */
-    private suspend fun awaitConflictDialogFree() {
-        var waited = 0
-        while (_downloadConflict.value != null &&
-            batchConflictPolicy == null &&
-            waited < CONFLICT_WAIT_TICKS
-        ) {
-            delay(CONFLICT_WAIT_TICK_MS)
-            waited++
-        }
-    }
-
-    /** Null if download may proceed; otherwise Spanish error for ActiveDownload ERROR. */
-    private suspend fun ensureDownloadNetworkAllowed(): String? {
-        if (!connectivityObserver.isMetered()) return null
-        val allowMetered = downloadPreferences.settingsFlow.first().downloadOnMeteredNetwork
-        if (allowMetered) return null
-        return DownloadMessages.blockedOnMetered
-    }
-
-    private suspend fun runTrackedDownloadLocked(
-        downloadId: String,
-        source: ActiveDownloadSource,
-        track: OnlineCatalogTrack,
-        candidates: List<OnlineCatalogTrack>,
-        safeIndex: Int,
-        targetPlaylistId: Long?,
-        conflictPolicy: DownloadConflictPolicy?,
-        lookupIdentity: TrackIdentity?,
-        titleOverride: String?
-    ): Result<Song> {
-        val activeTrack = candidates.getOrNull(safeIndex) ?: track
-
-        val resolvedPolicy = conflictPolicy ?: applyBatchPolicy(activeTrack, lookupIdentity)
-
-        val displayOverride = titleOverride
-            ?: (resolvedPolicy as? DownloadConflictPolicy.SaveAs)?.newTitle
-
-        if (resolvedPolicy == null) {
-            val existing = resolveExistingSong(activeTrack, lookupIdentity)
-            if (existing != null) {
-                markDownloadConflict(
-                    downloadId = downloadId,
-                    source = source,
-                    activeTrack = activeTrack,
-                    existing = existing,
-                    candidates = candidates,
-                    safeIndex = safeIndex,
-                    targetPlaylistId = targetPlaylistId,
-                    lookupIdentity = lookupIdentity,
-                    titleOverride = displayOverride
-                )
-                return Result.failure(
-                    DuplicateSongException(existing, activeTrack)
-                )
-            }
-        }
-
-        updateActiveDownload(downloadId) { row ->
-            ActiveDownload.downloading(
-                id = downloadId,
-                source = source,
-                candidates = candidates,
-                currentCandidateIndex = safeIndex,
-                targetPlaylistId = row.targetPlaylistId ?: targetPlaylistId,
-                titleOverride = displayOverride
-            )
-        }
-        val trackForDownload = when (val policy = resolvedPolicy) {
-            is DownloadConflictPolicy.SaveAs -> activeTrack.withIdentity { copy(title = policy.newTitle) }
-            else -> activeTrack
-        }
-
-        val result = downloadTrack(
-            track = trackForDownload,
-            onProgress = { phase ->
-                updateActiveDownload(downloadId) {
-                    it.copy(
-                        state = CandidateDownloadState.DOWNLOADING,
-                        progressMessage = phase.userMessage,
-                        progressPercent = phase.percent
-                    )
-                }
-            },
-            conflictPolicy = resolvedPolicy
-        )
-
-        // Late conflict after YouTube metadata resolve (e.g. blank title on LINK)
-        val duplicate = result.exceptionOrNull() as? DuplicateSongException
-        if (duplicate != null && resolvedPolicy == null) {
-            markDownloadConflict(
-                downloadId = downloadId,
-                source = source,
-                activeTrack = duplicate.track,
-                existing = duplicate.existing,
-                candidates = candidates,
-                safeIndex = safeIndex,
-                targetPlaylistId = targetPlaylistId,
-                lookupIdentity = lookupIdentity,
-                titleOverride = displayOverride
-            )
-            return result
-        }
-
-        result.fold(
-            onSuccess = { song ->
-                val effectiveTargetPlaylistId = activeDownloads.value
-                    .firstOrNull { it.id == downloadId }
-                    ?.targetPlaylistId
-                    ?: targetPlaylistId
-                updateActiveDownload(downloadId) {
-                    ActiveDownload.success(
-                        id = downloadId,
-                        source = source,
-                        song = song,
-                        candidates = candidates,
-                        currentCandidateIndex = safeIndex,
-                        targetPlaylistId = effectiveTargetPlaylistId
-                    )
-                }
-                processDownloads.recordCompletedDownload(song)
-                rematchDiscoverAfterLibraryChange(extraSong = song)
-                if (source == ActiveDownloadSource.CATALOG ||
-                    source == ActiveDownloadSource.LINK ||
-                    source == ActiveDownloadSource.DISCOVER
-                ) {
-                    toastSongInLibrary(song.title, LibraryToastKind.ADDED)
-                }
-            },
-            onFailure = { e ->
-                if (e is DuplicateSongException) return@fold
-                e.printStackTrace()
-                CrashReporter.recordNonFatal(
-                    e,
-                    mapOf(
-                        "download_phase" to "tracked_download",
-                        "download_source" to source.name,
-                        "download_id" to downloadId,
-                        "track_title" to activeTrack.title,
-                        "track_artist" to activeTrack.artist
-                    )
-                )
-                val error = mapDownloadError(e)
-                updateActiveDownload(downloadId) {
-                    it.copy(
-                        state = CandidateDownloadState.ERROR,
-                        progressMessage = null,
-                        progressPercent = 0,
-                        errorMessage = error
-                    )
-                }
-            }
-        )
-        return result
-    }
+    ).await()
 
     private suspend fun rematchDiscoverAfterLibraryChange(extraSong: Song? = null) {
         val library = libraryWithExtra(extraSong)
@@ -3752,8 +3358,12 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             toast(DownloadMessages.missingArtistOrTitle)
             return
         }
-        val existing = processDownloads.findByTrack(key, remote.artist, remote.title)
-        if (processDownloads.isRunning(key, remote.artist, remote.title)) {
+        val existing = processDownloadRuntime.findClaimedDownload(
+            key,
+            remote.artist,
+            remote.title
+        )
+        if (processDownloadRuntime.isRunning(key, remote.artist, remote.title)) {
             toastDownloadsQueued(alreadyQueued = true)
             return
         }
@@ -3784,19 +3394,11 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     fun retryActiveDownload(id: String) {
-        val download = activeDownloads.value.find { it.id == id } ?: return
-        val track = download.currentTrack ?: return
-        viewModelScope.launch {
-            processDownloads.cancelAndJoin(id)
-            runTrackedDownload(
-                downloadId = download.id,
-                source = download.source,
-                track = track,
-                existingCandidates = download.candidates,
-                currentCandidateIndex = download.currentCandidateIndex,
-                targetPlaylistId = download.targetPlaylistId
-            )
-        }
+        processDownloadRuntime.retry(id)
+    }
+
+    fun resumeAllDownloads() {
+        processDownloadRuntime.resumeAllErrors()
     }
 
     fun cycleActiveDownload(id: String) {
@@ -3815,7 +3417,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             wasPreviewing = wasPreviewing
         ) { candidatesList ->
             val cycled = ActiveDownload.withCycledCandidate(download, candidatesList)
-            upsertActiveDownload(cycled)
+            processDownloadRuntime.upsertRow(cycled)
             cycled.currentTrack
         }
     }
@@ -3835,11 +3437,11 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     fun dismissActiveDownload(id: String) {
-        processDownloads.dismiss(id)
+        processDownloadRuntime.dismiss(id)
     }
 
     fun dismissAllActiveDownloads() {
-        processDownloads.dismissAll()
+        processDownloadRuntime.dismissAll()
     }
 
     fun downloadSingleCandidate(index: Int) {
@@ -3884,22 +3486,18 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                     lookupIdentity = candidate.identity
                 )
             }
-            try {
-                enqueueTrackedBatch(
-                    items = items,
-                    source = ActiveDownloadSource.BATCH,
-                    idStrategy = {
-                        activeDownloadIdFor(
-                            it.track,
-                            ActiveDownloadSource.BATCH,
-                            explicitId = it.idHint
-                        )
-                    },
-                    playlistId = targetPlaylistId
-                )
-            } finally {
-                clearBatchConflictPolicy()
-            }
+            enqueueTrackedBatch(
+                items = items,
+                source = ActiveDownloadSource.BATCH,
+                idStrategy = {
+                    activeDownloadIdFor(
+                        it.track,
+                        ActiveDownloadSource.BATCH,
+                        explicitId = it.idHint
+                    )
+                },
+                playlistId = targetPlaylistId
+            )
         }
     }
 
@@ -3950,7 +3548,6 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     override fun onCleared() {
-        downloadNotificationHelper.cancel()
         playbackRuntime.detachUi()
         super.onCleared()
     }
@@ -3958,8 +3555,6 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     companion object {
         const val RADIO_LOADING_LABEL = "Armando radio…"
         private const val METADATA_ENHANCE_BATCH = 20
-        private const val CONFLICT_WAIT_TICK_MS = 250L
-        private const val CONFLICT_WAIT_TICKS = 120
     }
 }
 

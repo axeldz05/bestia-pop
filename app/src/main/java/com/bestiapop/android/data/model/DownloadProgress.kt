@@ -57,7 +57,7 @@ object DownloadMessages {
     const val conflictInLibrary = "Conflicto: ya está en la biblioteca"
     const val inLibrary = "En biblioteca"
     const val savedInLibrary = "¡Guardado en biblioteca!"
-    const val interrupted = "Interrumpida — tocá Reintentar"
+    const val interrupted = "Interrumpida — se reanudará al abrir la app"
     const val missingArtistOrTitle = "No se puede descargar: faltan artista o título"
 
     fun songSaved(title: String) = "«$title» guardada en biblioteca"

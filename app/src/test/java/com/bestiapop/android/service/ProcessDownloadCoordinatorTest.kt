@@ -2,6 +2,9 @@ package com.bestiapop.android.service
 
 import com.bestiapop.android.data.model.ActiveDownload
 import com.bestiapop.android.data.model.ActiveDownloadSource
+import com.bestiapop.android.data.model.CandidateDownloadState
+import com.bestiapop.android.data.model.DownloadLane
+import com.bestiapop.android.data.model.DownloadPlaylistDestination
 import com.bestiapop.android.data.model.OnlineCatalogTrack
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.data.model.TrackIdentity
@@ -131,6 +134,123 @@ class ProcessDownloadCoordinatorTest {
     }
 
     @Test
+    fun interruptAll_cancelsWritersButKeepsRowsForResume() = runBlocking {
+        val fixture = fixture()
+        val entered = CompletableDeferred<Unit>()
+        val neverComplete = CompletableDeferred<Unit>()
+        try {
+            fixture.coordinator.awaitHydrated()
+            val runner = launch(Dispatchers.Default) {
+                fixture.coordinator.execute(
+                    downloadId = "artist|song",
+                    artist = "Artist",
+                    title = "Song",
+                    onRegistered = {
+                        fixture.coordinator.upsert(
+                            row("artist|song", ActiveDownloadSource.CATALOG)
+                        )
+                    }
+                ) {
+                    entered.complete(Unit)
+                    neverComplete.await()
+                    Result.success(downloadedSong())
+                }
+            }
+            withTimeout(TEST_TIMEOUT_MS) { entered.await() }
+
+            fixture.coordinator.interruptAll()
+            withTimeout(TEST_TIMEOUT_MS) { runner.join() }
+
+            assertTrue(runner.isCancelled)
+            assertEquals(listOf("artist|song"), fixture.coordinator.downloads.value.map { it.id })
+        } finally {
+            fixture.close()
+        }
+    }
+
+    @Test
+    fun dismissAll_cancelsEveryWriterAndClearsQueue() = runBlocking {
+        val fixture = fixture()
+        val entered = Channel<Unit>(Channel.UNLIMITED)
+        val neverComplete = CompletableDeferred<Unit>()
+        try {
+            fixture.coordinator.awaitHydrated()
+            val runners = (0 until 2).map { index ->
+                launch(Dispatchers.Default) {
+                    fixture.coordinator.execute(
+                        downloadId = "artist|song-$index",
+                        artist = "Artist",
+                        title = "Song $index",
+                        onRegistered = {
+                            fixture.coordinator.upsert(
+                                row("artist|song-$index", ActiveDownloadSource.BATCH)
+                            )
+                        }
+                    ) {
+                        entered.send(Unit)
+                        neverComplete.await()
+                        Result.success(downloadedSong(index.toLong() + 1))
+                    }
+                }
+            }
+            repeat(2) { withTimeout(TEST_TIMEOUT_MS) { entered.receive() } }
+
+            fixture.coordinator.dismissAll()
+            runners.forEach { withTimeout(TEST_TIMEOUT_MS) { it.join() } }
+
+            assertTrue(runners.all { it.isCancelled })
+            assertTrue(fixture.coordinator.downloads.value.isEmpty())
+        } finally {
+            fixture.close()
+        }
+    }
+
+    @Test
+    fun interruptNow_onlyStopsTheRequestedLane() = runBlocking {
+        val fixture = fixture()
+        val entered = Channel<Unit>(Channel.UNLIMITED)
+        val neverComplete = CompletableDeferred<Unit>()
+        try {
+            fixture.coordinator.awaitHydrated()
+            val requests = listOf(
+                Triple("manual|song", ActiveDownloadSource.CATALOG, "Manual"),
+                Triple("autosave|song", ActiveDownloadSource.SAVE_WHILE_LISTENING, "Autosave")
+            )
+            val runners = requests.map { (id, source, title) ->
+                launch(Dispatchers.Default) {
+                    fixture.coordinator.execute(
+                        downloadId = id,
+                        artist = "Artist",
+                        title = title,
+                        onRegistered = {
+                            fixture.coordinator.upsert(
+                                row(id, source)
+                            )
+                        }
+                    ) {
+                        entered.send(Unit)
+                        neverComplete.await()
+                        Result.success(downloadedSong())
+                    }
+                }
+            }
+            repeat(2) { withTimeout(TEST_TIMEOUT_MS) { entered.receive() } }
+
+            fixture.coordinator.interruptNow(DownloadLane.AUTOSAVE)
+            runners[1].join()
+
+            val rows = fixture.coordinator.downloads.value.associateBy(ActiveDownload::id)
+            assertEquals(CandidateDownloadState.QUEUED, rows.getValue("manual|song").state)
+            assertEquals(CandidateDownloadState.ERROR, rows.getValue("autosave|song").state)
+            assertFalse(runners[0].isCompleted)
+            assertTrue(runners[1].isCancelled)
+        } finally {
+            fixture.coordinator.dismissAll()
+            fixture.close()
+        }
+    }
+
+    @Test
     fun hydrationMergesRowsWrittenByBothOwnersWithoutDroppingPersistedRows() = runBlocking {
         val persisted = row("persisted-manual", ActiveDownloadSource.CATALOG)
         val persistence = FakePersistence(
@@ -215,9 +335,9 @@ class ProcessDownloadCoordinatorTest {
 
     @Test
     fun concurrentPlaylistTargets_areEachCompletedExactlyOnce() = runBlocking {
-        val completedTargets = mutableListOf<DownloadPlaylistTarget>()
+        val completedTargets = mutableListOf<DownloadPlaylistDestination>()
         val addedSongs = mutableListOf<Pair<Long, Long>>()
-        val clearedPending = mutableListOf<DownloadPlaylistTarget>()
+        val clearedPending = mutableListOf<DownloadPlaylistDestination>()
         val fixture = fixture(
             onPlaylistTargetCompleted = { target, song ->
                 completedTargets += target
@@ -232,8 +352,8 @@ class ProcessDownloadCoordinatorTest {
             artist = "Artist",
             album = "Album"
         )
-        val firstTarget = DownloadPlaylistTarget(playlistId = 10L, identity = identity)
-        val secondTarget = DownloadPlaylistTarget(
+        val firstTarget = DownloadPlaylistDestination(playlistId = 10L, identity = identity)
+        val secondTarget = DownloadPlaylistDestination(
             playlistId = 20L,
             identity = identity.copy(album = "Imported album")
         )
@@ -244,7 +364,23 @@ class ProcessDownloadCoordinatorTest {
                 fixture.coordinator.execute(
                     downloadId = "artist|song",
                     artist = identity.artist,
-                    title = identity.title
+                    title = identity.title,
+                    onRegistered = {
+                        fixture.coordinator.upsert(
+                            ActiveDownload.queued(
+                                id = "artist|song",
+                                source = ActiveDownloadSource.LB_IMPORT,
+                                candidates = listOf(
+                                    OnlineCatalogTrack(
+                                        identity = identity,
+                                        id = "video-targets",
+                                        provider = "YouTube"
+                                    )
+                                ),
+                                lookupIdentity = identity
+                            )
+                        )
+                    }
                 ) {
                     entered.complete(Unit)
                     release.await()
@@ -287,6 +423,11 @@ class ProcessDownloadCoordinatorTest {
                         CoordinatedDownloadResult.AlreadyRunning
                 )
             }
+            assertEquals(
+                setOf(10L, 20L),
+                fixture.coordinator.downloads.value.single()
+                    .playlistTargets.map { it.playlistId }.toSet()
+            )
 
             release.complete(Unit)
             val result = withTimeout(TEST_TIMEOUT_MS) { owner.await() }
@@ -303,7 +444,7 @@ class ProcessDownloadCoordinatorTest {
 
     private fun fixture(
         persistence: FakePersistence = FakePersistence(),
-        onPlaylistTargetCompleted: suspend (DownloadPlaylistTarget, Song) -> Unit = { _, _ -> }
+        onPlaylistTargetCompleted: suspend (DownloadPlaylistDestination, Song) -> Unit = { _, _ -> }
     ): Fixture {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         return Fixture(

@@ -61,7 +61,10 @@ fun MatchedTrackLazyColumn(
                     match.meta.title
                 ),
                 remote = match.remote,
-                download = activeDownloads.findByTrack(match.meta.artist, match.meta.title),
+                download = activeDownloads.findUiDownloadByTrack(
+                    match.meta.artist,
+                    match.meta.title
+                ),
                 onPlayAt = { onPlayAt(index) },
                 onDownloadRemote = onDownloadRemote,
                 onRetryDownload = onRetryDownload,

@@ -23,6 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.bestiapop.android.data.model.PlayableItem
+import com.bestiapop.android.data.model.isFailed
 import com.bestiapop.android.data.util.StorageUtils
 import com.bestiapop.android.ui.MusicPlayerViewModel
 import com.bestiapop.android.ui.components.ActiveDownloadRow
@@ -39,7 +40,6 @@ fun DownloadsScreen(viewModel: MusicPlayerViewModel) {
     val currentItem by viewModel.currentItem.collectAsState()
 
     val totalBytes = downloadSettings.totalMeteredBytes + downloadSettings.totalUnmeteredBytes
-
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -47,28 +47,11 @@ fun DownloadsScreen(viewModel: MusicPlayerViewModel) {
             .padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = Icons.Default.Download,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(end = 8.dp)
-            )
-            Text(
-                text = "Descargas",
-                style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
-                color = MaterialTheme.colorScheme.onBackground,
-                modifier = Modifier.weight(1f)
-            )
-            if (activeDownloads.isNotEmpty()) {
-                TextButton(onClick = { viewModel.dismissAllActiveDownloads() }) {
-                    Text("Limpiar todo")
-                }
-            }
-        }
+        DownloadsHeader(
+            downloads = activeDownloads,
+            onResumeAll = viewModel::resumeAllDownloads,
+            onClearAll = viewModel::dismissAllActiveDownloads
+        )
 
         Spacer(modifier = Modifier.height(8.dp))
         Text(
@@ -127,5 +110,43 @@ fun DownloadsScreen(viewModel: MusicPlayerViewModel) {
         }
 
         Spacer(modifier = Modifier.height(16.dp))
+    }
+}
+
+@Composable
+internal fun DownloadsHeader(
+    downloads: List<com.bestiapop.android.data.model.ActiveDownload>,
+    onResumeAll: () -> Unit,
+    onClearAll: () -> Unit
+) {
+    val hasRetryable = downloads.any {
+        it.state.isFailed && it.currentTrack != null
+    }
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = Icons.Default.Download,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.padding(end = 8.dp)
+        )
+        Text(
+            text = "Descargas",
+            style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
+            color = MaterialTheme.colorScheme.onBackground,
+            modifier = Modifier.weight(1f)
+        )
+        if (hasRetryable) {
+            TextButton(onClick = onResumeAll) {
+                Text("Reanudar todo")
+            }
+        }
+        if (downloads.isNotEmpty()) {
+            TextButton(onClick = onClearAll) {
+                Text("Limpiar todo")
+            }
+        }
     }
 }

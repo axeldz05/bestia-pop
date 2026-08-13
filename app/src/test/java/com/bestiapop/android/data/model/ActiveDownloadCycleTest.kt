@@ -75,4 +75,51 @@ class ActiveDownloadCycleTest {
         assertEquals(null, result.errorMessage)
         assertEquals("b", result.currentTrack?.id)
     }
+
+    @Test
+    fun laneAndInFlightPredicates_keepSourceAndStateSemanticsExplicit() {
+        assertEquals(DownloadLane.AUTOSAVE, ActiveDownloadSource.SAVE_WHILE_LISTENING.lane)
+        assertEquals(DownloadLane.EXPLICIT, ActiveDownloadSource.DISCOVER.lane)
+        assertTrue(CandidateDownloadState.QUEUED.isInFlight)
+        assertTrue(CandidateDownloadState.DOWNLOADING.isInFlight)
+        assertTrue(CandidateDownloadState.ERROR.isFailed)
+    }
+
+    @Test
+    fun asError_preservesDurableExecutionContext() {
+        val identity = TrackIdentity(title = "Song", artist = "Artist")
+        val target = DownloadPlaylistDestination(7L, identity)
+        val active = download(listOf(track("a")), state = CandidateDownloadState.DOWNLOADING)
+            .copy(
+                playlistTargets = listOf(target),
+                lookupIdentity = identity,
+                downloadStarted = true,
+                storageCommitted = true,
+                batchId = "batch-1"
+            )
+
+        val failed = active.asError("offline", interrupted = true)
+
+        assertEquals(CandidateDownloadState.ERROR, failed.state)
+        assertEquals("offline", failed.errorMessage)
+        assertTrue(failed.interrupted)
+        assertEquals(listOf(target), failed.playlistTargets)
+        assertTrue(failed.storageCommitted)
+        assertEquals("batch-1", failed.batchId)
+    }
+
+    @Test
+    fun playlistDestinations_fallBackToLegacyTargetOnlyWhenNeeded() {
+        val identity = TrackIdentity(title = "Song", artist = "Artist")
+        val explicit = DownloadPlaylistDestination(8L, identity)
+
+        assertEquals(
+            listOf(explicit),
+            resolveDownloadPlaylistDestinations(listOf(explicit), 7L, identity)
+        )
+        assertEquals(
+            listOf(DownloadPlaylistDestination(7L, identity)),
+            resolveDownloadPlaylistDestinations(emptyList(), 7L, identity)
+        )
+    }
 }

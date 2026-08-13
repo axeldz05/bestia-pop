@@ -4,7 +4,9 @@ import com.bestiapop.android.data.model.ActiveDownload
 import com.bestiapop.android.data.model.ActiveDownloadSource
 import com.bestiapop.android.data.model.CandidateDownloadState
 import com.bestiapop.android.data.model.DownloadMessages
+import com.bestiapop.android.data.model.DownloadPlaylistDestination
 import com.bestiapop.android.data.model.OnlineCatalogTrack
+import com.bestiapop.android.data.model.TrackIdentity
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -33,7 +35,8 @@ class ActiveDownloadCodecTest {
         state = state,
         progressMessage = "Descargando…",
         progressPercent = 50,
-        errorMessage = if (state == CandidateDownloadState.ERROR) "boom" else null
+        errorMessage = if (state == CandidateDownloadState.ERROR) "boom" else null,
+        downloadStarted = state == CandidateDownloadState.DOWNLOADING
     )
 
     @Test
@@ -57,6 +60,7 @@ class ActiveDownloadCodecTest {
         assertEquals(CandidateDownloadState.ERROR, persisted[0].state)
         assertEquals(DownloadMessages.interrupted, persisted[0].errorMessage)
         assertEquals(0, persisted[0].progressPercent)
+        assertTrue(persisted[0].interrupted)
     }
 
     @Test
@@ -67,6 +71,7 @@ class ActiveDownloadCodecTest {
         assertEquals(1, persisted.size)
         assertEquals(CandidateDownloadState.ERROR, persisted[0].state)
         assertEquals(DownloadMessages.interrupted, persisted[0].errorMessage)
+        assertTrue(persisted[0].interrupted)
     }
 
     @Test
@@ -158,6 +163,74 @@ class ActiveDownloadCodecTest {
         val restored = ActiveDownloadCodec.decode(ActiveDownloadCodec.encode(original))
         assertEquals("Song", restored[0].title)
         assertEquals("Song (2)", restored[0].displayLabel)
+    }
+
+    @Test
+    fun roundTrip_preservesLookupIdentityAndInterruptedMarker() {
+        val lookup = TrackIdentity(
+            title = "Catalog title",
+            artist = "Catalog artist",
+            album = "Catalog album",
+            trackNumber = 7
+        )
+        val original = listOf(
+            download(CandidateDownloadState.ERROR).copy(
+                lookupIdentity = lookup,
+                interrupted = true,
+                errorMessage = DownloadMessages.interrupted
+            )
+        )
+
+        val restored = ActiveDownloadCodec.decode(ActiveDownloadCodec.encode(original))
+
+        assertEquals(lookup, restored.single().lookupIdentity)
+        assertTrue(restored.single().interrupted)
+    }
+
+    @Test
+    fun roundTrip_preservesEveryPlaylistTargetAndExecutionPolicy() {
+        val first = DownloadPlaylistDestination(
+            playlistId = 7L,
+            identity = TrackIdentity(title = "Song", artist = "Artist", album = "One")
+        )
+        val second = DownloadPlaylistDestination(
+            playlistId = 8L,
+            identity = TrackIdentity(title = "Song", artist = "Artist", album = "Two")
+        )
+        val original = listOf(
+            download(CandidateDownloadState.ERROR).copy(
+                targetPlaylistId = first.playlistId,
+                playlistTargets = listOf(first, second),
+                interrupted = true,
+                downloadStarted = true,
+                storageCommitted = true,
+                overwriteTargetSongId = 99L,
+                batchId = "batch-fixture"
+            )
+        )
+
+        val restored = ActiveDownloadCodec.decode(ActiveDownloadCodec.encode(original)).single()
+
+        assertEquals(listOf(first, second), restored.playlistTargets)
+        assertTrue(restored.downloadStarted)
+        assertTrue(restored.storageCommitted)
+        assertEquals(99L, restored.overwriteTargetSongId)
+        assertEquals("batch-fixture", restored.batchId)
+    }
+
+    @Test
+    fun legacyInterruptedMessage_restoresAsAutoResumable() {
+        val json = ActiveDownloadCodec.encode(
+            listOf(
+                download(CandidateDownloadState.ERROR).copy(
+                    errorMessage = "Interrumpida — tocá Reintentar"
+                )
+            )
+        ).replace("\"interrupted\":false,", "")
+
+        val restored = ActiveDownloadCodec.decode(json)
+
+        assertTrue(restored.single().interrupted)
     }
 
     @Test

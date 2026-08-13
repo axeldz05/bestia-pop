@@ -110,7 +110,7 @@ import com.bestiapop.android.ui.components.ArtworkHero
 import com.bestiapop.android.ui.components.DownloadStateTrailing
 import com.bestiapop.android.ui.components.QueueLazyList
 import com.bestiapop.android.ui.components.RadioModeControl
-import com.bestiapop.android.ui.components.findByTrack
+import com.bestiapop.android.ui.components.findUiDownloadByTrack
 import com.bestiapop.android.ui.components.focusedQueueIndex
 import com.bestiapop.android.ui.components.playPauseVector
 import com.bestiapop.android.ui.components.formatDuration
@@ -586,7 +586,10 @@ fun NowPlayingScreen(
             val remoteItem = item as? PlayableItem.Remote
             if (remoteItem != null) {
                 NowPlayingRemoteDownloadAction(
-                    download = activeDownloads.findByTrack(remoteItem.artist, remoteItem.title),
+                    download = activeDownloads.findUiDownloadByTrack(
+                        remoteItem.artist,
+                        remoteItem.title
+                    ),
                     onDownload = { viewModel.downloadRemoteItem(remoteItem) },
                     onRetry = viewModel::retryActiveDownload,
                     onCancel = viewModel::dismissActiveDownload

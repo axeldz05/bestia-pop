@@ -41,7 +41,10 @@ Si solo hay un bugfix local sin cambio de diseño, no hace falta tocar skills.
 
 ## Build / deploy
 
-- Compilar/instalar en dispositivo: `./install.sh` (debug, iteración diaria) o `./install.sh --release` (APK firmado beta-like)
+- **Regla absoluta de instalación:** instalar o reinstalar en un dispositivo **únicamente** con `./install.sh` (debug) o `./install.sh --release`. Nunca usar `adb install`, `gradle install*`, `connectedDebugAndroidTest`/UTP ni instalar el APK de tests manualmente.
+- **Preservar datos siempre:** no ejecutar `adb uninstall`, `pm uninstall`, `pm clear`, `cmd package clear` ni ninguna operación que pueda borrar Room, DataStore, playlists o ajustes. No borrar/recrear datos para tests.
+- Los tests instrumentados se pueden **compilar**, pero no ejecutar si eso requiere instalar fuera de `install.sh`. Si una verificación exige otra instalación, detenerse e informar al usuario.
+- Si `install.sh` falla, reportar el error; no sustituirlo con comandos manuales de instalación/desinstalación.
 - Publicar para amigos: `./release.sh` (bump `version.properties`, APK firmado → GitHub Releases; `versionCode` en las notas del release). Repo en `github-release.properties` (`GITHUB_REPOSITORY=owner/repo`)
 - Antes de `./release.sh`: leer skill `bestiapop-release-changelog`, resumir `CHANGELOG.pending.md` en notas **para el usuario** (sin refactors), escribir `CHANGELOG.release-notes.md` y pasar `--notes-file` (o dejar que el script lo tome si existe)
 - Tests unitarios bajo `app/src/test`; instrumentados bajo `app/src/androidTest`

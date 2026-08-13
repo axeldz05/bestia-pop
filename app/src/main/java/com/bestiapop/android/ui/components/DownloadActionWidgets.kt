@@ -166,8 +166,8 @@ fun PreviewPlayPauseButton(
     }
 }
 
-/** L1: lookup a tracked download by artist+title match key (plain or `batch:` catalog id). */
-fun List<ActiveDownload>.findByTrack(artist: String, title: String): ActiveDownload? {
+/** L1 UI lookup by artist+title (claim ownership remains in ProcessDownloadCoordinator). */
+fun List<ActiveDownload>.findUiDownloadByTrack(artist: String, title: String): ActiveDownload? {
     val key = TrackMatchKeys.downloadIdFor(artist, title)
     if (key.isEmpty()) return null
     val variants = TrackMatchKeys.downloadIdVariantsFor(artist, title)

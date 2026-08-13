@@ -96,6 +96,43 @@ class CatalogDownloadFunctionalTest {
     }
 
     @Test
+    fun downloadContinuesAfterActivityAndViewModelAreDestroyed() {
+        fixture.configureGatedSuccess()
+        fixture.startPrimaryDownloadFromViewModel()
+        fixture.awaitAudioRequest()
+        ui.await("process runtime owns the active transfer") {
+            fixture.isDownloadingAt(75)
+        }
+
+        fixture.destroyMainActivity()
+        fixture.releaseAudioDownload()
+
+        ui.await("download completes without a ViewModel") {
+            fixture.isDownloadComplete()
+        }
+        fixture.verifyPersistedSongAndFile(fixture.persistedSong())
+    }
+
+    @Test
+    fun interruptedQueueResumesAutomaticallyWhenUiReopens() {
+        fixture.configureGatedSuccess()
+        fixture.destroyMainActivity()
+        fixture.seedInterruptedPrimaryDownload()
+
+        fixture.launchMainActivity()
+        fixture.awaitAudioRequest()
+        ui.await("interrupted row returns to downloading") {
+            fixture.isDownloadingAt(75)
+        }
+        fixture.releaseAudioDownload()
+
+        ui.await("automatically resumed download completes") {
+            fixture.isDownloadComplete()
+        }
+        fixture.verifyPersistedSongAndFile(fixture.persistedSong())
+    }
+
+    @Test
     fun duplicateOverwrite_keepsRoomIdentityAndPrivateData_replacesBytes() {
         fixture.configureGatedSuccess()
         val existing = fixture.seedExistingSong()

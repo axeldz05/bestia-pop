@@ -1,14 +1,18 @@
 package com.bestiapop.android
 
 import android.app.Application
+import android.app.ActivityManager
+import android.app.ApplicationExitInfo
+import android.os.Build
 import com.bestiapop.android.data.db.AppDatabase
-import com.bestiapop.android.data.network.ConnectivityObserver
 import com.bestiapop.android.data.repository.MusicRepository
 import com.bestiapop.android.data.util.CrashReporter
 import com.bestiapop.android.domain.radio.RadioEngine
 import com.bestiapop.android.domain.radio.createBestiaPopRadioEngine
 import com.bestiapop.android.service.PlaybackRuntime
+import com.bestiapop.android.service.OnlineDownloadServiceLauncher
 import com.bestiapop.android.service.ProcessDownloadCoordinator
+import com.bestiapop.android.service.ProcessDownloadRuntime
 import com.bestiapop.android.service.ProcessSaveWhileListeningCoordinator
 import com.google.firebase.crashlytics.FirebaseCrashlytics
 import kotlinx.coroutines.CoroutineScope
@@ -26,6 +30,20 @@ class BestiaPopApplication : Application() {
 
     internal lateinit var processDownloads: ProcessDownloadCoordinator
         private set
+
+    internal lateinit var processDownloadRuntime: ProcessDownloadRuntime
+        private set
+
+    val shouldAutoResumeDownloads: Boolean by lazy {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+            true
+        } else {
+            val manager = getSystemService(ActivityManager::class.java)
+            manager.getHistoricalProcessExitReasons(packageName, 0, 1)
+                .firstOrNull()
+                ?.reason != ApplicationExitInfo.REASON_USER_REQUESTED
+        }
+    }
 
     lateinit var playbackRuntime: PlaybackRuntime
         private set
@@ -50,12 +68,18 @@ class BestiaPopApplication : Application() {
                 )
             }
         )
-        val saveWhileListeningDownloads = ProcessSaveWhileListeningCoordinator(
+        processDownloadRuntime = ProcessDownloadRuntime.create(
             context = this,
             scope = processScope,
             repository = musicRepository,
-            connectivity = ConnectivityObserver(this),
-            processDownloads = processDownloads
+            processDownloads = processDownloads,
+            acquireExecutionLease = { source ->
+                OnlineDownloadServiceLauncher.acquire(this, source)
+            }
+        )
+        val saveWhileListeningDownloads = ProcessSaveWhileListeningCoordinator(
+            scope = processScope,
+            runtime = processDownloadRuntime
         )
         playbackRuntime = PlaybackRuntime.create(
             context = this,

@@ -48,6 +48,7 @@ import com.bestiapop.android.data.util.StorageUtils
 import com.bestiapop.android.data.util.TagSyncSummary
 import com.bestiapop.android.data.util.TagWriteResult
 import com.bestiapop.android.data.util.looksLikeStoragePath
+import com.bestiapop.android.data.util.copyTransferToFile
 import com.bestiapop.android.domain.repository.IMusicRepository
 import com.bestiapop.android.domain.repository.LibraryScanProgress
 import com.bestiapop.android.domain.util.FilenameMetadataHints
@@ -1544,15 +1545,14 @@ class MusicRepository private constructor(
                     expectedTotalBytes = if (bodyLength > 0) downloadedBytes + bodyLength else -1L
 
                     body.byteStream().use { input ->
-                        java.io.FileOutputStream(file, resuming).use { output ->
-                            val buffer = ByteArray(65536)
-                            while (true) {
-                                val read = input.read(buffer)
-                                if (read < 0) break
-                                output.write(buffer, 0, read)
-                                downloadedBytes += read
-                            }
-                            output.flush()
+                        val baseBytes = downloadedBytes
+                        copyTransferToFile(
+                            input = input,
+                            destination = file,
+                            append = resuming,
+                            bufferSize = 65536
+                        ) { copied ->
+                            downloadedBytes = baseBytes + copied
                         }
                     }
                     // A clean EOF short of Content-Length is a truncated body, not a finished file.

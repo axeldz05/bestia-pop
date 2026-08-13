@@ -12,6 +12,8 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.bestiapop.android.BestiaPopApplication
 import com.bestiapop.android.MainActivity
 import com.bestiapop.android.data.db.AppDatabase
+import com.bestiapop.android.data.model.ActiveDownload
+import com.bestiapop.android.data.model.ActiveDownloadSource
 import com.bestiapop.android.data.model.CandidateDownloadState
 import com.bestiapop.android.data.model.DownloadMessages
 import com.bestiapop.android.data.model.OnlineCatalogTrack
@@ -202,6 +204,23 @@ internal class CatalogDownloadTestFixture : AutoCloseable {
         scenario = ActivityScenario.launch(MainActivity::class.java).also {
             it.moveToState(Lifecycle.State.RESUMED)
         }
+    }
+
+    fun destroyMainActivity() {
+        scenario?.close()
+        scenario = null
+    }
+
+    fun seedInterruptedPrimaryDownload() {
+        val track = CatalogDownloadTestContract.PRIMARY_TRACK.toOnlineCatalogTrack()
+        application.processDownloads.upsert(
+            ActiveDownload.queued(
+                id = CatalogDownloadTestContract.DOWNLOAD_ID,
+                source = ActiveDownloadSource.CATALOG,
+                candidates = listOf(track),
+                lookupIdentity = track.identity
+            ).asError(DownloadMessages.interrupted, interrupted = true)
+        )
     }
 
     fun startPrimaryDownloadFromViewModel() {

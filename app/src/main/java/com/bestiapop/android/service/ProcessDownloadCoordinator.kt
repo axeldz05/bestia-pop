@@ -2,8 +2,12 @@ package com.bestiapop.android.service
 
 import android.content.Context
 import com.bestiapop.android.data.model.ActiveDownload
+import com.bestiapop.android.data.model.DownloadLane
+import com.bestiapop.android.data.model.DownloadMessages
+import com.bestiapop.android.data.model.DownloadPlaylistDestination
 import com.bestiapop.android.data.model.Song
-import com.bestiapop.android.data.model.TrackIdentity
+import com.bestiapop.android.data.model.isInFlight
+import com.bestiapop.android.data.model.matchesLane
 import com.bestiapop.android.data.network.ConnectivityObserver
 import com.bestiapop.android.data.preferences.ActiveDownloadsStore
 import com.bestiapop.android.data.preferences.DownloadPreferencesRepository
@@ -17,6 +21,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -44,14 +49,12 @@ private class ActiveDownloadsStorePersistence(
 }
 
 internal sealed interface CoordinatedDownloadResult {
-    data class Completed(val result: Result<Song>) : CoordinatedDownloadResult
+    data class Completed(
+        val result: Result<Song>,
+        val incompletePlaylistTargets: List<DownloadPlaylistDestination> = emptyList()
+    ) : CoordinatedDownloadResult
     data class AlreadyRunning(val downloadId: String) : CoordinatedDownloadResult
 }
-
-internal data class DownloadPlaylistTarget(
-    val playlistId: Long,
-    val identity: TrackIdentity
-)
 
 /**
  * Process-scoped source of truth for every online download owner.
@@ -64,15 +67,15 @@ internal class ProcessDownloadCoordinator(
     private val persistence: ActiveDownloadsPersistence,
     maxConcurrentDownloads: Int = MAX_CONCURRENT_DOWNLOADS,
     private val onDownloadCompleted: suspend (Song) -> Unit = {},
-    private val onPlaylistTargetCompleted: suspend (DownloadPlaylistTarget, Song) -> Unit = { _, _ -> }
+    private val onPlaylistTargetCompleted: suspend (DownloadPlaylistDestination, Song) -> Unit = { _, _ -> }
 ) {
     private class Claim(
         val downloadId: String,
         val job: Job,
         val aliases: Set<String>
     ) {
-        val pendingPlaylistTargets = linkedSetOf<DownloadPlaylistTarget>()
-        val reservedPlaylistTargets = mutableSetOf<DownloadPlaylistTarget>()
+        val pendingPlaylistTargets = linkedSetOf<DownloadPlaylistDestination>()
+        val reservedPlaylistTargets = mutableSetOf<DownloadPlaylistDestination>()
     }
 
     private val claimsLock = Any()
@@ -109,7 +112,7 @@ internal class ProcessDownloadCoordinator(
         downloadId: String,
         artist: String,
         title: String,
-        playlistTarget: DownloadPlaylistTarget? = null,
+        playlistTarget: DownloadPlaylistDestination? = null,
         onRegistered: () -> Unit = {},
         beforePermit: suspend () -> Unit = {},
         block: suspend () -> Result<Song>
@@ -140,18 +143,19 @@ internal class ProcessDownloadCoordinator(
             throw error
         }
 
-        running?.let { owner ->
-            playlistTarget?.let { preserveTargetPlaylistId(owner.downloadId, it.playlistId) }
-            return CoordinatedDownloadResult.AlreadyRunning(owner.downloadId)
+        val owner = running ?: claim
+        playlistTarget?.let { preservePlaylistTarget(owner.downloadId, it) }
+        running?.let { runningOwner ->
+            return CoordinatedDownloadResult.AlreadyRunning(runningOwner.downloadId)
         }
 
         return try {
             beforePermit()
             val result = permits.withPermit { block() }
-            result.getOrNull()?.let { song ->
+            val incompleteTargets = result.getOrNull()?.let { song ->
                 completePlaylistTargets(claim, song)
-            }
-            CoordinatedDownloadResult.Completed(result)
+            }.orEmpty()
+            CoordinatedDownloadResult.Completed(result, incompleteTargets)
         } finally {
             unregister(claim)
         }
@@ -222,7 +226,7 @@ internal class ProcessDownloadCoordinator(
         downloadId: String,
         artist: String,
         title: String,
-        target: DownloadPlaylistTarget
+        target: DownloadPlaylistDestination
     ): Boolean {
         val aliases = aliasesFor(downloadId, artist, title)
         if (aliases.isEmpty()) return false
@@ -231,13 +235,16 @@ internal class ProcessDownloadCoordinator(
                 registerPlaylistTargetLocked(claim, target)
             }
         } ?: return false
-        preserveTargetPlaylistId(owner.downloadId, target.playlistId)
+        preservePlaylistTarget(owner.downloadId, target)
         return true
     }
 
-    private fun preserveTargetPlaylistId(downloadId: String, playlistId: Long) {
+    private fun preservePlaylistTarget(downloadId: String, target: DownloadPlaylistDestination) {
         update(downloadId) { row ->
-            if (row.targetPlaylistId != null) row else row.copy(targetPlaylistId = playlistId)
+            row.copy(
+                targetPlaylistId = row.targetPlaylistId ?: target.playlistId,
+                playlistTargets = (row.playlistTargets + target).distinct()
+            )
         }
     }
 
@@ -266,6 +273,33 @@ internal class ProcessDownloadCoordinator(
         }
     }
 
+    /** Stops live writers but keeps their rows so cancellation can mark them resumable. */
+    suspend fun interruptAll() {
+        val jobs = runningJobs()
+        jobs.forEach { it.cancel() }
+        markRunningRowsInterrupted()
+        jobs.joinAll()
+    }
+
+    fun interruptNow(lane: DownloadLane) {
+        interruptMatchingRows { it.matchesLane(lane) }
+    }
+
+    fun dismissRunning(lane: DownloadLane) {
+        val ids = _downloads.value
+            .filter { it.matchesLane(lane) }
+            .mapTo(mutableSetOf()) { it.id }
+        val claims = synchronized(claimsLock) {
+            claimsByAlias.values.distinctBy { it.job }.filter { it.downloadId in ids }
+        }
+        claims.forEach { it.job.cancel() }
+        val claimedIds = claims.mapTo(mutableSetOf()) { it.downloadId }
+        if (claimedIds.isNotEmpty()) {
+            _downloads.update { rows -> rows.filterNot { it.id in claimedIds } }
+            schedulePersist()
+        }
+    }
+
     suspend fun recordCompletedDownload(song: Song) {
         try {
             onDownloadCompleted(song)
@@ -285,12 +319,24 @@ internal class ProcessDownloadCoordinator(
         persistLatest()
     }
 
+    /** Transfer boundary: unlike background snapshots, failure must stop bytes from starting. */
+    internal suspend fun flushDurably() {
+        hydrated.await()
+        persistMutex.withLock {
+            persistence.save(downloads.value)
+        }
+    }
+
     /**
      * Reserves each target before invoking its callback. The claim stays registered while callbacks
      * suspend, so a destination attached concurrently is either drained by this loop or observes
      * that the transfer has already unregistered; the same target pair is never invoked twice.
      */
-    private suspend fun completePlaylistTargets(claim: Claim, song: Song) {
+    private suspend fun completePlaylistTargets(
+        claim: Claim,
+        song: Song
+    ): List<DownloadPlaylistDestination> {
+        val incomplete = mutableListOf<DownloadPlaylistDestination>()
         withContext(NonCancellable) {
             while (true) {
                 val target = synchronized(claimsLock) {
@@ -307,14 +353,16 @@ internal class ProcessDownloadCoordinator(
                 try {
                     onPlaylistTargetCompleted(target, song)
                 } catch (_: Exception) {
-                    // The audio is already stored; one failed playlist callback must not skip the
-                    // other destinations or turn the completed transfer into an ERROR row.
+                    // Audio is safe. Keep trying other destinations and let the runtime retain a
+                    // resumable row for any callback that did not commit.
+                    incomplete += target
                 }
             }
         }
+        return incomplete
     }
 
-    private fun registerPlaylistTargetLocked(claim: Claim, target: DownloadPlaylistTarget) {
+    private fun registerPlaylistTargetLocked(claim: Claim, target: DownloadPlaylistDestination) {
         if (target !in claim.reservedPlaylistTargets) {
             claim.pendingPlaylistTargets += target
         }
@@ -354,6 +402,40 @@ internal class ProcessDownloadCoordinator(
         }
     }
 
+    private fun runningJobs(): List<Job> = synchronized(claimsLock) {
+        claimsByAlias.values.distinctBy { it.job }.map { it.job }
+    }
+
+    private fun markRunningRowsInterrupted() {
+        markRowsInterrupted { true }
+    }
+
+    private fun interruptMatchingRows(predicate: (ActiveDownload) -> Boolean) {
+        val ids = _downloads.value.filter(predicate).mapTo(mutableSetOf()) { it.id }
+        val jobs = synchronized(claimsLock) {
+            claimsByAlias.values.distinctBy { it.job }
+                .filter { it.downloadId in ids }
+                .map { it.job }
+        }
+        jobs.forEach { it.cancel() }
+        markRowsInterrupted(predicate)
+    }
+
+    private fun markRowsInterrupted(predicate: (ActiveDownload) -> Boolean) {
+        var changed = false
+        _downloads.update { rows ->
+            rows.map { row ->
+                if (predicate(row) && row.state.isInFlight) {
+                    changed = true
+                    row.asError(DownloadMessages.interrupted, interrupted = true)
+                } else {
+                    row
+                }
+            }
+        }
+        if (changed) schedulePersist()
+    }
+
     private suspend fun persistLatest() {
         persistMutex.withLock {
             try {
@@ -380,7 +462,7 @@ internal class ProcessDownloadCoordinator(
         fun create(
             context: Context,
             scope: CoroutineScope,
-            onPlaylistTargetCompleted: suspend (DownloadPlaylistTarget, Song) -> Unit
+            onPlaylistTargetCompleted: suspend (DownloadPlaylistDestination, Song) -> Unit
         ): ProcessDownloadCoordinator {
             val preferences = DownloadPreferencesRepository(context)
             val connectivity = ConnectivityObserver(context)

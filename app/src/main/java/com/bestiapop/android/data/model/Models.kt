@@ -264,6 +264,13 @@ enum class CandidateDownloadState {
     ERROR
 }
 
+val CandidateDownloadState.isInFlight: Boolean
+    get() = this == CandidateDownloadState.QUEUED ||
+        this == CandidateDownloadState.DOWNLOADING
+
+val CandidateDownloadState.isFailed: Boolean
+    get() = this == CandidateDownloadState.ERROR
+
 data class CatalogTrackCandidate(
     val identity: TrackIdentity,
     val candidates: List<OnlineCatalogTrack>,
@@ -284,11 +291,29 @@ enum class ActiveDownloadSource {
     DISCOVER
 }
 
+enum class DownloadLane {
+    EXPLICIT,
+    AUTOSAVE
+}
+
+val ActiveDownloadSource.lane: DownloadLane
+    get() = if (this == ActiveDownloadSource.SAVE_WHILE_LISTENING) {
+        DownloadLane.AUTOSAVE
+    } else {
+        DownloadLane.EXPLICIT
+    }
+
 /** How to resolve a title+artist collision when downloading. */
 sealed class DownloadConflictPolicy {
     data class Overwrite(val existingSongId: Long) : DownloadConflictPolicy()
     data class SaveAs(val newTitle: String) : DownloadConflictPolicy()
 }
+
+val DownloadConflictPolicy?.overwriteTargetSongIdOrNull: Long?
+    get() = (this as? DownloadConflictPolicy.Overwrite)?.existingSongId
+
+val DownloadConflictPolicy?.saveAsTitleOrNull: String?
+    get() = (this as? DownloadConflictPolicy.SaveAs)?.newTitle
 
 /** Thrown when a download would duplicate an existing library song and no [DownloadConflictPolicy] was provided. */
 class DuplicateSongException(
@@ -305,9 +330,26 @@ data class DownloadConflict(
     val candidates: List<OnlineCatalogTrack>,
     val currentCandidateIndex: Int,
     val targetPlaylistId: Long? = null,
+    val playlistTargets: List<DownloadPlaylistDestination> = emptyList(),
+    val batchId: String? = null,
     val applyToRemainingBatch: Boolean = false,
     val lookupIdentity: TrackIdentity? = null
 )
+
+data class DownloadPlaylistDestination(
+    val playlistId: Long,
+    val identity: TrackIdentity
+)
+
+fun resolveDownloadPlaylistDestinations(
+    destinations: List<DownloadPlaylistDestination>,
+    legacyPlaylistId: Long?,
+    fallbackIdentity: TrackIdentity
+): List<DownloadPlaylistDestination> = destinations.ifEmpty {
+    legacyPlaylistId?.let { playlistId ->
+        listOf(DownloadPlaylistDestination(playlistId, fallbackIdentity))
+    }.orEmpty()
+}
 
 /**
  * Unified in-memory download job for the Descargas center.
@@ -326,7 +368,20 @@ data class ActiveDownload(
     val progressPercent: Int = 0,
     val errorMessage: String? = null,
     val targetPlaylistId: Long? = null,
+    val playlistTargets: List<DownloadPlaylistDestination> = emptyList(),
     val resultSongId: Long? = null,
+    /** Stable catalog identity used for duplicate claims/checks when the YouTube hit differs. */
+    val lookupIdentity: TrackIdentity? = null,
+    /** Persisted marker: this transfer was active when its process stopped and may auto-resume. */
+    val interrupted: Boolean = false,
+    /** True once duplicate checks passed and the transfer/storage pipeline began. */
+    val downloadStarted: Boolean = false,
+    /** Room/file commit completed; resume may reconcile instead of downloading bytes again. */
+    val storageCommitted: Boolean = false,
+    /** Durable Overwrite policy; Save As reuses [titleOverride]. */
+    val overwriteTargetSongId: Long? = null,
+    /** Process/persisted group key for "apply to remaining" conflict policy. */
+    val batchId: String? = null,
     /** Save As (or legacy displayTitle); never written into Room song identity. */
     val titleOverride: String? = null
 ) : TrackMeta {
@@ -357,6 +412,60 @@ data class ActiveDownload(
         )
     }
 
+    fun asError(message: String?, interrupted: Boolean = false): ActiveDownload = copy(
+        state = CandidateDownloadState.ERROR,
+        progressMessage = null,
+        progressPercent = 0,
+        errorMessage = message,
+        interrupted = interrupted
+    )
+
+    fun asDownloading(
+        progressMessage: String = DownloadMessages.starting,
+        progressPercent: Int = 20
+    ): ActiveDownload = copy(
+        state = CandidateDownloadState.DOWNLOADING,
+        progressMessage = progressMessage,
+        progressPercent = progressPercent,
+        errorMessage = null,
+        interrupted = false,
+        downloadStarted = true
+    )
+
+    fun asConflict(): ActiveDownload = copy(
+        state = CandidateDownloadState.IDLE,
+        progressMessage = DownloadMessages.conflictInLibrary,
+        progressPercent = 0,
+        errorMessage = null,
+        interrupted = false
+    )
+
+    fun asSuccess(song: Song): ActiveDownload {
+        val idx = currentCandidateIndex.coerceIn(0, (candidates.size - 1).coerceAtLeast(0))
+        val merged = candidates.mapIndexed { index, track ->
+            if (index != idx) track
+            else track.copy(identity = song.toIdentity().mergePreferring(track.identity))
+        }
+        return copy(
+            candidates = merged,
+            currentCandidateIndex = idx,
+            state = CandidateDownloadState.SUCCESS,
+            progressMessage = DownloadMessages.downloadedShort,
+            progressPercent = 100,
+            errorMessage = null,
+            resultSongId = song.id,
+            interrupted = false,
+            downloadStarted = true,
+            storageCommitted = true
+        )
+    }
+
+    fun restoredConflictPolicy(): DownloadConflictPolicy? = when {
+        overwriteTargetSongId != null -> DownloadConflictPolicy.Overwrite(overwriteTargetSongId)
+        titleOverride != null && downloadStarted -> DownloadConflictPolicy.SaveAs(titleOverride)
+        else -> null
+    }
+
     companion object {
         fun queued(
             id: String,
@@ -364,7 +473,13 @@ data class ActiveDownload(
             candidates: List<OnlineCatalogTrack>,
             currentCandidateIndex: Int = 0,
             targetPlaylistId: Long? = null,
+            playlistTargets: List<DownloadPlaylistDestination> = emptyList(),
             resultSongId: Long? = null,
+            lookupIdentity: TrackIdentity? = null,
+            downloadStarted: Boolean = false,
+            storageCommitted: Boolean = false,
+            overwriteTargetSongId: Long? = null,
+            batchId: String? = null,
             titleOverride: String? = null
         ): ActiveDownload = ActiveDownload(
             id = id,
@@ -376,97 +491,13 @@ data class ActiveDownload(
             progressPercent = 0,
             errorMessage = null,
             targetPlaylistId = targetPlaylistId,
+            playlistTargets = playlistTargets,
             resultSongId = resultSongId,
-            titleOverride = titleOverride
-        )
-
-        fun downloading(
-            id: String,
-            source: ActiveDownloadSource,
-            candidates: List<OnlineCatalogTrack>,
-            currentCandidateIndex: Int = 0,
-            targetPlaylistId: Long? = null,
-            progressMessage: String = DownloadMessages.starting,
-            progressPercent: Int = 20,
-            titleOverride: String? = null
-        ): ActiveDownload = ActiveDownload(
-            id = id,
-            source = source,
-            candidates = candidates,
-            currentCandidateIndex = currentCandidateIndex,
-            state = CandidateDownloadState.DOWNLOADING,
-            progressMessage = progressMessage,
-            progressPercent = progressPercent,
-            errorMessage = null,
-            targetPlaylistId = targetPlaylistId,
-            titleOverride = titleOverride
-        )
-
-        fun conflict(
-            id: String,
-            source: ActiveDownloadSource,
-            candidates: List<OnlineCatalogTrack>,
-            currentCandidateIndex: Int = 0,
-            targetPlaylistId: Long? = null,
-            titleOverride: String? = null
-        ): ActiveDownload = ActiveDownload(
-            id = id,
-            source = source,
-            candidates = candidates,
-            currentCandidateIndex = currentCandidateIndex,
-            state = CandidateDownloadState.IDLE,
-            progressMessage = DownloadMessages.conflictInLibrary,
-            progressPercent = 0,
-            errorMessage = null,
-            targetPlaylistId = targetPlaylistId,
-            titleOverride = titleOverride
-        )
-
-        fun success(
-            id: String,
-            source: ActiveDownloadSource,
-            song: Song,
-            candidates: List<OnlineCatalogTrack>,
-            currentCandidateIndex: Int = 0,
-            targetPlaylistId: Long? = null
-        ): ActiveDownload {
-            val idx = currentCandidateIndex.coerceIn(0, (candidates.size - 1).coerceAtLeast(0))
-            val merged = candidates.mapIndexed { i, t ->
-                if (i != idx) t
-                else t.copy(identity = song.toIdentity().mergePreferring(t.identity))
-            }
-            return ActiveDownload(
-                id = id,
-                source = source,
-                candidates = merged,
-                currentCandidateIndex = idx,
-                state = CandidateDownloadState.SUCCESS,
-                progressMessage = DownloadMessages.downloadedShort,
-                progressPercent = 100,
-                errorMessage = null,
-                targetPlaylistId = targetPlaylistId,
-                resultSongId = song.id
-            )
-        }
-
-        fun error(
-            id: String,
-            source: ActiveDownloadSource,
-            candidates: List<OnlineCatalogTrack>,
-            errorMessage: String,
-            currentCandidateIndex: Int = 0,
-            targetPlaylistId: Long? = null,
-            titleOverride: String? = null
-        ): ActiveDownload = ActiveDownload(
-            id = id,
-            source = source,
-            candidates = candidates,
-            currentCandidateIndex = currentCandidateIndex,
-            state = CandidateDownloadState.ERROR,
-            progressMessage = null,
-            progressPercent = 0,
-            errorMessage = errorMessage,
-            targetPlaylistId = targetPlaylistId,
+            lookupIdentity = lookupIdentity,
+            downloadStarted = downloadStarted,
+            storageCommitted = storageCommitted,
+            overwriteTargetSongId = overwriteTargetSongId,
+            batchId = batchId,
             titleOverride = titleOverride
         )
 
@@ -483,7 +514,7 @@ data class ActiveDownload(
             } else {
                 (download.currentCandidateIndex + 1) % newCandidates.size
             }
-            val stillFailed = download.state == CandidateDownloadState.ERROR
+            val stillFailed = download.state.isFailed
             return download.copy(
                 candidates = newCandidates.mapIndexed { i, t ->
                     if (i == nextIndex) t.preferMetaFrom(download) else t
@@ -498,6 +529,11 @@ data class ActiveDownload(
         }
     }
 }
+
+fun ActiveDownload.matchesLane(lane: DownloadLane): Boolean = source.lane == lane
+
+fun List<ActiveDownload>.forLane(lane: DownloadLane): List<ActiveDownload> =
+    filter { it.matchesLane(lane) }
 
 
 

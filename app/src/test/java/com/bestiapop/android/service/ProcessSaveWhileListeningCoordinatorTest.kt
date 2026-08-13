@@ -63,12 +63,7 @@ class ProcessSaveWhileListeningCoordinatorTest {
                     entered.complete(Unit)
                     release.await()
                     fixture.processDownloads.update(manualId) {
-                        ActiveDownload.success(
-                            id = manualId,
-                            source = ActiveDownloadSource.BATCH,
-                            song = saved,
-                            candidates = listOf(track)
-                        )
+                        it.asSuccess(saved)
                     }
                     Result.success(saved)
                 }
@@ -176,15 +171,19 @@ class ProcessSaveWhileListeningCoordinatorTest {
             scope = scope,
             persistence = FakePersistence()
         )
-        val saver = ProcessSaveWhileListeningCoordinator(
+        val runtime = ProcessDownloadRuntime(
             scope = scope,
             processDownloads = processDownloads,
-            dependencies = ProcessSaveWhileListeningCoordinator.Dependencies(
+            dependencies = ProcessDownloadRuntime.Dependencies(
                 findSong = findSong,
-                download = download,
+                download = { track, _, onProgress -> download(track, onProgress) },
                 isMetered = { false },
                 downloadOnMeteredNetwork = { true }
             )
+        )
+        val saver = ProcessSaveWhileListeningCoordinator(
+            scope = scope,
+            runtime = runtime
         )
         return Fixture(scope, processDownloads, saver)
     }

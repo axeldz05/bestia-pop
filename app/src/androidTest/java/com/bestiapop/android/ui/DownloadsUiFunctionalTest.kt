@@ -16,6 +16,7 @@ import com.bestiapop.android.data.model.TrackIdentity
 import com.bestiapop.android.testutil.DeviceAwakeRule
 import com.bestiapop.android.ui.components.ActiveDownloadRow
 import com.bestiapop.android.ui.components.DownloadStateTrailing
+import com.bestiapop.android.ui.screens.DownloadsHeader
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -108,6 +109,39 @@ class DownloadsUiFunctionalTest {
             )
         }
         composeTestRule.onNodeWithText(DownloadMessages.inLibrary).assertIsDisplayed()
+    }
+
+    @Test
+    fun header_errorRowsOfferResumeAllAndClearAll() {
+        var resumed = false
+        var cleared = false
+        composeTestRule.setContent {
+            DownloadsHeader(
+                downloads = listOf(download(CandidateDownloadState.ERROR)),
+                onResumeAll = { resumed = true },
+                onClearAll = { cleared = true }
+            )
+        }
+
+        composeTestRule.onNodeWithText("Reanudar todo").performClick()
+        composeTestRule.onNodeWithText("Limpiar todo").performClick()
+
+        assertTrue(resumed)
+        assertTrue(cleared)
+    }
+
+    @Test
+    fun header_successRowsDoNotOfferResumeAll() {
+        composeTestRule.setContent {
+            DownloadsHeader(
+                downloads = listOf(download(CandidateDownloadState.SUCCESS)),
+                onResumeAll = {},
+                onClearAll = {}
+            )
+        }
+
+        composeTestRule.onNodeWithText("Reanudar todo").assertDoesNotExist()
+        composeTestRule.onNodeWithText("Limpiar todo").assertIsDisplayed()
     }
 
 }

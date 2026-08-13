@@ -10,8 +10,12 @@ import com.bestiapop.android.data.model.ActiveDownload
 import com.bestiapop.android.data.model.ActiveDownloadSource
 import com.bestiapop.android.data.model.CandidateDownloadState
 import com.bestiapop.android.data.model.DownloadMessages
+import com.bestiapop.android.data.model.DownloadPlaylistDestination
+import com.bestiapop.android.data.model.isFailed
+import com.bestiapop.android.data.model.resolveDownloadPlaylistDestinations
 import com.bestiapop.android.data.model.withIdentity
 import com.bestiapop.android.data.util.CatalogTrackJson
+import com.bestiapop.android.data.util.TrackIdentityJson
 import com.bestiapop.android.data.util.optNullableString
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -58,24 +62,23 @@ object ActiveDownloadCodec {
         list.map { download ->
             when (download.state) {
                 CandidateDownloadState.DOWNLOADING,
-                CandidateDownloadState.QUEUED -> download.copy(
-                    state = CandidateDownloadState.ERROR,
-                    progressMessage = null,
-                    progressPercent = 0,
-                    errorMessage = DownloadMessages.interrupted
-                )
+                CandidateDownloadState.QUEUED ->
+                    download.asError(DownloadMessages.interrupted, interrupted = true)
                 CandidateDownloadState.SUCCESS -> download.copy(
                     progressMessage = null,
-                    progressPercent = 100
+                    progressPercent = 100,
+                    interrupted = false
                 )
-                CandidateDownloadState.ERROR -> download.copy(
-                    progressMessage = null,
-                    progressPercent = 0
+                CandidateDownloadState.ERROR -> download.asError(
+                    message = download.errorMessage,
+                    interrupted = download.interrupted ||
+                        isInterruptedMessage(download.errorMessage)
                 )
                 // IDLE means an unresolved conflict: keep a status line, or the row came back blank.
                 CandidateDownloadState.IDLE -> download.copy(
                     progressMessage = download.progressMessage ?: DownloadMessages.conflictPending,
-                    progressPercent = 0
+                    progressPercent = 0,
+                    interrupted = false
                 )
             }
         }
@@ -87,6 +90,11 @@ object ActiveDownloadCodec {
             put("currentCandidateIndex", download.currentCandidateIndex)
             put("state", download.state.name)
             put("errorMessage", download.errorMessage ?: JSONObject.NULL)
+            put("interrupted", download.interrupted)
+            put("downloadStarted", download.downloadStarted)
+            put("storageCommitted", download.storageCommitted)
+            put("overwriteTargetSongId", download.overwriteTargetSongId ?: JSONObject.NULL)
+            put("batchId", download.batchId ?: JSONObject.NULL)
             if (download.targetPlaylistId != null) {
                 put("targetPlaylistId", download.targetPlaylistId)
             } else {
@@ -101,6 +109,30 @@ object ActiveDownloadCodec {
             if (override != null) {
                 put("displayTitle", override)
             }
+            download.lookupIdentity?.let { identity ->
+                put(
+                    "lookupIdentity",
+                    JSONObject().also { TrackIdentityJson.putInto(it, identity) }
+                )
+            }
+            put(
+                "playlistTargets",
+                JSONArray().apply {
+                    download.playlistTargets.forEach { target ->
+                        put(
+                            JSONObject().apply {
+                                put("playlistId", target.playlistId)
+                                put(
+                                    "identity",
+                                    JSONObject().also {
+                                        TrackIdentityJson.putInto(it, target.identity)
+                                    }
+                                )
+                            }
+                        )
+                    }
+                }
+            )
             val candidates = JSONArray()
             for (track in download.candidates) {
                 candidates.put(CatalogTrackJson.encode(track))
@@ -150,6 +182,32 @@ object ActiveDownloadCodec {
             }
             val currentTitle = patched.getOrNull(index)?.title.orEmpty()
             val titleOverride = fallbackTitle.takeIf { it.isNotBlank() && it != currentTitle }
+            val errorMessage = obj.optNullableString("errorMessage")
+            val lookupIdentity = obj.optJSONObject("lookupIdentity")
+                ?.let(TrackIdentityJson::decode)
+            val decodedPlaylistTargets = obj.optJSONArray("playlistTargets")?.let { array ->
+                buildList {
+                    for (i in 0 until array.length()) {
+                        val target = array.optJSONObject(i) ?: continue
+                        val playlistId = target.optLong("playlistId").takeIf { it > 0L }
+                            ?: continue
+                        val identity = target.optJSONObject("identity")
+                            ?.let(TrackIdentityJson::decode)
+                            ?: continue
+                        add(DownloadPlaylistDestination(playlistId, identity))
+                    }
+                }
+            }.orEmpty()
+            val fallbackIdentity = lookupIdentity ?: patched.getOrNull(index)?.identity
+            val playlistTargets = if (fallbackIdentity == null) {
+                decodedPlaylistTargets
+            } else {
+                resolveDownloadPlaylistDestinations(
+                    decodedPlaylistTargets,
+                    targetPlaylistId,
+                    fallbackIdentity
+                )
+            }
             ActiveDownload(
                 id = obj.getString("id"),
                 source = source,
@@ -158,15 +216,29 @@ object ActiveDownloadCodec {
                 state = state,
                 progressMessage = null,
                 progressPercent = if (state == CandidateDownloadState.SUCCESS) 100 else 0,
-                errorMessage = obj.optNullableString("errorMessage"),
+                errorMessage = errorMessage,
                 targetPlaylistId = targetPlaylistId,
+                playlistTargets = playlistTargets,
                 resultSongId = resultSongId,
+                lookupIdentity = lookupIdentity,
+                interrupted = obj.optBoolean(
+                    "interrupted",
+                    isInterruptedMessage(errorMessage)
+                ),
+                downloadStarted = obj.optBoolean("downloadStarted", false),
+                storageCommitted = obj.optBoolean("storageCommitted", false),
+                overwriteTargetSongId = obj.optLong("overwriteTargetSongId")
+                    .takeIf { it > 0L },
+                batchId = obj.optNullableString("batchId"),
                 titleOverride = titleOverride
             )
         } catch (_: Exception) {
             null
         }
     }
+
+    private fun isInterruptedMessage(message: String?): Boolean =
+        message?.startsWith("Interrumpida") == true
 }
 
 
@@ -193,5 +265,5 @@ class ActiveDownloadsStore(private val context: Context) {
 /** Count of downloads that should show on the Descargas nav badge. */
 fun activeDownloadBadgeCount(downloads: List<ActiveDownload>): Int =
     downloads.count {
-        it.state == CandidateDownloadState.DOWNLOADING || it.state == CandidateDownloadState.ERROR
+        it.state == CandidateDownloadState.DOWNLOADING || it.state.isFailed
     }

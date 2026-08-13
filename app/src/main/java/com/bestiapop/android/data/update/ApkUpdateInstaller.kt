@@ -8,13 +8,14 @@ import android.provider.Settings
 import androidx.core.content.FileProvider
 import androidx.core.net.toUri
 import com.bestiapop.android.data.network.HttpClients
+import com.bestiapop.android.data.util.copyTransferToFile
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
-import java.io.FileOutputStream
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import kotlin.coroutines.cancellation.CancellationException
@@ -68,27 +69,20 @@ internal class ApkUpdateDownloader(
                 val body = response.body ?: error("Descarga APK vacía")
                 val expectedBytes = body.contentLength()
                 val copiedBytes = body.byteStream().use { input ->
-                    FileOutputStream(part).use { output ->
-                        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-                        var copied = 0L
-                        while (true) {
-                            ensureActive()
-                            val count = input.read(buffer)
-                            if (count < 0) break
-                            ensureActive()
-                            output.write(buffer, 0, count)
-                            copied += count
-                            onProgress(
-                                if (expectedBytes >= 0L) {
-                                    (copied.toFloat() / expectedBytes.toFloat()).coerceAtMost(1f)
-                                } else {
-                                    null
-                                }
-                            )
-                        }
-                        output.flush()
-                        output.fd.sync()
-                        copied
+                    val transferContext = currentCoroutineContext()
+                    copyTransferToFile(
+                        input = input,
+                        destination = part,
+                        syncToDisk = true,
+                        checkCancelled = transferContext::ensureActive
+                    ) { copied ->
+                        onProgress(
+                            if (expectedBytes >= 0L) {
+                                (copied.toFloat() / expectedBytes.toFloat()).coerceAtMost(1f)
+                            } else {
+                                null
+                            }
+                        )
                     }
                 }
                 check(copiedBytes > 0L) { "Descarga APK vacía" }

@@ -89,6 +89,8 @@ import com.bestiapop.android.data.model.CandidateDownloadState
 import com.bestiapop.android.data.model.DownloadMessages
 import com.bestiapop.android.data.model.OnlineCatalogTrack
 import com.bestiapop.android.data.model.PlayableItem
+import com.bestiapop.android.data.model.isFailed
+import com.bestiapop.android.data.model.isInFlight
 import com.bestiapop.android.ui.MusicPlayerViewModel
 
 
@@ -237,8 +239,7 @@ fun AddMusicDialog(
                             onUrlInputChange = { linkUrlInput = it },
                             linkDownloads = activeDownloads.filter {
                                 it.source == ActiveDownloadSource.LINK &&
-                                    (it.state == CandidateDownloadState.DOWNLOADING ||
-                                        it.state == CandidateDownloadState.ERROR)
+                                    (it.state.isInFlight || it.state.isFailed)
                             },
                             onDownloadClick = { viewModel.downloadFromUrl(linkUrlInput) },
                             onRetry = { id -> viewModel.retryActiveDownload(id) },
@@ -373,7 +374,7 @@ private fun LinkDownloaderTab(
     onRetry: (String) -> Unit,
     onOpenDownloads: () -> Unit
 ) {
-    val isDownloading = linkDownloads.any { it.state == CandidateDownloadState.DOWNLOADING }
+    val isDownloading = linkDownloads.any { it.state.isInFlight }
     Column(modifier = Modifier.fillMaxSize()) {
         Text(
             text = "Descargar por Enlace Web",
@@ -444,8 +445,8 @@ private fun ActiveDownloadsSummaryBanner(
     onOpenDownloads: () -> Unit
 ) {
     if (downloads.isEmpty()) return
-    val downloading = downloads.filter { it.state == CandidateDownloadState.DOWNLOADING }
-    val failed = downloads.filter { it.state == CandidateDownloadState.ERROR }
+    val downloading = downloads.filter { it.state.isInFlight }
+    val failed = downloads.filter { it.state.isFailed }
     if (downloading.isEmpty() && failed.isEmpty()) return
 
     AnimatedVisibility(visible = true) {
@@ -844,7 +845,7 @@ private fun CollectionTrackInspectionView(
     onStopPreview: () -> Unit
 ) {
     val selectedCount = candidates.count { it.isSelected && it.currentTrack != null }
-    val isBatchDownloading = batchDownloads.any { it.state == CandidateDownloadState.DOWNLOADING }
+    val isBatchDownloading = batchDownloads.any { it.state.isInFlight }
 
     Column(modifier = Modifier.fillMaxSize()) {
         // Back Header
@@ -913,7 +914,10 @@ private fun CollectionTrackInspectionView(
                     )
                     CandidateTrackCard(
                         item = item,
-                        trackedDownload = batchDownloads.findByTrack(item.artist, item.title),
+                        trackedDownload = batchDownloads.findUiDownloadByTrack(
+                            item.artist,
+                            item.title
+                        ),
                         isPreviewing = flags.isThisPreview,
                         isPlaying = flags.isPlaying,
                         isResolving = flags.isResolving,
@@ -1084,7 +1088,7 @@ private fun CandidateTrackCard(
         selected = item.isSelected,
         progressFraction = progressFraction,
         isResolving = isResolving,
-        subtitleColor = if (downloadState == CandidateDownloadState.ERROR) {
+        subtitleColor = if (downloadState.isFailed) {
             MaterialTheme.colorScheme.error
         } else {
             MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
@@ -1097,7 +1101,7 @@ private fun CandidateTrackCard(
             Spacer(modifier = Modifier.width(6.dp))
         },
         extraBelowTitle = {
-            if (downloadState == CandidateDownloadState.ERROR &&
+            if (downloadState.isFailed &&
                 !downloadError.isNullOrEmpty()
             ) {
                 Spacer(modifier = Modifier.height(2.dp))
@@ -1112,7 +1116,7 @@ private fun CandidateTrackCard(
         }
     ) {
         if (downloadState == CandidateDownloadState.IDLE ||
-            downloadState == CandidateDownloadState.ERROR
+            downloadState.isFailed
         ) {
             PreviewPlayPauseButton(
                 isResolving = isResolving,

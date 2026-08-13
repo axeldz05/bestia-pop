@@ -23,6 +23,7 @@ import com.bestiapop.android.data.model.ActiveDownload
 import com.bestiapop.android.data.model.ActiveDownloadSource
 import com.bestiapop.android.data.model.CandidateDownloadState
 import com.bestiapop.android.data.model.DownloadMessages
+import com.bestiapop.android.data.model.isFailed
 import com.bestiapop.android.ui.theme.ListDensity
 
 @Composable
@@ -66,7 +67,7 @@ fun ActiveDownloadRow(
                 modifier = Modifier.weight(1f),
                 titleStyle = MaterialTheme.typography.bodyMedium,
                 titleWeight = FontWeight.SemiBold,
-                subtitleColor = if (download.state == CandidateDownloadState.ERROR) {
+                subtitleColor = if (download.state.isFailed) {
                     MaterialTheme.colorScheme.error
                 } else {
                     MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f)

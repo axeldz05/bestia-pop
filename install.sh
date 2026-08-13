@@ -76,7 +76,7 @@ if [ "$BUILD_TYPE" = "release" ]; then
     APK_PATH="app/build/outputs/apk/release/app-release.apk"
 else
     echo -e "\n${YELLOW}Compilando APK debug con Gradle...${NC}"
-    gradle assembleDebug -x compileDebugJavaWithJavac
+    gradle assembleDebug
     APK_PATH="app/build/outputs/apk/debug/app-debug.apk"
 fi
 

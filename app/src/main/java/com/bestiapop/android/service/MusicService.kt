@@ -18,8 +18,10 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.datasource.ResolvingDataSource
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.audio.AudioSink
@@ -528,8 +530,39 @@ private class UserAgentMediaSourceFactory(
         if (tag != null && tag.userAgent.isNotBlank()) {
             httpFactory.setUserAgent(tag.userAgent)
         }
-        val dataSourceFactory = DefaultDataSource.Factory(context, httpFactory)
+        val upstreamFactory = DefaultDataSource.Factory(context, httpFactory)
+        val dataSourceFactory = ResolvingDataSource.Factory(
+            upstreamFactory,
+            ::boundGoogleVideoRequest
+        )
         return DefaultMediaSourceFactory(dataSourceFactory, extractorsFactory)
             .createMediaSource(mediaItem)
     }
+}
+
+internal fun boundGoogleVideoRequest(dataSpec: DataSpec): DataSpec {
+    val uri = dataSpec.uri
+    val remainingLength = googleVideoBoundedLength(
+        host = uri.host,
+        contentLengthParam = uri.getQueryParameter("clen"),
+        position = dataSpec.position,
+        requestedLength = dataSpec.length
+    ) ?: return dataSpec
+    return dataSpec.subrange(0L, remainingLength)
+}
+
+internal fun googleVideoBoundedLength(
+    host: String?,
+    contentLengthParam: String?,
+    position: Long,
+    requestedLength: Long
+): Long? {
+    if (requestedLength != C.LENGTH_UNSET.toLong()) return null
+    if (host?.endsWith(".googlevideo.com") != true) return null
+    val contentLength = contentLengthParam
+        ?.toLongOrNull()
+        ?.takeIf { it > 0L }
+        ?: return null
+    val remainingLength = contentLength - position
+    return remainingLength.takeIf { it > 0L }
 }

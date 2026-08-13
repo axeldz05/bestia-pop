@@ -44,9 +44,6 @@ Si solo hay un bugfix local sin cambio de diseño, no hace falta tocar skills.
 - Compilar/instalar en dispositivo: `./install.sh` (debug, iteración diaria) o `./install.sh --release` (APK firmado beta-like)
 - Publicar para amigos: `./release.sh` (bump `version.properties`, APK firmado → GitHub Releases; `versionCode` en las notas del release). Repo en `github-release.properties` (`GITHUB_REPOSITORY=owner/repo`)
 - Antes de `./release.sh`: leer skill `bestiapop-release-changelog`, resumir `CHANGELOG.pending.md` en notas **para el usuario** (sin refactors), escribir `CHANGELOG.release-notes.md` y pasar `--notes-file` (o dejar que el script lo tome si existe)
-- AAB Google Play (legacy): `./deploy-play.sh --upload --rollout` — no es el path de distribución
-- Firebase: `app/google-services.json` (plantilla `.example`); crashes → Crashlytics en builds release
-- Firma release: `keystore.properties` + `.jks` (plantillas `.example`)
 - Tests unitarios bajo `app/src/test`; instrumentados bajo `app/src/androidTest`
 
 ## Al terminar la implementación y haberlo verificado mediante Build - deploy

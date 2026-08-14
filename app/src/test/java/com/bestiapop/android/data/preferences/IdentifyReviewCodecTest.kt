@@ -84,4 +84,30 @@ class IdentifyReviewCodecTest {
         assertEquals(IdentifyReviewPhase.Item, state.phase)
         assertEquals(false, state.isVisible)
     }
+
+    @Test
+    fun roundTrip_persistsAndRestoresApplyFields() {
+        val customFields = com.bestiapop.android.data.model.IdentifyApplyFields(
+            artwork = true,
+            title = false,
+            artist = true,
+            album = false,
+            year = true,
+            trackNumber = false
+        )
+        val original = PersistedIdentifyReviewQueue(
+            proposals = listOf(proposal()),
+            phase = "Item",
+            applyFields = customFields
+        )
+        val restored = IdentifyReviewCodec.decode(IdentifyReviewCodec.encode(original))
+        assertEquals(customFields, restored.applyFields)
+    }
+
+    @Test
+    fun decode_legacyJsonWithoutApplyFields_defaultsToAll() {
+        val legacyJson = """{"phase":"Item","items":[]}"""
+        val decoded = IdentifyReviewCodec.decode(legacyJson)
+        assertEquals(com.bestiapop.android.data.model.IdentifyApplyFields.ALL, decoded.applyFields)
+    }
 }

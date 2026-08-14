@@ -4,6 +4,7 @@ import android.net.Uri
 import com.bestiapop.android.data.model.AlbumOverride
 import com.bestiapop.android.data.model.DownloadConflictPolicy
 import com.bestiapop.android.data.model.DownloadPhase
+import com.bestiapop.android.data.model.IdentifyApplyFields
 import com.bestiapop.android.data.model.IdentifyCandidate
 import com.bestiapop.android.data.model.IdentifyProposal
 import com.bestiapop.android.data.model.IdentifyResult
@@ -51,8 +52,11 @@ open class FakeMusicRepository : IMusicRepository {
         queryTitle = song.title,
         alreadyIdentified = true
     )
-    override suspend fun applySongIdentity(songId: Long, candidate: IdentifyCandidate) =
-        IdentifyResult.Skipped
+    override suspend fun applySongIdentity(
+        songId: Long,
+        candidate: IdentifyCandidate,
+        fields: IdentifyApplyFields
+    ) = IdentifyResult.Skipped
     override suspend fun identifySongMetadata(song: Song) = IdentifyResult.Skipped
     override suspend fun updateSongDuration(songId: Long, durationMs: Long) = Unit
     override suspend fun touchSongLastPlayed(songId: Long, playedAt: Long) = Unit

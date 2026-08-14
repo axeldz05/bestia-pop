@@ -23,6 +23,7 @@ fun LibraryAlbumBrowseList(
     onShuffleAlbum: (Album) -> Unit,
     onEditAlbum: (Album) -> Unit,
     onChangeAlbumCover: (Album) -> Unit,
+    onIdentifyAlbum: (Album) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     if (albums.isEmpty()) {
@@ -56,6 +57,7 @@ fun LibraryAlbumBrowseList(
                 onShuffleAlbum = { onShuffleAlbum(album) },
                 onEditAlbum = { onEditAlbum(album) },
                 onChangeAlbumCover = { onChangeAlbumCover(album) },
+                onIdentifyAlbum = { onIdentifyAlbum(album) },
                 onOpenAlbum = { onAlbumClick(album) }
             )
         }

@@ -80,6 +80,7 @@ fun MainScreen(
     val pendingOpenDownloads by viewModel.pendingOpenDownloads.collectAsState()
     val downloadConflict by viewModel.downloadConflict.collectAsState()
     val identifyReview by viewModel.identifyReview.collectAsState()
+    val identifySetup by viewModel.identifySetup.collectAsState()
     val pendingAlbumMerge by viewModel.pendingAlbumMerge.collectAsState()
     val appUpdateState by appUpdateViewModel.state.collectAsState()
     val downloadBadgeCount = activeDownloadBadgeCount(activeDownloads)
@@ -101,6 +102,7 @@ fun MainScreen(
         selectedNavIndex,
         showFullPlayer,
         identifyReview.isVisible,
+        identifySetup != null,
         pendingAlbumMerge,
         downloadConflict
     ) {
@@ -309,6 +311,17 @@ fun MainScreen(
 
         if (identifyReview.isOpen) {
             IdentifyReviewScreen(viewModel = viewModel)
+        }
+
+        identifySetup?.let { setup ->
+            com.bestiapop.android.ui.components.IdentifySetupDialog(
+                songs = setup.songs,
+                applyFields = setup.applyFields,
+                contextTitle = setup.contextTitle,
+                onFieldsChanged = { viewModel.setIdentifySetupFields(it) },
+                onConfirm = { viewModel.confirmIdentifySetup() },
+                onDismiss = { viewModel.dismissIdentifySetup() }
+            )
         }
 
         downloadConflict?.let { conflict ->

@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.bestiapop.android.data.model.IdentifyApplyFields
 import com.bestiapop.android.data.model.IdentifyCandidate
 import com.bestiapop.android.data.model.IdentifyConfidence
 import com.bestiapop.android.data.model.IdentifyProposal
@@ -23,7 +24,8 @@ private val Context.identifyReviewDataStore: DataStore<Preferences> by preferenc
 
 data class PersistedIdentifyReviewQueue(
     val proposals: List<IdentifyProposal> = emptyList(),
-    val phase: String = "Item"
+    val phase: String = "Item",
+    val applyFields: IdentifyApplyFields = IdentifyApplyFields.ALL
 )
 
 /**
@@ -36,9 +38,18 @@ object IdentifyReviewCodec {
         for (proposal in queue.proposals) {
             items.put(encodeProposal(proposal))
         }
+        val fieldsObj = JSONObject().apply {
+            put("artwork", queue.applyFields.artwork)
+            put("title", queue.applyFields.title)
+            put("artist", queue.applyFields.artist)
+            put("album", queue.applyFields.album)
+            put("year", queue.applyFields.year)
+            put("trackNumber", queue.applyFields.trackNumber)
+        }
         return JSONObject().apply {
             put("phase", queue.phase)
             put("items", items)
+            put("applyFields", fieldsObj)
         }.toString()
     }
 
@@ -52,9 +63,23 @@ object IdentifyReviewCodec {
                     decodeProposal(arr.getJSONObject(i))?.let { add(it) }
                 }
             }
+            val fieldsObj = obj.optJSONObject("applyFields")
+            val applyFields = if (fieldsObj != null) {
+                IdentifyApplyFields(
+                    artwork = fieldsObj.optBoolean("artwork", true),
+                    title = fieldsObj.optBoolean("title", true),
+                    artist = fieldsObj.optBoolean("artist", true),
+                    album = fieldsObj.optBoolean("album", true),
+                    year = fieldsObj.optBoolean("year", true),
+                    trackNumber = fieldsObj.optBoolean("trackNumber", true)
+                )
+            } else {
+                IdentifyApplyFields.ALL
+            }
             PersistedIdentifyReviewQueue(
                 proposals = proposals,
-                phase = obj.optString("phase", "Item").ifBlank { "Item" }
+                phase = obj.optString("phase", "Item").ifBlank { "Item" },
+                applyFields = applyFields
             )
         } catch (_: Exception) {
             PersistedIdentifyReviewQueue()

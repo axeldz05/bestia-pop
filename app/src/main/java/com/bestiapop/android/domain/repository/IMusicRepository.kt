@@ -2,6 +2,7 @@ package com.bestiapop.android.domain.repository
 
 import android.net.Uri
 import com.bestiapop.android.data.model.AlbumOverride
+import com.bestiapop.android.data.model.IdentifyApplyFields
 import com.bestiapop.android.data.model.IdentifyCandidate
 import com.bestiapop.android.data.model.IdentifyProposal
 import com.bestiapop.android.data.model.IdentifyResult
@@ -58,8 +59,12 @@ interface IMusicRepository {
         existingCandidates: List<IdentifyCandidate> = emptyList()
     ): IdentifyProposal
 
-    /** Persist one identify candidate onto [songId]. */
-    suspend fun applySongIdentity(songId: Long, candidate: IdentifyCandidate): IdentifyResult
+    /** Persist one identify candidate onto [songId] with optional field selection. */
+    suspend fun applySongIdentity(
+        songId: Long,
+        candidate: IdentifyCandidate,
+        fields: IdentifyApplyFields = IdentifyApplyFields.ALL
+    ): IdentifyResult
 
     /**
      * Look up artist/album online for a library song with missing/placeholder metadata.

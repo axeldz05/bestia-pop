@@ -1,5 +1,6 @@
 package com.bestiapop.android.ui.state
 
+import com.bestiapop.android.data.model.IdentifyApplyFields
 import com.bestiapop.android.data.model.IdentifyCandidate
 import com.bestiapop.android.data.model.IdentifyConfidence
 import com.bestiapop.android.data.model.IdentifyProposal
@@ -43,7 +44,8 @@ data class IdentifyReviewState(
     val sessionSkipped: Int = 0,
     val isVisible: Boolean = false,
     val phase: IdentifyReviewPhase = IdentifyReviewPhase.Item,
-    val openedFromOverview: Boolean = false
+    val openedFromOverview: Boolean = false,
+    val applyFields: IdentifyApplyFields = IdentifyApplyFields.ALL
 ) {
     val current: IdentifyReviewItem?
         get() = items.getOrNull(currentIndex)
@@ -116,14 +118,15 @@ fun identifyReviewPhaseOrItem(name: String): IdentifyReviewPhase =
 fun identifyReviewFromPersisted(
     proposals: List<IdentifyProposal>,
     phaseName: String,
-    songs: List<Song>
+    songs: List<Song>,
+    applyFields: IdentifyApplyFields = IdentifyApplyFields.ALL
 ): IdentifyReviewState {
-    if (proposals.isEmpty()) return IdentifyReviewState()
+    if (proposals.isEmpty()) return IdentifyReviewState(applyFields = applyFields)
     val byId = songs.associateBy { it.id }
     val items = proposals.mapNotNull { proposal ->
         byId[proposal.songId]?.let { IdentifyReviewItem(it, proposal) }
     }
-    if (items.isEmpty()) return IdentifyReviewState()
+    if (items.isEmpty()) return IdentifyReviewState(applyFields = applyFields)
     val requested = identifyReviewPhaseOrItem(phaseName)
     val phase = if (requested == IdentifyReviewPhase.Overview &&
         clusterIdentifyAlbumGroups(items.map { it.proposal }).isEmpty()
@@ -136,6 +139,7 @@ fun identifyReviewFromPersisted(
         items = items,
         currentIndex = 0,
         phase = phase,
-        isVisible = false
+        isVisible = false,
+        applyFields = applyFields
     )
 }

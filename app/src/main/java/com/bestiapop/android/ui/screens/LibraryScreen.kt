@@ -194,6 +194,17 @@ fun LibraryScreen(
             Unit
         }
     }
+    val onIdentifyAlbumByKey = remember(resolveAlbumByKey, songs) {
+        { albumKey: String ->
+            resolveAlbumByKey(albumKey)?.let { album ->
+                val albumSongs = viewModel.songsForAlbum(songs, album.name)
+                if (albumSongs.isNotEmpty()) {
+                    viewModel.openIdentifySetup(albumSongs, contextTitle = "Álbum: ${album.displayName}")
+                }
+            }
+            Unit
+        }
+    }
 
     val currentSongId = currentSong?.id
 
@@ -331,7 +342,7 @@ fun LibraryScreen(
     val songListActions = remember(
         onPlayNext, onAddToQueue, onStartRadio, onAddToPlaylist, onEditMetadata, onIdentify, onDeleteSong,
         onPlayAlbum, onShuffleAlbum, toggleSelectSong, toggleSelectAlbum, onAlbumLongClick,
-        toggleCollapseAlbum, onEditAlbumByKey, onChangeAlbumCoverByKey, selectedArtistName, selectedGenreName
+        toggleCollapseAlbum, onEditAlbumByKey, onChangeAlbumCoverByKey, onIdentifyAlbumByKey, selectedArtistName, selectedGenreName
     ) {
         LibrarySongListActions(
             onPlayNext = onPlayNext,
@@ -349,6 +360,7 @@ fun LibraryScreen(
             onToggleCollapseAlbum = toggleCollapseAlbum,
             onEditAlbum = onEditAlbumByKey,
             onChangeAlbumCover = onChangeAlbumCoverByKey,
+            onIdentifyAlbum = onIdentifyAlbumByKey,
             onOpenAlbum = { albumName ->
                 viewModel.openLibraryAlbum(
                     albumName,
@@ -542,7 +554,10 @@ fun LibraryScreen(
                     selectedSongs.firstOrNull()?.let(songDialogs.onAddToPlaylist)
                 },
                 onIdentifySelected = {
-                    viewModel.identifySongs(selectedSongs)
+                    viewModel.openIdentifySetup(
+                        selectedSongs,
+                        contextTitle = "${selectedSongs.size} canciones seleccionadas"
+                    )
                     clearSelection()
                 },
                 onSimilarSelected = {
@@ -688,7 +703,16 @@ fun LibraryScreen(
                         onPlayAlbum = { playOrShuffleAlbum(it, false) },
                         onShuffleAlbum = { playOrShuffleAlbum(it, true) },
                         onEditAlbum = { albumForEdit = it },
-                        onChangeAlbumCover = { albumForCoverChange = it }
+                        onChangeAlbumCover = { albumForCoverChange = it },
+                        onIdentifyAlbum = { album ->
+                            val albumSongs = viewModel.songsForAlbum(songs, album.name)
+                            if (albumSongs.isNotEmpty()) {
+                                viewModel.openIdentifySetup(
+                                    albumSongs,
+                                    contextTitle = "Álbum: ${album.displayName}"
+                                )
+                            }
+                        }
                     )
                 }
 

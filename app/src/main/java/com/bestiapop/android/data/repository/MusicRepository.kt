@@ -19,6 +19,7 @@ import com.bestiapop.android.data.model.Artist
 import com.bestiapop.android.data.model.DownloadConflictPolicy
 import com.bestiapop.android.data.model.DownloadPhase
 import com.bestiapop.android.data.model.DuplicateSongException
+import com.bestiapop.android.data.model.IdentifyApplyFields
 import com.bestiapop.android.data.model.IdentifyCandidate
 import com.bestiapop.android.data.model.IdentifyConfidence
 import com.bestiapop.android.data.model.IdentifyProposal
@@ -950,7 +951,8 @@ class MusicRepository private constructor(
 
     override suspend fun applySongIdentity(
         songId: Long,
-        candidate: IdentifyCandidate
+        candidate: IdentifyCandidate,
+        fields: IdentifyApplyFields
     ): IdentifyResult = withContext(Dispatchers.IO) {
         val entity = musicDao.getSongById(songId) ?: return@withContext IdentifyResult.NoMatch
         // Prefer candidate over Room; strip generic album before merge so entity can fill.
@@ -960,16 +962,30 @@ class MusicRepository private constructor(
                 .orEmpty()
         )
         val merged = preferred.mergePreferring(entity.toIdentity())
-        val cleaned = merged.copy(
-            title = IdentifyRanking.cleanIdentityTitle(merged.title).ifBlank { merged.title },
-            album = IdentifyRanking.fallbackAlbum(merged.artist, merged.album),
-            // The local file's own length wins: mergePreferring keeps the receiver's positive
-            // durationMs, and the receiver is the catalog hit, so a remaster or radio edit (or the
-            // 180000ms iTunes default) rewrote the real duration and nothing repaired it afterwards.
-            durationMs = if (entity.durationMs > 0) entity.durationMs else merged.durationMs
+        val candidateTitle = IdentifyRanking.cleanIdentityTitle(merged.title).ifBlank { merged.title }
+        val candidateArtist = merged.artist
+        val candidateAlbum = IdentifyRanking.fallbackAlbum(merged.artist, merged.album)
+        val candidateArtwork = merged.artworkUri
+        val candidateTrackNumber = merged.trackNumber
+
+        val finalTitle = if (fields.title) candidateTitle.ifBlank { entity.title } else entity.title
+        val finalArtist = if (fields.artist) candidateArtist.ifBlank { entity.artist } else entity.artist
+        val finalAlbum = if (fields.album) candidateAlbum.ifBlank { entity.album } else entity.album
+        val finalArtwork = if (fields.artwork) (candidateArtwork ?: entity.artworkUri) else entity.artworkUri
+        val finalTrackNumber = if (fields.trackNumber && candidateTrackNumber > 0) candidateTrackNumber else entity.trackNumber
+        val finalYear = if (fields.year && candidate.year > 0) candidate.year else entity.year
+        val finalDuration = if (entity.durationMs > 0) entity.durationMs else merged.durationMs
+
+        val updated = entity.copy(
+            title = finalTitle,
+            artist = finalArtist,
+            album = finalAlbum,
+            artworkUri = finalArtwork,
+            trackNumber = finalTrackNumber,
+            year = finalYear,
+            durationMs = finalDuration
         )
-        musicDao.updateSong(entity.withIdentity(cleaned))
-        val updated = entity.withIdentity(cleaned)
+        musicDao.updateSong(updated)
         maybeWriteTags(updated)
         IdentifyResult.Updated(songId = songId)
     }

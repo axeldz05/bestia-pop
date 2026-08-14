@@ -53,6 +53,7 @@ import com.bestiapop.android.domain.usecase.BuildSimilarPlaylistPreviewUseCase
 import com.bestiapop.android.domain.usecase.FetchAndMatchCfRecommendationsUseCase
 import com.bestiapop.android.domain.usecase.ImportListenBrainzPlaylistUseCase
 import com.bestiapop.android.domain.usecase.MatchListenBrainzTracksUseCase
+import com.bestiapop.android.data.model.IdentifyApplyFields
 import com.bestiapop.android.data.model.IdentifySearchFilters
 import com.bestiapop.android.domain.util.IdentifyAlbumGroup
 import com.bestiapop.android.domain.util.IdentifyCatalogQuery
@@ -72,6 +73,7 @@ import com.bestiapop.android.ui.state.CatalogSearchUiState
 import com.bestiapop.android.ui.state.IdentifyReviewItem
 import com.bestiapop.android.ui.state.IdentifyReviewPhase
 import com.bestiapop.android.ui.state.IdentifyReviewState
+import com.bestiapop.android.ui.state.IdentifySetupState
 import com.bestiapop.android.ui.state.hasMediumSuggestion
 import com.bestiapop.android.ui.state.identifyReviewFromPersisted
 import com.bestiapop.android.ui.state.LibraryBrowseFilter
@@ -395,6 +397,8 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     val libraryJobProgress: StateFlow<LibraryJobProgress?> = _libraryJobProgress.asStateFlow()
     private val _identifyReview = MutableStateFlow(IdentifyReviewState())
     val identifyReview: StateFlow<IdentifyReviewState> = _identifyReview.asStateFlow()
+    private val _identifySetup = MutableStateFlow<IdentifySetupState?>(null)
+    val identifySetup: StateFlow<IdentifySetupState?> = _identifySetup.asStateFlow()
     private val identifyMutex = Mutex()
     /** Serializes the first-launch disk import: two callers race the completed-flag check. */
     private val initialImportMutex = Mutex()
@@ -664,7 +668,8 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                     _identifyReview.value = identifyReviewFromPersisted(
                         snap.proposals,
                         snap.phase,
-                        songs
+                        songs,
+                        snap.applyFields
                     )
                 }
             }
@@ -672,7 +677,8 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 .map { state ->
                     PersistedIdentifyReviewQueue(
                         proposals = state.items.drop(state.currentIndex).map { it.proposal },
-                        phase = state.phase.name
+                        phase = state.phase.name,
+                        applyFields = state.applyFields
                     )
                 }
                 .distinctUntilChanged()
@@ -1719,17 +1725,18 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     fun identifySongs(
         songs: List<Song>,
         force: Boolean = false,
-        showReview: Boolean = true
+        showReview: Boolean = true,
+        fields: IdentifyApplyFields = IdentifyApplyFields.ALL
     ) {
         if (songs.isEmpty()) return
         viewModelScope.launch {
             identifyMutex.withLock {
-                runIdentifySongs(songs, force, showReview)
+                runIdentifySongs(songs, force, showReview, fields)
             }
         }
     }
 
-    /** Single-song identify from ⋮: open existing pending item, or force lookup. */
+    /** Single-song identify: open existing pending item, or open setup configuration dialog. */
     fun identifySongForReview(song: Song) {
         val state = _identifyReview.value
         val pendingIndex = state.remaining.indexOfFirst { it.song.id == song.id }
@@ -1745,13 +1752,42 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             ).withItemSearchChrome(item)
             return
         }
-        identifySongs(listOf(song), force = true, showReview = true)
+        openIdentifySetup(listOf(song), contextTitle = song.title)
+    }
+
+    fun openIdentifySetup(songs: List<Song>, contextTitle: String = "") {
+        if (songs.isEmpty()) return
+        _identifySetup.value = IdentifySetupState(
+            songs = songs,
+            applyFields = IdentifyApplyFields.ALL,
+            contextTitle = contextTitle
+        )
+    }
+
+    fun setIdentifySetupFields(fields: IdentifyApplyFields) {
+        _identifySetup.update { it?.copy(applyFields = fields) }
+    }
+
+    fun dismissIdentifySetup() {
+        _identifySetup.value = null
+    }
+
+    fun confirmIdentifySetup() {
+        val current = _identifySetup.value ?: return
+        _identifySetup.value = null
+        identifySongs(
+            songs = current.songs,
+            force = true,
+            showReview = true,
+            fields = current.applyFields
+        )
     }
 
     private suspend fun runIdentifySongs(
         songs: List<Song>,
         force: Boolean,
-        showReview: Boolean
+        showReview: Boolean,
+        fields: IdentifyApplyFields = IdentifyApplyFields.ALL
     ) {
         val pendingIds = _identifyReview.value.pendingSongIds
         val alreadyQueued = songs.count { it.id in pendingIds }
@@ -1792,7 +1828,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 proposal.confidence == IdentifyConfidence.HIGH && proposal.suggested != null -> {
                     when (
                         withContext(Dispatchers.IO) {
-                            repository.applySongIdentity(song.id, proposal.suggested)
+                            repository.applySongIdentity(song.id, proposal.suggested, fields)
                         }
                     ) {
                         is IdentifyResult.Updated -> updated++
@@ -1826,7 +1862,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             lbHits = lbHits
         )
         if (reviewItems.isNotEmpty()) {
-            enqueueIdentifyReview(reviewItems, showReview)
+            enqueueIdentifyReview(reviewItems, showReview, fields)
         } else if (alreadyQueued > 0 && showReview) {
             showIdentifyReview()
         }
@@ -1870,13 +1906,17 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         )
     }
 
-    private fun enqueueIdentifyReview(items: List<IdentifyReviewItem>, showReview: Boolean) {
+    private fun enqueueIdentifyReview(
+        items: List<IdentifyReviewItem>,
+        showReview: Boolean,
+        applyFields: IdentifyApplyFields = _identifyReview.value.applyFields
+    ) {
         if (items.isEmpty()) return
         val current = _identifyReview.value
         val existingIds = current.pendingSongIds
         val incoming = items.filter { it.song.id !in existingIds }
         if (current.items.isEmpty()) {
-            presentIdentifyQueue(incoming, showReview = showReview)
+            presentIdentifyQueue(incoming, showReview = showReview, applyFields = applyFields)
             return
         }
         if (incoming.isEmpty()) {
@@ -1893,7 +1933,8 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         _identifyReview.value = current.copy(
             items = merged,
             isVisible = visible,
-            phase = phase
+            phase = phase,
+            applyFields = applyFields
         )
     }
 
@@ -1909,10 +1950,11 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         showReview: Boolean,
         sessionApplied: Int = 0,
         sessionSkipped: Int = 0,
-        openedFromOverview: Boolean = false
+        openedFromOverview: Boolean = false,
+        applyFields: IdentifyApplyFields = _identifyReview.value.applyFields
     ) {
         if (items.isEmpty()) {
-            _identifyReview.value = IdentifyReviewState()
+            _identifyReview.value = IdentifyReviewState(applyFields = applyFields)
             clearCatalogPreview()
             return
         }
@@ -1926,7 +1968,8 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             sessionSkipped = sessionSkipped,
             isVisible = showReview,
             phase = phase,
-            openedFromOverview = openedFromOverview && phase == IdentifyReviewPhase.Item
+            openedFromOverview = openedFromOverview && phase == IdentifyReviewPhase.Item,
+            applyFields = applyFields
         ).let { base ->
             if (phase == IdentifyReviewPhase.Item) {
                 base.withItemSearchChrome(first, forceShowSearch = showSearch)
@@ -2097,7 +2140,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             )
             when (
                 withContext(Dispatchers.IO) {
-                    repository.applySongIdentity(item.song.id, candidate)
+                    repository.applySongIdentity(item.song.id, candidate, _identifyReview.value.applyFields)
                 }
             ) {
                 is IdentifyResult.Updated -> appliedIds += item.song.id
@@ -2345,7 +2388,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         viewModelScope.launch {
             when (
                 withContext(Dispatchers.IO) {
-                    repository.applySongIdentity(item.song.id, candidate)
+                    repository.applySongIdentity(item.song.id, candidate, state.applyFields)
                 }
             ) {
                 is IdentifyResult.Updated -> advanceIdentifyReview(applied = true)

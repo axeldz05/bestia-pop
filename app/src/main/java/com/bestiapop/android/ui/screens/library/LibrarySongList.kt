@@ -78,6 +78,7 @@ fun LibrarySongList(
     onToggleCollapseAlbum: (String) -> Unit = {},
     onEditAlbum: (String) -> Unit = {},
     onChangeAlbumCover: (String) -> Unit = {},
+    onIdentifyAlbum: (String) -> Unit = {},
     onOpenAlbum: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
@@ -111,6 +112,7 @@ fun LibrarySongList(
     val onToggleCollapseAlbumState = rememberUpdatedState(onToggleCollapseAlbum)
     val onEditAlbumState = rememberUpdatedState(onEditAlbum)
     val onChangeAlbumCoverState = rememberUpdatedState(onChangeAlbumCover)
+    val onIdentifyAlbumState = rememberUpdatedState(onIdentifyAlbum)
     val onOpenAlbumState = rememberUpdatedState(onOpenAlbum)
 
     LazyColumn(modifier = modifier.fillMaxSize()) {
@@ -151,6 +153,9 @@ fun LibrarySongList(
                     val changeAlbumCover = remember(item.albumName) {
                         { onChangeAlbumCoverState.value(item.albumName) }
                     }
+                    val identifyAlbum = remember(item.albumName) {
+                        { onIdentifyAlbumState.value(item.albumName) }
+                    }
                     val openAlbum = remember(item.albumName) {
                         { onOpenAlbumState.value(item.albumName) }
                     }
@@ -169,6 +174,7 @@ fun LibrarySongList(
                         onToggleCollapse = toggleCollapse,
                         onEditAlbum = editAlbum,
                         onChangeAlbumCover = changeAlbumCover,
+                        onIdentifyAlbum = identifyAlbum,
                         onOpenAlbum = openAlbum
                     )
                 }
@@ -326,6 +332,7 @@ fun TauonAlbumHeader(
     onToggleCollapse: () -> Unit = {},
     onEditAlbum: () -> Unit = {},
     onChangeAlbumCover: () -> Unit = {},
+    onIdentifyAlbum: (() -> Unit)? = null,
     onOpenAlbum: () -> Unit = {}
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
@@ -428,6 +435,12 @@ fun TauonAlbumHeader(
                                 onChangeCover = {
                                     menuExpanded = false
                                     onChangeAlbumCover()
+                                },
+                                onIdentifyAlbum = onIdentifyAlbum?.let { action ->
+                                    {
+                                        menuExpanded = false
+                                        action()
+                                    }
                                 }
                             )
                         }

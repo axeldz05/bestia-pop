@@ -48,6 +48,25 @@ enum class IdentifyConfidence {
 }
 
 /**
+ * Field selection for what metadata to identify/apply from internet catalog hits.
+ */
+data class IdentifyApplyFields(
+    val artwork: Boolean = true,
+    val title: Boolean = true,
+    val artist: Boolean = true,
+    val album: Boolean = true,
+    val year: Boolean = true,
+    val trackNumber: Boolean = true
+) {
+    val hasAny: Boolean get() = artwork || title || artist || album || year || trackNumber
+    val isAll: Boolean get() = artwork && title && artist && album && year && trackNumber
+
+    companion object {
+        val ALL = IdentifyApplyFields()
+    }
+}
+
+/**
  * Optional refine fields for identify review search (alongside free-text query).
  * Blank / year≤0 = unset. Used for Deezer advanced query + ranking boosts.
  */

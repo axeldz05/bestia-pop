@@ -181,6 +181,54 @@ class MusicRepositoryRoomIntegrationTest {
     }
 
     @Test
+    fun applySongIdentity_withSelectiveFields_updatesOnlySelectedFields() = runTest {
+        val songId = database.musicDao.insertSong(
+            song("selective.mp3", "Original title", album = "Original Album", artist = "Original Artist")
+                .copy(
+                    artworkUri = "content://local/original_art.jpg",
+                    year = 2010,
+                    trackNumber = 1
+                )
+        )
+        val candidate = IdentifyCandidate(
+            track = OnlineCatalogTrack(
+                identity = TrackIdentity(
+                    title = "New Title",
+                    artist = "New Artist",
+                    album = "New Album",
+                    artworkUri = "https://images.invalid/new_art.jpg",
+                    trackNumber = 5
+                ),
+                id = "catalog-id-2",
+                provider = "Test",
+                year = 2024
+            ),
+            score = 0.99f
+        )
+
+        // Only update artwork and year; keep original title, artist, album, trackNumber
+        val fields = com.bestiapop.android.data.model.IdentifyApplyFields(
+            artwork = true,
+            title = false,
+            artist = false,
+            album = false,
+            year = true,
+            trackNumber = false
+        )
+
+        val result = repository().applySongIdentity(songId, candidate, fields)
+
+        val updated = checkNotNull(database.musicDao.getSongById(songId))
+        assertEquals(IdentifyResult.Updated(songId), result)
+        assertEquals("Original title", updated.title)
+        assertEquals("Original Artist", updated.artist)
+        assertEquals("Original Album", updated.album)
+        assertEquals(1, updated.trackNumber)
+        assertEquals("https://images.invalid/new_art.jpg", updated.artworkUri)
+        assertEquals(2024, updated.year)
+    }
+
+    @Test
     fun albumCoverImport_copiesBytesIntoAppFilesBeforeSourceDisappears() = runTest {
         val source = files.create("cover.jpg", byteArrayOf(7, 8, 9))
         val repository = repository()

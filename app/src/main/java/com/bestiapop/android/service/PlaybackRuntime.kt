@@ -1470,7 +1470,7 @@ class PlaybackRuntime internal constructor(
                     }
                     val liveIndex = _queue.value.indexOfQueueEntry(step.item)
                     if (liveIndex < 0) continue
-                    when (val live = _queue.value[liveIndex]) {
+                    when (val live = _queue.value.getOrNull(liveIndex) ?: continue) {
                         is PlayableItem.Local -> {
                             if (selectionGate.isCurrent(token)) {
                                 val shouldPlay = playWhenReadyIntent &&
@@ -1700,7 +1700,7 @@ class PlaybackRuntime internal constructor(
                     if (queueEntryId in rejectedQueueEntries) continue
                     val liveIndex = _queue.value.indexOfQueueEntry(step.item)
                     if (liveIndex < 0) continue
-                    when (val live = _queue.value[liveIndex]) {
+                    when (val live = _queue.value.getOrNull(liveIndex) ?: continue) {
                         is PlayableItem.Local -> {
                             activateFallbackCandidate(
                                 queueEntryId = live.queueEntryId,
@@ -2011,9 +2011,10 @@ class PlaybackRuntime internal constructor(
     }
 
     private fun restartAsyncPlaybackWork() {
-        if (!playWhenReadyIntent || _queue.value.isEmpty()) return
-        val index = currentQueueIndex().coerceIn(_queue.value.indices)
-        val current = _queue.value[index]
+        val queue = _queue.value
+        if (!playWhenReadyIntent || queue.isEmpty()) return
+        val index = currentQueueIndex().coerceIn(queue.indices)
+        val current = queue.getOrNull(index) ?: return
         if (current is PlayableItem.Remote &&
             remoteRecoveryQueueEntryId == current.queueEntryId
         ) {

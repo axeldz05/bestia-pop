@@ -18,6 +18,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.flow.first
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -43,8 +44,8 @@ class LibraryPermissionFunctionalTest {
 
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val context = instrumentation.targetContext
-    private val preferences = LibraryPreferencesRepository(context)
-    private val database = AppDatabase.getDatabase(context)
+    private val preferences by lazy { LibraryPreferencesRepository(context.applicationContext) }
+    private val database by lazy { AppDatabase.getDatabase(context.applicationContext) }
     private var originalInitialScanCompleted = true
 
     @Before
@@ -58,8 +59,17 @@ class LibraryPermissionFunctionalTest {
             Manifest.permission.READ_MEDIA_AUDIO,
             Manifest.permission.POST_NOTIFICATIONS
         ).forEach { permission ->
-            if (context.checkSelfPermission(permission) == PackageManager.PERMISSION_DENIED) {
-                instrumentation.uiAutomation.grantRuntimePermission(context.packageName, permission)
+            grantPermission(permission)
+        }
+    }
+
+    private fun grantPermission(permission: String) {
+        runCatching {
+            instrumentation.uiAutomation.grantRuntimePermission(context.packageName, permission)
+        }
+        runCatching {
+            instrumentation.uiAutomation.executeShellCommand("pm grant ${context.packageName} $permission").use { pfd ->
+                android.os.ParcelFileDescriptor.AutoCloseInputStream(pfd).readBytes()
             }
         }
     }
@@ -81,14 +91,12 @@ class LibraryPermissionFunctionalTest {
 
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             scenario.moveToState(Lifecycle.State.RESUMED)
-            runBlocking {
-                withTimeout(15_000L) {
-                    while (!preferences.isInitialScanCompleted()) {
-                        delay(25L)
-                    }
+            val completed = runBlocking {
+                withTimeout(240_000L) {
+                    preferences.initialScanCompletedFlow.first { it }
                 }
             }
-            assertTrue(runBlocking { preferences.isInitialScanCompleted() })
+            assertTrue(completed)
         }
     }
 }

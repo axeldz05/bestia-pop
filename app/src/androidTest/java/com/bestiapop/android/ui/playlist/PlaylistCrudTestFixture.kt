@@ -179,7 +179,7 @@ internal class PlaylistCrudTestFixture : AutoCloseable {
                 genre = "Fixture",
                 durationMs = WAV_DURATION_MS.toLong(),
                 folderPath = fixtureDir.absolutePath,
-                dateAdded = System.currentTimeMillis() + index
+                dateAdded = Long.MAX_VALUE - 1000L + index
             )
             val id = repository.saveUploadedSong(song)
             check(id > 0L) { "Could not persist fixture Song $title (id=$id)" }

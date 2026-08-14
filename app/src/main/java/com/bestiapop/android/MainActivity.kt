@@ -116,6 +116,10 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun requestRequiredPermissions() {
+        if (hasAudioPermission()) {
+            viewModel.ensureInitialLibraryImport(showRecoveryToast = false)
+        }
+
         val permissionsToRequest = mutableListOf<String>()
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {

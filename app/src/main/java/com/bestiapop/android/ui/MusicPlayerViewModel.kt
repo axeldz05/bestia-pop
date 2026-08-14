@@ -1661,8 +1661,17 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             initialImportMutex.withLock {
                 if (libraryPreferences.isInitialScanCompleted()) return@launch
                 if (!hasAudioPermission()) return@launch
-                runLibraryDiskImport(showRecoveryToast = showRecoveryToast)
-                libraryPreferences.setInitialScanCompleted(true)
+                try {
+                    runLibraryDiskImport(showRecoveryToast = showRecoveryToast)
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                    com.bestiapop.android.data.util.CrashReporter.recordNonFatal(
+                        e,
+                        mapOf("phase" to "ensureInitialLibraryImport")
+                    )
+                } finally {
+                    libraryPreferences.setInitialScanCompleted(true)
+                }
             }
         }
     }

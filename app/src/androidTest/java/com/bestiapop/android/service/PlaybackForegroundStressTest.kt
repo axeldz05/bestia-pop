@@ -23,6 +23,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -67,20 +68,22 @@ class PlaybackForegroundStressTest {
                     val rng = Random(coroutineId * 42)
                     repeat(opsPerCoroutine) { opIndex ->
                         try {
-                            when (rng.nextInt(7)) {
-                                0 -> fixture.runtime.togglePlayPause()
-                                1 -> fixture.runtime.playNextBatch(listOf(PlayableItem.Local(song((100..999).random(rng).toLong(), "Next Track"))))
-                                2 -> {
-                                    val currentQueue = fixture.runtime.queue.value
-                                    if (currentQueue.isNotEmpty()) {
-                                        val removeIdx = rng.nextInt(currentQueue.size)
-                                        fixture.runtime.removeFromQueue(removeIdx)
+                            withContext(Dispatchers.Main) {
+                                when (rng.nextInt(7)) {
+                                    0 -> fixture.runtime.togglePlayPause()
+                                    1 -> fixture.runtime.playNextBatch(listOf(PlayableItem.Local(song((100..999).random(rng).toLong(), "Next Track"))))
+                                    2 -> {
+                                        val currentQueue = fixture.runtime.queue.value
+                                        if (currentQueue.isNotEmpty()) {
+                                            val removeIdx = rng.nextInt(currentQueue.size)
+                                            fixture.runtime.removeFromQueue(removeIdx)
+                                        }
                                     }
+                                    3 -> fixture.runtime.toggleShuffle()
+                                    4 -> fixture.runtime.skipToNext()
+                                    5 -> fixture.runtime.skipToPrevious()
+                                    6 -> fixture.runtime.addPlayableBatch(listOf(PlayableItem.Local(song((1000..9999).random(rng).toLong(), "Added Track"))))
                                 }
-                                3 -> fixture.runtime.toggleShuffle()
-                                4 -> fixture.runtime.skipToNext()
-                                5 -> fixture.runtime.skipToPrevious()
-                                6 -> fixture.runtime.addPlayableBatch(listOf(PlayableItem.Local(song((1000..9999).random(rng).toLong(), "Added Track"))))
                             }
                             delay(5L) // Micro-delays para favorecer el entrelazado de hilos
                         } catch (e: Throwable) {

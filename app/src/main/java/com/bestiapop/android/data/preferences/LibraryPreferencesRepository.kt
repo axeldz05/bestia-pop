@@ -53,10 +53,13 @@ class LibraryPreferencesRepository(private val context: Context) {
         )
     }
 
-    suspend fun isInitialScanCompleted(): Boolean =
+    val initialScanCompletedFlow: Flow<Boolean> =
         context.libraryDataStore.data.map { prefs ->
             prefs[Keys.INITIAL_SCAN_COMPLETED] ?: false
-        }.first()
+        }
+
+    suspend fun isInitialScanCompleted(): Boolean =
+        initialScanCompletedFlow.first()
 
     suspend fun setInitialScanCompleted(completed: Boolean = true) {
         context.libraryDataStore.put(Keys.INITIAL_SCAN_COMPLETED, completed)

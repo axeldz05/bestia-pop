@@ -21,10 +21,13 @@ class StereoBalanceAudioProcessor : BaseAudioProcessor() {
 
     override fun onConfigure(inputAudioFormat: AudioProcessor.AudioFormat): AudioProcessor.AudioFormat {
         if (inputAudioFormat.encoding != C.ENCODING_PCM_16BIT) {
-            throw AudioProcessor.UnhandledAudioFormatException(inputAudioFormat)
+            return AudioProcessor.AudioFormat.NOT_SET
         }
-        // Always active so live gain changes take effect even when both are 1f.
         return inputAudioFormat
+    }
+
+    override fun isActive(): Boolean {
+        return super.isActive() && (leftGain < 0.999f || rightGain < 0.999f)
     }
 
     override fun queueInput(inputBuffer: ByteBuffer) {
@@ -33,10 +36,18 @@ class StereoBalanceAudioProcessor : BaseAudioProcessor() {
         val size = limit - position
         if (size == 0) return
 
-        val output = replaceOutputBuffer(size)
-        val channels = inputAudioFormat.channelCount
         val left = leftGain
         val right = rightGain
+
+        if (left >= 0.999f && right >= 0.999f) {
+            val output = replaceOutputBuffer(size)
+            output.put(inputBuffer)
+            output.flip()
+            return
+        }
+
+        val output = replaceOutputBuffer(size)
+        val channels = inputAudioFormat.channelCount
 
         when (channels) {
             1 -> {

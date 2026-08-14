@@ -44,10 +44,8 @@ class GetLibrarySongsUseCase {
                 emptyList()
             } else {
                 unifiedList.filter { song ->
-                    TrackMatchKeys.normalize(song.title).contains(normalizedQuery) ||
-                        TrackMatchKeys.normalize(song.artist).contains(normalizedQuery) ||
-                        TrackMatchKeys.normalize(song.album).contains(normalizedQuery) ||
-                        TrackMatchKeys.normalize(song.genre).contains(normalizedQuery)
+                    TrackMatchKeys.normalize("${song.title} ${song.artist} ${song.album} ${song.genre}")
+                        .contains(normalizedQuery)
                 }
             }
         }

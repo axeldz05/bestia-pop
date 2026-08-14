@@ -49,7 +49,7 @@ internal class MediaLibraryBrowseProvider(
     ) { songs, overrides, playlists ->
         Sources(++nextRevision, songs, overrides, playlists)
     }
-        .stateIn(scope, SharingStarted.Eagerly, null)
+        .stateIn(scope, SharingStarted.WhileSubscribed(5_000L), null)
     private val snapshotMutex = Mutex()
     @Volatile
     private var cachedSnapshot: CachedSnapshot? = null

@@ -409,7 +409,16 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         _pendingOpenDownloads.value = true
     }
 
+    fun onUiAttached() {
+        playbackRuntime.attachUi()
+    }
+
+    fun onUiDetached() {
+        playbackRuntime.detachUi()
+    }
+
     fun onAppForeground() {
+        onUiAttached()
         _backgroundExecutionStatus.value = BackgroundExecutionProbe.current(getApplication())
         if (app.shouldAutoResumeDownloads) {
             processDownloadRuntime.resumeInterrupted()
@@ -627,7 +636,6 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     ): StateFlow<T> = playbackSettings.mapToUiState(viewModelScope, initial, transform = select)
 
     init {
-        playbackRuntime.attachUi()
         viewModelScope.launch {
             restoreVolumeBoostIfNeeded()
         }
@@ -763,35 +771,41 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         // rawSongs, not libraryProjection.songs: the latter also re-emits on every search keystroke and sort
         // change, which restarted these network passes over the whole library each time.
         viewModelScope.launch(Dispatchers.IO) {
-            rawSongs.collect { songs ->
-                val artists = songs.map { it.artist }.distinct().filter {
-                    it.isNotBlank() && !it.equals("Unknown Artist", ignoreCase = true)
-                }
-                for (artist in artists) {
-                    // Keyed on "attempted", not on a stored photo: an artist Deezer has no picture
-                    // for never entered the map and was re-queried on every emission, forever.
-                    if (!artistPhotoAttempted.add(artist)) continue
-                    val photoUrl = MetadataFetcher.fetchArtistPhotoUrl(artist)
-                    if (!photoUrl.isNullOrEmpty()) {
-                        _artistPhotos.update { it + (artist to photoUrl) }
+            rawSongs.map { songs -> songs.map { it.artist }.distinct() }
+                .distinctUntilChanged()
+                .collect { artists ->
+                    val newPhotos = mutableMapOf<String, String>()
+                    val unattempted = artists.filter {
+                        it.isNotBlank() && !it.equals("Unknown Artist", ignoreCase = true) &&
+                            it !in artistPhotoAttempted
+                    }
+                    for (artist in unattempted) {
+                        artistPhotoAttempted.add(artist)
+                        val photoUrl = MetadataFetcher.fetchArtistPhotoUrl(artist)
+                        if (!photoUrl.isNullOrEmpty()) {
+                            newPhotos[artist] = photoUrl
+                        }
+                    }
+                    if (newPhotos.isNotEmpty()) {
+                        _artistPhotos.update { it + newPhotos }
                     }
                 }
-            }
         }
 
         viewModelScope.launch(Dispatchers.IO) {
-            rawSongs.collect { songs ->
-                val unenhanced = songs.filter {
-                    !SongPathNormalizer.hasUsableArtwork(it.artworkUri) &&
-                        it.id !in metadataEnhanceAttempted
+            rawSongs.map { songs -> songs.map { it.id }.toSet() }
+                .distinctUntilChanged()
+                .collect {
+                    val songs = repository.allSongsFlow.first()
+                    val unenhanced = songs.filter {
+                        !SongPathNormalizer.hasUsableArtwork(it.artworkUri) &&
+                            it.id !in metadataEnhanceAttempted
+                    }
+                    for (song in unenhanced.take(METADATA_ENHANCE_BATCH)) {
+                        metadataEnhanceAttempted.add(song.id)
+                        repository.enhanceSongMetadataAndLyrics(song)
+                    }
                 }
-                // enhanceSongMetadataAndLyrics only writes to Room when it found something, so a song
-                // with no cover online stayed in this filter and was re-fetched on every emission.
-                for (song in unenhanced.take(METADATA_ENHANCE_BATCH)) {
-                    metadataEnhanceAttempted.add(song.id)
-                    repository.enhanceSongMetadataAndLyrics(song)
-                }
-            }
         }
     }
 

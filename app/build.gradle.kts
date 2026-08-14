@@ -39,8 +39,8 @@ android {
     defaultConfig {
         applicationId = "com.bestiapop.android"
         minSdk = 26
-        // Play: updates must target API 36+ from 2026-08-31.
-        targetSdk = 36
+        // Play: stable target API 35 (Android 15)
+        targetSdk = 35
         versionCode = versionProperties.getProperty("VERSION_CODE").toInt()
         versionName = versionProperties.getProperty("VERSION_NAME")
         buildConfigField(

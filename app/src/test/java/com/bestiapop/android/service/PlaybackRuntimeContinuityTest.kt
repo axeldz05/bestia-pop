@@ -156,27 +156,27 @@ class PlaybackRuntimeContinuityTest {
     }
 
     @Test
-    fun detachUi_keepsPositionPersistenceAndListenTrackerTicks() = runBlocking {
+    fun detachUi_pausesTickerAndPersistsOnPauseStateTransition() = runBlocking {
         val persistence = FakePersistence()
         val tracker = FakeListenTracker()
-        val fixture = fixture(persistence = persistence, tracker = tracker)
+        val fixture = fixture(persistence = persistence, tracker = tracker, startTicker = true)
         try {
             val song = song(1, "Local")
             fixture.runtime.attachUi()
             fixture.runtime.playPlayableCollection(listOf(PlayableItem.Local(song)), rotate = false)
+            assertTrue("ticker must be active when UI is attached and playing", fixture.runtime.tickerActiveForTest)
+
             fixture.runtime.detachUi()
+            assertFalse("ticker must pause when UI is detached", fixture.runtime.tickerActiveForTest)
 
             fixture.clock.set(20_000L)
             fixture.controller.positionMs = 42_000L
-            fixture.controller.playing = true
-            fixture.controller.wantsPlay = true
-            fixture.runtime.tickForTest()
+            fixture.controller.pause()
 
             withTimeout(2_000L) {
                 while (persistence.lastQueue?.positionMs != 42_000L) delay(10L)
             }
             assertEquals(42_000L, fixture.runtime.playbackPositionMs.value)
-            assertTrue("tracker must remain process-owned after detach", tracker.tickCount.get() > 0)
             assertEquals(song.id, tracker.lastChangedSongId)
         } finally {
             fixture.close()

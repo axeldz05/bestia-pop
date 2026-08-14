@@ -13,6 +13,9 @@ data class FilenameMetadataHints(
 private val TRACK_NUM_ONLY = Regex("""^\d{1,3}$""")
 private val DISC_TRACK = Regex("""^\d{1,2}[-.]\d{1,2}\.?$""")
 private val SPACED_DASH = Regex("""\s+[-–—]\s+""")
+private val TRACK_DASH_TITLE = Regex("""^(\d{1,3})(?:[-.]\d{1,2})?\s+-\s+(.+)$""")
+private val TRACK_DOT_TITLE = Regex("""^(\d{1,3})\.\s*(.+)$""")
+private val TRACK_UNDERSCORE_TITLE = Regex("""^(\d{1,3})_(.+)$""")
 
 /** `02`, `1-12`, `1.03` — not real artist names (unlike `65daysofstatic`). */
 fun isTrackNumberLabel(value: String): Boolean {
@@ -97,14 +100,14 @@ fun parseFilenameMetadataHints(nameWithoutExtension: String): FilenameMetadataHi
 
     val dashed = raw.replace("_-_", " - ")
 
-    Regex("""^(\d{1,3})(?:[-.]\d{1,2})?\s+-\s+(.+)$""").matchEntire(dashed)?.let { m ->
+    TRACK_DASH_TITLE.matchEntire(dashed)?.let { m ->
         return hintsFromTrackRest(m.groupValues[1].toIntOrNull(), m.groupValues[2])
     }
-    Regex("""^(\d{1,3})\.\s*(.+)$""").matchEntire(dashed)?.let { m ->
+    TRACK_DOT_TITLE.matchEntire(dashed)?.let { m ->
         return hintsFromTrackRest(m.groupValues[1].toIntOrNull(), m.groupValues[2])
     }
     // `02_Title` / leftover after `_-_` normalize missed (digits + underscore)
-    Regex("""^(\d{1,3})_(.+)$""").matchEntire(raw)?.let { m ->
+    TRACK_UNDERSCORE_TITLE.matchEntire(raw)?.let { m ->
         return hintsFromTrackRest(m.groupValues[1].toIntOrNull(), m.groupValues[2])
     }
 

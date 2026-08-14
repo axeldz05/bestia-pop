@@ -72,11 +72,11 @@ if [ "$BUILD_TYPE" = "release" ]; then
         echo -e "${YELLOW}Para beta firmada: copiá keystore.properties.example → keystore.properties y generá el .jks.${NC}"
     fi
     echo -e "\n${YELLOW}Compilando APK release con Gradle...${NC}"
-    gradle assembleRelease
+    ./gradlew assembleRelease
     APK_PATH="app/build/outputs/apk/release/app-release.apk"
 else
     echo -e "\n${YELLOW}Compilando APK debug con Gradle...${NC}"
-    gradle assembleDebug
+    ./gradlew assembleDebug
     APK_PATH="app/build/outputs/apk/debug/app-debug.apk"
 fi
 
@@ -123,13 +123,16 @@ fi
 
 echo -e "\n${GREEN}Lanzando la aplicación...${NC}"
 adb shell am start -n com.bestiapop.android/.MainActivity
-# Sideloaded APKs on Motorola default to background_restricted (appops ignore).
-# That demotes mediaPlayback FGS when the Activity pauses. Play apps sit in
-# adaptive_bucket + RUN_ANY_IN_BACKGROUND allow. Apply after launch: force-stop
-# / cold start can reset the op.
-sleep 1
+
+adb shell cmd appops reset "$PACKAGE" || true
 adb shell cmd activity set-bg-restriction-level --user 0 "$PACKAGE" adaptive_bucket || true
 adb shell cmd appops set "$PACKAGE" RUN_ANY_IN_BACKGROUND allow || true
+adb shell cmd appops set "$PACKAGE" RUN_IN_BACKGROUND allow || true
+APP_UID=$(adb shell pm list packages -U "$PACKAGE" 2>/dev/null | grep "$PACKAGE" | head -n 1 | sed -n 's/.*uid:\([0-9]*\).*/\1/p' | tr -d '\r\n')
+if [ -n "$APP_UID" ]; then
+    adb shell cmd appops set --uid "$APP_UID" RUN_ANY_IN_BACKGROUND allow || true
+    adb shell cmd appops set --uid "$APP_UID" RUN_IN_BACKGROUND allow || true
+fi
 adb shell cmd appops write-settings >/dev/null 2>&1 || true
 
 echo -e "\n${GREEN}Instalación y despliegue completados (${BUILD_TYPE}).${NC}"

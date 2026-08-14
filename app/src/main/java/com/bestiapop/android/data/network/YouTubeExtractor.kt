@@ -157,28 +157,47 @@ object YouTubeExtractor {
         """(?i)\b(?:cover|karaoke|react(?:ion)?s?|mashup)\b"""
     )
 
+    private val YOUTUBE_ID_EXACT_PATTERN = Pattern.compile("^[a-zA-Z0-9_-]{11}$")
+    private val YOUTUBE_URL_PATTERN = Pattern.compile(
+        "(?:youtube\\.com\\/(?:[^\\/]+\\/.+\\/|(?:v|e(?:mbed)?)\\/" +
+            "|.*[?&]v=)|youtu\\.be\\/|music\\.youtube\\.com\\/watch\\?v=)" +
+            "([a-zA-Z0-9_-]{11})"
+    )
+
+    private val OFFICIAL_MUSIC_VIDEO_PAREN = Regex("""(?i)\(Official\s+(?:Music\s+)?Video\)""")
+    private val OFFICIAL_MUSIC_VIDEO_BRACKET = Regex("""(?i)\[Official\s+(?:Music\s+)?Video\]""")
+    private val OFFICIAL_AUDIO_PAREN = Regex("""(?i)\(Official\s+Audio\)""")
+    private val OFFICIAL_AUDIO_BRACKET = Regex("""(?i)\[Official\s+Audio\]""")
+    private val VIDEO_PAREN = Regex("""(?i)\(Video\)""")
+    private val LYRICS_BRACKET = Regex("""(?i)\[Lyrics?\]""")
+    private val LYRICS_PAREN = Regex("""(?i)\(Lyrics?\)""")
+    private val HD_4K = Regex("""(?i)HD|4K""")
+
+    private val FALLBACK_PAREN = Regex("""(?i)\(.*?(?:remaster|version|edition|deluxe|feat).*?\)""")
+    private val FALLBACK_BRACKET = Regex("""(?i)\[.*?(?:remaster|version|edition|deluxe|feat).*?\]""")
+    private val NON_ALPHANUM_SPACE = Regex("""[^a-zA-Z0-9\s]""")
+
+    private val VISITOR_DATA_REGEX = Regex(""""visitorData"\s*:\s*"([^"]+)"""")
+
     fun extractYouTubeId(urlOrId: String): String? {
         val trimmed = urlOrId.trim()
-        if (trimmed.length == 11 && Pattern.matches("^[a-zA-Z0-9_-]{11}$", trimmed)) {
+        if (trimmed.length == 11 && YOUTUBE_ID_EXACT_PATTERN.matcher(trimmed).matches()) {
             return trimmed
         }
-        val regex = "(?:youtube\\.com\\/(?:[^\\/]+\\/.+\\/|(?:v|e(?:mbed)?)\\/" +
-                "|.*[?&]v=)|youtu\\.be\\/|music\\.youtube\\.com\\/watch\\?v=)" +
-                "([a-zA-Z0-9_-]{11})"
-        val matcher = Pattern.compile(regex).matcher(trimmed)
+        val matcher = YOUTUBE_URL_PATTERN.matcher(trimmed)
         return if (matcher.find()) matcher.group(1) else null
     }
 
     fun formatTitleAndArtist(rawTitle: String, rawAuthor: String): Pair<String, String> {
         var cleanTitle = rawTitle
-            .replace(Regex("(?i)\\(Official\\s+(?:Music\\s+)?Video\\)"), "")
-            .replace(Regex("(?i)\\[Official\\s+(?:Music\\s+)?Video\\]"), "")
-            .replace(Regex("(?i)\\(Official\\s+Audio\\)"), "")
-            .replace(Regex("(?i)\\[Official\\s+Audio\\]"), "")
-            .replace(Regex("(?i)\\(Video\\)"), "")
-            .replace(Regex("(?i)\\[Lyrics?\\]"), "")
-            .replace(Regex("(?i)\\(Lyrics?\\)"), "")
-            .replace(Regex("(?i)HD|4K"), "")
+            .replace(OFFICIAL_MUSIC_VIDEO_PAREN, "")
+            .replace(OFFICIAL_MUSIC_VIDEO_BRACKET, "")
+            .replace(OFFICIAL_AUDIO_PAREN, "")
+            .replace(OFFICIAL_AUDIO_BRACKET, "")
+            .replace(VIDEO_PAREN, "")
+            .replace(LYRICS_BRACKET, "")
+            .replace(LYRICS_PAREN, "")
+            .replace(HD_4K, "")
             .trim()
 
         var artist = rawAuthor.replace(" - Topic", "").replace("VEVO", "").trim()
@@ -448,9 +467,9 @@ object YouTubeExtractor {
             } else {
                 // Fallback query: Limpiar paréntesis, "Remastered", "Deluxe", "feat.", y caracteres especiales
                 val cleanedQuery = trimmed
-                    .replace(Regex("(?i)\\(.*?(?:remaster|version|edition|deluxe|feat).*?\\)"), "")
-                    .replace(Regex("(?i)\\[.*?(?:remaster|version|edition|deluxe|feat).*?\\]"), "")
-                    .replace(Regex("[^a-zA-Z0-9\\s]"), " ")
+                    .replace(FALLBACK_PAREN, "")
+                    .replace(FALLBACK_BRACKET, "")
+                    .replace(NON_ALPHANUM_SPACE, " ")
                     .trim()
                 if (cleanedQuery.isNotBlank() && cleanedQuery != trimmed) {
                     val fallbackResults = searchYouTube(cleanedQuery)
@@ -523,8 +542,7 @@ object YouTubeExtractor {
             client.newCall(req).execute().use { resp ->
                 if (resp.isSuccessful) {
                     val html = resp.body?.string() ?: ""
-                    val regex = Regex("\"visitorData\"\\s*:\\s*\"([^\"]+)\"")
-                    val match = regex.find(html)
+                    val match = VISITOR_DATA_REGEX.find(html)
                     val vData = match?.groupValues?.get(1)
                     if (vData != null) {
                         cachedVisitorData = vData

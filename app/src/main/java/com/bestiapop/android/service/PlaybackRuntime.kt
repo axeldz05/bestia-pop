@@ -2,9 +2,11 @@ package com.bestiapop.android.service
 
 import android.content.ComponentName
 import android.content.Context
+import android.content.Intent
 import android.os.Bundle
 import android.os.SystemClock
 import androidx.annotation.OptIn
+import androidx.core.content.ContextCompat
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
@@ -48,6 +50,7 @@ import com.bestiapop.android.data.preferences.QueueSnapshotCodec
 import com.bestiapop.android.data.repository.MusicRepository
 import com.bestiapop.android.data.stream.StreamResolver
 import com.bestiapop.android.data.util.MusicFileStore
+import com.bestiapop.android.data.util.PlaybackDiagnostics
 import com.bestiapop.android.domain.radio.RadioEngine
 import com.bestiapop.android.domain.radio.RadioMode
 import com.bestiapop.android.domain.radio.RadioSuggestResult
@@ -374,13 +377,24 @@ class PlaybackRuntime internal constructor(
     }
 
     fun attachUi() {
-        uiAttachments.incrementAndGet()
+        val count = uiAttachments.incrementAndGet()
+        PlaybackDiagnostics.log(
+            PlaybackDiagnostics.TAG_RUNTIME,
+            "PlaybackRuntime.attachUi() (uiAttachments=$count)"
+        )
         ensureControllerConnection()
         maybeSeedIdlePlayer()
+        scope.launch { samplePositionAndOwnership() }
+        updateTickerLifecycle()
     }
 
     fun detachUi() {
-        uiAttachments.updateAndGet { count -> (count - 1).coerceAtLeast(0) }
+        val count = uiAttachments.updateAndGet { c -> (c - 1).coerceAtLeast(0) }
+        PlaybackDiagnostics.log(
+            PlaybackDiagnostics.TAG_RUNTIME,
+            "PlaybackRuntime.detachUi() (uiAttachments=$count)"
+        )
+        updateTickerLifecycle()
         releaseControllerIfIdle()
     }
 
@@ -469,6 +483,9 @@ class PlaybackRuntime internal constructor(
     }
 
     internal fun connect(context: Context) {
+        runCatching {
+            context.startService(Intent(context, MusicService::class.java))
+        }
         configureControllerConnector(
             PlaybackControllerConnector {
                 MediaControllerConnection(
@@ -567,10 +584,19 @@ class PlaybackRuntime internal constructor(
             _isPlaying.value
 
     private fun releaseControllerIfIdle() {
-        if (shouldRetainController()) {
+        val shouldRetain = shouldRetainController()
+        if (shouldRetain) {
+            PlaybackDiagnostics.log(
+                PlaybackDiagnostics.TAG_RUNTIME,
+                "PlaybackRuntime.releaseControllerIfIdle: RETAINING controller (uiAttachments=${uiAttachments.get()}, queueSize=${_queue.value.size}, playWhenReadyIntent=$playWhenReadyIntent, isPlaying=${_isPlaying.value})"
+            )
             ensureControllerConnection()
             return
         }
+        PlaybackDiagnostics.warn(
+            PlaybackDiagnostics.TAG_RUNTIME,
+            "PlaybackRuntime.releaseControllerIfIdle: RELEASING controller (idle, no UI, no queue/playback)"
+        )
         controllerReconnectJob?.cancel()
         controllerReconnectJob = null
         controllerFuture?.let { future ->
@@ -587,7 +613,9 @@ class PlaybackRuntime internal constructor(
     }
 
     private fun updateTickerLifecycle() {
-        val shouldTick = dependencies.startTicker && controller?.isPlaying == true
+        val shouldTick = dependencies.startTicker &&
+            controller?.isPlaying == true &&
+            uiAttachments.get() > 0
         if (!shouldTick) {
             tickerJob?.cancel()
             tickerJob = null
@@ -595,7 +623,7 @@ class PlaybackRuntime internal constructor(
         }
         if (tickerJob?.isActive == true) return
         tickerJob = scope.launch {
-            while (isActive && controller?.isPlaying == true) {
+            while (isActive && controller?.isPlaying == true && uiAttachments.get() > 0) {
                 samplePositionAndOwnership()
                 delay(POSITION_TICK_MS)
             }
@@ -605,9 +633,14 @@ class PlaybackRuntime internal constructor(
 
     private val playerListener = object : PlaybackControllerFacade.Listener {
         override fun onIsPlayingChanged(isPlaying: Boolean) {
+            PlaybackDiagnostics.log(
+                PlaybackDiagnostics.TAG_RUNTIME,
+                "PlaybackRuntime.playerListener.onIsPlayingChanged: isPlaying=$isPlaying"
+            )
             _isPlaying.value = isPlaying
             if (isPlaying) {
                 clearRemoteRecoveryAfterProgress()
+                scope.launch { samplePositionAndOwnership() }
             } else {
                 controller?.let { player ->
                     _playbackPositionMs.value = player.currentPosition.coerceAtLeast(0L)
@@ -620,6 +653,10 @@ class PlaybackRuntime internal constructor(
         }
 
         override fun onPlayWhenReadyChanged(playWhenReady: Boolean) {
+            PlaybackDiagnostics.log(
+                PlaybackDiagnostics.TAG_RUNTIME,
+                "PlaybackRuntime.playerListener.onPlayWhenReadyChanged: playWhenReady=$playWhenReady"
+            )
             playWhenReadyIntent = playWhenReady
             if (playWhenReady) {
                 pendingPlayIntentEpoch = null
@@ -635,6 +672,10 @@ class PlaybackRuntime internal constructor(
         }
 
         override fun onPlayerError() {
+            PlaybackDiagnostics.error(
+                PlaybackDiagnostics.TAG_RUNTIME,
+                "PlaybackRuntime.playerListener.onPlayerError() triggered"
+            )
             handlePlayerError()
         }
 
@@ -808,7 +849,7 @@ class PlaybackRuntime internal constructor(
         val local = (item as? PlayableItem.Local)?.song
         _currentSong.value = local
         dependencies.listenTracker.onTrackChanged(local, hint)
-        if (local != null && occurrenceChanged) {
+        if (local != null && occurrenceChanged && uiAttachments.get() > 0) {
             scope.launch(Dispatchers.IO) { dependencies.enhanceSong(local) }
         }
         if (persistLastPlayed) {
@@ -1881,9 +1922,13 @@ class PlaybackRuntime internal constructor(
 
     private fun handlePlayerError() {
         val player = controller ?: return
-        if (!playWhenReadyIntent) return
         val index = player.currentMediaItemIndex
         val queued = _queue.value.getOrNull(index)
+        PlaybackDiagnostics.warn(
+            PlaybackDiagnostics.TAG_RUNTIME,
+            "PlaybackRuntime.handlePlayerError: index=$index, item='${queued?.title}', isRemote=${queued is PlayableItem.Remote}, playWhenReadyIntent=$playWhenReadyIntent"
+        )
+        if (!playWhenReadyIntent) return
         val remote = queued as? PlayableItem.Remote
         if (remote == null) {
             recoverAfterUnplayable(
@@ -1923,6 +1968,7 @@ class PlaybackRuntime internal constructor(
             val ownJob = coroutineContext[Job]
             beginResolving()
             try {
+                var attempt = 0
                 while (dependencies.clockMs() < deadlineMs) {
                     if (!playWhenReadyIntent ||
                         !isFallbackContextCurrent(
@@ -1945,11 +1991,16 @@ class PlaybackRuntime internal constructor(
                         return@launch
                     }
                     if (refreshed != null && applyResolvedRemote(remote, refreshed) >= 0) {
+                        val resumePos = _playbackPositionMs.value.coerceAtLeast(0L)
+                        if (resumePos > 0L) {
+                            expectedController.seekTo(index, resumePos)
+                        }
                         expectedController.prepare()
                         if (playWhenReadyIntent) expectedController.play()
                         return@launch
                     }
-                    delay(REMOTE_RECOVERY_RETRY_MS)
+                    attempt++
+                    delay(minOf(REMOTE_RECOVERY_RETRY_MS * (1L shl (attempt - 1).coerceAtMost(3)), 3_000L))
                 }
                 if (playWhenReadyIntent &&
                     isFallbackContextCurrent(
@@ -2007,7 +2058,9 @@ class PlaybackRuntime internal constructor(
         if (player.mediaItemCount == 0) return
         val remote = _queue.value.getOrNull(player.currentMediaItemIndex) as? PlayableItem.Remote
         if (remote != null && (remote.resolved == null || remote.resolved.audioUrl.isBlank())) return
-        if (player.playbackState == Player.STATE_IDLE) player.prepare()
+        if (player.playbackState == Player.STATE_IDLE || player.playbackState == Player.STATE_ENDED) {
+            player.prepare()
+        }
     }
 
     private fun restartAsyncPlaybackWork() {
@@ -2034,7 +2087,6 @@ class PlaybackRuntime internal constructor(
                 clearRemoteRecoveryAfterProgress()
                 rejectedQueueEntries.clear()
             }
-            persistPlaybackSession(force = false)
             val duration = player.duration
             val current = _currentItem.value
             if (duration > 0L && current != null && current.durationMs <= 0L) {

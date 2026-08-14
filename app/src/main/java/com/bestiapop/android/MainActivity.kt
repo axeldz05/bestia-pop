@@ -1,10 +1,15 @@
 package com.bestiapop.android
 
 import android.Manifest
+import android.annotation.SuppressLint
+import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -13,6 +18,7 @@ import androidx.activity.viewModels
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.core.content.ContextCompat
+import com.bestiapop.android.data.util.PlaybackDiagnostics
 import com.bestiapop.android.service.DownloadNotificationHelper
 import com.bestiapop.android.ui.MusicPlayerViewModel
 import com.bestiapop.android.ui.screens.MainScreen
@@ -29,6 +35,13 @@ class MainActivity : ComponentActivity() {
         ActivityResultContracts.StartActivityForResult()
     ) {
         appUpdateViewModel.onReturnedFromUnknownSources()
+    }
+
+    private val batteryOptimizationLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) {
+        PlaybackDiagnostics.log(PlaybackDiagnostics.TAG_SYSTEM, "Returned from battery optimization request")
+        viewModel.onAppForeground()
     }
 
     private val folderPickerLauncher = registerForActivityResult(
@@ -63,6 +76,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        PlaybackDiagnostics.log(PlaybackDiagnostics.TAG_LIFECYCLE, "MainActivity.onCreate(savedInstanceState=${savedInstanceState != null})")
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         requestRequiredPermissions()
@@ -88,7 +102,32 @@ class MainActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
+        PlaybackDiagnostics.log(PlaybackDiagnostics.TAG_LIFECYCLE, "MainActivity.onStart (app moved to foreground)")
+        runCatching {
+            startService(Intent(this, com.bestiapop.android.service.MusicService::class.java))
+        }
         viewModel.onAppForeground()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        PlaybackDiagnostics.log(PlaybackDiagnostics.TAG_LIFECYCLE, "MainActivity.onResume (UI active/interactive)")
+    }
+
+    override fun onPause() {
+        PlaybackDiagnostics.log(PlaybackDiagnostics.TAG_LIFECYCLE, "MainActivity.onPause (UI losing focus / switching apps / locking)")
+        super.onPause()
+    }
+
+    override fun onStop() {
+        PlaybackDiagnostics.log(PlaybackDiagnostics.TAG_LIFECYCLE, "MainActivity.onStop (UI no longer visible / in background)")
+        viewModel.onUiDetached()
+        super.onStop()
+    }
+
+    override fun onDestroy() {
+        PlaybackDiagnostics.log(PlaybackDiagnostics.TAG_LIFECYCLE, "MainActivity.onDestroy (Activity destroyed, isFinishing=$isFinishing)")
+        super.onDestroy()
     }
 
     override fun onNewIntent(intent: Intent) {

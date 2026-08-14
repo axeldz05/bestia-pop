@@ -1,10 +1,15 @@
 package com.bestiapop.android.service
-
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ServiceInfo
 import android.media.audiofx.LoudnessEnhancer
+import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
 import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
@@ -22,6 +27,7 @@ import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.MediaSource
+import androidx.media3.exoplayer.source.SilenceMediaSource
 import androidx.media3.exoplayer.source.ShuffleOrder
 import androidx.media3.extractor.DefaultExtractorsFactory
 import androidx.media3.session.MediaLibraryService
@@ -37,6 +43,7 @@ import com.bestiapop.android.data.preferences.clampStereoGain
 import com.bestiapop.android.data.system.BackgroundExecutionProbe
 import com.bestiapop.android.data.util.CrashReporter
 import com.bestiapop.android.data.util.MusicFileStore
+import com.bestiapop.android.data.util.PlaybackDiagnostics
 import com.bestiapop.android.service.library.BestiaPopMediaLibraryCallback
 import com.bestiapop.android.service.library.MediaLibraryBrowseProvider
 import com.google.common.util.concurrent.ListenableFuture
@@ -59,6 +66,7 @@ class MusicService : MediaLibraryService() {
     private var appliedSettings = MusicServiceAppliedSettings(1f, 1f, 0)
     private var foregroundPromoteRetryScheduled = false
     private var foregroundPromoteRetryAttempts = 0
+    private var serviceWakeLock: PowerManager.WakeLock? = null
     private val stereoBalanceProcessor = StereoBalanceAudioProcessor()
     private val audioStore by lazy { MusicFileStore(this) }
     private val libraryBrowseProvider by lazy {
@@ -71,6 +79,8 @@ class MusicService : MediaLibraryService() {
 
     override fun onCreate() {
         super.onCreate()
+        PlaybackDiagnostics.log(PlaybackDiagnostics.TAG_SERVICE, "MusicService.onCreate() starting")
+        createPlaybackNotificationChannel()
         val notificationProvider = RefreshingMediaNotificationProvider(
             context = this,
             notificationId = PLAYBACK_NOTIFICATION_ID,
@@ -109,8 +119,7 @@ class MusicService : MediaLibraryService() {
             .setRenderersFactory(renderersFactory)
             .setAudioAttributes(audioAttributes, true)
             .setHandleAudioBecomingNoisy(true)
-            // NETWORK: CPU + wifi lock while playing (local files + remote streams).
-            .setWakeMode(C.WAKE_MODE_NETWORK)
+            .setWakeMode(C.WAKE_MODE_LOCAL)
             .setMediaSourceFactory(UserAgentMediaSourceFactory(this))
             .build()
 
@@ -123,31 +132,101 @@ class MusicService : MediaLibraryService() {
 
         player?.let { p ->
             p.addListener(object : Player.Listener {
+                override fun onPlaybackStateChanged(playbackState: Int) {
+                    PlaybackDiagnostics.logPlayerState(
+                        event = "ExoPlayer.onPlaybackStateChanged",
+                        isPlaying = p.isPlaying,
+                        playWhenReady = p.playWhenReady,
+                        playbackState = playbackState,
+                        currentMediaId = p.currentMediaItem?.mediaId,
+                        positionMs = p.currentPosition
+                    )
+                    updateWakeMode()
+                    if (playbackState == Player.STATE_BUFFERING) {
+                        acquireTransientWakeLock(30_000L)
+                    } else if (playbackState == Player.STATE_READY && p.isPlaying) {
+                        releaseTransientWakeLock()
+                    } else if (playbackState == Player.STATE_ENDED && p.playWhenReady && p.mediaItemCount > 0) {
+                        acquireTransientWakeLock(30_000L)
+                    }
+                }
+
                 override fun onAudioSessionIdChanged(audioSessionId: Int) {
+                    PlaybackDiagnostics.log(
+                        PlaybackDiagnostics.TAG_SERVICE,
+                        "ExoPlayer.onAudioSessionIdChanged: sessionId=$audioSessionId"
+                    )
                     if (audioSessionId == 0 || audioSessionId == boundAudioSessionId) return
                     releaseLoudnessEnhancer()
                     applyBoost(latestPlaybackSettings)
                 }
 
                 override fun onPlayerError(error: PlaybackException) {
-                    CrashReporter.recordNonFatal(
-                        error,
-                        mapOf(
-                            "playback_phase" to "player_error",
-                            "error_code" to error.errorCodeName,
-                            "media_id" to (p.currentMediaItem?.mediaId ?: "none")
-                        )
+                    PlaybackDiagnostics.error(
+                        PlaybackDiagnostics.TAG_PLAYBACK,
+                        "ExoPlayer.onPlayerError: errorCode=${error.errorCodeName} (${error.errorCode}), msg=${error.message}, mediaId=${p.currentMediaItem?.mediaId}",
+                        error
                     )
+                    releaseTransientWakeLock()
                 }
 
                 override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+                    val reasonStr = when (reason) {
+                        Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST -> "USER_REQUEST"
+                        Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_FOCUS_LOSS -> "AUDIO_FOCUS_LOSS"
+                        Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_BECOMING_NOISY -> "AUDIO_BECOMING_NOISY"
+                        Player.PLAY_WHEN_READY_CHANGE_REASON_REMOTE -> "REMOTE"
+                        Player.PLAY_WHEN_READY_CHANGE_REASON_END_OF_MEDIA_ITEM -> "END_OF_MEDIA_ITEM"
+                        else -> "REASON_$reason"
+                    }
+                    PlaybackDiagnostics.logPlayerState(
+                        event = "ExoPlayer.onPlayWhenReadyChanged(playWhenReady=$playWhenReady, reason=$reasonStr)",
+                        isPlaying = p.isPlaying,
+                        playWhenReady = playWhenReady,
+                        playbackState = p.playbackState,
+                        currentMediaId = p.currentMediaItem?.mediaId,
+                        positionMs = p.currentPosition
+                    )
                     foregroundPromoteRetryAttempts = 0
+                    updateWakeMode()
+                    if (!playWhenReady) {
+                        releaseTransientWakeLock()
+                    }
                 }
 
                 override fun onIsPlayingChanged(isPlaying: Boolean) {
-                    if (isPlaying) foregroundPromoteRetryAttempts = 0
+                    PlaybackDiagnostics.logPlayerState(
+                        event = "ExoPlayer.onIsPlayingChanged(isPlaying=$isPlaying)",
+                        isPlaying = isPlaying,
+                        playWhenReady = p.playWhenReady,
+                        playbackState = p.playbackState,
+                        currentMediaId = p.currentMediaItem?.mediaId,
+                        positionMs = p.currentPosition
+                    )
+                    if (isPlaying) {
+                        foregroundPromoteRetryAttempts = 0
+                        releaseTransientWakeLock()
+                    }
+                    updateWakeMode()
                 }
 
+                override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                    val reasonStr = when (reason) {
+                        Player.MEDIA_ITEM_TRANSITION_REASON_AUTO -> "AUTO (next track)"
+                        Player.MEDIA_ITEM_TRANSITION_REASON_SEEK -> "SEEK"
+                        Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED -> "PLAYLIST_CHANGED"
+                        Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT -> "REPEAT"
+                        else -> "REASON_$reason"
+                    }
+                    PlaybackDiagnostics.log(
+                        PlaybackDiagnostics.TAG_PLAYBACK,
+                        "ExoPlayer.onMediaItemTransition: mediaId='${mediaItem?.mediaId}', title='${mediaItem?.mediaMetadata?.title}', reason=$reasonStr"
+                    )
+                    updateWakeMode()
+                    if (p.playWhenReady) {
+                        acquireTransientWakeLock(30_000L)
+                    }
+                }
             })
             val callback = BestiaPopMediaLibraryCallback(
                 scope = serviceScope,
@@ -240,40 +319,74 @@ class MusicService : MediaLibraryService() {
         boundAudioSessionId = 0
     }
 
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        PlaybackDiagnostics.log(
+            PlaybackDiagnostics.TAG_SERVICE,
+            "MusicService.onStartCommand(intentAction=${intent?.action}, flags=$flags, startId=$startId)"
+        )
+        super.onStartCommand(intent, flags, startId)
+        return START_STICKY
+    }
+
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? {
+        PlaybackDiagnostics.log(
+            PlaybackDiagnostics.TAG_SERVICE,
+            "MusicService.onGetSession(callerPackage=${controllerInfo.packageName}, uid=${controllerInfo.uid})"
+        )
         return mediaLibrarySession
     }
 
     override fun onUpdateNotificationAsync(
         session: MediaSession,
         startInForegroundRequired: Boolean
-    ): ListenableFuture<Void?> = super.onUpdateNotificationAsync(
-        session,
-        playbackForegroundRequired(
+    ): ListenableFuture<Void?> {
+        val p = player
+        val isEngaged = isPlaybackEngaged()
+        val calculatedForeground = playbackForegroundRequired(
             startInForegroundRequired = startInForegroundRequired,
-            playWhenReady = player?.playWhenReady == true,
-            mediaItemCount = player?.mediaItemCount ?: 0,
-            playbackState = player?.playbackState ?: Player.STATE_IDLE
+            playWhenReady = p?.playWhenReady == true,
+            mediaItemCount = p?.mediaItemCount ?: 0,
+            playbackState = p?.playbackState ?: Player.STATE_IDLE
         )
-    )
+        PlaybackDiagnostics.log(
+            PlaybackDiagnostics.TAG_SERVICE,
+            "MusicService.onUpdateNotificationAsync: media3StartForegroundRequired=$startInForegroundRequired, " +
+                "calculatedForeground=$calculatedForeground, isPlaybackEngaged=$isEngaged, " +
+                "isPlaying=${p?.isPlaying}, playWhenReady=${p?.playWhenReady}, items=${p?.mediaItemCount}, state=${p?.playbackState}"
+        )
+        return super.onUpdateNotificationAsync(session, calculatedForeground)
+    }
 
     /**
      * Media3's default also requires [Player.isPlaying]. A Remote placeholder is intentionally
      * engaged while IDLE and resolving, so task removal must follow our play intent policy.
      */
     override fun onTaskRemoved(rootIntent: Intent?) {
-        if (!PlaybackServiceLifetimePolicy.shouldStopAfterTaskRemoved(
-                playWhenReady = player?.playWhenReady == true,
-                mediaItemCount = player?.mediaItemCount ?: 0,
-                playbackState = player?.playbackState ?: Player.STATE_IDLE
-            )
-        ) {
+        val p = player
+        val shouldStop = PlaybackServiceLifetimePolicy.shouldStopAfterTaskRemoved(
+            playWhenReady = p?.playWhenReady == true,
+            mediaItemCount = p?.mediaItemCount ?: 0,
+            playbackState = p?.playbackState ?: Player.STATE_IDLE
+        )
+        PlaybackDiagnostics.log(
+            PlaybackDiagnostics.TAG_SERVICE,
+            "MusicService.onTaskRemoved(rootIntent=${rootIntent?.action}): shouldStop=$shouldStop, " +
+                "isPlaying=${p?.isPlaying}, playWhenReady=${p?.playWhenReady}, items=${p?.mediaItemCount}, state=${p?.playbackState}"
+        )
+        if (!shouldStop) {
+            PlaybackDiagnostics.log(PlaybackDiagnostics.TAG_SERVICE, "MusicService: Retaining playback service after task removed.")
             return
         }
+        PlaybackDiagnostics.warn(PlaybackDiagnostics.TAG_SERVICE, "MusicService: Stopping service after task removed (not engaged).")
         pauseAllPlayersAndStopSelf()
     }
 
     override fun onDestroy() {
+        PlaybackDiagnostics.warn(
+            PlaybackDiagnostics.TAG_SERVICE,
+            "MusicService.onDestroy() invoked! Releasing player and session."
+        )
+        releaseTransientWakeLock()
         clearListener()
         serviceScope.cancel()
         releaseLoudnessEnhancer()
@@ -282,8 +395,55 @@ class MusicService : MediaLibraryService() {
             release()
             mediaLibrarySession = null
         }
-        player = null
         super.onDestroy()
+    }
+
+    private fun updateWakeMode() {
+        val p = player ?: return
+        val currentIsRemote = p.currentMediaItem?.mediaId?.startsWith("http") == true ||
+            p.currentMediaItem?.localConfiguration?.uri?.scheme?.startsWith("http") == true
+        val nextIndex = p.nextMediaItemIndex
+        val nextIsRemote = if (nextIndex != C.INDEX_UNSET && nextIndex < p.mediaItemCount) {
+            val nextItem = p.getMediaItemAt(nextIndex)
+            nextItem.mediaId.startsWith("http") == true ||
+                nextItem.localConfiguration?.uri?.scheme?.startsWith("http") == true
+        } else {
+            false
+        }
+        // For local files, AudioTrack/audioserver in Android OS holds the native audio lock.
+        // Holding a continuous Java WakeLock triggers OEM battery killers (e.g. Motorola PowerController).
+        // Only set WAKE_MODE_NETWORK when streaming remote network audio.
+        val targetMode = if (currentIsRemote || nextIsRemote) C.WAKE_MODE_NETWORK else C.WAKE_MODE_NONE
+        p.setWakeMode(targetMode)
+    }
+
+    private fun acquireTransientWakeLock(timeoutMs: Long = 30_000L) {
+        val powerManager = getSystemService(PowerManager::class.java) ?: return
+        try {
+            if (serviceWakeLock?.isHeld == true) {
+                serviceWakeLock?.release()
+            }
+            serviceWakeLock = powerManager.newWakeLock(
+                PowerManager.PARTIAL_WAKE_LOCK,
+                "BestiaPop:TransientTransition"
+            ).apply {
+                setReferenceCounted(false)
+                acquire(timeoutMs)
+            }
+            PlaybackDiagnostics.log(PlaybackDiagnostics.TAG_SERVICE, "MusicService: Acquired transient WakeLock (${timeoutMs}ms)")
+        } catch (e: Exception) {
+            PlaybackDiagnostics.warn(PlaybackDiagnostics.TAG_SERVICE, "Failed to acquire transient WakeLock: ${e.message}")
+        }
+    }
+
+    private fun releaseTransientWakeLock() {
+        try {
+            if (serviceWakeLock?.isHeld == true) {
+                serviceWakeLock?.release()
+                PlaybackDiagnostics.log(PlaybackDiagnostics.TAG_SERVICE, "MusicService: Released transient WakeLock")
+            }
+        } catch (_: Exception) {}
+        serviceWakeLock = null
     }
 
     private fun isPlaybackEngaged(): Boolean {
@@ -293,6 +453,26 @@ class MusicService : MediaLibraryService() {
             mediaItemCount = p.mediaItemCount,
             playbackState = p.playbackState
         )
+    }
+
+    private fun createPlaybackNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val notificationManager = getSystemService(NotificationManager::class.java) ?: return
+            val channelName = getString(R.string.playback_notification_channel)
+            val existing = notificationManager.getNotificationChannel(PLAYBACK_CHANNEL_ID)
+            if (existing == null) {
+                val channel = NotificationChannel(
+                    PLAYBACK_CHANNEL_ID,
+                    channelName,
+                    NotificationManager.IMPORTANCE_LOW
+                ).apply {
+                    description = getString(R.string.playback_notification_channel_description)
+                    setShowBadge(false)
+                    lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
+                }
+                notificationManager.createNotificationChannel(channel)
+            }
+        }
     }
 
     private fun mainActivityPendingIntent(): PendingIntent {
@@ -308,6 +488,12 @@ class MusicService : MediaLibraryService() {
     }
 
     private fun handleForegroundServiceStartDenied() {
+        PlaybackDiagnostics.error(
+            PlaybackDiagnostics.TAG_SERVICE,
+            "handleForegroundServiceStartDenied: Media3 foreground service start was DENIED! " +
+                "isPlaying=${player?.isPlaying}, playWhenReady=${player?.playWhenReady}, state=${player?.playbackState}, " +
+                "retryAttempts=$foregroundPromoteRetryAttempts, scheduled=$foregroundPromoteRetryScheduled"
+        )
         CrashReporter.recordNonFatal(
             IllegalStateException("Media3 foreground service start was denied"),
             mapOf(
@@ -326,10 +512,17 @@ class MusicService : MediaLibraryService() {
         val retryDelay = FOREGROUND_RETRY_DELAYS_MS[foregroundPromoteRetryAttempts]
         foregroundPromoteRetryAttempts++
         foregroundPromoteRetryScheduled = true
+        PlaybackDiagnostics.log(
+            PlaybackDiagnostics.TAG_SERVICE,
+            "handleForegroundServiceStartDenied: Scheduling retry attempt $foregroundPromoteRetryAttempts in ${retryDelay}ms"
+        )
         serviceScope.launch {
             delay(retryDelay)
             foregroundPromoteRetryScheduled = false
-            if (isPlaybackEngaged()) triggerNotificationUpdate()
+            if (isPlaybackEngaged()) {
+                PlaybackDiagnostics.log(PlaybackDiagnostics.TAG_SERVICE, "handleForegroundServiceStartDenied: Executing delayed notification refresh retry")
+                triggerNotificationUpdate()
+            }
         }
     }
 
@@ -341,6 +534,7 @@ class MusicService : MediaLibraryService() {
         /** Head start buffered for upcoming queue items (10s). */
         private const val PRELOAD_TARGET_DURATION_US = 10_000_000L
         private val FOREGROUND_RETRY_DELAYS_MS = longArrayOf(750L, 2_000L, 5_000L)
+        private const val MAX_PLAYBACK_WAKE_LOCK_MS = 24L * 60L * 60L * 1000L
 
         fun shuffleOrderFromPlayer(player: Player): IntArray? {
             if (!player.shuffleModeEnabled) return null
@@ -432,6 +626,10 @@ private class UserAgentMediaSourceFactory(
         intArrayOf(C.CONTENT_TYPE_OTHER, C.CONTENT_TYPE_HLS, C.CONTENT_TYPE_DASH)
 
     override fun createMediaSource(mediaItem: MediaItem): MediaSource {
+        val uri = mediaItem.localConfiguration?.uri
+        if (uri == null || uri == Uri.EMPTY) {
+            return SilenceMediaSource.Factory().createMediaSource()
+        }
         val tag = mediaItem.streamPlaybackTag()
         val httpFactory = DefaultHttpDataSource.Factory()
             .setAllowCrossProtocolRedirects(true)
@@ -454,10 +652,7 @@ internal fun playbackForegroundRequired(
     mediaItemCount: Int,
     playbackState: Int
 ): Boolean = startInForegroundRequired ||
-    PlaybackServiceLifetimePolicy.shouldShowPlaybackNotification(
-        mediaItemCount = mediaItemCount,
-        playbackState = playbackState
-    )
+    (playWhenReady && mediaItemCount > 0)
 
 @OptIn(UnstableApi::class)
 internal fun boundGoogleVideoRequest(dataSpec: DataSpec): DataSpec {

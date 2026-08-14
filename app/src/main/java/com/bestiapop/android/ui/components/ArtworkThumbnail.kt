@@ -88,9 +88,10 @@ fun ArtworkHero(
     contentDescription: String? = null,
     cornerRadius: Dp = 24.dp,
     containerColor: Color = MaterialTheme.colorScheme.surfaceVariant,
-    fallbackTint: Color? = null
+    fallbackTint: Color? = null,
+    targetSizePx: Int = 600
 ) {
-    val imageRequest = rememberArtworkRequest(uri)
+    val imageRequest = rememberArtworkRequest(uri, targetSizePx)
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(cornerRadius))

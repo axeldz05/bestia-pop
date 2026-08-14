@@ -110,13 +110,18 @@ class ListenTracker private constructor(
 
         if (isPlaying) {
             if (lastTickElapsedRealtime > 0L) {
-                val delta = (elapsedRealtimeMs - lastTickElapsedRealtime).coerceIn(0L, 2_000L)
+                val delta = (elapsedRealtimeMs - lastTickElapsedRealtime).coerceAtLeast(0L)
                 playedMs += delta
             }
             lastTickElapsedRealtime = elapsedRealtimeMs
             maybeEnqueueIfReady()
         } else {
+            if (lastTickElapsedRealtime > 0L) {
+                val delta = (elapsedRealtimeMs - lastTickElapsedRealtime).coerceAtLeast(0L)
+                playedMs += delta
+            }
             lastTickElapsedRealtime = 0L
+            maybeEnqueueIfReady()
         }
     }
 

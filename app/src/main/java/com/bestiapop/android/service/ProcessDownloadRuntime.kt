@@ -44,6 +44,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeoutOrNull
 
 internal data class ProcessDownloadRequest(
     val downloadId: String,
@@ -764,14 +765,14 @@ internal class ProcessDownloadRuntime(
     }
 
     private suspend fun awaitConflictDialogFree(batchId: String?) {
-        var waited = 0
-        while (_downloadConflict.value != null &&
-            (batchId == null ||
-                synchronized(batchPoliciesLock) { batchPolicies[batchId] == null }) &&
-            waited < CONFLICT_WAIT_TICKS
-        ) {
-            delay(CONFLICT_WAIT_TICK_MS)
-            waited++
+        val hasBatchPolicy: () -> Boolean = {
+            batchId != null && synchronized(batchPoliciesLock) { batchPolicies[batchId] != null }
+        }
+        if (_downloadConflict.value == null || hasBatchPolicy()) return
+        withTimeoutOrNull(CONFLICT_WAIT_TIMEOUT_MS) {
+            _downloadConflict.first { conflict ->
+                conflict == null || hasBatchPolicy()
+            }
         }
     }
 
@@ -795,8 +796,7 @@ internal class ProcessDownloadRuntime(
     }
 
     companion object {
-        private const val CONFLICT_WAIT_TICK_MS = 250L
-        private const val CONFLICT_WAIT_TICKS = 120
+        private const val CONFLICT_WAIT_TIMEOUT_MS = 30_000L
 
         fun create(
             context: Context,

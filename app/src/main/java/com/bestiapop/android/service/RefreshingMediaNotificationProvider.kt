@@ -42,10 +42,9 @@ internal class RefreshingMediaNotificationProvider(
     ): MediaNotification = delegate.createNotification(
         mediaSession,
         mediaButtonPreferences,
-        actionFactory
-    ) {
-        requestNotificationRefresh()
-    }
+        actionFactory,
+        onNotificationChangedCallback
+    )
 
     override fun handleCustomCommand(
         session: MediaSession,

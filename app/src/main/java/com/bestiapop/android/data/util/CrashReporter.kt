@@ -1,5 +1,6 @@
 package com.bestiapop.android.data.util
 
+import android.util.Log
 import com.google.firebase.crashlytics.FirebaseCrashlytics
 
 /**
@@ -8,6 +9,8 @@ import com.google.firebase.crashlytics.FirebaseCrashlytics
  */
 object CrashReporter {
 
+    private const val TAG = "BestiaPop"
+
     fun setKey(key: String, value: String) {
         runCatching {
             FirebaseCrashlytics.getInstance().setCustomKey(key, value.take(MAX_VALUE_LEN))
@@ -15,12 +18,15 @@ object CrashReporter {
     }
 
     fun log(message: String) {
+        runCatching { Log.d(TAG, message) }
         runCatching {
             FirebaseCrashlytics.getInstance().log(message.take(MAX_LOG_LEN))
         }
     }
 
     fun recordNonFatal(throwable: Throwable, keys: Map<String, String> = emptyMap()) {
+        val details = if (keys.isNotEmpty()) " keys=$keys" else ""
+        runCatching { Log.w(TAG, "Non-fatal exception recorded: ${throwable.message}$details", throwable) }
         runCatching {
             val crashlytics = FirebaseCrashlytics.getInstance()
             keys.forEach { (k, v) ->

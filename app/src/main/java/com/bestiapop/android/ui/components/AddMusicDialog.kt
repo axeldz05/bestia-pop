@@ -37,10 +37,15 @@ import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Public
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Whatshot
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -259,7 +264,20 @@ fun AddMusicDialog(
                         )
                         2 -> OnlineCatalogTab(
                             searchInput = catalogSearchInput,
-                            onSearchInputChange = { catalogSearchInput = it },
+                            onSearchInputChange = {
+                                catalogSearchInput = it
+                                viewModel.setCatalogSearchDraft(it)
+                            },
+                            filterArtist = catalogSearch.searchFilterArtist,
+                            onFilterArtistChange = viewModel::setCatalogSearchFilterArtist,
+                            filterAlbum = catalogSearch.searchFilterAlbum,
+                            onFilterAlbumChange = viewModel::setCatalogSearchFilterAlbum,
+                            filterYear = catalogSearch.searchFilterYear,
+                            onFilterYearChange = viewModel::setCatalogSearchFilterYear,
+                            showFilters = catalogSearch.showSearchFilters,
+                            onToggleFilters = { viewModel.toggleCatalogSearchFilters() },
+                            onClearFilters = { viewModel.clearCatalogSearchFilters() },
+                            hasActiveFilters = catalogSearch.hasActiveFilters,
                             category = catalogCategory,
                             onCategorySelect = { viewModel.setCatalogCategory(it) },
                             isSearching = isSearchingCatalog,
@@ -527,6 +545,16 @@ private fun ActiveDownloadsSummaryBanner(
 private fun OnlineCatalogTab(
     searchInput: String,
     onSearchInputChange: (String) -> Unit,
+    filterArtist: String,
+    onFilterArtistChange: (String) -> Unit,
+    filterAlbum: String,
+    onFilterAlbumChange: (String) -> Unit,
+    filterYear: String,
+    onFilterYearChange: (String) -> Unit,
+    showFilters: Boolean,
+    onToggleFilters: () -> Unit,
+    onClearFilters: () -> Unit,
+    hasActiveFilters: Boolean,
     category: CatalogCategory,
     onCategorySelect: (CatalogCategory) -> Unit,
     isSearching: Boolean,
@@ -604,8 +632,14 @@ private fun OnlineCatalogTab(
 
     Column(modifier = Modifier.fillMaxSize()) {
 
-        // Search Input Bar (hidden for Charts — no query needed)
+        // Search Input Bar & Filters (hidden for Charts — no query needed)
         if (showSearchField) {
+            val searchActions = KeyboardActions(
+                onSearch = { onSearch() },
+                onDone = { onSearch() },
+                onGo = { onSearch() }
+            )
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
@@ -613,15 +647,72 @@ private fun OnlineCatalogTab(
                 OutlinedTextField(
                     value = searchInput,
                     onValueChange = onSearchInputChange,
-                    placeholder = { Text(searchPlaceholder) },
+                    placeholder = {
+                        Text(
+                            text = searchPlaceholder,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    },
                     leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                    trailingIcon = {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(0.dp)
+                        ) {
+                            if (searchInput.isNotEmpty()) {
+                                IconButton(
+                                    onClick = { onSearchInputChange("") },
+                                    modifier = Modifier.size(32.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Close,
+                                        contentDescription = "Limpiar texto",
+                                        modifier = Modifier.size(16.dp),
+                                        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                    )
+                                }
+                            }
+                            IconButton(
+                                onClick = onToggleFilters,
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .testTag("catalog-filter-toggle")
+                            ) {
+                                Box(contentAlignment = Alignment.TopEnd) {
+                                    Icon(
+                                        imageVector = Icons.Default.Tune,
+                                        contentDescription = if (showFilters) "Ocultar filtros" else "Filtros especiales",
+                                        tint = if (showFilters || hasActiveFilters) {
+                                            MaterialTheme.colorScheme.primary
+                                        } else {
+                                            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                        },
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    if (hasActiveFilters) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(6.dp)
+                                                .clip(CircleShape)
+                                                .background(MaterialTheme.colorScheme.primary)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    },
                     singleLine = true,
                     shape = RoundedCornerShape(16.dp),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = MaterialTheme.colorScheme.primary,
                         unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
                     ),
-                    modifier = Modifier.weight(1f)
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    keyboardActions = searchActions,
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag("catalog-search-input")
                 )
 
                 Spacer(modifier = Modifier.width(8.dp))
@@ -633,6 +724,81 @@ private fun OnlineCatalogTab(
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                 ) {
                     Icon(Icons.Default.Search, contentDescription = "Buscar")
+                }
+            }
+
+            AnimatedVisibility(visible = showFilters) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 6.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        OutlinedTextField(
+                            value = filterArtist,
+                            onValueChange = onFilterArtistChange,
+                            placeholder = { Text("Artista", style = MaterialTheme.typography.bodySmall) },
+                            label = { Text("Artista", style = MaterialTheme.typography.labelSmall) },
+                            singleLine = true,
+                            textStyle = MaterialTheme.typography.bodySmall,
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier
+                                .weight(1.1f)
+                                .testTag("catalog-filter-artist"),
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                            keyboardActions = searchActions
+                        )
+                        OutlinedTextField(
+                            value = filterAlbum,
+                            onValueChange = onFilterAlbumChange,
+                            placeholder = { Text("Álbum", style = MaterialTheme.typography.bodySmall) },
+                            label = { Text("Álbum", style = MaterialTheme.typography.labelSmall) },
+                            singleLine = true,
+                            textStyle = MaterialTheme.typography.bodySmall,
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier
+                                .weight(1.1f)
+                                .testTag("catalog-filter-album"),
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                            keyboardActions = searchActions
+                        )
+                        OutlinedTextField(
+                            value = filterYear,
+                            onValueChange = onFilterYearChange,
+                            placeholder = { Text("Año", style = MaterialTheme.typography.bodySmall) },
+                            label = { Text("Año", style = MaterialTheme.typography.labelSmall) },
+                            singleLine = true,
+                            textStyle = MaterialTheme.typography.bodySmall,
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier
+                                .weight(0.8f)
+                                .testTag("catalog-filter-year"),
+                            keyboardOptions = KeyboardOptions(
+                                keyboardType = KeyboardType.Number,
+                                imeAction = ImeAction.Search
+                            ),
+                            keyboardActions = searchActions
+                        )
+                        if (hasActiveFilters) {
+                            IconButton(
+                                onClick = onClearFilters,
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .testTag("catalog-filter-clear")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "Limpiar filtros",
+                                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
+                    }
                 }
             }
 

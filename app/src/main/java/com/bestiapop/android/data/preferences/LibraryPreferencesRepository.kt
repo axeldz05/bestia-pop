@@ -88,6 +88,15 @@ class LibraryPreferencesRepository(private val context: Context) {
         context.libraryDataStore.put(Keys.LEGACY_YTM_MIGRATED, true)
     }
 
+    suspend fun isDeviceDateAddedMigrated(): Boolean =
+        context.libraryDataStore.data.map { prefs ->
+            prefs[Keys.DEVICE_DATE_ADDED_MIGRATED] ?: false
+        }.first()
+
+    suspend fun setDeviceDateAddedMigrated() {
+        context.libraryDataStore.put(Keys.DEVICE_DATE_ADDED_MIGRATED, true)
+    }
+
     suspend fun setSortOptionName(name: String) {
         val clean = LibraryUiPreferencesCodec.sanitizeSortOptionName(name)
         context.libraryDataStore.edit { prefs ->
@@ -145,6 +154,7 @@ class LibraryPreferencesRepository(private val context: Context) {
     private object Keys {
         val INITIAL_SCAN_COMPLETED = booleanPreferencesKey("initial_library_scan_completed")
         val LEGACY_YTM_MIGRATED = booleanPreferencesKey("legacy_ytm_album_migrated")
+        val DEVICE_DATE_ADDED_MIGRATED = booleanPreferencesKey("device_date_added_migrated")
         val HIGHEST_DB_VERSION = intPreferencesKey("highest_db_version_seen")
         val SORT_OPTION = stringPreferencesKey("library_sort_option")
         val SORT_DIRECTION = stringPreferencesKey("library_sort_direction")

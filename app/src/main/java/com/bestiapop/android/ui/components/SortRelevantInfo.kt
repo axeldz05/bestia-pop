@@ -3,6 +3,7 @@ package com.bestiapop.android.ui.components
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.ui.SortOption
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
@@ -29,6 +30,10 @@ fun formatSortRelevantInfo(
 }
 
 fun formatDateAdded(epochMs: Long): String {
-    val formatter = SimpleDateFormat("dd MMM", Locale.getDefault())
-    return formatter.format(Date(epochMs))
+    val date = Date(epochMs)
+    val now = Calendar.getInstance()
+    val songCal = Calendar.getInstance().apply { time = date }
+    val pattern = if (songCal.get(Calendar.YEAR) == now.get(Calendar.YEAR)) "dd MMM" else "dd MMM yyyy"
+    val formatter = SimpleDateFormat(pattern, Locale.getDefault())
+    return formatter.format(date)
 }

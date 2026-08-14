@@ -117,7 +117,9 @@ private data class MediaRow(
     val durationMs: Long = 31_000L,
     val year: Int = 2024,
     val track: Int = 1,
-    val albumId: Long = -1L
+    val albumId: Long = -1L,
+    val dateAdded: Long = 0L,
+    val dateModified: Long = 0L
 )
 
 private class ScanMediaStoreProvider : ContentProvider() {
@@ -145,6 +147,8 @@ private class ScanMediaStoreProvider : ContentProvider() {
                             MediaStore.Audio.Media.TRACK -> media.track
                             MediaStore.Audio.Media.DATA -> media.path
                             MediaStore.Audio.Media.ALBUM_ID -> media.albumId
+                            MediaStore.Audio.Media.DATE_ADDED -> media.dateAdded
+                            MediaStore.Audio.Media.DATE_MODIFIED -> media.dateModified
                             else -> null
                         }
                     }

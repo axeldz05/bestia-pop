@@ -424,6 +424,29 @@ class MusicRepositoryRoomIntegrationTest {
         album = album,
         durationMs = 180_000L
     )
+
+    @Test
+    fun migrateDateAddedFromDevice_updatesExistingSongsWithFileModificationTime() = runTest {
+        val file = files.create("migrated_track.mp3", byteArrayOf(1, 2, 3))
+        file.setLastModified(1600000000000L)
+
+        val id = database.musicDao.insertSong(
+            Song(
+                uriString = file.absolutePath,
+                title = "Migrated Track",
+                artist = "Artist",
+                durationMs = 60_000L,
+                dateAdded = 1700000000000L
+            )
+        )
+
+        val repo = repository()
+        repo.migrateDateAddedFromDevice()
+
+        val updated = database.musicDao.getSongById(id)
+        assertNotNull(updated)
+        assertEquals(1600000000000L, updated?.dateAdded)
+    }
 }
 
 internal class EphemeralCoverContentProvider : ContentProvider() {

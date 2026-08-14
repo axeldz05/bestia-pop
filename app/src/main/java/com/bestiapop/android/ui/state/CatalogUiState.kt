@@ -7,14 +7,31 @@ import com.bestiapop.android.data.model.CatalogPlaylist
 import com.bestiapop.android.data.model.CatalogTrackCandidate
 import com.bestiapop.android.data.model.OnlineCatalogTrack
 
+import com.bestiapop.android.data.model.IdentifySearchFilters
+
 data class CatalogSearchUiState(
     val category: CatalogCategory = CatalogCategory.SONGS,
     val tracks: List<OnlineCatalogTrack> = emptyList(),
     val albums: List<CatalogAlbum> = emptyList(),
     val playlists: List<CatalogPlaylist> = emptyList(),
     val genres: List<CatalogGenre> = emptyList(),
-    val isSearching: Boolean = false
+    val isSearching: Boolean = false,
+    val searchQueryDraft: String = "",
+    val searchFilterArtist: String = "",
+    val searchFilterAlbum: String = "",
+    val searchFilterYear: String = "",
+    val showSearchFilters: Boolean = false
 ) {
+    val searchFilters: IdentifySearchFilters
+        get() = IdentifySearchFilters(
+            artist = searchFilterArtist,
+            album = searchFilterAlbum,
+            year = searchFilterYear.toIntOrNull() ?: 0
+        )
+
+    val hasActiveFilters: Boolean
+        get() = searchFilters.hasAny
+
     fun currentResultsAreEmpty(): Boolean = when (category) {
         CatalogCategory.SONGS, CatalogCategory.CHARTS -> tracks.isEmpty()
         CatalogCategory.ALBUMS -> albums.isEmpty()

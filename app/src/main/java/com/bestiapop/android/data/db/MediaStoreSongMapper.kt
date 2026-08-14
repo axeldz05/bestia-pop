@@ -5,6 +5,7 @@ import android.database.Cursor
 import android.provider.MediaStore
 import androidx.core.net.toUri
 import com.bestiapop.android.data.model.Song
+import java.io.File
 
 fun Cursor.toSong(): Song {
     val id = getLong(getColumnIndexOrThrow(MediaStore.Audio.Media._ID))
@@ -37,6 +38,19 @@ fun Cursor.toSong(): Song {
         null
     }
 
+    val dateAddedIdx = getColumnIndex(MediaStore.Audio.Media.DATE_ADDED)
+    val dateAddedSec = if (dateAddedIdx != -1) getLong(dateAddedIdx) else 0L
+    val dateModifiedIdx = getColumnIndex(MediaStore.Audio.Media.DATE_MODIFIED)
+    val dateModifiedSec = if (dateModifiedIdx != -1) getLong(dateModifiedIdx) else 0L
+
+    val dateAddedMs = when {
+        dateAddedSec > 0L -> dateAddedSec * 1000L
+        dateModifiedSec > 0L -> dateModifiedSec * 1000L
+        filePath.isNotBlank() && File(filePath).exists() && File(filePath).lastModified() > 0L ->
+            File(filePath).lastModified()
+        else -> System.currentTimeMillis()
+    }
+
     return Song(
         uriString = uri,
         title = title,
@@ -49,6 +63,6 @@ fun Cursor.toSong(): Song {
         artworkUri = artworkUri,
         lyrics = null,
         folderPath = filePath,
-        dateAdded = System.currentTimeMillis()
+        dateAdded = dateAddedMs
     )
 }

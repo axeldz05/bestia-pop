@@ -53,7 +53,9 @@ import com.bestiapop.android.domain.usecase.BuildSimilarPlaylistPreviewUseCase
 import com.bestiapop.android.domain.usecase.FetchAndMatchCfRecommendationsUseCase
 import com.bestiapop.android.domain.usecase.ImportListenBrainzPlaylistUseCase
 import com.bestiapop.android.domain.usecase.MatchListenBrainzTracksUseCase
+import com.bestiapop.android.data.model.IdentifySearchFilters
 import com.bestiapop.android.domain.util.IdentifyAlbumGroup
+import com.bestiapop.android.domain.util.IdentifyCatalogQuery
 import com.bestiapop.android.domain.util.IdentifyRanking
 import com.bestiapop.android.domain.util.TrackMatchKeys
 import com.bestiapop.android.domain.util.clusterIdentifyAlbumGroups
@@ -647,6 +649,10 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             if (!libraryPreferences.isLegacyYouTubeMusicMigrated()) {
                 repository.migrateLegacyYouTubeMusicSongs()
                 libraryPreferences.setLegacyYouTubeMusicMigrated()
+            }
+            if (!libraryPreferences.isDeviceDateAddedMigrated()) {
+                repository.migrateDateAddedFromDevice()
+                libraryPreferences.setDeviceDateAddedMigrated()
             }
         }
 
@@ -2930,15 +2936,55 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     // Online Catalog & Link Downloader Actions
     private var lastCatalogQuery = ""
+    private var lastCatalogFilters = IdentifySearchFilters()
 
     fun setCatalogCategory(category: CatalogCategory) {
         _catalogSearch.update { it.copy(category = category) }
-        searchCatalog(lastCatalogQuery)
+        searchCatalog(lastCatalogQuery, lastCatalogFilters)
     }
 
-    fun searchCatalog(query: String) {
+    fun setCatalogSearchDraft(query: String) {
+        _catalogSearch.update { it.copy(searchQueryDraft = query) }
+    }
+
+    fun setCatalogSearchFilterArtist(artist: String) {
+        _catalogSearch.update { it.copy(searchFilterArtist = artist) }
+    }
+
+    fun setCatalogSearchFilterAlbum(album: String) {
+        _catalogSearch.update { it.copy(searchFilterAlbum = album) }
+    }
+
+    fun setCatalogSearchFilterYear(year: String) {
+        _catalogSearch.update { it.copy(searchFilterYear = year) }
+    }
+
+    fun toggleCatalogSearchFilters(show: Boolean? = null) {
+        _catalogSearch.update { state ->
+            val next = show ?: !state.showSearchFilters
+            state.copy(showSearchFilters = next)
+        }
+    }
+
+    fun clearCatalogSearchFilters() {
+        _catalogSearch.update {
+            it.copy(
+                searchFilterArtist = "",
+                searchFilterAlbum = "",
+                searchFilterYear = ""
+            )
+        }
+    }
+
+    fun searchCatalog(
+        query: String = _catalogSearch.value.searchQueryDraft,
+        filters: IdentifySearchFilters = _catalogSearch.value.searchFilters
+    ) {
         lastCatalogQuery = query
+        lastCatalogFilters = filters
         val cleanQ = query.trim()
+        val normalizedFilters = filters.normalized()
+        val effectiveQuery = IdentifyCatalogQuery.build(cleanQ, normalizedFilters)
         val generation = ++catalogSearchGeneration
         val category = _catalogSearch.value.category
         catalogSearchJob?.cancel()
@@ -2946,19 +2992,23 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             _catalogSearch.update { it.copy(isSearching = true) }
             when (category) {
                 CatalogCategory.SONGS -> {
-                    val results = MetadataFetcher.searchOnlineCatalog(cleanQ)
+                    val results = if (effectiveQuery.isEmpty() && !normalizedFilters.hasAny) {
+                        MetadataFetcher.getFeaturedDemoCatalog()
+                    } else {
+                        MetadataFetcher.searchOnlineCatalog(effectiveQuery)
+                    }
                     if (generation == catalogSearchGeneration) {
                         _catalogSearch.update { it.copy(tracks = results) }
                     }
                 }
                 CatalogCategory.ALBUMS -> {
-                    val results = MetadataFetcher.searchAlbums(cleanQ)
+                    val results = MetadataFetcher.searchAlbums(effectiveQuery.ifEmpty { cleanQ })
                     if (generation == catalogSearchGeneration) {
                         _catalogSearch.update { it.copy(albums = results) }
                     }
                 }
                 CatalogCategory.PLAYLISTS -> {
-                    val results = MetadataFetcher.searchPlaylists(cleanQ)
+                    val results = MetadataFetcher.searchPlaylists(cleanQ.ifEmpty { effectiveQuery })
                     if (generation == catalogSearchGeneration) {
                         _catalogSearch.update { it.copy(playlists = results) }
                     }
@@ -2990,7 +3040,6 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             }
         }
     }
-
 
     fun searchOnlineCatalog(query: String) {
         searchCatalog(query)

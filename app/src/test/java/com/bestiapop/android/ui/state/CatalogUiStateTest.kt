@@ -2,6 +2,7 @@ package com.bestiapop.android.ui.state
 
 import com.bestiapop.android.data.model.CatalogCategory
 import com.bestiapop.android.data.model.OnlineCatalogTrack
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
@@ -25,6 +26,43 @@ class CatalogUiStateTest {
 
         assertFalse(tracks.currentResultsAreEmpty())
         assertTrue(tracks.copy(category = CatalogCategory.ALBUMS).currentResultsAreEmpty())
+    }
+
+    @Test
+    fun catalogSearchUiState_defaultsHaveFiltersClosedAndEmpty() {
+        val state = CatalogSearchUiState()
+        assertFalse(state.showSearchFilters)
+        assertFalse(state.hasActiveFilters)
+        assertEquals("", state.searchFilterArtist)
+        assertEquals("", state.searchFilterAlbum)
+        assertEquals("", state.searchFilterYear)
+        assertEquals("", state.searchQueryDraft)
+        assertFalse(state.searchFilters.hasAny)
+    }
+
+    @Test
+    fun catalogSearchUiState_searchFiltersMapsArtistAlbumAndYear() {
+        val state = CatalogSearchUiState(
+            searchFilterArtist = "Daft Punk",
+            searchFilterAlbum = "Discovery",
+            searchFilterYear = "2001"
+        )
+        assertTrue(state.hasActiveFilters)
+        val filters = state.searchFilters
+        assertEquals("Daft Punk", filters.artist)
+        assertEquals("Discovery", filters.album)
+        assertEquals(2001, filters.year)
+    }
+
+    @Test
+    fun catalogSearchUiState_hasActiveFiltersIgnoresBlankOrInvalidYear() {
+        val blankState = CatalogSearchUiState(
+            searchFilterArtist = "   ",
+            searchFilterAlbum = "",
+            searchFilterYear = "invalid"
+        )
+        assertFalse(blankState.hasActiveFilters)
+        assertEquals(0, blankState.searchFilters.year)
     }
 
     @Test

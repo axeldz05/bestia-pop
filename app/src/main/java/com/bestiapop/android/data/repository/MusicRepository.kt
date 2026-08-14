@@ -3,6 +3,7 @@ package com.bestiapop.android.data.repository
 import android.content.Context
 import android.media.MediaMetadataRetriever
 import android.net.Uri
+import android.provider.DocumentsContract
 import android.provider.MediaStore
 import androidx.documentfile.provider.DocumentFile
 import androidx.core.net.toUri
@@ -322,7 +323,9 @@ class MusicRepository private constructor(
             MediaStore.Audio.Media.YEAR,
             MediaStore.Audio.Media.TRACK,
             MediaStore.Audio.Media.DATA,
-            MediaStore.Audio.Media.ALBUM_ID
+            MediaStore.Audio.Media.ALBUM_ID,
+            MediaStore.Audio.Media.DATE_ADDED,
+            MediaStore.Audio.Media.DATE_MODIFIED
         )
 
         val selection = "${MediaStore.Audio.Media.IS_MUSIC} != 0 AND ${MediaStore.Audio.Media.DURATION} >= 30000"
@@ -410,6 +413,7 @@ class MusicRepository private constructor(
                 val file = document.file
                 val fileName = file.name ?: "audio"
                 ticker.tick(fileName)
+                val fileModified = file.lastModified().takeIf { it > 0L }
                 tryIndexOneFile(
                     sourcePath = file.uri.toString(),
                     folderHint = document.folderName,
@@ -420,7 +424,8 @@ class MusicRepository private constructor(
                     list = scanned,
                     useCanonicalPathForMetadata = false,
                     scanPhase = "folder_import_file",
-                    crashPathKey = "uri"
+                    crashPathKey = "uri",
+                    fileDate = fileModified
                 )
             }
             if (scanned.isNotEmpty()) {
@@ -478,7 +483,8 @@ class MusicRepository private constructor(
         list: MutableList<Song>,
         useCanonicalPathForMetadata: Boolean,
         scanPhase: String,
-        crashPathKey: String = "path"
+        crashPathKey: String = "path",
+        fileDate: Long? = null
     ): Boolean {
         val ref = audioStore.canonicalize(sourcePath, folderHint)
         val pathKey = ref.uriString.lowercase()
@@ -501,10 +507,16 @@ class MusicRepository private constructor(
             }
             val key = TrackMatchKeys.matchKey(metadata.artist, metadata.title)
             if (key.isNotEmpty() && existingKeys.contains(key)) return false
+            val resolvedDate = fileDate?.takeIf { it > 0L }
+                ?: (if (!sourcePath.startsWith("content://")) {
+                    File(sourcePath).takeIf { it.exists() && it.lastModified() > 0L }?.lastModified()
+                } else null)
+                ?: System.currentTimeMillis()
             list.add(
                 metadata.toSong(
                     uriString = ref.uriString,
-                    folderPath = ref.folderPath
+                    folderPath = ref.folderPath,
+                    dateAdded = resolvedDate
                 )
             )
             if (key.isNotEmpty()) existingKeys.add(key)
@@ -531,6 +543,7 @@ class MusicRepository private constructor(
         for (file in files) {
             if (!file.isFile || !isAudioFile(file.name)) continue
             onFileVisited?.invoke(file.name)
+            val fileModified = file.lastModified().takeIf { it > 0L }
             tryIndexOneFile(
                 sourcePath = file.absolutePath,
                 folderHint = file.parent ?: "",
@@ -540,7 +553,8 @@ class MusicRepository private constructor(
                 existingPaths = existingPaths,
                 list = list,
                 useCanonicalPathForMetadata = true,
-                scanPhase = "app_music_file"
+                scanPhase = "app_music_file",
+                fileDate = fileModified
             )
         }
     }
@@ -1788,6 +1802,100 @@ class MusicRepository private constructor(
         } catch (e: Exception) {
             e.printStackTrace()
         }
+    }
+
+    suspend fun migrateDateAddedFromDevice() = withContext(Dispatchers.IO) {
+        try {
+            val songs = musicDao.getAllSongs()
+            if (songs.isEmpty()) return@withContext
+            for (song in songs) {
+                val resolvedDate = resolveDeviceDateForSong(song)
+                if (resolvedDate != null && resolvedDate > 0L && resolvedDate != song.dateAdded) {
+                    musicDao.updateSongDateAdded(song.id, resolvedDate)
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            com.bestiapop.android.data.util.CrashReporter.recordNonFatal(
+                e,
+                mapOf("migrate_phase" to "device_date_added")
+            )
+        }
+    }
+
+    private fun resolveDeviceDateForSong(song: Song): Long? {
+        val uri = song.uriString
+        if (uri.startsWith("content://media/")) {
+            try {
+                context.contentResolver.query(
+                    uri.toUri(),
+                    arrayOf(
+                        MediaStore.Audio.Media.DATE_ADDED,
+                        MediaStore.Audio.Media.DATE_MODIFIED,
+                        MediaStore.Audio.Media.DATA
+                    ),
+                    null,
+                    null,
+                    null
+                )?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        val dateAddedIdx = cursor.getColumnIndex(MediaStore.Audio.Media.DATE_ADDED)
+                        val dateAddedSec = if (dateAddedIdx != -1) cursor.getLong(dateAddedIdx) else 0L
+                        val dateModifiedIdx = cursor.getColumnIndex(MediaStore.Audio.Media.DATE_MODIFIED)
+                        val dateModifiedSec = if (dateModifiedIdx != -1) cursor.getLong(dateModifiedIdx) else 0L
+                        val dataIdx = cursor.getColumnIndex(MediaStore.Audio.Media.DATA)
+                        val dataPath = if (dataIdx != -1) cursor.getString(dataIdx) else null
+
+                        return when {
+                            dateAddedSec > 0L -> dateAddedSec * 1000L
+                            dateModifiedSec > 0L -> dateModifiedSec * 1000L
+                            !dataPath.isNullOrBlank() && File(dataPath).exists() && File(dataPath).lastModified() > 0L ->
+                                File(dataPath).lastModified()
+                            else -> null
+                        }
+                    }
+                }
+            } catch (_: Exception) {
+                // fall through
+            }
+        }
+
+        val directPath = SongPathNormalizer.resolveFilePath(song.uriString, song.folderPath)
+            ?: song.folderPath.takeIf { it.isNotBlank() && !it.startsWith("content://") }
+            ?: song.uriString.takeIf { it.isNotBlank() && !it.startsWith("content://") }
+
+        if (!directPath.isNullOrBlank()) {
+            try {
+                val f = File(directPath)
+                if (f.exists() && f.lastModified() > 0L) {
+                    return f.lastModified()
+                }
+            } catch (_: Exception) {
+            }
+        }
+
+        if (uri.startsWith("content://")) {
+            try {
+                context.contentResolver.query(
+                    uri.toUri(),
+                    arrayOf(DocumentsContract.Document.COLUMN_LAST_MODIFIED),
+                    null,
+                    null,
+                    null
+                )?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        val idx = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_LAST_MODIFIED)
+                        if (idx != -1) {
+                            val modified = cursor.getLong(idx)
+                            if (modified > 0L) return modified
+                        }
+                    }
+                }
+            } catch (_: Exception) {
+            }
+        }
+
+        return null
     }
 
     private fun isPlaceholderTitle(title: String): Boolean =

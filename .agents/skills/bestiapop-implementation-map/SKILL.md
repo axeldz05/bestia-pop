@@ -63,7 +63,7 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 | Mini player | `ui/components/BottomPlayerBar.kt` (`statusLabel`, Previous/Next/Play; `BottomPlayerProgress` es el único collector del tick 200 ms); wiring `ui/screens/MainScreen.kt`; estado desde los flows de `PlaybackRuntime` reexpuestos por `MusicPlayerViewModel` |
 | Active download row | `ui/components/ActiveDownloadRow.kt` |
 | Download conflict dialog | `ui/components/DownloadConflictDialog.kt` |
-| Add / download music | `ui/components/AddMusicDialog.kt` (carga catálogo al componer por primera vez el tab; preview colecta posición solo en progress/preview activos; banners vía `activeDownloads` + `ActiveDownloadsSummaryBanner`; `BackHandler` step-back colección) |
+| Add / download music | `ui/components/AddMusicDialog.kt` (carga catálogo al componer por primera vez el tab; buscador con filtros especiales artista/álbum/año y UI compacta; preview colecta posición solo en progress/preview activos; banners vía `activeDownloads` + `ActiveDownloadsSummaryBanner`; `BackHandler` step-back colección) |
 | Song row | `ui/components/SongListItem.kt` (`SongOverflowMenuItems`) |
 | Track meta row | `ui/components/TrackMetaRow.kt` (`joinMeta`, `TrackMeta.artistAlbumLabel`, `playingRowColors` / `playingTitleStyle`, `TrackTextColumn`, `TrackMetaRow`) |
 | Song queue actions | `ui/components/SongQueueActions.kt` (`SongQueueActions`, `rememberSongQueueActions`) |

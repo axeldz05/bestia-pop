@@ -247,11 +247,19 @@ class PlaybackContinuityFunctionalTest {
                 playbackState = Player.STATE_IDLE
             )
         )
-        assertFalse(
+        assertTrue(
             playbackForegroundRequired(
                 startInForegroundRequired = false,
                 playWhenReady = false,
                 mediaItemCount = 1,
+                playbackState = Player.STATE_IDLE
+            )
+        )
+        assertFalse(
+            playbackForegroundRequired(
+                startInForegroundRequired = false,
+                playWhenReady = false,
+                mediaItemCount = 0,
                 playbackState = Player.STATE_IDLE
             )
         )

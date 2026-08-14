@@ -454,8 +454,7 @@ internal fun playbackForegroundRequired(
     mediaItemCount: Int,
     playbackState: Int
 ): Boolean = startInForegroundRequired ||
-    PlaybackServiceLifetimePolicy.isPlaybackEngaged(
-        playWhenReady = playWhenReady,
+    PlaybackServiceLifetimePolicy.shouldShowPlaybackNotification(
         mediaItemCount = mediaItemCount,
         playbackState = playbackState
     )

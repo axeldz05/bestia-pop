@@ -32,12 +32,24 @@ class PlaybackNotificationContractTest {
     }
 
     @Test
-    fun pausedOrEndedPlayback_doesNotInventForegroundDemand() {
-        assertFalse(
+    fun pausedPlaybackWithQueue_retainsForegroundDemand() {
+        assertTrue(
             playbackForegroundRequired(
                 startInForegroundRequired = false,
                 playWhenReady = false,
                 mediaItemCount = 1,
+                playbackState = Player.STATE_READY
+            )
+        )
+    }
+
+    @Test
+    fun endedOrEmptyQueuePlayback_doesNotInventForegroundDemand() {
+        assertFalse(
+            playbackForegroundRequired(
+                startInForegroundRequired = false,
+                playWhenReady = false,
+                mediaItemCount = 0,
                 playbackState = Player.STATE_READY
             )
         )

@@ -762,7 +762,7 @@ class MusicRepository private constructor(
     ): IdentifyProposal = withContext(Dispatchers.IO) {
         val normalizedFilters = filters.normalized()
         val isExpand = catalogIndex > 0 || existingCandidates.isNotEmpty()
-        if (!force && !isExpand && !needsMetadataIdentify(song.artist, song.album)) {
+        if (!force && !isExpand && !needsMetadataIdentify(song)) {
             return@withContext IdentifyProposal(
                 songId = song.id,
                 queryArtist = song.artist,
@@ -1052,8 +1052,9 @@ class MusicRepository private constructor(
         provider = "Catalog"
     )
 
-    private fun needsMetadataIdentify(artist: String, album: String): Boolean {
-        return IdentifyRanking.isPlaceholderArtist(artist) || IdentifyRanking.isGenericAlbum(album)
+    private fun needsMetadataIdentify(song: Song): Boolean {
+        val missingArtwork = !SongPathNormalizer.hasUsableArtwork(song.artworkUri)
+        return IdentifyRanking.isPlaceholderArtist(song.artist) || IdentifyRanking.isGenericAlbum(song.album) || missingArtwork
     }
 
     /**

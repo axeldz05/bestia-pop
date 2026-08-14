@@ -1,0 +1,72 @@
+# BestiaPop (sofoapps) — Cursor rules
+
+App Android Kotlin/Compose de música: biblioteca local, playlists, descarga online (YouTube), temas y WiFi sync.
+
+## Skills de arquitectura (fuente de verdad viva)
+
+Leer y seguir estos skills del repo **antes** de diseñar o implementar cambios no triviales. Contienen referencias directas a implementaciones actuales:
+
+| Skill | Path | Usar cuando |
+|-------|------|-------------|
+| **Arquitectura** | `.cursor/skills/bestiapop-architecture/SKILL.md` | Capas, stack, flujos, dónde colocar código |
+| **Features** | `.cursor/skills/bestiapop-features/SKILL.md` | Comportamiento esencial e invariantes + entry points |
+| **Implementation map** | `.cursor/skills/bestiapop-implementation-map/SKILL.md` | Localizar archivos/clases/funciones concretas |
+| **Living docs** | `.cursor/skills/bestiapop-living-docs/SKILL.md` | Protocolo para actualizar los skills anteriores |
+| **Release changelog** | `.cursor/skills/bestiapop-release-changelog/SKILL.md` | Anotar cambios user-facing y armar notas del APK |
+
+Resumen histórico de principios (mantener alineado con features): `.agents/AGENTS.md`
+
+## Obligación de mantener los skills
+
+Al modificar arquitectura, features esenciales o APIs/ubicaciones de código, **actualizar en el mismo cambio** los skills de la tabla (según `bestiapop-living-docs`):
+
+1. Añadir/ajustar referencias **directas** (`path` + `Class`/`fun`).
+2. Eliminar referencias obsoletas.
+3. No dejar invariantes documentados que el código ya no cumpla.
+
+Si solo hay un bugfix local sin cambio de diseño, no hace falta tocar skills.
+
+## Convenciones de código
+
+- Package root: `com.bestiapop.android`
+- Lógica nueva de negocio → `domain/usecase`; persistencia/red → `data`; UI → `ui`
+- Reproducción de agrupaciones → pipeline unificado `playCollection` / `shuffleCollection` / `enqueueCollection` (no inventar paths paralelos)
+- Descarga de audio online → re-extraer stream YouTube antes de bajar (CDN expira → 403)
+- Portada de **álbum** propaga a canciones; portada de **playlist** no
+- Imágenes elegidas por el usuario → copiar a `context.filesDir`
+- Preferir patrones y nombres ya usados en `MusicPlayerViewModel`, `MusicRepository`, use cases existentes
+- Metadatos de canción compartidos → `TrackIdentity` / `TrackMeta` (`data/model/TrackIdentity.kt`). No clonar DTO satélite (title/artist/álbum/art/duration/trackNumber) por sistema. Wrappers solo para extras: score (`IdentifyCandidate` / `MatchedRemoteTrack.score`), mbid/stream (`PlayableItem.Remote`, `LbPlaylistTrack` / `LbRecordingMetadata`), genre de archivo (`AudioFileMetadata`), pending (`PlaylistPendingTrack`), columnas Room (`Song` plano = fila `songs`; `PlaylistPendingTrackEntity.releaseName` ↔ `identity.album`). Si un campo nuevo habría que pegarlo en >2 data classes de track, el modelo está mal.
+- No crear markdown de docs extras salvo que el usuario lo pida; los skills anteriores son el lugar para documentar arquitectura/features
+- Changelog user-facing → `CHANGELOG.pending.md` (gitignored). Tras features/fixes visibles, anotar ahí (skill `bestiapop-release-changelog`). No anotar refactors ni detalle interno
+
+## Build / deploy
+
+- **Regla absoluta de instalación:** instalar o reinstalar en un dispositivo **únicamente** con `./install.sh` (debug) o `./install.sh --release`. Nunca usar `adb install`, `gradle install*`, `connectedDebugAndroidTest`/UTP ni instalar el APK de tests manualmente.
+- **Preservar datos siempre:** no ejecutar `adb uninstall`, `pm uninstall`, `pm clear`, `cmd package clear` ni ninguna operación que pueda borrar Room, DataStore, playlists o ajustes. No borrar/recrear datos para tests.
+- Los tests instrumentados se pueden **compilar**, pero no ejecutar si eso requiere instalar fuera de `install.sh`. Si una verificación exige otra instalación, detenerse e informar al usuario.
+- Si `install.sh` falla, reportar el error; no sustituirlo con comandos manuales de instalación/desinstalación.
+- Publicar para amigos: `./release.sh` (bump `version.properties`, APK firmado → GitHub Releases; `versionCode` en las notas del release). Repo en `github-release.properties` (`GITHUB_REPOSITORY=owner/repo`)
+- Antes de `./release.sh`: leer skill `bestiapop-release-changelog`, resumir `CHANGELOG.pending.md` en notas **para el usuario** (sin refactors), escribir `CHANGELOG.release-notes.md` y pasar `--notes-file` (o dejar que el script lo tome si existe)
+- Tests unitarios bajo `app/src/test`; instrumentados bajo `app/src/androidTest`
+
+## Al terminar la implementación y haberlo verificado mediante Build - deploy
+Leer las skills de refactorizacion y aplicalos en los cambios que hiciste.
+- Compresión semántica .cursor/skills/semantic-compression/SKILL.md
+- Granularidad continua .cursor/skills/continuous-granularity/SKILL.md
+Busca principalmente comportamiento repetido que creaste ya sea en tus cambios o con el resto del codigo que podria estar teniendo comportamientos similares (ejemplo, si cambiaste como se descarga algo, busca en todas las partes de descargas si tienen comportamiento repetido).
+Una regla de oro para saber si tenes comportamiento repetido es pensar en cuantos sitios tendrías que tocar código para cambiar algo de lo que implementaste, si son más de 2 veces es que tenés código repetido. Ejemplos: cambiar un algoritmo específico para las recomendaciones, cambiar texto de "descarga completada", botones como reproducir cancion o agregar a playlist.
+
+## Limpieza obligatoria al terminar
+
+Después de completar **toda** la implementación, la verificación final, living docs y refactorización:
+
+1. Ejecutar `gradle --stop`.
+2. Revisar los JVM restantes (`jps -lv`) y terminar con `TERM` cualquier
+   `org.gradle.launcher.daemon.bootstrap.GradleDaemon` o
+   `org.jetbrains.kotlin.daemon.KotlinCompileDaemon` que haya quedado del build.
+3. Verificar que ya no queden Gradle Daemons ni Kotlin Compile Daemons.
+
+Hacer esta limpieza solo después de la última tarea Gradle esperada, para no provocar reinicios
+innecesarios durante la implementación. No matar los language servers de Cursor/IntelliJ/JDT ni
+el `com.github.badsyntax.gradle.GradleServer`; tampoco borrar caches `~/.gradle` o artefactos de
+build salvo pedido explícito del usuario.

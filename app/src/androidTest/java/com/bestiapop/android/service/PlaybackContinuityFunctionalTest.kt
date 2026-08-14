@@ -309,7 +309,7 @@ class PlaybackContinuityFunctionalTest {
         fun close() = scope.cancel()
     }
 
-    private class FakeController : PlaybackControllerFacade {
+    internal class FakeController : PlaybackControllerFacade {
         private var listener: PlaybackControllerFacade.Listener? = null
         private val timeline = mutableListOf<PlayableItem>()
         val releaseCount = AtomicInteger(0)
@@ -479,6 +479,39 @@ class PlaybackContinuityFunctionalTest {
             playing = isPlaying
         }
 
+        /**
+         * Simula pérdida transitoria de foco de audio (AUDIOFOCUS_LOSS_TRANSIENT)
+         */
+        fun simulateAudioFocusLossTransient() {
+            checkValid()
+            // Simular pausa temporal por pérdida de foco
+            val wasPlaying = playing
+            playing = false
+            listener?.onIsPlayingChanged(false)
+            // Mantener wantsPlay para indicar que debería reanudarse
+        }
+
+        /**
+         * Simula pérdida transitoria con ducking (AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK)
+         */
+        fun simulateAudioFocusLossTransientCanDuck() {
+            checkValid()
+            // En este caso no pausamos, solo reducimos volumen (simulado)
+            // Para el test, mantenemos el estado pero notificamos el cambio
+        }
+
+        /**
+         * Simula recuperación de foco de audio (AUDIOFOCUS_GAIN)
+         */
+        fun simulateAudioFocusGain() {
+            checkValid()
+            // Si wantsPlay era true antes de la pérdida, recuperar reproducción
+            if (wantsPlay) {
+                playing = true
+                listener?.onIsPlayingChanged(true)
+            }
+        }
+		
         private fun updatePlaying(next: Boolean) {
             if (playing == next) return
             playing = next
@@ -501,7 +534,7 @@ class PlaybackContinuityFunctionalTest {
         }
     }
 
-    private class InstantStreamAccess : PlaybackRuntimeStreamAccess {
+    internal class InstantStreamAccess : PlaybackRuntimeStreamAccess {
         override fun needsResolve(item: PlayableItem.Remote): Boolean =
             item.resolved?.audioUrl.isNullOrBlank()
 
@@ -511,7 +544,7 @@ class PlaybackContinuityFunctionalTest {
         override suspend fun invalidate(item: PlayableItem.Remote) = Unit
     }
 
-    private class DelayedStreamAccess(
+    internal class DelayedStreamAccess(
         private val delayedQuery: String
     ) : PlaybackRuntimeStreamAccess {
         val started = CompletableDeferred<Unit>()
@@ -532,7 +565,7 @@ class PlaybackContinuityFunctionalTest {
         override suspend fun invalidate(item: PlayableItem.Remote) = Unit
     }
 
-    private class RecordingPersistence : PlaybackRuntimePersistence {
+    internal class RecordingPersistence : PlaybackRuntimePersistence {
         val savedQueues = CopyOnWriteArrayList<QueueSnapshot>()
 
         override suspend fun loadLastPlayed(): LastPlayedSnapshot? = null
@@ -571,14 +604,14 @@ class PlaybackContinuityFunctionalTest {
         override fun cancel() = Unit
     }
 
-    private object NoopListenTracker : PlaybackRuntimeListenTracker {
+    internal object NoopListenTracker : PlaybackRuntimeListenTracker {
         override fun onTrackChanged(song: Song?, hint: PlaybackChangeHint) = Unit
         override fun onDurationKnown(songId: Long, durationMs: Long) = Unit
         override fun onPlaybackTick(isPlaying: Boolean, elapsedRealtimeMs: Long) = Unit
         override fun onStopped() = Unit
     }
 
-    private class FakeSaveDownloads(
+    internal class FakeSaveDownloads(
         private val resultFor: (PlayableItem.Remote) -> SaveWhileListeningDownloadResult = { remote ->
             SaveWhileListeningDownloadResult.Saved(
                 Song(

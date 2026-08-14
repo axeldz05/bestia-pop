@@ -44,7 +44,7 @@ búsqueda escrita por el usuario.
 | Álbumes / playlists online | `MetadataFetcher.searchAlbums` / `searchPlaylists` + `fetchAlbumTrackCandidates` / `fetchPlaylistTrackCandidates` |
 | Extraer stream | `YouTubeExtractor.extractAudioStream` / `extractAudioStreamDetailed` |
 | Descargar + persistir | `DownloadAudioTrackUseCase.execute` → `IMusicRepository.downloadAndSaveOnlineTrack` (`onProgress: DownloadPhase`; persiste `OnlineCatalogTrack.trackNumber` / `TrackIdentity.trackNumber` de `fetchFullTrackMetadata`); copy/UI labels `DownloadMessages` |
-| UI diálogo | `ui/components/AddMusicDialog.kt` |
+| UI diálogo | `ui/components/AddMusicDialog.kt`; estado agrupado `CatalogSearchUiState` / `CatalogCollectionUiState` vía `MusicPlayerViewModel.catalogSearch` / `catalogCollection` |
 | Centro de descargas | `DownloadsScreen` + `ActiveDownloadRow`; persistencia `ActiveDownloadsStore` / `ActiveDownloadCodec`; notif `DownloadNotificationHelper`; badge `activeDownloadBadgeCount` en tab Descargas (`MainScreen`) |
 | Orquestación | Manual: VM `runTrackedDownload` adapta a `ProcessDownloadRequest` → `ProcessDownloadRuntime.submit` desde `enqueueTrackedBatch`, `downloadSingleCandidate`, `downloadSelectedCandidatesBatch`, `downloadFromUrl`, `downloadOnlineTrack`, `downloadRemoteItem`; autosave: `ProcessSaveWhileListeningCoordinator.save`; ambos llaman `ProcessDownloadCoordinator.execute`; gate metered tras permit (`DownloadPreferencesRepository.downloadOnMeteredNetwork` default true); acciones `retryActiveDownload` / `resumeAllDownloads` / cycle/preview/play/dismiss; deep-link `requestOpenDownloads` |
 
@@ -54,7 +54,7 @@ Modelo clave: `TrackIdentity` / `TrackMeta`, `OnlineCatalogTrack`, `CatalogTrack
 
 ## 3. Biblioteca: filtro, orden y vistas
 
-**Invariante:** `songsState` filtra por título/artista/álbum/género y ordena con `SortOption` + `SortDirection` (ASC/DESC). Orden, dirección, vista, chip de browse (`LibraryBrowseFilter`) y pila artista→álbum / género→álbum **persisten** entre sesiones (`LibraryPreferencesRepository`). Al cambiar `SortOption`, la dirección vuelve al default (DATE_ADDED → DESC; resto → ASC). Con `ALBUM_GROUPS`, canciones **dentro de cada álbum** van por `trackNumber` (0 al final + título); play/shuffle/tap usan ese orden visual (`songsFromListItems`). Detalle de álbum siempre por pista. Un chip a la vez proyecta el pool (estilo YouTube Music); search no cambia el chip.
+**Invariante:** `libraryProjection.songs` filtra por título/artista/álbum/género y ordena con `SortOption` + `SortDirection` (ASC/DESC). Orden, dirección, vista, chip de browse (`LibraryBrowseFilter`) y pila artista→álbum / género→álbum **persisten** entre sesiones (`LibraryPreferencesRepository`). Al cambiar `SortOption`, la dirección vuelve al default (DATE_ADDED → DESC; resto → ASC). Con `ALBUM_GROUPS`, canciones **dentro de cada álbum** van por `trackNumber` (0 al final + título); play/shuffle/tap usan ese orden visual (`songsFromListItems`). Detalle de álbum siempre por pista. Un chip a la vez proyecta el pool (estilo YouTube Music); search no cambia el chip.
 
 | Capacidad | API |
 |-----------|-----|
@@ -65,15 +65,15 @@ Modelo clave: `TrackIdentity` / `TrackMeta`, `OnlineCatalogTrack`, `CatalogTrack
 | Énfasis fila | `sortEmphasisFor(song, sortOption)` / `sortEmphasisForLastPlayed` (chip RECENT) → title/subtitle/trailing; sort key trailing con color primary (`SongListItem`) |
 | Filtrado/orden | `GetLibrarySongsUseCase.execute(songs, query, sortOption, sortDirection)` — query vía `TrackMatchKeys.containsNormalized` (case + tildes; blank needle = match all; punctuation-only → no match) |
 | Vista plana vs grupos álbum | `LibraryViewMode.FLAT` / `ALBUM_GROUPS` → `setLibraryViewMode` / `toggleLibraryViewMode`; solo UI cuando chip = `SONGS`; `buildLibraryListItems` / `buildListItems`; within-album `compareSongsWithinAlbum` / `sortSongsWithinAlbum` / `songsFromListItems` |
-| Browse chip + pila | `libraryBrowseFilter` / `setLibraryBrowseFilter` (`LibraryBrowseFilter`: SONGS, ALBUMS, ARTISTS, GENRES, RECENT); `openLibraryAlbum(fromNestedParent)`, `openLibraryArtist`, `openLibraryGenre`, `popLibraryNested` (álbum encima de artista\|género) |
+| Browse chip + pila | `MusicPlayerViewModel.navigation` (`UiNavigationState.libraryBrowseFilter` + `LibraryBrowseStack`) / `setLibraryBrowseFilter`; `openLibraryAlbum(fromNestedParent)`, `openLibraryArtist`, `openLibraryGenre`, `popLibraryNested` (álbum encima de artista\|género) |
 | Multi-select | La selección **se mantiene** al buscar: los ids se resuelven contra `rawSongs` (sin filtrar), así que buscar acota lo que podés tildar sin perder lo ya tildado. La fila de chips se oculta mientras hay selección: con chips de agregados, «Seleccionar todo» tomaba toda la biblioteca |
 | Colapsar álbum / todos | `collapsedAlbumNames` + toggle por header (`onToggleCollapseAlbum`); expandir/colapsar todo en `LibraryScreen` (vista grupos; no persistido) |
-| Derivados | `extractAlbums` / `extractArtists` / `extractGenres` (`sortOption` + `sortDirection`) → `albumsState`, `artistsState`, `genresState`; play-all `songsForBrowseProjection` |
+| Derivados | `LibraryProjectionState` usa `extractAlbums` / `extractArtists` / `extractGenres` (`sortOption` + `sortDirection`) → `MusicPlayerViewModel.libraryProjection.{songs,albums,artists,genres}`; play-all `songsForBrowseProjection` |
 | Énfasis agregados | Álbumes: `TauonAlbumHeader.sortHint` vía `formatSortRelevantInfo`; artistas/géneros: subtítulo con mismo helper |
 | RECENT | Chip label **Recientes**; canciones con `lastPlayedAt > 0` DESC; stamp `setCurrentItem` → `maybeTouchSongLastPlayed` (dedupe por songId / mismo mediaId; sin enhance extra en re-set); `emphasizeLastPlayed`; sección orden del sheet deshabilitada en RECENT (también con nested) |
 
 UI: `LibraryScreen` (`NestedLibraryBrowse` para detalle álbum/artista/género), `LibraryFilterChipRow`, `LibraryBrowseSortSheet`, `LibrarySongList` (`onOpenAlbum`), `LibraryAlbumBrowseList` (`TauonAlbumHeader`), `LibraryAggregateListItem` + `LibraryArtistList` / `LibraryGenreList`.
-Estado: `ui/state/LibraryUiState.kt`, `LibraryBrowseFilter.kt`, `LibraryListItem.kt`. Prefs: `LibraryDisplaySettings` (`sortOptionName` / `sortDirectionName`) + `UiNavSnapshot.browseFilterName` / `LibraryUiPreferencesCodec` (legacy `library_tab` 0/1/2 → SONGS/ALBUMS/ARTISTS).
+Estado: `ui/state/LibraryProjectionState.kt`, `UiNavigationState.kt`, `LibraryBrowseFilter.kt`, `LibraryListItem.kt` y `LibraryUiState.kt` (solo `LibraryViewMode`). Prefs: `LibraryDisplaySettings` (`sortOptionName` / `sortDirectionName`) + `UiNavSnapshot.browseFilterName` / `LibraryUiPreferencesCodec` (legacy `library_tab` 0/1/2 → SONGS/ALBUMS/ARTISTS).
 
 ## 4. Portadas y metadata: álbum ≠ playlist ≠ canción
 
@@ -108,7 +108,7 @@ UI: `PlaylistsScreen`. Detalle abierto = `PlaylistDetailNav` persistido (`openLo
 - **Insertar no clobbea:** `MusicDao.insertSong` / `insertSongs` usan `OnConflictStrategy.IGNORE` (no `REPLACE`: borraba la fila y la reinsertaba con id nuevo, dejando huérfanas las filas de `playlist_song_cross_ref` — sin FK/cascade — y perdiendo `lyrics` / `lastPlayedAt` / `dateAdded`). Colisión de `uriString` en alta de una canción → `MusicRepository.insertOrUpdateByUri` conserva el id y actualiza en el lugar. Borrar canciones limpia sus cross-refs (`MusicDao.deletePlaylistRefsForSongs`).
 - `Music/BestiaPop` es app-managed: `scanMediaStore` **no** reinserta esos archivos (evita duplicar `file:`/path vs `content://`). Tras reinstall, `resyncAppManagedMusic()` reindexa esos archivos por path absoluto.
 - Import disco (MediaStore + BestiaPop) solo en **primer arranque** / post-uninstall (`LibraryPreferencesRepository.initial_library_scan_completed`); updates no re-escanean (Room migraciones sí).
-- **Pases de fondo con memoria de intentos:** el enriquecido de portadas/letras y las fotos de artista colectan `rawSongs` (no `songsState`, que re-emite con cada tecla del buscador y cada cambio de orden) y marcan lo ya intentado (`metadataEnhanceAttempted` / `artistPhotoAttempted`); si no, un artista sin foto o una canción sin portada online se re-consultaban para siempre. `migrateLegacyYouTubeMusicSongs` es one-shot (`legacy_ytm_album_migrated`).
+- **Pases de fondo con memoria de intentos:** el enriquecido de portadas/letras y las fotos de artista colectan `rawSongs` (no `libraryProjection.songs`, que re-emite con cada tecla del buscador y cada cambio de orden) y marcan lo ya intentado (`metadataEnhanceAttempted` / `artistPhotoAttempted`); si no, un artista sin foto o una canción sin portada online se re-consultaban para siempre. `migrateLegacyYouTubeMusicSongs` es one-shot (`legacy_ytm_album_migrated`).
 - Audio local: un solo API `MusicFileStore` + `AudioPersistRef.canonicalize` (escribir/abrir/borrar/playableUri). BestiaPop se persiste como **path absoluto** en `Music/BestiaPop`; música ajena de MediaStore queda `content://media`. Callers no ramifican por scheme. Arranque: `migrateCanonicalAudioUris` (SAF/cache → abs; colisión remapea playlists). WiFi `/existing-files` = union Room basename + `listManagedNames`.
 - Escritura BestiaPop: `MusicFileStore.prepareWrite` → File si el dir es writable; si no (UID viejo), MediaStore al mismo relative path (`StorageUtils`). Debug y release (mismo `applicationId`) usan esa carpeta.
 - Import SAF (`scanFolderUri`) enumera el árbol una sola vez (conserva total/progreso exactos), guarda `AudioPersistRef` (abs si el document id mapea a filesystem) y comparte un solo `MediaMetadataRetriever` por archivo para tags+artwork. Reproducción: `playableUri` (SAF viejo → `file://`). Fallo local → toast «No se pudo reproducir».
@@ -268,7 +268,7 @@ Centro de descargas online → sección 2 (`DownloadsScreen`, tab Descargas).
 | Descarga manual Remote | `downloadRemoteItem` → `runTrackedDownload` (`DISCOVER`); UI `RemoteTrackPlaceholderRow.onDownload` en detalle LB/CF; NP `NowPlayingRemoteDownloadAction` |
 | CF Recomendados | `ListenBrainzClient.fetchCfRecordingRecommendations` → `FetchAndMatchCfRecommendationsUseCase` → `refreshCfRecommendations` / `openCfRecommendations` / `playMatchedTracks` / `shuffleMatchedTracks` |
 | UI sección | `PlaylistsScreen` — "Para Ti" + "Recomendados"; Guardar / Descargar faltantes / descarga por track; detalle local muestra pendientes |
-| Restore sesión | `playlistDetail` `ListenBrainz` / `CfRecommendations` + `selectedNavIndex`; fetch al hidratar/abrir tab Playlists; fallo (sin red, Discover off, API) → lista general + toast (`restoreDiscoverDetailOrFallback`) |
+| Restore sesión | `MusicPlayerViewModel.navigation` → `UiNavigationState.playlistDetail` (`ListenBrainz` / `CfRecommendations`) + `UiNavigationState.selectedNavIndex`; fetch al hidratar/abrir tab Playlists; fallo (sin red, Discover off, API) → lista general + toast (`restoreDiscoverDetailOrFallback`) |
 
 ## 10. Stream remoto (playback sin descarga)
 
@@ -338,7 +338,7 @@ Entry points: `MediaLibraryBrowseProvider` + `MediaLibraryIds` / `MediaLibraryBr
 
 | Acción | Cuándo | Entry point |
 |--------|--------|-------------|
-| Ir al álbum / artista | Match en `albumsState` / `artistsState` | `openLibraryAlbum` / `openLibraryArtist` + `setSelectedNavIndex(0)` |
+| Ir al álbum / artista | Match en `libraryProjection.albums` / `libraryProjection.artists` | `openLibraryAlbum` / `openLibraryArtist` + `setSelectedNavIndex(0)` |
 | Ir a playlist local | Membresía Room (`getPlaylistIdsForSong`) | `openLocalPlaylist` + tab Playlists |
 | Ir a Para Ti / Recomendados | `DiscoverPlaybackOrigin` process-scoped (sesión; no persistido) si play/shuffle desde LB/CF | `PlaybackRuntime.discoverPlaybackOrigin` → `openListenBrainzPlaylistDetail` / `openCfRecommendationsDetail` |
 | Añadir a playlist / Identificar / Editar canción | Solo `PlayableItem.Local` | `SongActionDialogsHost` / `identifySongForReview` |

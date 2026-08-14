@@ -64,6 +64,9 @@ import com.bestiapop.android.service.PlaybackRuntime
 import com.bestiapop.android.service.ProcessDownloadEvent
 import com.bestiapop.android.service.ProcessDownloadRequest
 import com.bestiapop.android.service.WebServerService
+import com.bestiapop.android.ui.state.CatalogCollectionKind
+import com.bestiapop.android.ui.state.CatalogCollectionUiState
+import com.bestiapop.android.ui.state.CatalogSearchUiState
 import com.bestiapop.android.ui.state.IdentifyReviewItem
 import com.bestiapop.android.ui.state.IdentifyReviewPhase
 import com.bestiapop.android.ui.state.IdentifyReviewState
@@ -71,12 +74,15 @@ import com.bestiapop.android.ui.state.hasMediumSuggestion
 import com.bestiapop.android.ui.state.identifyReviewFromPersisted
 import com.bestiapop.android.ui.state.LibraryBrowseFilter
 import com.bestiapop.android.ui.state.LibraryListItem
+import com.bestiapop.android.ui.state.LibraryProjectionState
 import com.bestiapop.android.ui.state.LibraryViewMode
+import com.bestiapop.android.ui.state.LoadableUiState
 import com.bestiapop.android.ui.state.PlaylistDetailNav
 import com.bestiapop.android.ui.state.SimilarPlaylistPreviewState
-import com.bestiapop.android.ui.state.kindName
+import com.bestiapop.android.ui.state.UiNavigationState
 import com.bestiapop.android.ui.state.lbMbidOrNull
-import com.bestiapop.android.ui.state.localIdOrNull
+import com.bestiapop.android.ui.state.mapToUiState
+import com.bestiapop.android.ui.state.stateInUi
 import com.bestiapop.android.ui.theme.ThemePresets
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
@@ -91,7 +97,6 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -131,34 +136,6 @@ enum class SortDirection {
     }
 }
 
-sealed class TokenValidationUiState {
-    data object Idle : TokenValidationUiState()
-    data object Validating : TokenValidationUiState()
-    data class Success(val username: String) : TokenValidationUiState()
-    data class Error(val message: String) : TokenValidationUiState()
-}
-
-sealed class LbDiscoverListUiState {
-    data object Idle : LbDiscoverListUiState()
-    data object Loading : LbDiscoverListUiState()
-    data object Success : LbDiscoverListUiState()
-    data class Error(val message: String) : LbDiscoverListUiState()
-}
-
-sealed class LbPlaylistDetailUiState {
-    data object Idle : LbPlaylistDetailUiState()
-    data object Loading : LbPlaylistDetailUiState()
-    data object Success : LbPlaylistDetailUiState()
-    data class Error(val message: String) : LbPlaylistDetailUiState()
-}
-
-sealed class CfRecommendationsUiState {
-    data object Idle : CfRecommendationsUiState()
-    data object Loading : CfRecommendationsUiState()
-    data object Success : CfRecommendationsUiState()
-    data class Error(val message: String) : CfRecommendationsUiState()
-}
-
 @OptIn(UnstableApi::class)
 @kotlin.OptIn(FlowPreview::class)
 class MusicPlayerViewModel(application: Application) : AndroidViewModel(application) {
@@ -190,7 +167,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     val downloadSettings: StateFlow<DownloadSettings> =
         downloadPreferences.settingsFlow
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), DownloadSettings())
+            .stateInUi(viewModelScope, DownloadSettings())
 
     private val _backgroundExecutionStatus =
         MutableStateFlow(BackgroundExecutionProbe.current(application))
@@ -199,12 +176,10 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     val libraryTagWriteSettings: StateFlow<LibraryTagWriteSettings> =
         libraryTagWritePreferences.settingsFlow
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), LibraryTagWriteSettings())
+            .stateInUi(viewModelScope, LibraryTagWriteSettings())
 
     val downloadOnMeteredNetwork: StateFlow<Boolean> =
-        downloadSettings
-            .map { it.downloadOnMeteredNetwork }
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+        downloadSettings.mapToUiState(viewModelScope, true) { it.downloadOnMeteredNetwork }
 
     val volumeBoostEnabled: StateFlow<Boolean> = playbackPref(false) { it.volumeBoostEnabled }
     val stereoLeftGain: StateFlow<Float> = playbackPref(1f) { it.stereoLeftGain }
@@ -224,10 +199,10 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         playbackPref(DEFAULT_STREAM_SKIP_GRACE_SECONDS) { it.streamSkipGraceSeconds }
 
     val pendingListenCount: StateFlow<Int> = pendingListenDao.countFlow()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
+        .stateInUi(viewModelScope, 0)
 
-    private val _tokenValidationState = MutableStateFlow<TokenValidationUiState>(TokenValidationUiState.Idle)
-    val tokenValidationState = _tokenValidationState.asStateFlow()
+    private val _tokenValidation = MutableStateFlow(LoadableUiState<String?>(null))
+    val tokenValidation = _tokenValidation.asStateFlow()
 
     private val matchListenBrainzTracksUseCase = MatchListenBrainzTracksUseCase()
     private val importListenBrainzPlaylistUseCase = ImportListenBrainzPlaylistUseCase(repository)
@@ -246,29 +221,17 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         }
     )
 
-    private val _lbDiscoverPlaylists = MutableStateFlow<List<LbPlaylistSummary>>(emptyList())
-    val lbDiscoverPlaylists = _lbDiscoverPlaylists.asStateFlow()
+    private val _lbDiscover =
+        MutableStateFlow(LoadableUiState<List<LbPlaylistSummary>>(emptyList()))
+    val lbDiscover = _lbDiscover.asStateFlow()
 
-    private val _lbDiscoverListState = MutableStateFlow<LbDiscoverListUiState>(LbDiscoverListUiState.Idle)
-    val lbDiscoverListState = _lbDiscoverListState.asStateFlow()
+    private val _lbPlaylistDetail =
+        MutableStateFlow(LoadableUiState<MatchedLbPlaylist?>(null))
+    val lbPlaylistDetail = _lbPlaylistDetail.asStateFlow()
 
-    private val _selectedLbPlaylist = MutableStateFlow<MatchedLbPlaylist?>(null)
-    val selectedLbPlaylist = _selectedLbPlaylist.asStateFlow()
-
-    private val _lbPlaylistDetailState = MutableStateFlow<LbPlaylistDetailUiState>(LbPlaylistDetailUiState.Idle)
-    val lbPlaylistDetailState = _lbPlaylistDetailState.asStateFlow()
-
-    private val _cfRecommendations = MutableStateFlow<MatchedCfRecommendations?>(null)
+    private val _cfRecommendations =
+        MutableStateFlow(LoadableUiState<MatchedCfRecommendations?>(null))
     val cfRecommendations = _cfRecommendations.asStateFlow()
-
-    private val _cfListState = MutableStateFlow<CfRecommendationsUiState>(CfRecommendationsUiState.Idle)
-    val cfListState = _cfListState.asStateFlow()
-
-    private val _cfDetailOpen = MutableStateFlow(false)
-    val cfDetailOpen = _cfDetailOpen.asStateFlow()
-
-    private val _cfDetailState = MutableStateFlow<CfRecommendationsUiState>(CfRecommendationsUiState.Idle)
-    val cfDetailState = _cfDetailState.asStateFlow()
 
     // Raw songs & playlists
     val rawSongs = repository.allSongsFlow
@@ -287,23 +250,11 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private val _libraryViewMode = MutableStateFlow(LibraryViewMode.ALBUM_GROUPS)
     val libraryViewMode = _libraryViewMode.asStateFlow()
 
-    private val _selectedNavIndex = MutableStateFlow(0)
-    val selectedNavIndex = _selectedNavIndex.asStateFlow()
-
-    private val _libraryBrowseFilter = MutableStateFlow(LibraryBrowseFilter.SONGS)
-    val libraryBrowseFilter = _libraryBrowseFilter.asStateFlow()
-
-    private val _libraryArtistName = MutableStateFlow<String?>(null)
-    val libraryArtistName = _libraryArtistName.asStateFlow()
-
-    private val _libraryAlbumName = MutableStateFlow<String?>(null)
-    val libraryAlbumName = _libraryAlbumName.asStateFlow()
-
-    private val _libraryGenreName = MutableStateFlow<String?>(null)
-    val libraryGenreName = _libraryGenreName.asStateFlow()
-
-    private val _playlistDetail = MutableStateFlow<PlaylistDetailNav>(PlaylistDetailNav.None)
-    val playlistDetail = _playlistDetail.asStateFlow()
+    private val _navigation = MutableStateFlow(UiNavigationState())
+    val navigation = _navigation.asStateFlow()
+    val selectedNavIndex = navigation.mapToUiState(viewModelScope, NAV_LIBRARY) {
+        it.selectedNavIndex
+    }
 
     private var uiPrefsHydrated = false
     /** Tab to persist. Transient jumps move the live index without touching this. */
@@ -312,17 +263,17 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private var navIndexBeforeTransient: Int? = null
 
     private val getLibrarySongsUseCase = com.bestiapop.android.domain.usecase.GetLibrarySongsUseCase()
-
-    val songsState: StateFlow<List<Song>> = combine(
-        rawSongs,
-        _searchQuery,
-        _sortOption,
-        _sortDirection
-    ) { list, query, sort, direction ->
-        getLibrarySongsUseCase.execute(list, query, sort, direction)
-    }
-        .flowOn(Dispatchers.Default)
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    private val _artistPhotos = MutableStateFlow<Map<String, String>>(emptyMap())
+    val libraryProjection = LibraryProjectionState(
+        scope = viewModelScope,
+        rawSongs = rawSongs,
+        albumOverrides = repository.albumOverridesFlow,
+        searchQuery = searchQuery,
+        sortOption = sortOption,
+        sortDirection = sortDirection,
+        artistPhotos = _artistPhotos,
+        useCase = getLibrarySongsUseCase
+    )
 
     data class PendingAlbumMerge(
         val source: Album,
@@ -336,7 +287,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         songs: List<Song>,
         viewMode: LibraryViewMode
     ): List<LibraryListItem> =
-        getLibrarySongsUseCase.buildListItems(songs, viewMode, albumOverrides.value)
+        libraryProjection.buildListItems(songs, viewMode)
 
     fun sortSongsWithinAlbum(songs: List<Song>): List<Song> =
         getLibrarySongsUseCase.sortSongsWithinAlbum(songs)
@@ -368,46 +319,6 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         artists = artists,
         genres = genres
     )
-
-    /** Shared by [albumsState] and the album-group headers so both show the same album name. */
-    private val albumOverrides: StateFlow<Map<String, AlbumOverride>> =
-        repository.albumOverridesFlow
-            .map { overrides -> overrides.associateBy { it.albumKey } }
-            .stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
-
-    val albumsState: StateFlow<List<Album>> = combine(
-        songsState,
-        albumOverrides,
-        _sortOption,
-        _sortDirection
-    ) { songs, overrides, sortOption, sortDirection ->
-        getLibrarySongsUseCase.extractAlbums(songs, overrides, sortOption, sortDirection)
-    }
-        .flowOn(Dispatchers.Default)
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
-    private val _artistPhotos = MutableStateFlow<Map<String, String>>(emptyMap())
-
-    val artistsState: StateFlow<List<Artist>> = combine(
-        songsState,
-        _artistPhotos,
-        _sortOption,
-        _sortDirection
-    ) { songs: List<Song>, photoMap: Map<String, String>, sortOption, sortDirection ->
-        getLibrarySongsUseCase.extractArtists(songs, photoMap, sortOption, sortDirection)
-    }
-        .flowOn(Dispatchers.Default)
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
-    val genresState: StateFlow<List<GenreGroup>> = combine(
-        songsState,
-        _sortOption,
-        _sortDirection
-    ) { songs, sortOption, sortDirection ->
-        getLibrarySongsUseCase.extractGenres(songs, sortOption, sortDirection)
-    }
-        .flowOn(Dispatchers.Default)
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     // Process-owned playback state. ViewModel only exposes/observes it.
     val currentItem = playbackRuntime.currentItem
@@ -454,38 +365,22 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     val volumeLevel = _volumeLevel.asStateFlow()
 
     // Online Catalog & Link Downloader State
-    private val _catalogSearchResults = MutableStateFlow<List<OnlineCatalogTrack>>(emptyList())
-    val catalogSearchResults = _catalogSearchResults.asStateFlow()
+    private val _catalogSearch = MutableStateFlow(CatalogSearchUiState())
+    val catalogSearch = _catalogSearch.asStateFlow()
 
-    private val _catalogCategory = MutableStateFlow(CatalogCategory.SONGS)
-    val catalogCategory = _catalogCategory.asStateFlow()
+    private val _catalogCollection = MutableStateFlow(CatalogCollectionUiState())
+    val catalogCollection = _catalogCollection.asStateFlow()
 
-    private val _albumSearchResults = MutableStateFlow<List<CatalogAlbum>>(emptyList())
-    val albumSearchResults = _albumSearchResults.asStateFlow()
+    private data class CatalogBatchPlaylistTarget(
+        val selectionKey: String,
+        val playlistId: Long
+    )
 
-    private val _playlistSearchResults = MutableStateFlow<List<CatalogPlaylist>>(emptyList())
-    val playlistSearchResults = _playlistSearchResults.asStateFlow()
-
-    private val _catalogGenres = MutableStateFlow<List<CatalogGenre>>(emptyList())
-    val catalogGenres = _catalogGenres.asStateFlow()
-
-    private val _selectedCollectionTitle = MutableStateFlow<String?>(null)
-    val selectedCollectionTitle = _selectedCollectionTitle.asStateFlow()
-
-    private enum class CatalogCollectionKind { ALBUM, PLAYLIST, GENRE }
-    private var selectedCollectionKind: CatalogCollectionKind? = null
-    private var selectedCollectionCoverUrl: String? = null
     /** Local playlist created when batch-downloading a catalog playlist (reuse across single/batch). */
-    private var catalogBatchPlaylistId: Long? = null
-
-    private val _activeTrackCandidates = MutableStateFlow<List<CatalogTrackCandidate>>(emptyList())
-    val activeTrackCandidates = _activeTrackCandidates.asStateFlow()
-
-    private val _isLoadingCollection = MutableStateFlow(false)
-    val isLoadingCollection = _isLoadingCollection.asStateFlow()
-
-    private val _isSearchingCatalog = MutableStateFlow(false)
-    val isSearchingCatalog = _isSearchingCatalog.asStateFlow()
+    private var catalogBatchPlaylistTarget: CatalogBatchPlaylistTarget? = null
+    private val catalogBatchPlaylistMutex = Mutex()
+    private var catalogCollectionJob: Job? = null
+    private var catalogCollectionGeneration = 0L
     private var catalogSearchJob: Job? = null
     private var catalogSearchGeneration = 0L
 
@@ -632,16 +527,16 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     private fun openSettingsSection(section: String) {
-        navIndexBeforeTransient = _selectedNavIndex.value
+        navIndexBeforeTransient = _navigation.value.selectedNavIndex
         _pendingSettingsSection.value = section
-        _selectedNavIndex.value = NAV_SETTINGS
+        _navigation.update { it.copy(selectedNavIndex = NAV_SETTINGS) }
     }
 
     /** True when it consumed a pending transient jump and restored the previous tab. */
     fun returnFromTransientSettings(): Boolean {
         val previous = navIndexBeforeTransient ?: return false
         navIndexBeforeTransient = null
-        _selectedNavIndex.value = previous
+        _navigation.update { it.copy(selectedNavIndex = previous) }
         return true
     }
 
@@ -723,9 +618,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private fun <T> playbackPref(
         initial: T,
         select: (PlaybackSettings) -> T
-    ): StateFlow<T> = playbackSettings
-        .map(select)
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), initial)
+    ): StateFlow<T> = playbackSettings.mapToUiState(viewModelScope, initial, transform = select)
 
     init {
         playbackRuntime.attachUi()
@@ -842,8 +735,8 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                         .mapNotNull { it.resultSongId }
                         .toSet()
                 },
-                selectedLbPlaylist.map { it != null },
-                cfRecommendations.map { it != null }
+                lbPlaylistDetail.map { it.data != null },
+                cfRecommendations.map { it.data != null }
             ) { savedSongIds, hasLbDetail, hasCfDetail ->
                 Triple(savedSongIds, hasLbDetail, hasCfDetail)
             }
@@ -855,7 +748,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 }
         }
 
-        // rawSongs, not songsState: the latter also re-emits on every search keystroke and sort
+        // rawSongs, not libraryProjection.songs: the latter also re-emits on every search keystroke and sort
         // change, which restarted these network passes over the whole library each time.
         viewModelScope.launch(Dispatchers.IO) {
             rawSongs.collect { songs ->
@@ -924,7 +817,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         applyManualModes: Boolean = true
     ) {
         _catalogPreviewKey.value = null
-        val baseList = if (playlistOrQueue.isNotEmpty()) playlistOrQueue else songsState.value
+        val baseList = if (playlistOrQueue.isNotEmpty()) playlistOrQueue else libraryProjection.songs.value
         val indexInBase = baseList.indexOfFirst { it.id == song.id || it.uriString == song.uriString }
 
         val targetQueue = if (indexInBase != -1) baseList else listOf(song)
@@ -1455,14 +1348,25 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         setLibraryViewMode(next)
     }
 
+    private fun updateNavigation(
+        transform: (UiNavigationState) -> UiNavigationState
+    ): Boolean {
+        while (true) {
+            val current = _navigation.value
+            val updated = transform(current)
+            if (updated == current) return false
+            if (_navigation.compareAndSet(current, updated)) return true
+        }
+    }
+
     fun setSelectedNavIndex(index: Int, persist: Boolean = true) {
         val sanitized = LibraryUiPreferencesCodec.sanitizeNavIndex(index)
         navIndexBeforeTransient = null
-        if (_selectedNavIndex.value == sanitized) {
+        if (_navigation.value.selectedNavIndex == sanitized) {
             if (sanitized == NAV_PLAYLISTS) maybeRestoreDiscoverDetail()
             return
         }
-        _selectedNavIndex.value = sanitized
+        updateNavigation { it.copy(selectedNavIndex = sanitized) }
         if (persist) {
             persistedNavIndex = sanitized
             persistNavSnapshot()
@@ -1471,108 +1375,102 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     fun openDownloadsTabTransient() {
-        _selectedNavIndex.value = NAV_DOWNLOADS
+        updateNavigation { it.copy(selectedNavIndex = NAV_DOWNLOADS) }
     }
 
     fun setLibraryBrowseFilter(filter: LibraryBrowseFilter) {
-        if (_libraryBrowseFilter.value == filter) return
-        _libraryBrowseFilter.value = filter
-        persistNavSnapshot()
+        if (updateNavigation { it.copy(libraryBrowseFilter = filter) }) persistNavSnapshot()
     }
 
     fun openLibraryAlbum(name: String, fromNestedParent: Boolean = false) {
         val trimmed = name.trim()
         if (trimmed.isEmpty()) return
-        if (!fromNestedParent) {
-            _libraryArtistName.value = null
-            _libraryGenreName.value = null
+        if (updateNavigation {
+                it.copy(libraryStack = it.libraryStack.openAlbum(trimmed, fromNestedParent))
+            }
+        ) {
+            persistNavSnapshot()
         }
-        _libraryAlbumName.value = trimmed
-        persistNavSnapshot()
     }
 
     fun openLibraryArtist(name: String) {
         val trimmed = name.trim()
         if (trimmed.isEmpty()) return
-        _libraryArtistName.value = trimmed
-        _libraryAlbumName.value = null
-        _libraryGenreName.value = null
-        persistNavSnapshot()
+        if (updateNavigation { it.copy(libraryStack = it.libraryStack.openArtist(trimmed)) }) {
+            persistNavSnapshot()
+        }
     }
 
     fun openLibraryGenre(name: String) {
         val trimmed = name.trim()
         if (trimmed.isEmpty()) return
-        _libraryGenreName.value = trimmed
-        _libraryAlbumName.value = null
-        _libraryArtistName.value = null
-        persistNavSnapshot()
+        if (updateNavigation { it.copy(libraryStack = it.libraryStack.openGenre(trimmed)) }) {
+            persistNavSnapshot()
+        }
     }
 
     fun closeLibraryAlbum() {
-        if (_libraryAlbumName.value == null) return
-        _libraryAlbumName.value = null
-        persistNavSnapshot()
+        if (updateNavigation { it.copy(libraryStack = it.libraryStack.closeAlbum()) }) {
+            persistNavSnapshot()
+        }
     }
 
     fun closeLibraryArtist() {
-        if (_libraryArtistName.value == null && _libraryAlbumName.value == null) return
-        _libraryArtistName.value = null
-        _libraryAlbumName.value = null
-        persistNavSnapshot()
+        if (updateNavigation { it.copy(libraryStack = it.libraryStack.closeArtist()) }) {
+            persistNavSnapshot()
+        }
     }
 
     fun closeLibraryGenre() {
-        if (_libraryGenreName.value == null && _libraryAlbumName.value == null) return
-        _libraryGenreName.value = null
-        _libraryAlbumName.value = null
-        persistNavSnapshot()
+        if (updateNavigation { it.copy(libraryStack = it.libraryStack.closeGenre()) }) {
+            persistNavSnapshot()
+        }
     }
 
     fun popLibraryNested() {
-        when {
-            _libraryAlbumName.value != null -> closeLibraryAlbum()
-            _libraryArtistName.value != null -> closeLibraryArtist()
-            _libraryGenreName.value != null -> closeLibraryGenre()
+        if (updateNavigation { it.copy(libraryStack = it.libraryStack.pop()) }) {
+            persistNavSnapshot()
         }
     }
 
     fun renameRestoredLibraryAlbum(sourceKey: String, targetKey: String) {
-        if (_libraryAlbumName.value.equals(sourceKey, ignoreCase = true)) {
-            _libraryAlbumName.value = targetKey
+        if (updateNavigation {
+                it.copy(libraryStack = it.libraryStack.renameAlbum(sourceKey, targetKey))
+            }
+        ) {
             persistNavSnapshot()
         }
     }
 
     fun openLocalPlaylist(id: Long) {
         closeDiscoverSessionUi()
-        _playlistDetail.value = PlaylistDetailNav.Local(id)
+        updateNavigation { it.copy(playlistDetail = PlaylistDetailNav.Local(id)) }
         persistNavSnapshot()
     }
 
     fun openListenBrainzPlaylistDetail(mbid: String) {
         closeDiscoverSessionUi()
-        _playlistDetail.value = PlaylistDetailNav.ListenBrainz(mbid)
+        updateNavigation { it.copy(playlistDetail = PlaylistDetailNav.ListenBrainz(mbid)) }
         persistNavSnapshot()
         openListenBrainzPlaylist(mbid)
     }
 
     fun openCfRecommendationsDetail() {
         closeDiscoverSessionUi()
-        _playlistDetail.value = PlaylistDetailNav.CfRecommendations
+        updateNavigation { it.copy(playlistDetail = PlaylistDetailNav.CfRecommendations) }
         persistNavSnapshot()
         openCfRecommendations()
     }
 
     fun closePlaylistDetail() {
         closeDiscoverSessionUi()
-        if (_playlistDetail.value is PlaylistDetailNav.None) return
-        _playlistDetail.value = PlaylistDetailNav.None
-        persistNavSnapshot()
+        if (updateNavigation { it.copy(playlistDetail = PlaylistDetailNav.None) }) {
+            persistNavSnapshot()
+        }
     }
 
     fun dismissDiscoverDetails() {
-        val detail = _playlistDetail.value
+        val detail = _navigation.value.playlistDetail
         if (detail is PlaylistDetailNav.ListenBrainz || detail is PlaylistDetailNav.CfRecommendations) {
             closePlaylistDetail()
         } else {
@@ -1582,7 +1480,6 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     private fun closeDiscoverSessionUi() {
         closeListenBrainzPlaylist()
-        closeCfRecommendations()
     }
 
     private suspend fun hydrateUiPreferences() {
@@ -1597,46 +1494,31 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
         pruneRestoredLibraryStack()
         pruneRestoredLocalPlaylist()
-        if (_selectedNavIndex.value == NAV_PLAYLISTS) {
+        if (_navigation.value.selectedNavIndex == NAV_PLAYLISTS) {
             restoreDiscoverDetailOrFallback()
         }
     }
 
     private fun applyNavSnapshot(nav: UiNavSnapshot) {
-        _selectedNavIndex.value = nav.navIndex
+        _navigation.value = UiNavigationState.fromSnapshot(nav)
         persistedNavIndex = nav.navIndex
-        _libraryBrowseFilter.value = parseLibraryBrowseFilter(nav.browseFilterName)
-        _libraryArtistName.value = nav.libraryArtistName
-        _libraryAlbumName.value = nav.libraryAlbumName
-        _libraryGenreName.value = nav.libraryGenreName
-        _playlistDetail.value = PlaylistDetailNav.fromSnapshot(nav)
     }
 
     private fun persistNavSnapshot() {
         if (!uiPrefsHydrated) return
-        val detail = _playlistDetail.value
-        val snapshot = UiNavSnapshot(
-            // persistedNavIndex, not the live one: a transient tab (download notification deep link,
-            // the Ajustes → Descargas shortcut) would otherwise be written by any later persist and
-            // become the tab the next launch opens on.
-            navIndex = persistedNavIndex,
-            browseFilterName = _libraryBrowseFilter.value.name,
-            libraryArtistName = _libraryArtistName.value,
-            libraryAlbumName = _libraryAlbumName.value,
-            libraryGenreName = _libraryGenreName.value,
-            playlistDetailKind = detail.kindName(),
-            playlistLocalId = detail.localIdOrNull(),
-            playlistLbMbid = detail.lbMbidOrNull()
-        )
+        // persistedNavIndex, not the live one: a transient tab (download notification deep link,
+        // the Ajustes → Descargas shortcut) would otherwise become the next cold-start tab.
+        val snapshot = _navigation.value.toSnapshot(persistedNavIndex)
         viewModelScope.launch { libraryPreferences.setNavSnapshot(snapshot) }
     }
 
     private suspend fun pruneRestoredLibraryStack() {
         val songs = rawSongs.first()
+        val stack = _navigation.value.libraryStack
         val pruned = LibraryUiPreferencesCodec.pruneLibraryStack(
-            albumName = _libraryAlbumName.value,
-            artistName = _libraryArtistName.value,
-            genreName = _libraryGenreName.value,
+            albumName = stack.albumName,
+            artistName = stack.artistName,
+            genreName = stack.genreName,
             albumExists = { name -> songs.any { it.album.equals(name, ignoreCase = true) } },
             artistExists = { name -> songs.any { it.artist.equals(name, ignoreCase = true) } },
             genreExists = { name ->
@@ -1646,38 +1528,32 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 }
             }
         )
-        if (pruned.albumName != _libraryAlbumName.value ||
-            pruned.artistName != _libraryArtistName.value ||
-            pruned.genreName != _libraryGenreName.value
-        ) {
-            _libraryAlbumName.value = pruned.albumName
-            _libraryArtistName.value = pruned.artistName
-            _libraryGenreName.value = pruned.genreName
+        if (updateNavigation { it.copy(libraryStack = it.libraryStack.applyPruned(pruned)) }) {
             persistNavSnapshot()
         }
     }
 
     private suspend fun pruneRestoredLocalPlaylist() {
-        val detail = _playlistDetail.value as? PlaylistDetailNav.Local ?: return
+        val detail = _navigation.value.playlistDetail as? PlaylistDetailNav.Local ?: return
         val lists = playlists.first()
         if (lists.none { it.id == detail.id }) {
-            _playlistDetail.value = PlaylistDetailNav.None
+            updateNavigation { it.copy(playlistDetail = PlaylistDetailNav.None) }
             persistNavSnapshot()
         }
     }
 
     private fun maybeRestoreDiscoverDetail() {
-        val detail = _playlistDetail.value
+        val detail = _navigation.value.playlistDetail
         if (detail !is PlaylistDetailNav.ListenBrainz && detail !is PlaylistDetailNav.CfRecommendations) {
             return
         }
         val needsFetch = when (detail) {
             is PlaylistDetailNav.ListenBrainz ->
-                _selectedLbPlaylist.value == null &&
-                    _lbPlaylistDetailState.value !is LbPlaylistDetailUiState.Loading
+                _lbPlaylistDetail.value.data == null &&
+                    !_lbPlaylistDetail.value.isLoading
             PlaylistDetailNav.CfRecommendations ->
-                _cfRecommendations.value == null &&
-                    _cfListState.value !is CfRecommendationsUiState.Loading
+                _cfRecommendations.value.data == null &&
+                    !_cfRecommendations.value.isLoading
             else -> false
         }
         if (!needsFetch) return
@@ -1685,7 +1561,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     private suspend fun restoreDiscoverDetailOrFallback() {
-        when (val detail = _playlistDetail.value) {
+        when (val detail = _navigation.value.playlistDetail) {
             is PlaylistDetailNav.ListenBrainz -> {
                 val ok = loadListenBrainzPlaylist(detail.mbid, forRestore = true)
                 if (!ok) fallbackDiscoverRestore(announce = true)
@@ -1711,10 +1587,6 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     private fun parseLibraryViewMode(name: String): LibraryViewMode =
         LibraryViewMode.entries.find { it.name == name } ?: LibraryViewMode.ALBUM_GROUPS
-
-    private fun parseLibraryBrowseFilter(name: String): LibraryBrowseFilter =
-        LibraryBrowseFilter.entries.find { it.name == name } ?: LibraryBrowseFilter.SONGS
-
 
     private fun reportLibraryProgress(
         kind: LibraryJobKind,
@@ -2590,7 +2462,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     fun deletePlaylist(id: Long) {
-        val detail = _playlistDetail.value
+        val detail = _navigation.value.playlistDetail
         if (detail is PlaylistDetailNav.Local && detail.id == id) {
             closePlaylistDetail()
         }
@@ -2659,7 +2531,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     fun saveListenBrainzToken(token: String) {
         viewModelScope.launch {
             listenBrainzPreferences.setToken(token)
-            _tokenValidationState.value = TokenValidationUiState.Idle
+            _tokenValidation.value = _tokenValidation.value.idle(data = null)
         }
     }
 
@@ -2667,24 +2539,25 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         viewModelScope.launch {
             val trimmed = token.trim()
             if (trimmed.isBlank()) {
-                _tokenValidationState.value = TokenValidationUiState.Error("Token vacío")
+                _tokenValidation.value = _tokenValidation.value.failure("Token vacío", data = null)
                 return@launch
             }
-            _tokenValidationState.value = TokenValidationUiState.Validating
+            _tokenValidation.value = _tokenValidation.value.loading(data = null)
             listenBrainzPreferences.setToken(trimmed)
             val result = ListenBrainzClient.validateToken(trimmed)
             if (result.valid && !result.username.isNullOrBlank()) {
                 listenBrainzPreferences.setUsername(result.username)
                 listenBrainzPreferences.setEnabled(true)
-                _tokenValidationState.value = TokenValidationUiState.Success(result.username)
+                _tokenValidation.value = _tokenValidation.value.success(result.username)
                 playbackRuntime.requestListenSync()
                 if (listenBrainzSettings.value.discoverEnabled) {
                     refreshListenBrainzDiscoverPlaylists()
                 }
             } else {
                 listenBrainzPreferences.setUsername(null)
-                _tokenValidationState.value = TokenValidationUiState.Error(
-                    result.message ?: "Token inválido"
+                _tokenValidation.value = _tokenValidation.value.failure(
+                    message = result.message ?: "Token inválido",
+                    data = null
                 )
             }
         }
@@ -2693,7 +2566,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     fun clearListenBrainz() {
         viewModelScope.launch {
             listenBrainzPreferences.clear()
-            _tokenValidationState.value = TokenValidationUiState.Idle
+            _tokenValidation.value = _tokenValidation.value.idle(data = null)
             clearDiscoverState()
         }
     }
@@ -2706,7 +2579,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 return@launch
             }
             val username = settings.username ?: return@launch
-            _lbDiscoverListState.value = LbDiscoverListUiState.Loading
+            _lbDiscover.update { it.loading() }
             when (
                 val result = ListenBrainzClient.fetchCreatedForPlaylists(
                     username = username,
@@ -2714,11 +2587,10 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 )
             ) {
                 is LbApiResult.Success -> {
-                    _lbDiscoverPlaylists.value = result.data
-                    _lbDiscoverListState.value = LbDiscoverListUiState.Success
+                    _lbDiscover.update { it.success(result.data) }
                 }
                 is LbApiResult.Failure -> {
-                    _lbDiscoverListState.value = LbDiscoverListUiState.Error(result.message)
+                    _lbDiscover.update { it.failure(result.message) }
                 }
             }
             refreshCfRecommendationsInternal(settings)
@@ -2742,7 +2614,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             clearCfState()
             return
         }
-        _cfListState.value = CfRecommendationsUiState.Loading
+        _cfRecommendations.update { it.loading() }
         val library = rawSongs.first()
         when (
             val result = fetchAndMatchCfRecommendationsUseCase.execute(
@@ -2753,58 +2625,26 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             )
         ) {
             is LbApiResult.Success -> {
-                _cfRecommendations.value = result.data
-                _cfListState.value = CfRecommendationsUiState.Success
-                if (_cfDetailOpen.value) {
-                    _cfDetailState.value = CfRecommendationsUiState.Success
-                }
+                _cfRecommendations.update { it.success(result.data) }
             }
             is LbApiResult.Failure -> {
-                _cfListState.value = CfRecommendationsUiState.Error(result.message)
-                if (_cfDetailOpen.value) {
-                    _cfDetailState.value = CfRecommendationsUiState.Error(result.message)
-                }
+                _cfRecommendations.update { it.failure(result.message) }
             }
         }
     }
 
     fun openCfRecommendations() {
-        _cfDetailOpen.value = true
         val current = _cfRecommendations.value
-        val listState = _cfListState.value
-        when {
-            current != null && listState is CfRecommendationsUiState.Success -> {
-                _cfDetailState.value = CfRecommendationsUiState.Success
-            }
-            listState is CfRecommendationsUiState.Loading -> {
-                _cfDetailState.value = CfRecommendationsUiState.Loading
-            }
-            listState is CfRecommendationsUiState.Error -> {
-                _cfDetailState.value = CfRecommendationsUiState.Error(listState.message)
-            }
-            else -> {
-                _cfDetailState.value = CfRecommendationsUiState.Loading
-                refreshCfRecommendations()
-            }
+        if (current.data == null && !current.isLoading) {
+            refreshCfRecommendations()
         }
-    }
-
-    fun closeCfRecommendations() {
-        _cfDetailOpen.value = false
-        _cfDetailState.value = CfRecommendationsUiState.Idle
     }
 
     private suspend fun loadCfRecommendationsForRestore(): Boolean {
         val settings = listenBrainzPreferences.settingsFlow.first()
         if (!settings.showDiscoverPlaylists) return false
         refreshCfRecommendationsInternal(settings)
-        val ok = _cfRecommendations.value != null &&
-            _cfListState.value is CfRecommendationsUiState.Success
-        if (ok) {
-            _cfDetailOpen.value = true
-            _cfDetailState.value = CfRecommendationsUiState.Success
-        }
-        return ok
+        return _cfRecommendations.value.data != null && _cfRecommendations.value.isLoaded
     }
 
     private fun playMatchedCollection(
@@ -2842,18 +2682,19 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     private fun isListenBrainzDetailCurrent(mbid: String): Boolean =
-        _playlistDetail.value.lbMbidOrNull() == mbid
+        _navigation.value.playlistDetail.lbMbidOrNull() == mbid
 
     private suspend fun loadListenBrainzPlaylist(mbid: String, forRestore: Boolean): Boolean {
         val settings = listenBrainzPreferences.settingsFlow.first()
         if (!settings.showDiscoverPlaylists || mbid.isBlank()) {
             if (!forRestore) {
-                _lbPlaylistDetailState.value = LbPlaylistDetailUiState.Error("ListenBrainz no disponible")
+                _lbPlaylistDetail.update {
+                    it.failure("ListenBrainz no disponible", data = null)
+                }
             }
             return false
         }
-        _lbPlaylistDetailState.value = LbPlaylistDetailUiState.Loading
-        _selectedLbPlaylist.value = null
+        _lbPlaylistDetail.update { it.loading(data = null) }
         return when (
             val result = ListenBrainzClient.fetchPlaylist(
                 playlistMbid = mbid,
@@ -2865,15 +2706,14 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 val matched = matchListenBrainzTracksUseCase.execute(result.data, library)
                 // Only publish if this mbid is still the one on screen.
                 if (!forRestore && !isListenBrainzDetailCurrent(mbid)) return false
-                _selectedLbPlaylist.value = matched
-                _lbPlaylistDetailState.value = LbPlaylistDetailUiState.Success
+                _lbPlaylistDetail.update { it.success(matched) }
                 true
             }
             is LbApiResult.Failure -> {
                 if (forRestore) {
-                    _lbPlaylistDetailState.value = LbPlaylistDetailUiState.Idle
+                    _lbPlaylistDetail.update { it.idle(data = null) }
                 } else {
-                    _lbPlaylistDetailState.value = LbPlaylistDetailUiState.Error(result.message)
+                    _lbPlaylistDetail.update { it.failure(result.message, data = null) }
                 }
                 false
             }
@@ -2881,13 +2721,12 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     fun closeListenBrainzPlaylist() {
-        _selectedLbPlaylist.value = null
-        _lbPlaylistDetailState.value = LbPlaylistDetailUiState.Idle
+        _lbPlaylistDetail.update { it.idle(data = null) }
     }
 
     /** Saves matched locals + unmatched as pending metadata (no download yet). */
     fun saveListenBrainzPlaylistAsLocal(onCreated: ((Long) -> Unit)? = null) {
-        val matched = _selectedLbPlaylist.value ?: return
+        val matched = _lbPlaylistDetail.value.data ?: return
         if (matched.matchedCount == 0 && matched.streamCount == 0) return
         viewModelScope.launch {
             val playlistId = importListenBrainzPlaylistUseCase.createLocalFromMatched(matched)
@@ -2902,7 +2741,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
      * downloads via [runTrackedDownload] ([ActiveDownloadSource.LB_IMPORT]).
      */
     fun importListenBrainzPlaylistWithDownloads(onCreated: ((Long) -> Unit)? = null) {
-        val matched = _selectedLbPlaylist.value ?: return
+        val matched = _lbPlaylistDetail.value.data ?: return
         val unmatched = importListenBrainzPlaylistUseCase.unmatchedCatalogTracks(matched)
         if (unmatched.isEmpty() && matched.matchedCount == 0) return
 
@@ -3066,28 +2905,25 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     )
 
     private fun clearDiscoverState() {
-        _lbDiscoverPlaylists.value = emptyList()
-        _lbDiscoverListState.value = LbDiscoverListUiState.Idle
+        _lbDiscover.update { it.idle(emptyList()) }
         closeListenBrainzPlaylist()
         clearCfState()
-        val detail = _playlistDetail.value
+        val detail = _navigation.value.playlistDetail
         if (detail is PlaylistDetailNav.ListenBrainz || detail is PlaylistDetailNav.CfRecommendations) {
-            _playlistDetail.value = PlaylistDetailNav.None
+            updateNavigation { it.copy(playlistDetail = PlaylistDetailNav.None) }
             persistNavSnapshot()
         }
     }
 
     private fun clearCfState() {
-        _cfRecommendations.value = null
-        _cfListState.value = CfRecommendationsUiState.Idle
-        closeCfRecommendations()
+        _cfRecommendations.update { it.idle(data = null) }
     }
 
     // Online Catalog & Link Downloader Actions
     private var lastCatalogQuery = ""
 
     fun setCatalogCategory(category: CatalogCategory) {
-        _catalogCategory.value = category
+        _catalogSearch.update { it.copy(category = category) }
         searchCatalog(lastCatalogQuery)
     }
 
@@ -3095,26 +2931,27 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         lastCatalogQuery = query
         val cleanQ = query.trim()
         val generation = ++catalogSearchGeneration
+        val category = _catalogSearch.value.category
         catalogSearchJob?.cancel()
         catalogSearchJob = viewModelScope.launch {
-            _isSearchingCatalog.value = true
-            when (_catalogCategory.value) {
+            _catalogSearch.update { it.copy(isSearching = true) }
+            when (category) {
                 CatalogCategory.SONGS -> {
                     val results = MetadataFetcher.searchOnlineCatalog(cleanQ)
                     if (generation == catalogSearchGeneration) {
-                        _catalogSearchResults.value = results
+                        _catalogSearch.update { it.copy(tracks = results) }
                     }
                 }
                 CatalogCategory.ALBUMS -> {
                     val results = MetadataFetcher.searchAlbums(cleanQ)
                     if (generation == catalogSearchGeneration) {
-                        _albumSearchResults.value = results
+                        _catalogSearch.update { it.copy(albums = results) }
                     }
                 }
                 CatalogCategory.PLAYLISTS -> {
                     val results = MetadataFetcher.searchPlaylists(cleanQ)
                     if (generation == catalogSearchGeneration) {
-                        _playlistSearchResults.value = results
+                        _catalogSearch.update { it.copy(playlists = results) }
                     }
                 }
                 CatalogCategory.GENRES -> {
@@ -3125,31 +2962,24 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                         genres.filter { TrackMatchKeys.containsNormalized(it.name, cleanQ) }
                     }
                     if (generation == catalogSearchGeneration) {
-                        _catalogGenres.value = results
+                        _catalogSearch.update { it.copy(genres = results) }
                     }
                 }
                 CatalogCategory.CHARTS -> {
                     val results = MetadataFetcher.fetchChartTracks()
                     if (generation == catalogSearchGeneration) {
-                        _catalogSearchResults.value = results
+                        _catalogSearch.update { it.copy(tracks = results) }
                     }
                 }
             }
             if (generation != catalogSearchGeneration) return@launch
-            _isSearchingCatalog.value = false
+            _catalogSearch.update { it.copy(isSearching = false) }
             // The fetchers degrade to an empty list on any transport error, so an empty list reads as
             // "this song does not exist". Say it out loud when the reason is simply no connection.
-            if (catalogResultsAreEmpty() && !connectivityObserver.isCurrentlyOnline()) {
+            if (_catalogSearch.value.currentResultsAreEmpty() && !connectivityObserver.isCurrentlyOnline()) {
                 toast("Sin conexión: no se pudo buscar en el catálogo")
             }
         }
-    }
-
-    private fun catalogResultsAreEmpty(): Boolean = when (_catalogCategory.value) {
-        CatalogCategory.SONGS, CatalogCategory.CHARTS -> _catalogSearchResults.value.isEmpty()
-        CatalogCategory.ALBUMS -> _albumSearchResults.value.isEmpty()
-        CatalogCategory.PLAYLISTS -> _playlistSearchResults.value.isEmpty()
-        CatalogCategory.GENRES -> _catalogGenres.value.isEmpty()
     }
 
 
@@ -3159,6 +2989,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     fun selectAlbumForInspection(album: CatalogAlbum) {
         selectCollectionForInspection(
+            selectionKey = "album:${album.id}",
             title = album.title,
             kind = CatalogCollectionKind.ALBUM,
             coverUrl = album.coverUrl
@@ -3169,6 +3000,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     fun selectPlaylistForInspection(playlist: CatalogPlaylist) {
         selectCollectionForInspection(
+            selectionKey = "playlist:${playlist.id}",
             title = playlist.title,
             kind = CatalogCollectionKind.PLAYLIST,
             coverUrl = playlist.coverUrl
@@ -3179,6 +3011,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     fun selectGenreForInspection(genre: CatalogGenre) {
         selectCollectionForInspection(
+            selectionKey = "genre:${genre.id}",
             title = genre.name,
             kind = CatalogCollectionKind.GENRE,
             coverUrl = genre.pictureUrl
@@ -3188,19 +3021,41 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
+    private fun updateCatalogCollection(
+        selectionKey: String,
+        transform: (CatalogCollectionUiState) -> CatalogCollectionUiState
+    ): Boolean {
+        while (true) {
+            val current = _catalogCollection.value
+            if (current.selectionKey != selectionKey) return false
+            val updated = transform(current)
+            if (updated == current) return true
+            if (_catalogCollection.compareAndSet(current, updated)) return true
+        }
+    }
+
     private fun selectCollectionForInspection(
+        selectionKey: String,
         title: String,
         kind: CatalogCollectionKind,
         coverUrl: String?,
         fetch: suspend () -> List<CatalogTrackCandidate>
     ) {
-        viewModelScope.launch {
-            _isLoadingCollection.value = true
-            _selectedCollectionTitle.value = title
-            selectedCollectionKind = kind
-            selectedCollectionCoverUrl = coverUrl
-            _activeTrackCandidates.value = fetch()
-            _isLoadingCollection.value = false
+        val requestKey = "$selectionKey#${++catalogCollectionGeneration}"
+        catalogCollectionJob?.cancel()
+        catalogBatchPlaylistTarget = null
+        _catalogCollection.value = CatalogCollectionUiState(
+            selectionKey = requestKey,
+            title = title,
+            kind = kind,
+            coverUrl = coverUrl,
+            isLoading = true
+        )
+        catalogCollectionJob = viewModelScope.launch {
+            val candidates = fetch()
+            updateCatalogCollection(requestKey) { current ->
+                current.copy(candidates = candidates, isLoading = false)
+            }
         }
     }
 
@@ -3233,7 +3088,9 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     fun cycleTrackCandidate(index: Int) {
-        val list = _activeTrackCandidates.value.toMutableList()
+        val collection = _catalogCollection.value
+        val selectionKey = collection.selectionKey ?: return
+        val list = collection.candidates.toMutableList()
         if (index !in list.indices) return
         val item = list[index]
         launchCycleYouTubeMatch(
@@ -3248,14 +3105,17 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             }
             val updated = item.copy(candidates = merged, currentCandidateIndex = nextIndex)
             list[index] = updated
-            _activeTrackCandidates.value = list
-            updated.currentTrack
+            if (updateCatalogCollection(selectionKey) { it.copy(candidates = list) }) {
+                updated.currentTrack
+            } else {
+                null
+            }
         }
     }
 
     /** Cycle YouTube match for a song result in the catalog songs list ("Buscar otro"). */
     fun cycleSongCatalogResult(index: Int) {
-        val list = _catalogSearchResults.value.toMutableList()
+        val list = _catalogSearch.value.tracks.toMutableList()
         if (index !in list.indices) return
         val current = list[index]
         val wasPreviewing = _catalogPreviewKey.value == catalogPreviewKeyFor(current)
@@ -3270,7 +3130,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             val next = searchResults[(currentIdx + 1).coerceAtLeast(0) % searchResults.size]
             // Keep catalog album metadata when YouTube only says "YouTube"
             list[index] = next.preferMetaFrom(current)
-            _catalogSearchResults.value = list
+            _catalogSearch.update { it.copy(tracks = list) }
             list[index]
         }
     }
@@ -3283,21 +3143,21 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     fun toggleTrackSelection(index: Int) {
-        val list = _activeTrackCandidates.value.toMutableList()
+        val collection = _catalogCollection.value
+        val selectionKey = collection.selectionKey ?: return
+        val list = collection.candidates.toMutableList()
         if (index in list.indices) {
             val item = list[index]
             list[index] = item.copy(isSelected = !item.isSelected)
-            _activeTrackCandidates.value = list
+            updateCatalogCollection(selectionKey) { it.copy(candidates = list) }
         }
     }
 
     fun clearSelectedCollection() {
-        _selectedCollectionTitle.value = null
-        selectedCollectionKind = null
-        selectedCollectionCoverUrl = null
-        catalogBatchPlaylistId = null
-        _activeTrackCandidates.value = emptyList()
-        _isLoadingCollection.value = false
+        catalogCollectionJob?.cancel()
+        catalogCollectionJob = null
+        catalogBatchPlaylistTarget = null
+        _catalogCollection.value = CatalogCollectionUiState()
     }
 
     fun resolveDownloadConflictOverwrite(applyToRemainingBatch: Boolean = false) {
@@ -3356,11 +3216,15 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     private suspend fun rematchDiscoverAfterLibraryChange(extraSong: Song? = null) {
         val library = libraryWithExtra(extraSong)
-        _selectedLbPlaylist.value?.let { current ->
-            _selectedLbPlaylist.value = current.copy(matches = current.matches.rematchLocals(library))
+        _lbPlaylistDetail.value.data?.let { current ->
+            _lbPlaylistDetail.update {
+                it.copy(data = current.copy(matches = current.matches.rematchLocals(library)))
+            }
         }
-        _cfRecommendations.value?.let { current ->
-            _cfRecommendations.value = current.copy(matches = current.matches.rematchLocals(library))
+        _cfRecommendations.value.data?.let { current ->
+            _cfRecommendations.update {
+                it.copy(data = current.copy(matches = current.matches.rematchLocals(library)))
+            }
         }
     }
 
@@ -3467,7 +3331,8 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     fun downloadSingleCandidate(index: Int) {
-        val list = _activeTrackCandidates.value
+        val collection = _catalogCollection.value
+        val list = collection.candidates
         if (index !in list.indices) return
         val candidate = list[index]
         val track = candidate.currentTrack ?: return
@@ -3478,7 +3343,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         )
 
         viewModelScope.launch {
-            val targetPlaylistId = ensureCatalogPlaylistForBatch()
+            val targetPlaylistId = ensureCatalogPlaylistForBatch(collection)
             runTrackedDownload(
                 downloadId = downloadId,
                 source = ActiveDownloadSource.BATCH,
@@ -3492,12 +3357,15 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     fun downloadSelectedCandidatesBatch() {
-        val selected = _activeTrackCandidates.value.filter { it.isSelected && it.currentTrack != null }
+        val collection = _catalogCollection.value
+        val selected = collection.candidates.filter {
+            it.isSelected && it.currentTrack != null
+        }
         if (selected.isEmpty()) return
 
         viewModelScope.launch {
             clearBatchConflictPolicy()
-            val targetPlaylistId = ensureCatalogPlaylistForBatch()
+            val targetPlaylistId = ensureCatalogPlaylistForBatch(collection)
             val items = selected.mapNotNull { candidate ->
                 val track = candidate.currentTrack ?: return@mapNotNull null
                 TrackedBatchItem(
@@ -3527,14 +3395,20 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
      * When downloading from a catalog playlist inspection, create a matching local playlist
      * once per batch session and return its id for [ActiveDownload.targetPlaylistId].
      */
-    private suspend fun ensureCatalogPlaylistForBatch(): Long? {
-        if (selectedCollectionKind != CatalogCollectionKind.PLAYLIST) return null
-        catalogBatchPlaylistId?.let { return it }
-        val name = _selectedCollectionTitle.value?.takeIf { it.isNotBlank() } ?: "Playlist"
-        val cover = selectedCollectionCoverUrl
-        val id = repository.createPlaylist(name, coverUri = cover)
-        catalogBatchPlaylistId = id
-        return id
+    private suspend fun ensureCatalogPlaylistForBatch(
+        collection: CatalogCollectionUiState
+    ): Long? = catalogBatchPlaylistMutex.withLock {
+        val selectionKey = collection.selectionKey ?: return@withLock null
+        if (collection.kind != CatalogCollectionKind.PLAYLIST) return@withLock null
+        catalogBatchPlaylistTarget
+            ?.takeIf { it.selectionKey == selectionKey }
+            ?.let { return@withLock it.playlistId }
+        val name = collection.title?.takeIf { it.isNotBlank() } ?: "Playlist"
+        val id = repository.createPlaylist(name, coverUri = collection.coverUrl)
+        if (_catalogCollection.value.selectionKey == selectionKey) {
+            catalogBatchPlaylistTarget = CatalogBatchPlaylistTarget(selectionKey, id)
+        }
+        id
     }
 
     fun downloadFromUrl(url: String) {

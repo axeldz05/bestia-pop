@@ -80,22 +80,23 @@ fun LibraryScreen(
     onSelectFolderClick: () -> Unit,
     onOpenDownloads: () -> Unit = {}
 ) {
-    val songs by viewModel.songsState.collectAsState()
+    val songs by viewModel.libraryProjection.songs.collectAsState()
     /** Unfiltered: multi-select keeps ids picked before a search narrowed the visible list. */
     val allSongs by viewModel.rawSongs.collectAsState(initial = emptyList())
-    val albums by viewModel.albumsState.collectAsState()
-    val artists by viewModel.artistsState.collectAsState()
-    val genres by viewModel.genresState.collectAsState()
+    val albums by viewModel.libraryProjection.albums.collectAsState()
+    val artists by viewModel.libraryProjection.artists.collectAsState()
+    val genres by viewModel.libraryProjection.genres.collectAsState()
     val playlists by viewModel.playlists.collectAsState(initial = emptyList())
     val currentSong by viewModel.currentSong.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
     val sortOption by viewModel.sortOption.collectAsState()
     val sortDirection by viewModel.sortDirection.collectAsState()
     val libraryViewMode by viewModel.libraryViewMode.collectAsState()
-    val browseFilter by viewModel.libraryBrowseFilter.collectAsState()
-    val selectedAlbumName by viewModel.libraryAlbumName.collectAsState()
-    val selectedArtistName by viewModel.libraryArtistName.collectAsState()
-    val selectedGenreName by viewModel.libraryGenreName.collectAsState()
+    val navigation by viewModel.navigation.collectAsState()
+    val browseFilter = navigation.libraryBrowseFilter
+    val selectedAlbumName = navigation.libraryStack.albumName
+    val selectedArtistName = navigation.libraryStack.artistName
+    val selectedGenreName = navigation.libraryStack.genreName
     val libraryJobProgress by viewModel.libraryJobProgress.collectAsState()
     val identifyReview by viewModel.identifyReview.collectAsState()
     val similarPlaylistPreview by viewModel.similarPlaylistPreview.collectAsState()
@@ -796,7 +797,7 @@ private fun NestedLibraryBrowse(
     onToggleSelect: (Song) -> Unit
 ) {
     // Keyed on albums so an album rename refreshes the group headers, which read the override name.
-    val albums by viewModel.albumsState.collectAsState()
+    val albums by viewModel.libraryProjection.albums.collectAsState()
     val listItems = remember(browseSongs, viewMode, albums) {
         viewModel.buildLibraryListItems(browseSongs, viewMode)
     }

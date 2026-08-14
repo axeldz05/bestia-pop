@@ -17,7 +17,7 @@ Módulo único Gradle: `:app`. Nombre del proyecto: **BestiaPop**.
 | Capa | Tecnología |
 |------|------------|
 | UI | Jetpack Compose + Material3 |
-| Estado UI | `MusicPlayerViewModel` (AndroidViewModel) + StateFlow; playback observado desde `PlaybackRuntime` process-scoped |
+| Estado UI | `MusicPlayerViewModel` (AndroidViewModel) + StateFlow; owners tipados en `ui/state` para proyecciones, cargas, catálogo y navegación; playback observado desde `PlaybackRuntime` process-scoped |
 | Reproducción | Media3 1.11.0 ExoPlayer + `MediaLibraryService` (`MusicService`) |
 | Persistencia | Room (`bestiapop_music_db`, v9) |
 | Preferencias | DataStore (`ThemePreferencesRepository`, `ListenBrainzPreferencesRepository`, `PlaybackPreferencesRepository`, `DownloadPreferencesRepository` metered/path prefs, `LibraryPreferencesRepository` display+nav, `ActiveDownloadsStore`, `IdentifyReviewStore` cola identify, `PlaybackSessionStore` last-played + cola, `AppUpdateCheckStore` last GitHub check) |
@@ -48,7 +48,7 @@ Políticas puras de reproducción: `data/playback/PlaybackQueueOrder.kt`, `data/
 ## Flujo de datos (happy path)
 
 1. Room / MediaStore → `MusicRepository` (`MusicFileStore` para I/O local) → `Flow<List<Song>>`
-2. ViewModel combina flows + search/sort → `songsState` / `albumsState` / `artistsState`
+2. `LibraryProjectionState` combina flows + search/sort → `songs` / `albums` / `artists` / `genres`; `MusicPlayerViewModel.libraryProjection` lo expone sin crear un snapshot monolítico
 3. Screens Compose observan StateFlows y llaman métodos del ViewModel
 4. Reproducción: `MusicPlayerViewModel` no posee controller ni lógica de resolución. En `init` llama `PlaybackRuntime.attachUi()`, reexpone sus StateFlows y colecta `PlaybackRuntime.events`; los comandos delegan al runtime. `onCleared` llama `detachUi()`. El runtime posee `List<PlayableItem>` (`Local` | `Remote`; cada ocurrencia lleva `queueEntryId`) + `DiscoverPlaybackOrigin`, intención `playWhenReady`, slot/índice y posición muestreada, un solo lease de `MediaController`/listener y una generación que invalida resolve/recovery/prefetch viejos → `MusicService` (ExoPlayer). Una desconexión nunca vuelve a leer el controller inválido; la reconexión restaura desde el estado process-scoped. Sin UI, playback ni cola, cancela ticker/retry y libera el controller. Kill → `PlaybackSessionStore` (`queue_json` sin ids efímeros/CDN + last-played; origen Discover no persistido); `onPlaybackResumption` comparte hidratación mutex con el arranque y permite reanudar desde System UI/Bluetooth sin persistir CDN.
 5. Stream remoto: `PlaybackRuntime` → `StreamResolver.resolveForPlayback(maxCachedAgeMs)` / `resolveQuery` → `YouTubeExtractor.extractAudioStreamDetailed` → `PlaybackMediaItemCodec` (identidad/query/mbid/videoId/UA en extras; CDN solo URI) → `MusicService.boundGoogleVideoRequest` (completa `DataSpec.length` desde `clen` para emitir `Range` cerrado) → ExoPlayer.

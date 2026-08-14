@@ -68,7 +68,7 @@ fun WebServerScreen(viewModel: MusicPlayerViewModel) {
     val context = LocalContext.current
     val serverAddress by WebServerService.serverState.collectAsState()
     val transfers by WebServerService.transfers.collectAsState()
-    val songs by viewModel.songsState.collectAsState()
+    val songs by viewModel.libraryProjection.songs.collectAsState()
     val identifyReview by viewModel.identifyReview.collectAsState()
     val playlists by viewModel.playlists.collectAsState(initial = emptyList())
     val currentItem by viewModel.currentItem.collectAsState()

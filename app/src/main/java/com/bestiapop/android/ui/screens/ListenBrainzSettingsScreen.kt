@@ -41,7 +41,8 @@ import com.bestiapop.android.data.preferences.MIN_SAVE_WHILE_LISTENING_PERCENT
 import com.bestiapop.android.ui.MusicPlayerViewModel
 import com.bestiapop.android.ui.components.SettingsScrollColumn
 import com.bestiapop.android.ui.components.SettingsSwitchRow
-import com.bestiapop.android.ui.TokenValidationUiState
+import com.bestiapop.android.ui.state.LoadPhase
+import com.bestiapop.android.ui.state.LoadableUiState
 import java.text.DateFormat
 import java.util.Date
 
@@ -49,7 +50,7 @@ import java.util.Date
 fun ListenBrainzSettingsScreen(viewModel: MusicPlayerViewModel) {
     val settings by viewModel.listenBrainzSettings.collectAsState()
     val pendingCount by viewModel.pendingListenCount.collectAsState()
-    val validationState by viewModel.tokenValidationState.collectAsState()
+    val validationState by viewModel.tokenValidation.collectAsState()
 
     var tokenDraft by remember(settings.userToken) { mutableStateOf(settings.userToken) }
     var showToken by remember { mutableStateOf(false) }
@@ -118,17 +119,14 @@ fun ListenBrainzSettingsScreen(viewModel: MusicPlayerViewModel) {
                     viewModel.saveListenBrainzToken(tokenDraft)
                     viewModel.validateListenBrainzToken(tokenDraft)
                 },
-                enabled = tokenDraft.isNotBlank() && validationState !is TokenValidationUiState.Validating,
+                enabled = tokenDraft.isNotBlank() && !validationState.isLoading,
                 modifier = Modifier.weight(1f),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = MaterialTheme.colorScheme.primary
                 )
             ) {
                 Text(
-                    text = when (validationState) {
-                        is TokenValidationUiState.Validating -> "Validando…"
-                        else -> "Validar"
-                    }
+                    text = if (validationState.isLoading) "Validando…" else "Validar"
                 )
             }
             if (settings.userToken.isNotBlank() || settings.username != null) {
@@ -255,22 +253,22 @@ private fun SaveWhileListeningPercentSlider(
 @Composable
 private fun ConnectionStatusBlock(
     settingsUsername: String?,
-    validationState: TokenValidationUiState
+    validationState: LoadableUiState<String?>
 ) {
-    val (label, color) = when (validationState) {
-        is TokenValidationUiState.Idle -> {
+    val (label, color) = when (val phase = validationState.phase) {
+        LoadPhase.Idle -> {
             if (settingsUsername != null) {
                 "Conectado como $settingsUsername" to MaterialTheme.colorScheme.primary
             } else {
                 "Sin validar" to MaterialTheme.colorScheme.onSurfaceVariant
             }
         }
-        is TokenValidationUiState.Validating ->
+        LoadPhase.Loading ->
             "Validando token…" to MaterialTheme.colorScheme.onSurfaceVariant
-        is TokenValidationUiState.Success ->
-            "Conectado como ${validationState.username}" to MaterialTheme.colorScheme.primary
-        is TokenValidationUiState.Error ->
-            validationState.message to MaterialTheme.colorScheme.error
+        LoadPhase.Loaded ->
+            "Conectado como ${validationState.data}" to MaterialTheme.colorScheme.primary
+        is LoadPhase.Error ->
+            phase.message to MaterialTheme.colorScheme.error
     }
 
     Text(

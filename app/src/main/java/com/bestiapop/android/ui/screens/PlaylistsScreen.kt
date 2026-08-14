@@ -80,10 +80,9 @@ import com.bestiapop.android.data.model.PlaylistPendingTrack
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.data.model.toPlayable
 import com.bestiapop.android.data.model.toDiscoverOrigin
-import com.bestiapop.android.ui.CfRecommendationsUiState
-import com.bestiapop.android.ui.LbDiscoverListUiState
-import com.bestiapop.android.ui.LbPlaylistDetailUiState
 import com.bestiapop.android.ui.MusicPlayerViewModel
+import com.bestiapop.android.ui.state.LoadPhase
+import com.bestiapop.android.ui.state.LoadableUiState
 import com.bestiapop.android.ui.state.PlaylistDetailNav
 import com.bestiapop.android.ui.components.ArtworkHero
 import com.bestiapop.android.ui.components.ArtworkPickerBlock
@@ -116,16 +115,16 @@ fun PlaylistsScreen(
     onAddSongsRequest: (Playlist) -> Unit = {}
 ) {
     val playlists by viewModel.playlists.collectAsState(initial = emptyList())
-    val allSongs by viewModel.songsState.collectAsState()
+    val allSongs by viewModel.libraryProjection.songs.collectAsState()
     val lbSettings by viewModel.listenBrainzSettings.collectAsState()
-    val lbDiscoverPlaylists by viewModel.lbDiscoverPlaylists.collectAsState()
-    val lbDiscoverListState by viewModel.lbDiscoverListState.collectAsState()
-    val selectedLbPlaylist by viewModel.selectedLbPlaylist.collectAsState()
-    val lbPlaylistDetailState by viewModel.lbPlaylistDetailState.collectAsState()
-    val cfRecommendations by viewModel.cfRecommendations.collectAsState()
-    val cfListState by viewModel.cfListState.collectAsState()
-    val cfDetailState by viewModel.cfDetailState.collectAsState()
-    val playlistDetail by viewModel.playlistDetail.collectAsState()
+    val lbDiscover by viewModel.lbDiscover.collectAsState()
+    val lbPlaylistDetail by viewModel.lbPlaylistDetail.collectAsState()
+    val cfRecommendationsState by viewModel.cfRecommendations.collectAsState()
+    val navigation by viewModel.navigation.collectAsState()
+    val playlistDetail = navigation.playlistDetail
+    val lbDiscoverPlaylists = lbDiscover.data
+    val selectedLbPlaylist = lbPlaylistDetail.data
+    val cfRecommendations = cfRecommendationsState.data
 
     var showCreateDialog by remember { mutableStateOf(false) }
     var playlistToDelete by remember { mutableStateOf<Playlist?>(null) }
@@ -191,8 +190,8 @@ fun PlaylistsScreen(
                             Spacer(modifier = Modifier.height(8.dp))
                         }
 
-                        when (val state = lbDiscoverListState) {
-                            is LbDiscoverListUiState.Loading -> {
+                        when (val phase = lbDiscover.phase) {
+                            LoadPhase.Loading -> {
                                 item(key = "para-ti-loading") {
                                     Box(
                                         modifier = Modifier
@@ -204,18 +203,18 @@ fun PlaylistsScreen(
                                     }
                                 }
                             }
-                            is LbDiscoverListUiState.Error -> {
+                            is LoadPhase.Error -> {
                                 item(key = "para-ti-error") {
                                     Text(
-                                        text = state.message,
+                                        text = phase.message,
                                         style = MaterialTheme.typography.bodyMedium,
                                         color = MaterialTheme.colorScheme.error,
                                         modifier = Modifier.padding(vertical = 8.dp)
                                     )
                                 }
                             }
-                            is LbDiscoverListUiState.Success, is LbDiscoverListUiState.Idle -> {
-                                if (lbDiscoverPlaylists.isEmpty() && state is LbDiscoverListUiState.Success) {
+                            LoadPhase.Loaded, LoadPhase.Idle -> {
+                                if (lbDiscoverPlaylists.isEmpty() && phase is LoadPhase.Loaded) {
                                     item(key = "para-ti-empty") {
                                         Text(
                                             text = "Aún no hay playlists Discover en tu cuenta.",
@@ -266,8 +265,8 @@ fun PlaylistsScreen(
                             Spacer(modifier = Modifier.height(8.dp))
                         }
 
-                        when (val cfState = cfListState) {
-                            is CfRecommendationsUiState.Loading -> {
+                        when (val phase = cfRecommendationsState.phase) {
+                            LoadPhase.Loading -> {
                                 item(key = "recomendados-loading") {
                                     Box(
                                         modifier = Modifier
@@ -279,20 +278,20 @@ fun PlaylistsScreen(
                                     }
                                 }
                             }
-                            is CfRecommendationsUiState.Error -> {
+                            is LoadPhase.Error -> {
                                 item(key = "recomendados-error") {
                                     Text(
-                                        text = cfState.message,
+                                        text = phase.message,
                                         style = MaterialTheme.typography.bodyMedium,
                                         color = MaterialTheme.colorScheme.error,
                                         modifier = Modifier.padding(vertical = 8.dp)
                                     )
                                 }
                             }
-                            is CfRecommendationsUiState.Success, is CfRecommendationsUiState.Idle -> {
+                            LoadPhase.Loaded, LoadPhase.Idle -> {
                                 val matched = cfRecommendations
                                 if (matched == null || matched.matches.isEmpty()) {
-                                    if (cfState is CfRecommendationsUiState.Success) {
+                                    if (phase is LoadPhase.Loaded) {
                                         item(key = "recomendados-empty") {
                                             Text(
                                                 text = "Aún no hay recomendaciones CF para tu cuenta.",
@@ -405,8 +404,7 @@ fun PlaylistsScreen(
             val currentItem by viewModel.currentItem.collectAsState()
             val activeDownloads by viewModel.activeDownloads.collectAsState()
             LbPlaylistDetailScreen(
-                detailState = lbPlaylistDetailState,
-                matchedPlaylist = selectedLbPlaylist,
+                state = lbPlaylistDetail,
                 onBack = { viewModel.closePlaylistDetail() },
                 onPlay = {
                     val matched = selectedLbPlaylist ?: return@LbPlaylistDetailScreen
@@ -446,8 +444,7 @@ fun PlaylistsScreen(
             val currentItem by viewModel.currentItem.collectAsState()
             val activeDownloads by viewModel.activeDownloads.collectAsState()
             CfRecommendationsDetailScreen(
-                detailState = cfDetailState,
-                matched = cfRecommendations,
+                state = cfRecommendationsState,
                 onBack = { viewModel.closePlaylistDetail() },
                 onPlay = {
                     val matched = cfRecommendations ?: return@CfRecommendationsDetailScreen
@@ -654,8 +651,7 @@ private fun CfRecommendationsCardItem(
 
 @Composable
 private fun CfRecommendationsDetailScreen(
-    detailState: CfRecommendationsUiState,
-    matched: MatchedCfRecommendations?,
+    state: LoadableUiState<MatchedCfRecommendations?>,
     onBack: () -> Unit,
     onPlay: () -> Unit,
     onShuffle: () -> Unit,
@@ -667,12 +663,12 @@ private fun CfRecommendationsDetailScreen(
     onCancelDownload: (String) -> Unit,
     queueActions: SongQueueActions
 ) {
+    val matched = state.data
     MatchedPlaylistDetailScaffold(
         title = "Recomendados",
         onBack = onBack,
-        loading = detailState is CfRecommendationsUiState.Loading ||
-            detailState is CfRecommendationsUiState.Idle,
-        errorMessage = (detailState as? CfRecommendationsUiState.Error)?.message
+        loading = matched == null && (state.phase is LoadPhase.Loading || state.phase is LoadPhase.Idle),
+        errorMessage = state.errorMessage
     ) {
         if (matched == null || matched.matches.isEmpty()) {
             Box(
@@ -762,8 +758,7 @@ private fun LbPlaylistCardItem(
 
 @Composable
 private fun LbPlaylistDetailScreen(
-    detailState: LbPlaylistDetailUiState,
-    matchedPlaylist: MatchedLbPlaylist?,
+    state: LoadableUiState<MatchedLbPlaylist?>,
     onBack: () -> Unit,
     onPlay: () -> Unit,
     onShuffle: () -> Unit,
@@ -777,12 +772,12 @@ private fun LbPlaylistDetailScreen(
     onCancelDownload: (String) -> Unit,
     queueActions: SongQueueActions
 ) {
+    val matchedPlaylist = state.data
     MatchedPlaylistDetailScaffold(
         title = matchedPlaylist?.detail?.summary?.title ?: "Para Ti",
         onBack = onBack,
-        loading = detailState is LbPlaylistDetailUiState.Loading ||
-            detailState is LbPlaylistDetailUiState.Idle,
-        errorMessage = (detailState as? LbPlaylistDetailUiState.Error)?.message
+        loading = state.phase is LoadPhase.Loading || state.phase is LoadPhase.Idle,
+        errorMessage = state.errorMessage
     ) {
         val matched = matchedPlaylist
         if (matched == null) {

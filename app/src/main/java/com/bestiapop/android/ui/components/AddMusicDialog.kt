@@ -117,17 +117,19 @@ fun AddMusicDialog(
     var linkUrlInput by remember { mutableStateOf("") }
     var catalogSearchInput by remember { mutableStateOf("") }
 
-    val catalogResults by viewModel.catalogSearchResults.collectAsState()
-    val isSearchingCatalog by viewModel.isSearchingCatalog.collectAsState()
+    val catalogSearch by viewModel.catalogSearch.collectAsState()
+    val catalogCollection by viewModel.catalogCollection.collectAsState()
     val activeDownloads by viewModel.activeDownloads.collectAsState()
 
-    val catalogCategory by viewModel.catalogCategory.collectAsState()
-    val albumSearchResults by viewModel.albumSearchResults.collectAsState()
-    val playlistSearchResults by viewModel.playlistSearchResults.collectAsState()
-    val catalogGenres by viewModel.catalogGenres.collectAsState()
-    val selectedCollectionTitle by viewModel.selectedCollectionTitle.collectAsState()
-    val activeTrackCandidates by viewModel.activeTrackCandidates.collectAsState()
-    val isLoadingCollection by viewModel.isLoadingCollection.collectAsState()
+    val catalogResults = catalogSearch.tracks
+    val isSearchingCatalog = catalogSearch.isSearching
+    val catalogCategory = catalogSearch.category
+    val albumSearchResults = catalogSearch.albums
+    val playlistSearchResults = catalogSearch.playlists
+    val catalogGenres = catalogSearch.genres
+    val selectedCollectionTitle = catalogCollection.title
+    val activeTrackCandidates = catalogCollection.candidates
+    val isLoadingCollection = catalogCollection.isLoading
 
     val catalogPreviewKey by viewModel.catalogPreviewKey.collectAsState()
     val currentItem by viewModel.currentItem.collectAsState()

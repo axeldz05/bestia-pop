@@ -311,25 +311,25 @@ class PlaybackContinuityFunctionalTest {
 
     internal class FakeController : PlaybackControllerFacade {
         private var listener: PlaybackControllerFacade.Listener? = null
-        private val timeline = mutableListOf<PlayableItem>()
+        private val timeline = java.util.concurrent.CopyOnWriteArrayList<PlayableItem>()
         val releaseCount = AtomicInteger(0)
         var prepareCount = 0
             private set
         var replaceCount = 0
             private set
         val listenerAttached: Boolean get() = listener != null
-        var positionMs = 0L
-        var durationMs = 180_000L
-        var playing = false
-        var wantsPlay = false
-        var state = Player.STATE_IDLE
-        private var index = 0
-        private var valid = true
-        private var repeatModeValue = Player.REPEAT_MODE_OFF
-        private var shuffle = false
+        @Volatile var positionMs = 0L
+        @Volatile var durationMs = 180_000L
+        @Volatile var playing = false
+        @Volatile var wantsPlay = false
+        @Volatile var state = Player.STATE_IDLE
+        @Volatile private var index = 0
+        @Volatile private var valid = true
+        @Volatile private var repeatModeValue = Player.REPEAT_MODE_OFF
+        @Volatile private var shuffle = false
 
         override val mediaItemCount: Int get() = checked { timeline.size }
-        override val currentMediaItemIndex: Int get() = checked { index }
+        override val currentMediaItemIndex: Int get() = checked { index.coerceIn(0, (timeline.size - 1).coerceAtLeast(0)) }
         override val currentPosition: Long get() = checked { positionMs }
         override val duration: Long get() = checked { durationMs }
         override val isPlaying: Boolean get() = checked { playing }
@@ -348,6 +348,7 @@ class PlaybackContinuityFunctionalTest {
                 shuffle = value
             }
 
+        @Synchronized
         override fun addListener(listener: PlaybackControllerFacade.Listener) {
             checkValid()
             this.listener = listener
@@ -355,6 +356,7 @@ class PlaybackContinuityFunctionalTest {
 
         override fun items(): List<PlayableItem> = checked { timeline.toList() }
 
+        @Synchronized
         override fun setMediaItems(
             items: List<PlayableItem>,
             startIndex: Int,
@@ -363,49 +365,65 @@ class PlaybackContinuityFunctionalTest {
             checkValid()
             timeline.clear()
             timeline.addAll(items)
-            index = startIndex
+            index = if (timeline.isEmpty()) 0 else startIndex.coerceIn(0, timeline.lastIndex)
             positionMs = startPositionMs
             state = Player.STATE_IDLE
             updatePlaying(false)
             listener?.onTimelineChanged()
         }
 
+        @Synchronized
         override fun replaceMediaItem(index: Int, item: PlayableItem) {
             checkValid()
+            if (index !in timeline.indices) return
             replaceCount++
             timeline[index] = item
             listener?.onTimelineChanged()
         }
 
+        @Synchronized
         override fun addMediaItems(items: List<PlayableItem>) {
             checkValid()
             timeline.addAll(items)
             listener?.onTimelineChanged()
         }
 
+        @Synchronized
         override fun addMediaItems(index: Int, items: List<PlayableItem>) {
             checkValid()
-            timeline.addAll(index, items)
+            val safeIndex = index.coerceIn(0, timeline.size)
+            timeline.addAll(safeIndex, items)
             listener?.onTimelineChanged()
         }
 
+        @Synchronized
         override fun removeMediaItem(index: Int) {
             checkValid()
+            if (index !in timeline.indices) return
             timeline.removeAt(index)
-            this.index = this.index.coerceAtMost(timeline.lastIndex.coerceAtLeast(0))
+            this.index = this.index.coerceAtMost((timeline.size - 1).coerceAtLeast(0))
             listener?.onTimelineChanged()
         }
 
+        @Synchronized
         override fun removeMediaItems(fromIndex: Int, toIndex: Int) {
             checkValid()
-            repeat(toIndex - fromIndex) { timeline.removeAt(fromIndex) }
-            index = index.coerceAtMost(timeline.lastIndex.coerceAtLeast(0))
+            val safeFrom = fromIndex.coerceIn(0, timeline.size)
+            val safeTo = toIndex.coerceIn(safeFrom, timeline.size)
+            repeat(safeTo - safeFrom) {
+                if (safeFrom in timeline.indices) timeline.removeAt(safeFrom)
+            }
+            index = index.coerceAtMost((timeline.size - 1).coerceAtLeast(0))
             listener?.onTimelineChanged()
         }
 
+        @Synchronized
         override fun moveMediaItem(fromIndex: Int, toIndex: Int) {
             checkValid()
-            timeline.add(toIndex, timeline.removeAt(fromIndex))
+            if (fromIndex !in timeline.indices) return
+            val item = timeline.removeAt(fromIndex)
+            val safeTo = toIndex.coerceIn(0, timeline.size)
+            timeline.add(safeTo, item)
             listener?.onTimelineChanged()
         }
 

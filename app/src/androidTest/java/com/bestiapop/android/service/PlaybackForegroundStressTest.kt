@@ -51,7 +51,7 @@ class PlaybackForegroundStressTest {
     @Test
     fun stressTest_concurrencyBurst_randomOperationsMaintainStateConsistency() = runBlocking {
         val fixture = fixture()
-        val errorCount = AtomicInteger(0)
+        val errors = java.util.concurrent.CopyOnWriteArrayList<Throwable>()
         val numCoroutines = 10
         val opsPerCoroutine = 50
 
@@ -84,7 +84,7 @@ class PlaybackForegroundStressTest {
                             }
                             delay(5L) // Micro-delays para favorecer el entrelazado de hilos
                         } catch (e: Throwable) {
-                            errorCount.incrementAndGet()
+                            errors.add(e)
                         }
                     }
                 }
@@ -92,7 +92,11 @@ class PlaybackForegroundStressTest {
 
             jobs.awaitAll()
 
-            assertEquals("No deben ocurrir excepciones durante la ráfaga de concurrencia", 0, errorCount.get())
+            assertTrue(
+                "No deben ocurrir excepciones durante la ráfaga de concurrencia. Ocurrieron ${errors.size}:\n" +
+                    errors.joinToString("\n---\n") { it.stackTraceToString() },
+                errors.isEmpty()
+            )
 
             // Verificar la consistencia final del estado
             val runtimeQueue = fixture.runtime.queue.value

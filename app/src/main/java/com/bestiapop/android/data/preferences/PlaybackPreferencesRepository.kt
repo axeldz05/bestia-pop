@@ -161,6 +161,12 @@ class PlaybackPreferencesRepository internal constructor(
         val CLEAR_SHUFFLE_ON_SKIP = booleanPreferencesKey("clear_shuffle_on_skip")
         val CLEAR_REPEAT_ONE_ON_SKIP = booleanPreferencesKey("clear_repeat_one_on_skip")
         val STREAM_SKIP_GRACE_SECONDS = intPreferencesKey("stream_skip_grace_seconds")
+        val OEM_SCREEN_OFF_CLEANUP_HINT_DISMISSED =
+            booleanPreferencesKey("oem_screen_off_cleanup_hint_dismissed")
+    }
+
+    val oemScreenOffCleanupHintDismissed: Flow<Boolean> = dataStore.data.map { prefs ->
+        prefs[Keys.OEM_SCREEN_OFF_CLEANUP_HINT_DISMISSED] ?: false
     }
 
     val settingsFlow: Flow<PlaybackSettings> = dataStore.data.map { prefs ->
@@ -253,5 +259,9 @@ class PlaybackPreferencesRepository internal constructor(
             Keys.STREAM_SKIP_GRACE_SECONDS,
             clampStreamSkipGraceSeconds(seconds)
         )
+    }
+
+    suspend fun dismissOemScreenOffCleanupHint() {
+        dataStore.put(Keys.OEM_SCREEN_OFF_CLEANUP_HINT_DISMISSED, true)
     }
 }

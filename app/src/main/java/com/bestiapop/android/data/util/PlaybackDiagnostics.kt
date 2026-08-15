@@ -2,7 +2,6 @@ package com.bestiapop.android.data.util
 
 import android.app.ActivityManager
 import android.app.Application
-import android.app.ApplicationExitInfo
 import android.content.ComponentCallbacks2
 import android.content.Context
 import android.content.res.Configuration

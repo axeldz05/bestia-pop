@@ -563,6 +563,19 @@ class PlaybackRuntime internal constructor(
         updateTickerLifecycle()
     }
 
+    fun requestResumeAfterServiceRestart() {
+        playWhenReadyIntent = true
+        ensureControllerConnection()
+        scope.launch {
+            sessionRestoreMutex.withLock {
+                ensurePersistedSessionRestoredLocked()
+            }
+            if (_currentItem.value != null) {
+                requestPlaybackForCurrent()
+            }
+        }
+    }
+
     private fun handleControllerDisconnected(disconnected: PlaybackControllerFacade) {
         if (controller !== disconnected) return
         controller = null

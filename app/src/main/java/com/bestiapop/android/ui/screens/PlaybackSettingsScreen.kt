@@ -14,12 +14,14 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 import com.bestiapop.android.data.preferences.MAX_STREAM_SKIP_GRACE_SECONDS
+import com.bestiapop.android.data.system.BackgroundExecutionProbe
 import com.bestiapop.android.ui.MusicPlayerViewModel
 import com.bestiapop.android.ui.components.SettingsScrollColumn
 import com.bestiapop.android.ui.components.SettingsSwitchRow
@@ -39,6 +41,12 @@ fun PlaybackSettingsScreen(viewModel: MusicPlayerViewModel) {
     val backgroundExecutionStatus by viewModel.backgroundExecutionStatus.collectAsState()
 
     val context = LocalContext.current
+    val oemScreenOffCleanupIntent = remember(context) {
+        BackgroundExecutionProbe.oemScreenOffCleanupIntent(context)
+    }
+    val restrictionGuidance = remember {
+        BackgroundExecutionProbe.restrictionGuidance()
+    }
 
     SettingsScrollColumn(
         intro = "Elegí qué se restaura al abrir la app y si al reproducir o saltar se sale del aleatorio y la repetición. Los switches de recordar no cambian la sesión actual."
@@ -176,19 +184,19 @@ fun PlaybackSettingsScreen(viewModel: MusicPlayerViewModel) {
         )
         Spacer(modifier = Modifier.height(12.dp))
 
-        if (backgroundExecutionStatus.backgroundRestricted) {
+        if (backgroundExecutionStatus.blocksBackgroundPlayback) {
             Text(
                 text = "Actividad en segundo plano restringida",
                 style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
                 color = MaterialTheme.colorScheme.error
             )
             Text(
-                text = "El sistema puede ocultar la notificación, detener jobs y pausar descargas al bloquear el celular.",
+                text = restrictionGuidance.body,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            TextButton(onClick = { openAppDetailsSettings(context) }) {
-                Text("Abrir información de la app")
+            TextButton(onClick = { BackgroundExecutionProbe.openApplicationDetails(context) }) {
+                Text("Abrir ficha de la app")
             }
         } else {
             SettingsSwitchRow(
@@ -198,6 +206,23 @@ fun PlaybackSettingsScreen(viewModel: MusicPlayerViewModel) {
                 onCheckedChange = {},
                 enabled = false
             )
+        }
+
+        if (oemScreenOffCleanupIntent != null) {
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(
+                text = "Cerrar al apagar la pantalla",
+                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                text = "Este teléfono puede cortar la reproducción al bloquear o apagar la pantalla. Desactivá esa opción en Batería para BestiaPop.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            TextButton(onClick = { BackgroundExecutionProbe.openOemScreenOffCleanupSettings(context) }) {
+                Text("Abrir ajuste de batería")
+            }
         }
 
         Spacer(modifier = Modifier.height(20.dp))
@@ -218,14 +243,6 @@ fun PlaybackSettingsScreen(viewModel: MusicPlayerViewModel) {
             }
         }
     }
-}
-
-private fun openAppDetailsSettings(context: Context) {
-    context.startActivity(
-        Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-            data = "package:${context.packageName}".toUri()
-        }
-    )
 }
 
 // Explicit, user-triggered exception for uninterrupted media playback; never requested silently.

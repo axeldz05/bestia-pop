@@ -178,6 +178,9 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     val backgroundExecutionStatus: StateFlow<BackgroundExecutionStatus> =
         _backgroundExecutionStatus.asStateFlow()
 
+    val oemScreenOffCleanupHintDismissed: StateFlow<Boolean> =
+        playbackPreferences.oemScreenOffCleanupHintDismissed.stateInUi(viewModelScope, false)
+
     val libraryTagWriteSettings: StateFlow<LibraryTagWriteSettings> =
         libraryTagWritePreferences.settingsFlow
             .stateInUi(viewModelScope, LibraryTagWriteSettings())
@@ -415,6 +418,10 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     fun onUiDetached() {
         playbackRuntime.detachUi()
+    }
+
+    fun dismissOemScreenOffCleanupHint() {
+        persistPlayback { dismissOemScreenOffCleanupHint() }
     }
 
     fun onAppForeground() {

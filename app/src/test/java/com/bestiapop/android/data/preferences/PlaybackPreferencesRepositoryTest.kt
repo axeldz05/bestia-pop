@@ -72,4 +72,27 @@ class PlaybackPreferencesRepositoryTest {
             storage.close()
         }
     }
+
+    @Test
+    fun oemScreenOffCleanupHint_isIndependentOfPlaybackSettingsAndSurvivesRestart() = runTest {
+        val storage = TemporaryPreferencesDataStore(
+            ApplicationProvider.getApplicationContext(),
+            "playback-preferences-oem-hint"
+        )
+        try {
+            val repository = PlaybackPreferencesRepository(storage.dataStore)
+            assertEquals(false, repository.oemScreenOffCleanupHintDismissed.first())
+            repository.dismissOemScreenOffCleanupHint()
+            assertEquals(true, repository.oemScreenOffCleanupHintDismissed.first())
+            storage.restart()
+            assertEquals(
+                true,
+                PlaybackPreferencesRepository(storage.dataStore)
+                    .oemScreenOffCleanupHintDismissed
+                    .first()
+            )
+        } finally {
+            storage.close()
+        }
+    }
 }

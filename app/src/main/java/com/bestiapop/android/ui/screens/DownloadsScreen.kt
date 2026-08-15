@@ -56,7 +56,7 @@ fun DownloadsScreen(viewModel: MusicPlayerViewModel) {
             onClearAll = viewModel::dismissAllActiveDownloads
         )
 
-        if (backgroundExecutionStatus.backgroundRestricted) {
+        if (backgroundExecutionStatus.blocksBackgroundPlayback) {
             Spacer(modifier = Modifier.height(8.dp))
             Surface(
                 color = MaterialTheme.colorScheme.errorContainer,

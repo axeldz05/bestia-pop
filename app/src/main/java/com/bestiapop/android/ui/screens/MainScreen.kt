@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.LibraryMusic
@@ -30,6 +31,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -48,8 +50,10 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.bestiapop.android.data.preferences.activeDownloadBadgeCount
+import com.bestiapop.android.data.system.BackgroundExecutionProbe
 import com.bestiapop.android.ui.MusicPlayerViewModel
 import com.bestiapop.android.ui.components.BottomPlayerBar
 import com.bestiapop.android.ui.update.AppUpdateDialogs
@@ -89,6 +93,14 @@ fun MainScreen(
     val pendingAlbumMerge by viewModel.pendingAlbumMerge.collectAsState()
     val appUpdateState by appUpdateViewModel.state.collectAsState()
     val downloadBadgeCount = activeDownloadBadgeCount(activeDownloads)
+    val backgroundExecutionStatus by viewModel.backgroundExecutionStatus.collectAsState()
+    val oemScreenOffCleanupHintDismissed by viewModel.oemScreenOffCleanupHintDismissed.collectAsState()
+    val oemScreenOffCleanupIntent = remember(context) {
+        BackgroundExecutionProbe.oemScreenOffCleanupIntent(context)
+    }
+    val restrictionGuidance = remember {
+        BackgroundExecutionProbe.restrictionGuidance()
+    }
 
     val miniPlayerStatusLabel = when {
         resolvingRemote -> "Resolviendo stream…"
@@ -243,6 +255,30 @@ fun MainScreen(
                 .fillMaxWidth()
                 .onGloballyPositioned { bottomChromeHeightPx = it.size.height }
         ) {
+            if (backgroundExecutionStatus.blocksBackgroundPlayback) {
+                Surface(
+                    color = MaterialTheme.colorScheme.errorContainer,
+                    contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                ) {
+                    Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                        Text(
+                            text = restrictionGuidance.title,
+                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold)
+                        )
+                        Text(
+                            text = restrictionGuidance.body,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        TextButton(onClick = viewModel::openPlaybackSettings) {
+                            Text("Abrir ajustes")
+                        }
+                    }
+                }
+            }
             BottomPlayerBar(
                 currentItem = currentItem,
                 isPlaying = isPlaying,
@@ -357,6 +393,43 @@ fun MainScreen(
             onConfirmUpdate = { appUpdateViewModel.confirmUpdate() },
             onDismiss = { appUpdateViewModel.dismiss() }
         )
+
+        val blockingOverlay = identifyReview.isOpen ||
+            identifySetup != null ||
+            downloadConflict != null ||
+            pendingAlbumMerge != null ||
+            appUpdateState !is AppUpdateUiState.Idle
+        if (
+            oemScreenOffCleanupIntent != null &&
+            !oemScreenOffCleanupHintDismissed &&
+            !blockingOverlay
+        ) {
+            AlertDialog(
+                onDismissRequest = viewModel::dismissOemScreenOffCleanupHint,
+                title = { Text("Cerrar al apagar la pantalla") },
+                text = {
+                    Text(
+                        "Este teléfono puede cerrar apps al bloquear o apagar la pantalla y cortar " +
+                            "la reproducción. Desactivá esa opción en Batería para BestiaPop."
+                    )
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            viewModel.dismissOemScreenOffCleanupHint()
+                            BackgroundExecutionProbe.openOemScreenOffCleanupSettings(context)
+                        }
+                    ) {
+                        Text("Abrir ajuste")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = viewModel::dismissOemScreenOffCleanupHint) {
+                        Text("Ahora no")
+                    }
+                }
+            )
+        }
     }
 }
 

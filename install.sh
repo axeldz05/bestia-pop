@@ -121,14 +121,23 @@ if [ "$INSTALL_RC" -ne 0 ]; then
     fi
 fi
 
-echo -e "\n${GREEN}Lanzando la aplicación...${NC}"
-adb shell am start -n com.bestiapop.android/.MainActivity
-
 adb shell cmd appops reset "$PACKAGE" || true
-adb shell cmd activity set-bg-restriction-level --user 0 "$PACKAGE" adaptive_bucket || true
+adb shell cmd activity set-bg-restriction-level --user 0 "$PACKAGE" unrestricted || true
 adb shell cmd appops set "$PACKAGE" RUN_ANY_IN_BACKGROUND allow || true
 adb shell cmd appops set "$PACKAGE" RUN_IN_BACKGROUND allow || true
 APP_UID=$(adb shell pm list packages -U "$PACKAGE" 2>/dev/null | grep "$PACKAGE" | head -n 1 | sed -n 's/.*uid:\([0-9]*\).*/\1/p' | tr -d '\r\n')
+if [ -n "$APP_UID" ]; then
+    adb shell cmd appops set --uid "$APP_UID" RUN_ANY_IN_BACKGROUND allow || true
+    adb shell cmd appops set --uid "$APP_UID" RUN_IN_BACKGROUND allow || true
+fi
+adb shell cmd appops write-settings >/dev/null 2>&1 || true
+
+echo -e "\n${GREEN}Lanzando la aplicación...${NC}"
+adb shell am start -n com.bestiapop.android/.MainActivity
+# Motorola/Unisoc may flip the app to background_restricted on process start.
+adb shell cmd activity set-bg-restriction-level --user 0 "$PACKAGE" unrestricted || true
+adb shell cmd appops set "$PACKAGE" RUN_ANY_IN_BACKGROUND allow || true
+adb shell cmd appops set "$PACKAGE" RUN_IN_BACKGROUND allow || true
 if [ -n "$APP_UID" ]; then
     adb shell cmd appops set --uid "$APP_UID" RUN_ANY_IN_BACKGROUND allow || true
     adb shell cmd appops set --uid "$APP_UID" RUN_IN_BACKGROUND allow || true

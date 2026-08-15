@@ -1,4 +1,8 @@
 package com.bestiapop.android.service
+
+import android.annotation.SuppressLint
+import android.app.AppOpsManager
+import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -6,7 +10,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.media.audiofx.LoudnessEnhancer
-import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
@@ -27,7 +30,6 @@ import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.MediaSource
-import androidx.media3.exoplayer.source.SilenceMediaSource
 import androidx.media3.exoplayer.source.ShuffleOrder
 import androidx.media3.extractor.DefaultExtractorsFactory
 import androidx.media3.session.MediaLibraryService
@@ -66,6 +68,8 @@ class MusicService : MediaLibraryService() {
     private var appliedSettings = MusicServiceAppliedSettings(1f, 1f, 0)
     private var foregroundPromoteRetryScheduled = false
     private var foregroundPromoteRetryAttempts = 0
+    private var restrictionNoticePosted = false
+    private var appOpsWatcher: AppOpsManager.OnOpChangedListener? = null
     private var serviceWakeLock: PowerManager.WakeLock? = null
     private val stereoBalanceProcessor = StereoBalanceAudioProcessor()
     private val audioStore by lazy { MusicFileStore(this) }
@@ -81,6 +85,8 @@ class MusicService : MediaLibraryService() {
         super.onCreate()
         PlaybackDiagnostics.log(PlaybackDiagnostics.TAG_SERVICE, "MusicService.onCreate() starting")
         createPlaybackNotificationChannel()
+        watchBackgroundAppOps()
+        maybeNotifyBackgroundRestriction("onCreate")
         val notificationProvider = RefreshingMediaNotificationProvider(
             context = this,
             notificationId = PLAYBACK_NOTIFICATION_ID,
@@ -119,7 +125,7 @@ class MusicService : MediaLibraryService() {
             .setRenderersFactory(renderersFactory)
             .setAudioAttributes(audioAttributes, true)
             .setHandleAudioBecomingNoisy(true)
-            .setWakeMode(C.WAKE_MODE_LOCAL)
+            .setWakeMode(C.WAKE_MODE_NONE)
             .setMediaSourceFactory(UserAgentMediaSourceFactory(this))
             .build()
 
@@ -188,6 +194,7 @@ class MusicService : MediaLibraryService() {
                         positionMs = p.currentPosition
                     )
                     foregroundPromoteRetryAttempts = 0
+                    persistPlaybackEngaged(isPlaybackEngaged())
                     updateWakeMode()
                     if (!playWhenReady) {
                         releaseTransientWakeLock()
@@ -207,6 +214,7 @@ class MusicService : MediaLibraryService() {
                         foregroundPromoteRetryAttempts = 0
                         releaseTransientWakeLock()
                     }
+                    persistPlaybackEngaged(isPlaybackEngaged())
                     updateWakeMode()
                 }
 
@@ -325,6 +333,9 @@ class MusicService : MediaLibraryService() {
             "MusicService.onStartCommand(intentAction=${intent?.action}, flags=$flags, startId=$startId)"
         )
         super.onStartCommand(intent, flags, startId)
+        if (shouldResumeAfterStickyRestart(intent == null, wasPlaybackEngaged())) {
+            (application as BestiaPopApplication).playbackRuntime.requestResumeAfterServiceRestart()
+        }
         return START_STICKY
     }
 
@@ -354,6 +365,7 @@ class MusicService : MediaLibraryService() {
                 "calculatedForeground=$calculatedForeground, isPlaybackEngaged=$isEngaged, " +
                 "isPlaying=${p?.isPlaying}, playWhenReady=${p?.playWhenReady}, items=${p?.mediaItemCount}, state=${p?.playbackState}"
         )
+        maybeNotifyBackgroundRestriction("notification")
         return super.onUpdateNotificationAsync(session, calculatedForeground)
     }
 
@@ -386,6 +398,7 @@ class MusicService : MediaLibraryService() {
             PlaybackDiagnostics.TAG_SERVICE,
             "MusicService.onDestroy() invoked! Releasing player and session."
         )
+        stopWatchingBackgroundAppOps()
         releaseTransientWakeLock()
         clearListener()
         serviceScope.cancel()
@@ -410,11 +423,7 @@ class MusicService : MediaLibraryService() {
         } else {
             false
         }
-        // For local files, AudioTrack/audioserver in Android OS holds the native audio lock.
-        // Holding a continuous Java WakeLock triggers OEM battery killers (e.g. Motorola PowerController).
-        // Only set WAKE_MODE_NETWORK when streaming remote network audio.
-        val targetMode = if (currentIsRemote || nextIsRemote) C.WAKE_MODE_NETWORK else C.WAKE_MODE_NONE
-        p.setWakeMode(targetMode)
+        p.setWakeMode(playbackWakeMode(currentIsRemote = currentIsRemote, nextIsRemote = nextIsRemote))
     }
 
     private fun acquireTransientWakeLock(timeoutMs: Long = 30_000L) {
@@ -472,6 +481,19 @@ class MusicService : MediaLibraryService() {
                 }
                 notificationManager.createNotificationChannel(channel)
             }
+            if (notificationManager.getNotificationChannel(RESTRICTION_CHANNEL_ID) == null) {
+                notificationManager.createNotificationChannel(
+                    NotificationChannel(
+                        RESTRICTION_CHANNEL_ID,
+                        getString(R.string.playback_restricted_notification_channel),
+                        NotificationManager.IMPORTANCE_HIGH
+                    ).apply {
+                        description = getString(R.string.playback_restricted_notification_text)
+                        setShowBadge(true)
+                        lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
+                    }
+                )
+            }
         }
     }
 
@@ -502,10 +524,13 @@ class MusicService : MediaLibraryService() {
                 "playback_state" to (player?.playbackState?.toString() ?: "null")
             )
         )
+        if (BackgroundExecutionProbe.current(this).blocksBackgroundPlayback) {
+            maybeNotifyBackgroundRestriction("startForegroundDenied")
+            return
+        }
         if (foregroundPromoteRetryScheduled ||
             foregroundPromoteRetryAttempts >= FOREGROUND_RETRY_DELAYS_MS.size ||
-            !isPlaybackEngaged() ||
-            BackgroundExecutionProbe.current(this).backgroundRestricted
+            !isPlaybackEngaged()
         ) {
             return
         }
@@ -526,6 +551,83 @@ class MusicService : MediaLibraryService() {
         }
     }
 
+    @SuppressLint("ApplySharedPref")
+    private fun persistPlaybackEngaged(engaged: Boolean) {
+        getSharedPreferences(PLAYBACK_LIFETIME_PREFS, MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_PLAYBACK_ENGAGED, engaged)
+            .commit()
+    }
+
+    private fun wasPlaybackEngaged(): Boolean =
+        getSharedPreferences(PLAYBACK_LIFETIME_PREFS, MODE_PRIVATE)
+            .getBoolean(KEY_PLAYBACK_ENGAGED, false)
+
+    private fun watchBackgroundAppOps() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return
+        val appOps = getSystemService(AppOpsManager::class.java) ?: return
+        val watchedPackage = packageName
+        val watcher = AppOpsManager.OnOpChangedListener { _, changedPackage ->
+            if (changedPackage != null && changedPackage != watchedPackage) return@OnOpChangedListener
+            serviceScope.launch { maybeNotifyBackgroundRestriction("appops") }
+        }
+        appOpsWatcher = watcher
+        appOps.startWatchingMode(
+            com.bestiapop.android.data.system.OPSTR_RUN_ANY_IN_BACKGROUND,
+            packageName,
+            watcher
+        )
+    }
+
+    private fun stopWatchingBackgroundAppOps() {
+        val watcher = appOpsWatcher ?: return
+        getSystemService(AppOpsManager::class.java)?.stopWatchingMode(watcher)
+        appOpsWatcher = null
+    }
+
+    private fun maybeNotifyBackgroundRestriction(source: String) {
+        val status = BackgroundExecutionProbe.current(this)
+        if (!status.blocksBackgroundPlayback) {
+            if (restrictionNoticePosted) {
+                getSystemService(NotificationManager::class.java)
+                    ?.cancel(RESTRICTION_NOTIFICATION_ID)
+                restrictionNoticePosted = false
+            }
+            return
+        }
+        if (!isPlaybackEngaged() && !wasPlaybackEngaged()) return
+        if (restrictionNoticePosted) return
+        restrictionNoticePosted = true
+        PlaybackDiagnostics.warn(
+            PlaybackDiagnostics.TAG_SERVICE,
+            "MusicService: background execution blocked while engaged (source=$source)"
+        )
+        notifyBackgroundRestrictionBlockedForeground()
+    }
+
+    private fun notifyBackgroundRestrictionBlockedForeground() {
+        val notificationManager = getSystemService(NotificationManager::class.java) ?: return
+        val contentIntent = PendingIntent.getActivity(
+            this,
+            1,
+            BackgroundExecutionProbe.applicationDetailsIntent(this, newTask = true),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val notification = Notification.Builder(this, RESTRICTION_CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_stat_bestiapop)
+            .setContentTitle(getString(R.string.playback_restricted_notification_title))
+            .setContentText(getString(R.string.playback_restricted_notification_text))
+            .setStyle(
+                Notification.BigTextStyle()
+                    .bigText(getString(R.string.playback_restricted_notification_text))
+            )
+            .setContentIntent(contentIntent)
+            .setAutoCancel(false)
+            .setOngoing(true)
+            .build()
+        notificationManager.notify(RESTRICTION_NOTIFICATION_ID, notification)
+    }
+
     companion object {
         const val PLAYBACK_CHANNEL_ID = "playback_channel"
         const val PLAYBACK_NOTIFICATION_ID = 1001
@@ -534,7 +636,10 @@ class MusicService : MediaLibraryService() {
         /** Head start buffered for upcoming queue items (10s). */
         private const val PRELOAD_TARGET_DURATION_US = 10_000_000L
         private val FOREGROUND_RETRY_DELAYS_MS = longArrayOf(750L, 2_000L, 5_000L)
-        private const val MAX_PLAYBACK_WAKE_LOCK_MS = 24L * 60L * 60L * 1000L
+        private const val PLAYBACK_LIFETIME_PREFS = "playback_lifetime"
+        private const val KEY_PLAYBACK_ENGAGED = "engaged"
+        private const val RESTRICTION_NOTIFICATION_ID = 1002
+        const val RESTRICTION_CHANNEL_ID = "playback_restricted_channel"
 
         fun shuffleOrderFromPlayer(player: Player): IntArray? {
             if (!player.shuffleModeEnabled) return null
@@ -608,7 +713,7 @@ class MusicService : MediaLibraryService() {
  * Local file / content URIs still go through [DefaultDataSource].
  */
 @UnstableApi
-private class UserAgentMediaSourceFactory(
+internal class UserAgentMediaSourceFactory(
     private val context: Context
 ) : MediaSource.Factory {
 
@@ -626,10 +731,6 @@ private class UserAgentMediaSourceFactory(
         intArrayOf(C.CONTENT_TYPE_OTHER, C.CONTENT_TYPE_HLS, C.CONTENT_TYPE_DASH)
 
     override fun createMediaSource(mediaItem: MediaItem): MediaSource {
-        val uri = mediaItem.localConfiguration?.uri
-        if (uri == null || uri == Uri.EMPTY) {
-            return SilenceMediaSource.Factory().createMediaSource()
-        }
         val tag = mediaItem.streamPlaybackTag()
         val httpFactory = DefaultHttpDataSource.Factory()
             .setAllowCrossProtocolRedirects(true)
@@ -645,6 +746,18 @@ private class UserAgentMediaSourceFactory(
             .createMediaSource(mediaItem)
     }
 }
+
+internal fun shouldResumeAfterStickyRestart(
+    intentNull: Boolean,
+    wasEngaged: Boolean
+): Boolean = intentNull && wasEngaged
+
+/** Local files: AudioTrack holds the native lock; a Java WakeLock trips OEM killers. */
+@OptIn(UnstableApi::class)
+internal fun playbackWakeMode(
+    currentIsRemote: Boolean,
+    nextIsRemote: Boolean
+): Int = if (currentIsRemote || nextIsRemote) C.WAKE_MODE_NETWORK else C.WAKE_MODE_NONE
 
 internal fun playbackForegroundRequired(
     startInForegroundRequired: Boolean,

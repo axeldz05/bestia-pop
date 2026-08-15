@@ -1,4 +1,7 @@
 <resources>
     <string name="playback_notification_channel">Reproducción</string>
     <string name="playback_notification_channel_description">Controles de reproducción y estado en segundo plano</string>
+    <string name="playback_restricted_notification_title">Reproducción detenida</string>
+    <string name="playback_restricted_notification_channel">Restricción de segundo plano</string>
+    <string name="playback_restricted_notification_text">Android restringió el segundo plano y detuvo la reproducción. Tocá para abrir la ficha de BestiaPop y poné el uso de batería en Sin restricciones.</string>
 </resources>

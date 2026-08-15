@@ -26,6 +26,9 @@
             <action android:name="android.intent.action.VIEW" />
             <data android:mimeType="application/vnd.android.package-archive" />
         </intent>
+        <intent>
+            <action android:name="unisoc.intent.action.POWER_BACKGROUND_CLEAN" />
+        </intent>
     </queries>
 
     <application

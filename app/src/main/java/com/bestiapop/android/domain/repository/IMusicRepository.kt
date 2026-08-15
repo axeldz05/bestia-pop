@@ -84,6 +84,11 @@ interface IMusicRepository {
         trackNumber: Int = 0
     )
 
+    suspend fun updateSongLyrics(songId: Long, lyrics: String?)
+
+    /** Online lyrics lookup; does not persist. Null if none found. */
+    suspend fun fetchSongLyrics(song: Song): String?
+
     /** Persist album-level override only (does not rewrite songs). */
     suspend fun upsertAlbumOverride(override: AlbumOverride)
 

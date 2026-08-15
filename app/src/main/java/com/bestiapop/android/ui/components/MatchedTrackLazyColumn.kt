@@ -42,6 +42,7 @@ fun MatchedTrackLazyColumn(
     modifier: Modifier = Modifier,
     onAddToPlaylist: ((Song) -> Unit)? = null,
     onEditMetadata: ((Song) -> Unit)? = null,
+    onEditLyrics: ((Song) -> Unit)? = null,
     onIdentify: ((Song) -> Unit)? = null,
     onDelete: ((Song) -> Unit)? = null
 ) {
@@ -72,6 +73,7 @@ fun MatchedTrackLazyColumn(
                 queueActions = queueActions,
                 onAddToPlaylist = onAddToPlaylist,
                 onEditMetadata = onEditMetadata,
+                onEditLyrics = onEditLyrics,
                 onIdentify = onIdentify,
                 onDelete = onDelete
             )

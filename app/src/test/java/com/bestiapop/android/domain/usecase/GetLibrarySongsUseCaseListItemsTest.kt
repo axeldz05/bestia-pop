@@ -42,13 +42,14 @@ class GetLibrarySongsUseCaseListItemsTest {
 
         assertEquals(5, items.size)
         val header1 = items[0] as LibraryListItem.AlbumHeader
-        assertEquals("Opera", header1.albumName)
-        assertEquals(2, header1.songCount)
+        assertEquals("Hotel", header1.albumName)
+        assertEquals(1, header1.songCount)
         assertEquals(0, (items[1] as LibraryListItem.SongRow).index)
-        assertEquals(1, (items[2] as LibraryListItem.SongRow).index)
 
-        val header2 = items[3] as LibraryListItem.AlbumHeader
-        assertEquals("Hotel", header2.albumName)
+        val header2 = items[2] as LibraryListItem.AlbumHeader
+        assertEquals("Opera", header2.albumName)
+        assertEquals(2, header2.songCount)
+        assertEquals(1, (items[3] as LibraryListItem.SongRow).index)
         assertEquals(2, (items[4] as LibraryListItem.SongRow).index)
     }
 
@@ -64,8 +65,41 @@ class GetLibrarySongsUseCaseListItemsTest {
         val operaRows = items.filterIsInstance<LibraryListItem.SongRow>()
             .filter { it.song.album == "Opera" }
         assertEquals(listOf(3L, 1L, 2L), operaRows.map { it.song.id })
-        assertEquals(listOf(0, 1, 2), operaRows.map { it.index })
-        assertEquals(listOf(3L, 1L, 2L, 4L), useCase.songsFromListItems(items).map { it.id })
+        assertEquals(listOf(1, 2, 3), operaRows.map { it.index })
+        assertEquals(listOf(4L, 3L, 1L, 2L), useCase.songsFromListItems(items).map { it.id })
+    }
+
+    @Test
+    fun buildListItems_albumGroups_ordersBlocksLikeExtractAlbums() {
+        val mixed = listOf(
+            Song(id = 1, uriString = "u1", title = "Zed", artist = "B", album = "Zebra", dateAdded = 10),
+            Song(id = 2, uriString = "u2", title = "Amy", artist = "A", album = "Alpha", dateAdded = 30),
+            Song(id = 3, uriString = "u3", title = "Old", artist = "C", album = "Mid", dateAdded = 20)
+        )
+        val byName = useCase.buildListItems(
+            mixed, LibraryViewMode.ALBUM_GROUPS, sortOption = SortOption.TITLE
+        )
+        assertEquals(
+            listOf("Alpha", "Mid", "Zebra"),
+            byName.filterIsInstance<LibraryListItem.AlbumHeader>().map { it.albumName }
+        )
+        val byDateDesc = useCase.buildListItems(
+            mixed,
+            LibraryViewMode.ALBUM_GROUPS,
+            sortOption = SortOption.DATE_ADDED,
+            sortDirection = SortDirection.DESC
+        )
+        assertEquals(
+            listOf("Alpha", "Mid", "Zebra"),
+            byDateDesc.filterIsInstance<LibraryListItem.AlbumHeader>().map { it.albumName }
+        )
+        val byArtist = useCase.buildListItems(
+            mixed, LibraryViewMode.ALBUM_GROUPS, sortOption = SortOption.ARTIST
+        )
+        assertEquals(
+            listOf("Alpha", "Zebra", "Mid"),
+            byArtist.filterIsInstance<LibraryListItem.AlbumHeader>().map { it.albumName }
+        )
     }
 
     @Test
@@ -238,10 +272,10 @@ class GetLibrarySongsUseCaseListItemsTest {
 
         assertEquals(3, filtered.size)
         assertTrue(filtered[0] is LibraryListItem.AlbumHeader)
-        assertEquals("Opera", (filtered[0] as LibraryListItem.AlbumHeader).albumName)
-        assertTrue(filtered[1] is LibraryListItem.AlbumHeader)
-        assertEquals("Hotel", (filtered[1] as LibraryListItem.AlbumHeader).albumName)
-        assertTrue(filtered[2] is LibraryListItem.SongRow)
+        assertEquals("Hotel", (filtered[0] as LibraryListItem.AlbumHeader).albumName)
+        assertTrue(filtered[1] is LibraryListItem.SongRow)
+        assertTrue(filtered[2] is LibraryListItem.AlbumHeader)
+        assertEquals("Opera", (filtered[2] as LibraryListItem.AlbumHeader).albumName)
     }
 
     @Test

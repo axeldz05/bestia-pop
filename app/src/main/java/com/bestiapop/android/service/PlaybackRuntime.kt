@@ -1277,7 +1277,6 @@ class PlaybackRuntime internal constructor(
 
     fun togglePlayPause() {
         val player = controller
-        val current = _currentItem.value
         if (playWhenReadyIntent || pendingPlayIntentEpoch != null) {
             playWhenReadyIntent = false
             cancelPendingPlayIntent()
@@ -1290,9 +1289,19 @@ class PlaybackRuntime internal constructor(
             player?.pause()
             return
         }
-        current ?: return
+        ensurePlaying()
+    }
+
+    fun seekToAndPlay(positionMs: Long) {
+        seekTo(positionMs)
+        ensurePlaying()
+    }
+
+    private fun ensurePlaying() {
+        _currentItem.value ?: return
+        if (playWhenReadyIntent || pendingPlayIntentEpoch != null) return
         playWhenReadyIntent = true
-        if (player == null) {
+        if (controller == null) {
             beginPendingPlayIntent()
             ensureControllerConnection()
             return

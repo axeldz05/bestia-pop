@@ -103,6 +103,7 @@ import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.data.model.Playlist
 import com.bestiapop.android.data.model.RepeatMode
 import com.bestiapop.android.data.model.Song
+import com.bestiapop.android.data.util.SyncedLyrics
 import com.bestiapop.android.data.preferences.NAV_LIBRARY
 import com.bestiapop.android.data.preferences.NAV_PLAYLISTS
 import com.bestiapop.android.ui.MusicPlayerViewModel
@@ -112,6 +113,7 @@ import com.bestiapop.android.ui.components.QueueLazyList
 import com.bestiapop.android.ui.components.RadioModeControl
 import com.bestiapop.android.ui.components.findUiDownloadByTrack
 import com.bestiapop.android.ui.components.focusedQueueIndex
+import com.bestiapop.android.ui.components.PlaybackScrubber
 import com.bestiapop.android.ui.components.playPauseVector
 import com.bestiapop.android.ui.components.formatDuration
 import com.bestiapop.android.ui.screens.library.AlbumEditDialogsHost
@@ -125,28 +127,6 @@ import kotlin.math.roundToInt
 private class ScrollZoneCoords {
     var surface: LayoutCoordinates? = null
     var inner: LayoutCoordinates? = null
-}
-
-private data class LrcLine(val timeMs: Long, val text: String)
-
-private fun parseLrcLyrics(rawLyrics: String): List<LrcLine> {
-    val lines = mutableListOf<LrcLine>()
-    val regex = Regex("\\[(\\d{2}):(\\d{2})\\.(\\d{2,3})\\](.*)")
-
-    rawLyrics.lines().forEach { lineStr ->
-        val match = regex.find(lineStr.trim())
-        if (match != null) {
-            val min = match.groupValues[1].toLongOrNull() ?: 0L
-            val sec = match.groupValues[2].toLongOrNull() ?: 0L
-            val msPart = match.groupValues[3].toLongOrNull() ?: 0L
-            val text = match.groupValues[4].trim()
-            val totalMs = (min * 60 + sec) * 1000 + if (msPart < 100) msPart * 10 else msPart
-            if (text.isNotEmpty()) {
-                lines.add(LrcLine(totalMs, text))
-            }
-        }
-    }
-    return lines.sortedBy { it.timeMs }
 }
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -470,6 +450,7 @@ fun NowPlayingScreen(
                         localSong = localSong,
                         positionMsFlow = viewModel.playbackPositionMs,
                         onRetryFetchLyrics = viewModel::retryFetchLyrics,
+                        onSeekToLyric = viewModel::seekToAndPlay,
                         onPanelPositioned = remember(scrollZoneCoords) {
                             { coords: LayoutCoordinates -> scrollZoneCoords.inner = coords }
                         }
@@ -577,6 +558,7 @@ fun NowPlayingScreen(
                         onAddToPlaylist = { localSong?.let(songDialogs.onAddToPlaylist) },
                         onIdentify = { localSong?.let { viewModel.identifySongForReview(it) } },
                         onEditSong = { localSong?.let(songDialogs.onEdit) },
+                        onEditLyrics = { localSong?.let(songDialogs.onEditLyrics) },
                         onEditAlbum = { albumForEdit = matchedAlbum },
                         onStartRadio = { viewModel.startRadio() }
                     )
@@ -599,7 +581,7 @@ fun NowPlayingScreen(
             Spacer(modifier = Modifier.height(20.dp))
 
             // Interactive Time Scrubber Slider Bar
-            NowPlayingScrubber(
+            PlaybackScrubber(
                 durationMs = item.durationMs,
                 positionMsFlow = viewModel.playbackPositionMs,
                 onSeek = { viewModel.seekTo(it) }
@@ -776,63 +758,11 @@ private fun NowPlayingRemoteDownloadAction(
 }
 
 @Composable
-private fun NowPlayingScrubber(
-    durationMs: Long,
-    positionMsFlow: StateFlow<Long>,
-    onSeek: (Long) -> Unit
-) {
-    val positionMs by positionMsFlow.collectAsState()
-    var isDragging by remember { mutableStateOf(false) }
-    var dragPosition by remember { mutableFloatStateOf(0f) }
-    val maxDuration = durationMs.toFloat().coerceAtLeast(1f)
-    val displayPosition = if (isDragging) dragPosition.toLong() else positionMs
-    val sliderValue = if (isDragging) dragPosition else positionMs.toFloat().coerceIn(0f, maxDuration)
-
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Slider(
-            value = sliderValue,
-            onValueChange = { newValue ->
-                isDragging = true
-                dragPosition = newValue
-            },
-            onValueChangeFinished = {
-                isDragging = false
-                onSeek(dragPosition.toLong())
-            },
-            valueRange = 0f..maxDuration,
-            colors = SliderDefaults.colors(
-                thumbColor = MaterialTheme.colorScheme.primary,
-                activeTrackColor = MaterialTheme.colorScheme.primary,
-                inactiveTrackColor = MaterialTheme.colorScheme.surfaceVariant
-            ),
-            modifier = Modifier.fillMaxWidth()
-        )
-
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 4.dp),
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Text(
-                text = formatDuration(displayPosition),
-                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                color = MaterialTheme.colorScheme.primary
-            )
-            Text(
-                text = formatDuration(durationMs),
-                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
-            )
-        }
-    }
-}
-
-@Composable
 private fun NowPlayingLyricsPanel(
     localSong: Song?,
     positionMsFlow: StateFlow<Long>,
     onRetryFetchLyrics: (Song) -> Unit,
+    onSeekToLyric: (Long) -> Unit,
     onPanelPositioned: (LayoutCoordinates) -> Unit
 ) {
     val positionMs by positionMsFlow.collectAsState()
@@ -849,15 +779,12 @@ private fun NowPlayingLyricsPanel(
     ) {
         val rawLyrics = localSong?.lyrics
         if (!rawLyrics.isNullOrEmpty()) {
-            val parsedLrc = remember(rawLyrics) { parseLrcLyrics(rawLyrics) }
+            val parsedLrc = remember(rawLyrics) { SyncedLyrics.parse(rawLyrics) }
+            val timed = SyncedLyrics.hasTimestamps(parsedLrc)
 
-            if (parsedLrc.isNotEmpty()) {
+            if (timed) {
                 val currentLineIndex = remember(parsedLrc, positionMs) {
-                    var idx = -1
-                    for (i in parsedLrc.indices) {
-                        if (positionMs >= parsedLrc[i].timeMs) idx = i else break
-                    }
-                    idx
+                    SyncedLyrics.currentLineIndex(parsedLrc, positionMs)
                 }
                 Column(
                     modifier = Modifier
@@ -866,7 +793,9 @@ private fun NowPlayingLyricsPanel(
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     parsedLrc.forEachIndexed { index, line ->
+                        if (line.text.isEmpty()) return@forEachIndexed
                         val isCurrentLine = index == currentLineIndex
+                        val timeMs = line.timeMs
                         Text(
                             text = line.text,
                             style = MaterialTheme.typography.bodyMedium.copy(
@@ -879,7 +808,13 @@ private fun NowPlayingLyricsPanel(
                                 MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                             },
                             textAlign = TextAlign.Center,
-                            modifier = Modifier.padding(vertical = 4.dp)
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable(
+                                    enabled = timeMs != null,
+                                    onClick = { timeMs?.let(onSeekToLyric) }
+                                )
+                                .padding(vertical = 4.dp)
                         )
                     }
                 }

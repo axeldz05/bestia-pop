@@ -79,7 +79,15 @@ class LibraryProjectionState internal constructor(
 
     fun buildListItems(
         songs: List<Song>,
-        viewMode: LibraryViewMode
+        viewMode: LibraryViewMode,
+        sortOption: SortOption = SortOption.TITLE,
+        sortDirection: SortDirection = SortDirection.ASC
     ): List<LibraryListItem> =
-        useCase.buildListItems(songs, viewMode, overridesByAlbum.value)
+        useCase.buildListItems(
+            songs,
+            viewMode,
+            overridesByAlbum.value,
+            sortOption,
+            sortDirection
+        )
 }

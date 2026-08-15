@@ -26,6 +26,7 @@ fun NowPlayingActionsMenu(
     onAddToPlaylist: () -> Unit,
     onIdentify: () -> Unit,
     onEditSong: () -> Unit,
+    onEditLyrics: () -> Unit,
     onEditAlbum: () -> Unit,
     onStartRadio: () -> Unit
 ) {
@@ -87,7 +88,8 @@ fun NowPlayingActionsMenu(
                 onDismiss = onDismiss,
                 onAddToPlaylist = onAddToPlaylist,
                 onIdentify = onIdentify,
-                onEditMetadata = onEditSong
+                onEditMetadata = onEditSong,
+                onEditLyrics = onEditLyrics
             )
             if (canEditAlbum) {
                 DropdownMenuItem(

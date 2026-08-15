@@ -69,6 +69,8 @@ open class FakeMusicRepository : IMusicRepository {
         year: Int,
         trackNumber: Int
     ) = Unit
+    override suspend fun updateSongLyrics(songId: Long, lyrics: String?) = Unit
+    override suspend fun fetchSongLyrics(song: Song): String? = null
     override suspend fun upsertAlbumOverride(override: AlbumOverride) = Unit
     override suspend fun updateAlbumMetadataPropagateToSongs(override: AlbumOverride) = Unit
     override suspend fun setAlbumArtwork(albumKey: String, artworkUri: String?) = Unit

@@ -75,6 +75,7 @@ fun MatchedTrackRow(
     leadingIcon: ImageVector = Icons.Default.PlayArrow,
     onAddToPlaylist: ((Song) -> Unit)? = null,
     onEditMetadata: ((Song) -> Unit)? = null,
+    onEditLyrics: ((Song) -> Unit)? = null,
     onIdentify: ((Song) -> Unit)? = null,
     onDelete: ((Song) -> Unit)? = null
 ) {
@@ -89,6 +90,7 @@ fun MatchedTrackRow(
             onStartRadio = { queueActions.onStartRadio(local) },
             onAddToPlaylist = onAddToPlaylist?.let { cb -> { cb(local) } },
             onEditMetadata = onEditMetadata?.let { cb -> { cb(local) } },
+            onEditLyrics = onEditLyrics?.let { cb -> { cb(local) } },
             onIdentify = onIdentify?.let { cb -> { cb(local) } },
             onDelete = onDelete?.let { cb -> { cb(local) } }
         )
@@ -127,6 +129,7 @@ fun MatchedTrackRow(
     leadingIcon: ImageVector = Icons.Default.PlayArrow,
     onAddToPlaylist: ((Song) -> Unit)? = null,
     onEditMetadata: ((Song) -> Unit)? = null,
+    onEditLyrics: ((Song) -> Unit)? = null,
     onIdentify: ((Song) -> Unit)? = null,
     onDelete: ((Song) -> Unit)? = null
 ) = MatchedTrackRow(
@@ -143,6 +146,7 @@ fun MatchedTrackRow(
     leadingIcon = leadingIcon,
     onAddToPlaylist = onAddToPlaylist,
     onEditMetadata = onEditMetadata,
+    onEditLyrics = onEditLyrics,
     onIdentify = onIdentify,
     onDelete = onDelete
 )

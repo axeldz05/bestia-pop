@@ -29,6 +29,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -57,6 +58,7 @@ fun SongListItem(
     onStartRadio: (() -> Unit)? = null,
     onAddToPlaylist: (() -> Unit)? = null,
     onEditMetadata: (() -> Unit)? = null,
+    onEditLyrics: (() -> Unit)? = null,
     onIdentify: (() -> Unit)? = null,
     onDelete: (() -> Unit)? = null
 ) {
@@ -153,6 +155,7 @@ fun SongListItem(
                         onStartRadio = onStartRadio,
                         onAddToPlaylist = onAddToPlaylist,
                         onEditMetadata = onEditMetadata,
+                        onEditLyrics = onEditLyrics,
                         onIdentify = onIdentify,
                         onDelete = onDelete
                     )
@@ -168,44 +171,31 @@ fun SongOverflowMenuItems(
     onAddToPlaylist: (() -> Unit)? = null,
     onIdentify: (() -> Unit)? = null,
     onEditMetadata: (() -> Unit)? = null,
+    onEditLyrics: (() -> Unit)? = null,
     onDelete: (() -> Unit)? = null
 ) {
-    if (onAddToPlaylist != null) {
-        DropdownMenuItem(
-            text = { Text("Añadir a playlist") },
-            onClick = {
-                onDismiss()
-                onAddToPlaylist()
-            }
-        )
-    }
-    if (onIdentify != null) {
-        DropdownMenuItem(
-            text = { Text("Identificar…") },
-            onClick = {
-                onDismiss()
-                onIdentify()
-            }
-        )
-    }
-    if (onEditMetadata != null) {
-        DropdownMenuItem(
-            text = { Text("Editar información") },
-            onClick = {
-                onDismiss()
-                onEditMetadata()
-            }
-        )
-    }
-    if (onDelete != null) {
-        DropdownMenuItem(
-            text = { Text("Eliminar", color = MaterialTheme.colorScheme.error) },
-            onClick = {
-                onDismiss()
-                onDelete()
-            }
-        )
-    }
+    optionalOverflowItem("Añadir a playlist", onAddToPlaylist, onDismiss)
+    optionalOverflowItem("Identificar…", onIdentify, onDismiss)
+    optionalOverflowItem("Editar información", onEditMetadata, onDismiss)
+    optionalOverflowItem("Editar letra", onEditLyrics, onDismiss)
+    optionalOverflowItem("Eliminar", onDelete, onDismiss, MaterialTheme.colorScheme.error)
+}
+
+@Composable
+private fun optionalOverflowItem(
+    label: String,
+    onClick: (() -> Unit)?,
+    onDismiss: () -> Unit,
+    textColor: Color = Color.Unspecified
+) {
+    if (onClick == null) return
+    DropdownMenuItem(
+        text = { Text(label, color = textColor) },
+        onClick = {
+            onDismiss()
+            onClick()
+        }
+    )
 }
 
 @Composable
@@ -216,6 +206,7 @@ private fun SongOptionsMenu(
     onStartRadio: (() -> Unit)?,
     onAddToPlaylist: (() -> Unit)?,
     onEditMetadata: (() -> Unit)?,
+    onEditLyrics: (() -> Unit)?,
     onIdentify: (() -> Unit)?,
     onDelete: (() -> Unit)?
 ) {
@@ -251,6 +242,7 @@ private fun SongOptionsMenu(
             onAddToPlaylist = onAddToPlaylist,
             onIdentify = onIdentify,
             onEditMetadata = onEditMetadata,
+            onEditLyrics = onEditLyrics,
             onDelete = onDelete
         )
     }

@@ -45,6 +45,7 @@ import com.bestiapop.android.ui.components.ArtworkThumbnail
 import com.bestiapop.android.ui.components.EmptyListHint
 import com.bestiapop.android.ui.components.PlayShuffleIconPair
 import com.bestiapop.android.ui.components.SongListItem
+import com.bestiapop.android.ui.components.formatSortRelevantInfo
 import com.bestiapop.android.ui.components.sortEmphasisFor
 import com.bestiapop.android.ui.components.sortEmphasisForLastPlayed
 import com.bestiapop.android.ui.state.LibraryListItem
@@ -69,6 +70,7 @@ fun LibrarySongList(
     onStartRadio: (Song) -> Unit = {},
     onAddToPlaylist: (Song) -> Unit,
     onEditMetadata: (Song) -> Unit,
+    onEditLyrics: (Song) -> Unit = {},
     onIdentify: (Song) -> Unit = {},
     onDeleteSong: (Song) -> Unit,
     onPlayAlbum: (String, List<Song>) -> Unit,
@@ -103,6 +105,7 @@ fun LibrarySongList(
     val onStartRadioState = rememberUpdatedState(onStartRadio)
     val onAddToPlaylistState = rememberUpdatedState(onAddToPlaylist)
     val onEditMetadataState = rememberUpdatedState(onEditMetadata)
+    val onEditLyricsState = rememberUpdatedState(onEditLyrics)
     val onIdentifyState = rememberUpdatedState(onIdentify)
     val onDeleteSongState = rememberUpdatedState(onDeleteSong)
     val onPlayAlbumState = rememberUpdatedState(onPlayAlbum)
@@ -164,6 +167,15 @@ fun LibrarySongList(
                         artistName = item.artistName,
                         artworkUri = item.artworkUri,
                         songCount = item.songCount,
+                        sortHint = remember(item.albumSongs, sortOption) {
+                            formatSortRelevantInfo(
+                                sortOption = sortOption,
+                                genre = item.albumSongs.map { it.genre }.firstOrNull { genre ->
+                                    genre.isNotBlank() && !genre.equals(Song.UNKNOWN_GENRE, ignoreCase = true)
+                                },
+                                dateAdded = item.albumSongs.maxOfOrNull { it.dateAdded }
+                            )
+                        },
                         isCollapsed = collapsedAlbumNames.contains(item.albumName),
                         isSelectionMode = isSelectionMode,
                         selectionState = selectionState,
@@ -196,6 +208,7 @@ fun LibrarySongList(
                         onStartRadioState = onStartRadioState,
                         onAddToPlaylistState = onAddToPlaylistState,
                         onEditMetadataState = onEditMetadataState,
+                        onEditLyricsState = onEditLyricsState,
                         onIdentifyState = onIdentifyState,
                         onDeleteSongState = onDeleteSongState
                     )
@@ -251,6 +264,7 @@ private fun LibrarySongRow(
     onStartRadioState: State<(Song) -> Unit>,
     onAddToPlaylistState: State<(Song) -> Unit>,
     onEditMetadataState: State<(Song) -> Unit>,
+    onEditLyricsState: State<(Song) -> Unit>,
     onIdentifyState: State<(Song) -> Unit>,
     onDeleteSongState: State<(Song) -> Unit>
 ) {
@@ -278,6 +292,9 @@ private fun LibrarySongRow(
     }
     val onEditMetadata = remember(song.id) {
         { onEditMetadataState.value(songState.value) }
+    }
+    val onEditLyrics = remember(song.id) {
+        { onEditLyricsState.value(songState.value) }
     }
     val onIdentify = remember(song.id) {
         { onIdentifyState.value(songState.value) }
@@ -307,6 +324,7 @@ private fun LibrarySongRow(
         onStartRadio = onStartRadio,
         onAddToPlaylist = onAddToPlaylist,
         onEditMetadata = onEditMetadata,
+        onEditLyrics = onEditLyrics,
         onIdentify = onIdentify,
         onDelete = onDelete
     )

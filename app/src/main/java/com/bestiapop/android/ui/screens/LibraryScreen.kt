@@ -48,6 +48,7 @@ import com.bestiapop.android.data.model.Album
 import com.bestiapop.android.data.model.Playlist
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.ui.MusicPlayerViewModel
+import com.bestiapop.android.ui.SortDirection
 import com.bestiapop.android.ui.SortOption
 import com.bestiapop.android.ui.components.PlayShuffleIconPair
 import com.bestiapop.android.ui.components.MultiSelectActionBar
@@ -124,8 +125,8 @@ fun LibraryScreen(
         LibraryViewMode.FLAT
     }
     // `albums` is keyed in because headers now read album overrides: a rename has to refresh them.
-    val songListItems = remember(songs, songsViewMode, albums) {
-        viewModel.buildLibraryListItems(songs, songsViewMode)
+    val songListItems = remember(songs, songsViewMode, albums, sortOption, sortDirection) {
+        viewModel.buildLibraryListItems(songs, songsViewMode, sortOption, sortDirection)
     }
     val recentSongs = remember(songs) {
         songs.filter { it.lastPlayedAt > 0 }.sortedByDescending { it.lastPlayedAt }
@@ -149,8 +150,8 @@ fun LibraryScreen(
             )
         }
     }
-    val orderSummary = remember(activeFilter, sortOption, sortDirection) {
-        libraryOrderSummary(activeFilter, sortOption, sortDirection)
+    val orderSummary = remember(activeFilter, sortOption, sortDirection, showAlbumHeaders) {
+        libraryOrderSummary(activeFilter, sortOption, sortDirection, showAlbumHeaders)
     }
 
     var collapsedAlbumNames by remember { mutableStateOf(setOf<String>()) }
@@ -331,6 +332,7 @@ fun LibraryScreen(
     val onStartRadio = songActions.onStartRadio
     val onAddToPlaylist = songDialogs.onAddToPlaylist
     val onEditMetadata = songDialogs.onEdit
+    val onEditLyrics = songDialogs.onEditLyrics
     val onIdentify = remember<(Song) -> Unit> { { viewModel.identifySongForReview(it) } }
     val onDeleteSong = songDialogs.onDelete
     val onPlayAlbum = remember<(String, List<Song>) -> Unit> {
@@ -340,7 +342,7 @@ fun LibraryScreen(
         { _, albumSongs -> viewModel.shuffleCollection(albumSongs) }
     }
     val songListActions = remember(
-        onPlayNext, onAddToQueue, onStartRadio, onAddToPlaylist, onEditMetadata, onIdentify, onDeleteSong,
+        onPlayNext, onAddToQueue, onStartRadio, onAddToPlaylist, onEditMetadata, onEditLyrics, onIdentify, onDeleteSong,
         onPlayAlbum, onShuffleAlbum, toggleSelectSong, toggleSelectAlbum, onAlbumLongClick,
         toggleCollapseAlbum, onEditAlbumByKey, onChangeAlbumCoverByKey, onIdentifyAlbumByKey, selectedArtistName, selectedGenreName
     ) {
@@ -350,6 +352,7 @@ fun LibraryScreen(
             onStartRadio = onStartRadio,
             onAddToPlaylist = onAddToPlaylist,
             onEditMetadata = onEditMetadata,
+            onEditLyrics = onEditLyrics,
             onIdentify = onIdentify,
             onDeleteSong = onDeleteSong,
             onPlayAlbum = onPlayAlbum,
@@ -378,6 +381,7 @@ fun LibraryScreen(
             sortOption = sortOption,
             sortDirection = sortDirection,
             sortEnabled = sortEnabledInSheet,
+            albumHeadersActive = showAlbumHeaders,
             onBrowseFilterChange = { filter ->
                 if (!isPlaylistAdditionMode) viewModel.setLibraryBrowseFilter(filter)
             },
@@ -603,6 +607,7 @@ fun LibraryScreen(
                         selectedSongIds = selectedSongIds,
                         collapsedAlbumNames = collapsedAlbumNames,
                         sortOption = sortOption,
+                        sortDirection = sortDirection,
                         actions = songListActions,
                         onToggleSelect = toggleSelectSong
                     )
@@ -621,6 +626,7 @@ fun LibraryScreen(
                         selectedSongIds = selectedSongIds,
                         collapsedAlbumNames = collapsedAlbumNames,
                         sortOption = sortOption,
+                        sortDirection = sortDirection,
                         actions = songListActions,
                         onToggleSelect = toggleSelectSong
                     )
@@ -640,6 +646,7 @@ fun LibraryScreen(
                         selectedSongIds = selectedSongIds,
                         collapsedAlbumNames = collapsedAlbumNames,
                         sortOption = sortOption,
+                        sortDirection = sortDirection,
                         actions = songListActions,
                         onToggleSelect = toggleSelectSong
                     )
@@ -817,13 +824,14 @@ private fun NestedLibraryBrowse(
     selectedSongIds: Set<Long>,
     collapsedAlbumNames: Set<String>,
     sortOption: SortOption,
+    sortDirection: SortDirection,
     actions: LibrarySongListActions,
     onToggleSelect: (Song) -> Unit
 ) {
     // Keyed on albums so an album rename refreshes the group headers, which read the override name.
     val albums by viewModel.libraryProjection.albums.collectAsState()
-    val listItems = remember(browseSongs, viewMode, albums) {
-        viewModel.buildLibraryListItems(browseSongs, viewMode)
+    val listItems = remember(browseSongs, viewMode, albums, sortOption, sortDirection) {
+        viewModel.buildLibraryListItems(browseSongs, viewMode, sortOption, sortDirection)
     }
     val playQueue = remember(listItems, viewMode, browseSongs) {
         if (viewMode == LibraryViewMode.ALBUM_GROUPS) {

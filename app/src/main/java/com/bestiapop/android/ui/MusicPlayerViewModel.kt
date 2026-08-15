@@ -293,9 +293,11 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     fun buildLibraryListItems(
         songs: List<Song>,
-        viewMode: LibraryViewMode
+        viewMode: LibraryViewMode,
+        sortOption: SortOption = this.sortOption.value,
+        sortDirection: SortDirection = this.sortDirection.value
     ): List<LibraryListItem> =
-        libraryProjection.buildListItems(songs, viewMode)
+        libraryProjection.buildListItems(songs, viewMode, sortOption, sortDirection)
 
     fun sortSongsWithinAlbum(songs: List<Song>): List<Song> =
         getLibrarySongsUseCase.sortSongsWithinAlbum(songs)
@@ -325,7 +327,9 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         viewMode = viewMode,
         albums = albums,
         artists = artists,
-        genres = genres
+        genres = genres,
+        sortOption = sortOption.value,
+        sortDirection = sortDirection.value
     )
 
     // Process-owned playback state. ViewModel only exposes/observes it.
@@ -1067,6 +1071,10 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         playbackRuntime.seekTo(positionMs)
     }
 
+    fun seekToAndPlay(positionMs: Long) {
+        playbackRuntime.seekToAndPlay(positionMs)
+    }
+
     fun toggleRepeatMode() {
         playbackRuntime.toggleRepeatMode()
     }
@@ -1334,6 +1342,18 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     ) {
         viewModelScope.launch {
             repository.updateSongMetadata(songId, title, artist, album, genre, year, trackNumber)
+        }
+    }
+
+    fun updateSongLyrics(songId: Long, lyrics: String?) {
+        viewModelScope.launch {
+            repository.updateSongLyrics(songId, lyrics)
+        }
+    }
+
+    fun fetchSongLyrics(song: Song, onResult: (String?) -> Unit) {
+        viewModelScope.launch {
+            onResult(repository.fetchSongLyrics(song))
         }
     }
 

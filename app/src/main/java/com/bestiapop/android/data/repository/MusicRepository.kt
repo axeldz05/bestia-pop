@@ -1216,6 +1216,16 @@ class MusicRepository private constructor(
         if (updated != null) maybeWriteTags(updated)
     }
 
+    override suspend fun updateSongLyrics(songId: Long, lyrics: String?) =
+        withContext(Dispatchers.IO) {
+            musicDao.updateSongLyrics(songId, lyrics?.ifBlank { null })
+        }
+
+    override suspend fun fetchSongLyrics(song: Song): String? =
+        withContext(Dispatchers.IO) {
+            metadataSource.fetchLyrics(song.artist, song.title)?.ifBlank { null }
+        }
+
     override suspend fun getAlbumOverride(albumKey: String): AlbumOverride? =
         withContext(Dispatchers.IO) {
             musicDao.getAlbumOverride(albumKey)

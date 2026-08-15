@@ -81,12 +81,15 @@ class GetLibrarySongsUseCase {
     /**
      * Builds a flat, keyed list for LazyColumn: optional album headers + song rows.
      * [LibraryListItem.SongRow.index] is the play index into [songsFromListItems].
-     * ALBUM_GROUPS sorts each album by track number (unknown tracks last).
+     * ALBUM_GROUPS orders album blocks with the same keys as [extractAlbums];
+     * songs inside each album stay by track number (unknown tracks last).
      */
     fun buildListItems(
         songs: List<Song>,
         viewMode: LibraryViewMode,
-        overrides: Map<String, AlbumOverride> = emptyMap()
+        overrides: Map<String, AlbumOverride> = emptyMap(),
+        sortOption: SortOption = SortOption.TITLE,
+        sortDirection: SortDirection = SortDirection.ASC
     ): List<LibraryListItem> {
         if (songs.isEmpty()) return emptyList()
 
@@ -98,17 +101,15 @@ class GetLibrarySongsUseCase {
             LibraryViewMode.ALBUM_GROUPS -> {
                 val items = ArrayList<LibraryListItem>(songs.size + songs.size / 4 + 1)
                 var songIndex = 0
-                songs.groupBy { it.album }.forEach { (albumName, groupSongs) ->
+                val grouped = songs.groupBy { it.album }
+                extractAlbums(songs, overrides, sortOption, sortDirection).forEach { album ->
+                    val groupSongs = grouped[album.name] ?: return@forEach
                     val albumSongs = sortSongsWithinAlbum(groupSongs)
-                    val override = overrides[albumName]
                     items += LibraryListItem.AlbumHeader(
-                        albumName = albumName,
-                        displayName = override?.displayName?.takeIf { it.isNotBlank() } ?: albumName,
-                        artistName = override?.artist?.takeIf { it.isNotBlank() }
-                            ?: albumSongs.firstOrNull()?.artist
-                            ?: "Artista desconocido",
-                        artworkUri = override?.artworkUri?.takeIf { it.isNotBlank() }
-                            ?: firstArtwork(albumSongs),
+                        albumName = album.name,
+                        displayName = album.displayName,
+                        artistName = album.artist,
+                        artworkUri = album.artworkUri,
                         songCount = albumSongs.size,
                         albumSongs = albumSongs
                     )
@@ -240,12 +241,17 @@ class GetLibrarySongsUseCase {
         viewMode: LibraryViewMode = LibraryViewMode.FLAT,
         albums: List<Album>? = null,
         artists: List<Artist>? = null,
-        genres: List<GenreGroup>? = null
+        genres: List<GenreGroup>? = null,
+        sortOption: SortOption = SortOption.TITLE,
+        sortDirection: SortDirection = SortDirection.ASC,
+        overrides: Map<String, AlbumOverride> = emptyMap()
     ): List<Song> {
         if (songs.isEmpty()) return emptyList()
         return when (filter) {
             LibraryBrowseFilter.SONGS ->
-                songsFromListItems(buildListItems(songs, viewMode))
+                songsFromListItems(
+                    buildListItems(songs, viewMode, overrides, sortOption, sortDirection)
+                )
             LibraryBrowseFilter.RECENT ->
                 songs.filter { it.lastPlayedAt > 0 }.sortedByDescending { it.lastPlayedAt }
             LibraryBrowseFilter.ALBUMS -> {

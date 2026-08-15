@@ -335,6 +335,7 @@ fun WebServerScreen(viewModel: MusicPlayerViewModel) {
                         onStartRadio = { songActions.onStartRadio(doneSong) },
                         onAddToPlaylist = { songDialogs.onAddToPlaylist(doneSong) },
                         onEditMetadata = { songDialogs.onEdit(doneSong) },
+                        onEditLyrics = { songDialogs.onEditLyrics(doneSong) },
                         onIdentify = { viewModel.identifySongForReview(doneSong) },
                         onDelete = { songDialogs.onDelete(doneSong) }
                     )

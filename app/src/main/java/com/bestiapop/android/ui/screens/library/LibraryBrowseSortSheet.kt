@@ -15,6 +15,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.ViewAgenda
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
@@ -47,6 +48,7 @@ fun LibraryBrowseSortSheet(
     sortOption: SortOption,
     sortDirection: SortDirection,
     sortEnabled: Boolean,
+    albumHeadersActive: Boolean = false,
     onBrowseFilterChange: (LibraryBrowseFilter) -> Unit,
     onSortOptionChange: (SortOption) -> Unit,
     onToggleSortDirection: () -> Unit,
@@ -112,41 +114,60 @@ fun LibraryBrowseSortSheet(
                 HorizontalDivider()
                 Spacer(modifier = Modifier.height(16.dp))
 
+                val labelFilter = if (albumHeadersActive) {
+                    LibraryBrowseFilter.ALBUMS
+                } else {
+                    browseFilter
+                }
+                val sectionTitle = sortSectionTitle(browseFilter, albumHeadersActive)
+
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    if (albumHeadersActive) {
+                        Icon(
+                            imageVector = Icons.Default.ViewAgenda,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                    }
                     Text(
-                        text = sortSectionTitle(browseFilter),
+                        text = sectionTitle,
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.SemiBold,
                         modifier = Modifier
                             .weight(1f)
                             .semantics {
-                                contentDescription = sortSectionTitle(browseFilter)
+                                contentDescription = sectionTitle
                             }
                     )
                     TextButton(onClick = onToggleSortDirection) {
                         Icon(
                             imageVector = if (sortDirection == SortDirection.ASC) {
-                                Icons.Default.ArrowUpward
-                            } else {
                                 Icons.Default.ArrowDownward
-                            },
-                            contentDescription = if (sortDirection == SortDirection.ASC) {
-                                "Orden ascendente"
                             } else {
-                                "Orden descendente"
-                            }
+                                Icons.Default.ArrowUpward
+                            },
+                            contentDescription = sortDirection.sortDirectionLabel(sortOption)
                         )
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text(if (sortDirection == SortDirection.ASC) "Asc" else "Desc")
+                        Text(sortDirection.sortDirectionLabel(sortOption))
                     }
+                }
+                if (albumHeadersActive) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "El orden aplica a los álbumes; dentro de cada uno se usa el número de pista.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
                 Spacer(modifier = Modifier.height(4.dp))
                 SortOption.entries.forEach { option ->
                     val selected = sortOption == option
-                    val label = option.sortLabel(browseFilter)
+                    val label = option.sortLabel(labelFilter)
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -218,21 +239,32 @@ fun SortOption.shortSortLabel(): String = when (this) {
     SortOption.DATE_ADDED -> "fecha"
 }
 
+fun SortDirection.sortDirectionLabel(sortOption: SortOption): String = when (sortOption) {
+    SortOption.DATE_ADDED -> if (this == SortDirection.ASC) "Antiguo → reciente" else "Reciente → antiguo"
+    else -> if (this == SortDirection.ASC) "A–Z" else "Z–A"
+}
+
 fun libraryOrderSummary(
     browseFilter: LibraryBrowseFilter,
     sortOption: SortOption,
-    sortDirection: SortDirection
+    sortDirection: SortDirection,
+    albumHeadersActive: Boolean = false
 ): String {
     val shape = browseFilter.chipLabel()
     if (browseFilter == LibraryBrowseFilter.RECENT) return shape
-    val arrow = if (sortDirection == SortDirection.ASC) "↑" else "↓"
-    return "$shape · por ${sortOption.shortSortLabel()} $arrow"
+    val arrow = if (sortDirection == SortDirection.ASC) "↓" else "↑"
+    val scope = if (albumHeadersActive) "álbumes por" else "por"
+    return "$shape · $scope ${sortOption.shortSortLabel()} $arrow"
 }
 
-private fun sortSectionTitle(browseFilter: LibraryBrowseFilter): String = when (browseFilter) {
-    LibraryBrowseFilter.ALBUMS -> "Ordenar álbumes por"
-    LibraryBrowseFilter.ARTISTS -> "Ordenar artistas por"
-    LibraryBrowseFilter.GENRES -> "Ordenar géneros por"
+private fun sortSectionTitle(
+    browseFilter: LibraryBrowseFilter,
+    albumHeadersActive: Boolean = false
+): String = when {
+    albumHeadersActive -> "Ordenar álbumes por"
+    browseFilter == LibraryBrowseFilter.ALBUMS -> "Ordenar álbumes por"
+    browseFilter == LibraryBrowseFilter.ARTISTS -> "Ordenar artistas por"
+    browseFilter == LibraryBrowseFilter.GENRES -> "Ordenar géneros por"
     else -> "Ordenar canciones por"
 }
 

@@ -99,6 +99,7 @@ import com.bestiapop.android.ui.components.SongQueueActions
 import com.bestiapop.android.ui.components.isCurrentPlaying
 import com.bestiapop.android.ui.components.rememberImagePicker
 import com.bestiapop.android.ui.components.rememberSongQueueActions
+import com.bestiapop.android.ui.screens.library.rememberSongActionDialogs
 
 import androidx.compose.material.icons.filled.Recommend
 import androidx.compose.runtime.LaunchedEffect
@@ -130,6 +131,7 @@ fun PlaylistsScreen(
     var playlistToDelete by remember { mutableStateOf<Playlist?>(null) }
 
     val songActions = rememberSongQueueActions(viewModel)
+    val songDialogs = rememberSongActionDialogs(viewModel = viewModel, playlists = playlists)
 
     val showDiscover = lbSettings.showDiscoverPlaylists
     val selectedPlaylistId = (playlistDetail as? PlaylistDetailNav.Local)?.id
@@ -394,7 +396,8 @@ fun PlaylistsScreen(
                     viewModel = viewModel,
                     onAddSongsRequest = { onAddSongsRequest(it) },
                     onDeletePlaylist = { playlistToDelete = playlist },
-                    onDownloadPending = { viewModel.downloadPlaylistPendingTracks(playlistId) }
+                    onDownloadPending = { viewModel.downloadPlaylistPendingTracks(playlistId) },
+                    onEditLyrics = songDialogs.onEditLyrics
                 )
             }
         }
@@ -435,7 +438,8 @@ fun PlaylistsScreen(
                 onDownloadRemote = { viewModel.downloadRemoteItem(it) },
                 onRetryDownload = viewModel::retryActiveDownload,
                 onCancelDownload = viewModel::dismissActiveDownload,
-                queueActions = songActions
+                queueActions = songActions,
+                onEditLyrics = songDialogs.onEditLyrics
             )
         }
 
@@ -473,7 +477,8 @@ fun PlaylistsScreen(
                 onDownloadRemote = { viewModel.downloadRemoteItem(it) },
                 onRetryDownload = viewModel::retryActiveDownload,
                 onCancelDownload = viewModel::dismissActiveDownload,
-                queueActions = songActions
+                queueActions = songActions,
+                onEditLyrics = songDialogs.onEditLyrics
             )
         }
 
@@ -661,7 +666,8 @@ private fun CfRecommendationsDetailScreen(
     onDownloadRemote: (PlayableItem.Remote) -> Unit,
     onRetryDownload: (String) -> Unit,
     onCancelDownload: (String) -> Unit,
-    queueActions: SongQueueActions
+    queueActions: SongQueueActions,
+    onEditLyrics: (Song) -> Unit
 ) {
     val matched = state.data
     MatchedPlaylistDetailScaffold(
@@ -703,7 +709,8 @@ private fun CfRecommendationsDetailScreen(
                 onDownloadRemote = onDownloadRemote,
                 onRetryDownload = onRetryDownload,
                 onCancelDownload = onCancelDownload,
-                queueActions = queueActions
+                queueActions = queueActions,
+                onEditLyrics = onEditLyrics
             )
         }
     }
@@ -770,7 +777,8 @@ private fun LbPlaylistDetailScreen(
     onDownloadRemote: (PlayableItem.Remote) -> Unit,
     onRetryDownload: (String) -> Unit,
     onCancelDownload: (String) -> Unit,
-    queueActions: SongQueueActions
+    queueActions: SongQueueActions,
+    onEditLyrics: (Song) -> Unit
 ) {
     val matchedPlaylist = state.data
     MatchedPlaylistDetailScaffold(
@@ -878,7 +886,8 @@ private fun LbPlaylistDetailScreen(
                 onDownloadRemote = onDownloadRemote,
                 onRetryDownload = onRetryDownload,
                 onCancelDownload = onCancelDownload,
-                queueActions = queueActions
+                queueActions = queueActions,
+                onEditLyrics = onEditLyrics
             )
         }
     }
@@ -940,7 +949,8 @@ private fun PlaylistDetailScreen(
     viewModel: MusicPlayerViewModel,
     onAddSongsRequest: (Playlist) -> Unit,
     onDeletePlaylist: () -> Unit,
-    onDownloadPending: () -> Unit
+    onDownloadPending: () -> Unit,
+    onEditLyrics: (Song) -> Unit
 ) {
     var showEditDialog by remember { mutableStateOf(false) }
     val totalCount = songs.size + pendingTracks.size
@@ -1109,6 +1119,7 @@ private fun PlaylistDetailScreen(
                             onPlayNext = { songActions.onPlayNext(song) },
                             onAddToQueue = { songActions.onAddToQueue(song) },
                             onStartRadio = { songActions.onStartRadio(song) },
+                            onEditLyrics = { onEditLyrics(song) },
                             onDelete = { viewModel.removeSongFromPlaylist(playlist.id, song.id) }
                         )
                     }

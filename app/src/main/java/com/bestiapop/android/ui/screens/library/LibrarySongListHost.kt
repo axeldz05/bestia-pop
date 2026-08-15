@@ -1,12 +1,14 @@
 package com.bestiapop.android.ui.screens.library
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import com.bestiapop.android.data.model.Album
+import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.data.model.Playlist
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.ui.MusicPlayerViewModel
@@ -20,6 +22,7 @@ data class LibrarySongListActions(
     val onStartRadio: (Song) -> Unit,
     val onAddToPlaylist: (Song) -> Unit,
     val onEditMetadata: (Song) -> Unit,
+    val onEditLyrics: (Song) -> Unit,
     val onIdentify: (Song) -> Unit = {},
     val onDeleteSong: (Song) -> Unit,
     val onPlayAlbum: (String, List<Song>) -> Unit,
@@ -72,6 +75,7 @@ fun LibrarySongListHost(
         onStartRadio = actions.onStartRadio,
         onAddToPlaylist = actions.onAddToPlaylist,
         onEditMetadata = actions.onEditMetadata,
+        onEditLyrics = actions.onEditLyrics,
         onIdentify = actions.onIdentify,
         onDeleteSong = actions.onDeleteSong,
         onPlayAlbum = actions.onPlayAlbum,
@@ -89,6 +93,7 @@ fun LibrarySongListHost(
 
 class SongActionDialogsController(
     val onEdit: (Song) -> Unit,
+    val onEditLyrics: (Song) -> Unit,
     val onAddToPlaylist: (Song) -> Unit,
     val onDelete: (Song) -> Unit,
     val onDeleteMany: (List<Song>) -> Unit
@@ -107,16 +112,19 @@ fun rememberSongActionDialogs(
     onSelectPlaylist: ((Playlist, Song) -> Unit)? = null
 ): SongActionDialogsController {
     var editingSong by remember { mutableStateOf<Song?>(null) }
+    var editingLyricsSong by remember { mutableStateOf<Song?>(null) }
     var songForPlaylistAddition by remember { mutableStateOf<Song?>(null) }
     var songsForDeletion by remember { mutableStateOf<List<Song>?>(null) }
 
     SongActionDialogsHost(
         editingSong = editingSong,
+        editingLyricsSong = editingLyricsSong,
         songForPlaylistAddition = songForPlaylistAddition,
         songsForDeletion = songsForDeletion,
         playlists = playlists,
         viewModel = viewModel,
         onDismissEdit = { editingSong = null },
+        onDismissLyrics = { editingLyricsSong = null },
         onDismissPlaylist = { songForPlaylistAddition = null },
         onDismissDelete = { songsForDeletion = null },
         onAfterPlaylistAdd = onAfterPlaylistAdd,
@@ -128,6 +136,7 @@ fun rememberSongActionDialogs(
     return remember {
         SongActionDialogsController(
             onEdit = { editingSong = it },
+            onEditLyrics = { editingLyricsSong = it },
             onAddToPlaylist = { songForPlaylistAddition = it },
             onDelete = { songsForDeletion = listOf(it) },
             onDeleteMany = { songsForDeletion = it }
@@ -141,11 +150,13 @@ fun rememberSongActionDialogs(
 @Composable
 fun SongActionDialogsHost(
     editingSong: Song?,
+    editingLyricsSong: Song?,
     songForPlaylistAddition: Song?,
     songsForDeletion: List<Song>?,
     playlists: List<Playlist>,
     viewModel: MusicPlayerViewModel,
     onDismissEdit: () -> Unit,
+    onDismissLyrics: () -> Unit,
     onDismissPlaylist: () -> Unit,
     onDismissDelete: () -> Unit,
     onAfterPlaylistAdd: () -> Unit = {},
@@ -153,6 +164,9 @@ fun SongActionDialogsHost(
     playlistSongIds: (Song) -> List<Long> = { listOf(it.id) },
     onSelectPlaylist: ((Playlist, Song) -> Unit)? = null
 ) {
+    val currentItem by viewModel.currentItem.collectAsState()
+    val isPlaying by viewModel.isPlaying.collectAsState()
+
     editingSong?.let { song ->
         EditSongMetadataDialog(
             song = song,
@@ -161,6 +175,27 @@ fun SongActionDialogsHost(
                 viewModel.updateSongMetadata(song.id, title, artist, album, genre, year, trackNumber)
                 onDismissEdit()
             }
+        )
+    }
+
+    editingLyricsSong?.let { song ->
+        val isCurrent = (currentItem as? PlayableItem.Local)?.song?.id == song.id
+        EditLyricsDialog(
+            song = song,
+            isCurrent = isCurrent,
+            isPlaying = isPlaying,
+            durationMs = if (isCurrent) currentItem?.durationMs ?: song.durationMs else song.durationMs,
+            positionMsFlow = viewModel.playbackPositionMs,
+            onDismiss = onDismissLyrics,
+            onSave = { lyrics ->
+                viewModel.updateSongLyrics(song.id, lyrics)
+                onDismissLyrics()
+            },
+            onPlayPause = {
+                if (isCurrent) viewModel.togglePlayPause() else viewModel.playSong(song)
+            },
+            onSeek = viewModel::seekTo,
+            onFetchOnline = { onResult -> viewModel.fetchSongLyrics(song, onResult) }
         )
     }
 

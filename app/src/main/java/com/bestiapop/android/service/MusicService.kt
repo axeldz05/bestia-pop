@@ -42,6 +42,7 @@ import com.bestiapop.android.data.preferences.MAX_VOLUME_BOOST_GAIN_MB
 import com.bestiapop.android.data.preferences.PlaybackPreferencesRepository
 import com.bestiapop.android.data.preferences.PlaybackSettings
 import com.bestiapop.android.data.preferences.clampStereoGain
+import com.bestiapop.android.data.system.BACKGROUND_RESTRICTION_CONFIRM_MS
 import com.bestiapop.android.data.system.BackgroundExecutionProbe
 import com.bestiapop.android.data.util.CrashReporter
 import com.bestiapop.android.data.util.MusicFileStore
@@ -51,6 +52,7 @@ import com.bestiapop.android.service.library.MediaLibraryBrowseProvider
 import com.google.common.util.concurrent.ListenableFuture
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
@@ -69,6 +71,7 @@ class MusicService : MediaLibraryService() {
     private var foregroundPromoteRetryScheduled = false
     private var foregroundPromoteRetryAttempts = 0
     private var restrictionNoticePosted = false
+    private var restrictionConfirmJob: Job? = null
     private var appOpsWatcher: AppOpsManager.OnOpChangedListener? = null
     private var serviceWakeLock: PowerManager.WakeLock? = null
     private val stereoBalanceProcessor = StereoBalanceAudioProcessor()
@@ -333,6 +336,7 @@ class MusicService : MediaLibraryService() {
             "MusicService.onStartCommand(intentAction=${intent?.action}, flags=$flags, startId=$startId)"
         )
         super.onStartCommand(intent, flags, startId)
+        maybeNotifyBackgroundRestriction("onStartCommand")
         if (shouldResumeAfterStickyRestart(intent == null, wasPlaybackEngaged())) {
             (application as BestiaPopApplication).playbackRuntime.requestResumeAfterServiceRestart()
         }
@@ -588,6 +592,8 @@ class MusicService : MediaLibraryService() {
     private fun maybeNotifyBackgroundRestriction(source: String) {
         val status = BackgroundExecutionProbe.current(this)
         if (!status.blocksBackgroundPlayback) {
+            restrictionConfirmJob?.cancel()
+            restrictionConfirmJob = null
             if (restrictionNoticePosted) {
                 getSystemService(NotificationManager::class.java)
                     ?.cancel(RESTRICTION_NOTIFICATION_ID)
@@ -597,6 +603,22 @@ class MusicService : MediaLibraryService() {
         }
         if (!isPlaybackEngaged() && !wasPlaybackEngaged()) return
         if (restrictionNoticePosted) return
+        if (source == "startForegroundDenied") {
+            postBackgroundRestrictionNotice(source)
+            return
+        }
+        if (restrictionConfirmJob?.isActive == true) return
+        restrictionConfirmJob = serviceScope.launch {
+            delay(BACKGROUND_RESTRICTION_CONFIRM_MS)
+            val confirmed = BackgroundExecutionProbe.current(this@MusicService)
+            if (!confirmed.blocksBackgroundPlayback) return@launch
+            if (!isPlaybackEngaged() && !wasPlaybackEngaged()) return@launch
+            if (restrictionNoticePosted) return@launch
+            postBackgroundRestrictionNotice(source)
+        }
+    }
+
+    private fun postBackgroundRestrictionNotice(source: String) {
         restrictionNoticePosted = true
         PlaybackDiagnostics.warn(
             PlaybackDiagnostics.TAG_SERVICE,

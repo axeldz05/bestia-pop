@@ -208,20 +208,22 @@ fun PlaybackSettingsScreen(viewModel: MusicPlayerViewModel) {
             )
         }
 
-        if (oemScreenOffCleanupIntent != null) {
+        if (backgroundExecutionStatus.oemScreenOffCleanupActive) {
             Spacer(modifier = Modifier.height(12.dp))
             Text(
                 text = "Cerrar al apagar la pantalla",
                 style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
-                color = MaterialTheme.colorScheme.onSurface
+                color = MaterialTheme.colorScheme.error
             )
             Text(
                 text = "Este teléfono puede cortar la reproducción al bloquear o apagar la pantalla. Desactivá esa opción en Batería para BestiaPop.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            TextButton(onClick = { BackgroundExecutionProbe.openOemScreenOffCleanupSettings(context) }) {
-                Text("Abrir ajuste de batería")
+            if (oemScreenOffCleanupIntent != null) {
+                TextButton(onClick = { BackgroundExecutionProbe.openOemScreenOffCleanupSettings(context) }) {
+                    Text("Abrir ajuste de batería")
+                }
             }
         }
 

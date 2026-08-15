@@ -42,6 +42,7 @@ import com.bestiapop.android.data.preferences.ListenBrainzSettings
 import com.bestiapop.android.data.preferences.PlaybackPreferencesRepository
 import com.bestiapop.android.data.preferences.PlaybackSettings
 import com.bestiapop.android.data.preferences.ThemePreferencesRepository
+import com.bestiapop.android.data.system.BACKGROUND_RESTRICTION_CONFIRM_MS
 import com.bestiapop.android.data.system.BackgroundExecutionProbe
 import com.bestiapop.android.data.system.BackgroundExecutionStatus
 import com.bestiapop.android.data.util.CrashReporter
@@ -173,13 +174,13 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         downloadPreferences.settingsFlow
             .stateInUi(viewModelScope, DownloadSettings())
 
-    private val _backgroundExecutionStatus =
-        MutableStateFlow(BackgroundExecutionProbe.current(application))
+    private val _backgroundExecutionStatus = MutableStateFlow(BackgroundExecutionStatus())
     val backgroundExecutionStatus: StateFlow<BackgroundExecutionStatus> =
         _backgroundExecutionStatus.asStateFlow()
+    private var backgroundExecutionConfirmJob: Job? = null
 
     val oemScreenOffCleanupHintDismissed: StateFlow<Boolean> =
-        playbackPreferences.oemScreenOffCleanupHintDismissed.stateInUi(viewModelScope, false)
+        playbackPreferences.oemScreenOffCleanupHintDismissed.stateInUi(viewModelScope, true)
 
     val libraryTagWriteSettings: StateFlow<LibraryTagWriteSettings> =
         libraryTagWritePreferences.settingsFlow
@@ -426,9 +427,30 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     fun onAppForeground() {
         onUiAttached()
-        _backgroundExecutionStatus.value = BackgroundExecutionProbe.current(getApplication())
+        publishBackgroundExecutionStatus()
         if (app.shouldAutoResumeDownloads) {
             processDownloadRuntime.resumeInterrupted()
+        }
+    }
+
+    private fun publishBackgroundExecutionStatus() {
+        val snapshot = BackgroundExecutionProbe.current(getApplication())
+        backgroundExecutionConfirmJob?.cancel()
+        val current = _backgroundExecutionStatus.value
+        val raisingAlarm =
+            (snapshot.blocksBackgroundPlayback && !current.blocksBackgroundPlayback) ||
+                (snapshot.oemScreenOffCleanupActive && !current.oemScreenOffCleanupActive)
+        if (!raisingAlarm) {
+            _backgroundExecutionStatus.value = snapshot
+            return
+        }
+        _backgroundExecutionStatus.value = snapshot.copy(
+            runAnyInBackgroundIgnored = current.runAnyInBackgroundIgnored,
+            oemScreenOffCleanupEnabled = current.oemScreenOffCleanupEnabled
+        )
+        backgroundExecutionConfirmJob = viewModelScope.launch {
+            delay(BACKGROUND_RESTRICTION_CONFIRM_MS)
+            _backgroundExecutionStatus.value = BackgroundExecutionProbe.current(getApplication())
         }
     }
 

@@ -401,6 +401,7 @@ fun MainScreen(
             appUpdateState !is AppUpdateUiState.Idle
         if (
             oemScreenOffCleanupIntent != null &&
+            backgroundExecutionStatus.oemScreenOffCleanupActive &&
             !oemScreenOffCleanupHintDismissed &&
             !blockingOverlay
         ) {

@@ -3,6 +3,7 @@ package com.bestiapop.android.data.system
 import android.app.ActivityManager
 import android.app.AppOpsManager
 import android.content.ActivityNotFoundException
+import android.content.ContentResolver
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -14,10 +15,14 @@ import android.provider.Settings
 data class BackgroundExecutionStatus(
     val backgroundRestricted: Boolean = false,
     val ignoringBatteryOptimizations: Boolean = false,
-    val runAnyInBackgroundIgnored: Boolean = false
+    val runAnyInBackgroundIgnored: Boolean = false,
+    val oemScreenOffCleanupEnabled: Boolean? = null
 ) {
     val blocksBackgroundPlayback: Boolean
-        get() = backgroundRestricted || runAnyInBackgroundIgnored
+        get() = runAnyInBackgroundIgnored
+
+    val oemScreenOffCleanupActive: Boolean
+        get() = oemScreenOffCleanupEnabled == true
 }
 
 data class BackgroundRestrictionGuidance(
@@ -46,6 +51,7 @@ internal fun backgroundRestrictionGuidance(
 }
 
 internal const val OPSTR_RUN_ANY_IN_BACKGROUND = "android:run_any_in_background"
+internal const val BACKGROUND_RESTRICTION_CONFIRM_MS = 1_500L
 
 internal const val OEM_POWER_BACKGROUND_CLEAN_ACTION = "unisoc.intent.action.POWER_BACKGROUND_CLEAN"
 internal const val OEM_LOCK_SCREEN_BATTERY_SAVE_KEY = "lock_screen_battery_save"
@@ -72,7 +78,10 @@ object BackgroundExecutionProbe {
             ignoringBatteryOptimizations = {
                 powerManager?.isIgnoringBatteryOptimizations(appContext.packageName) == true
             },
-            runAnyInBackgroundIgnored = { runAnyInBackgroundIgnored(appContext) }
+            runAnyInBackgroundIgnored = { runAnyInBackgroundIgnored(appContext) },
+            oemScreenOffCleanupEnabled = {
+                oemScreenOffCleanupEnabledFromSettings(appContext.contentResolver)
+            }
         )
     }
 
@@ -113,13 +122,9 @@ object BackgroundExecutionProbe {
     private fun runAnyInBackgroundIgnored(context: Context): Boolean {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return false
         val appOps = context.getSystemService(AppOpsManager::class.java) ?: return false
-        @Suppress("DEPRECATION")
-        val mode = appOps.checkOpNoThrow(
-            OPSTR_RUN_ANY_IN_BACKGROUND,
-            Process.myUid(),
-            context.packageName
-        )
-        return mode == AppOpsManager.MODE_IGNORED || mode == AppOpsManager.MODE_ERRORED
+        val mode = runCatching { runAnyInBackgroundMode(appOps, context) }
+            .getOrDefault(AppOpsManager.MODE_ALLOWED)
+        return isRunAnyInBackgroundBlocked(mode)
     }
 }
 
@@ -129,15 +134,55 @@ internal fun applicationDetailsSettingsIntent(packageName: String, newTask: Bool
         if (newTask) addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     }
 
+internal fun isRunAnyInBackgroundBlocked(mode: Int): Boolean =
+    mode == AppOpsManager.MODE_IGNORED || mode == AppOpsManager.MODE_ERRORED
+
+internal fun parseOemScreenOffCleanupEnabled(raw: String?): Boolean? {
+    val value = raw?.trim()?.lowercase() ?: return null
+    if (value.isEmpty() || value == "null") return null
+    return when (value) {
+        "1", "true", "on" -> true
+        "0", "false", "off" -> false
+        else -> value.toIntOrNull()?.let { it != 0 }
+    }
+}
+
+internal fun oemScreenOffCleanupEnabledFromSettings(resolver: ContentResolver): Boolean? {
+    val raw = firstPresentSetting(resolver, OEM_LOCK_SCREEN_BATTERY_SAVE_KEY)
+    return parseOemScreenOffCleanupEnabled(raw)
+}
+
 internal fun resolveBackgroundExecutionStatus(
     sdkInt: Int,
     backgroundRestricted: () -> Boolean,
     ignoringBatteryOptimizations: () -> Boolean,
-    runAnyInBackgroundIgnored: () -> Boolean = { false }
+    runAnyInBackgroundIgnored: () -> Boolean = { false },
+    oemScreenOffCleanupEnabled: () -> Boolean? = { null }
 ): BackgroundExecutionStatus = BackgroundExecutionStatus(
     backgroundRestricted =
         sdkInt >= Build.VERSION_CODES.P && backgroundRestricted(),
     ignoringBatteryOptimizations = ignoringBatteryOptimizations(),
     runAnyInBackgroundIgnored =
-        sdkInt >= Build.VERSION_CODES.P && runAnyInBackgroundIgnored()
+        sdkInt >= Build.VERSION_CODES.P && runAnyInBackgroundIgnored(),
+    oemScreenOffCleanupEnabled = oemScreenOffCleanupEnabled()
 )
+
+private fun runAnyInBackgroundMode(appOps: AppOpsManager, context: Context): Int =
+    appOps.checkOpNoThrow(
+        OPSTR_RUN_ANY_IN_BACKGROUND,
+        Process.myUid(),
+        context.packageName
+    )
+
+private fun firstPresentSetting(resolver: ContentResolver, key: String): String? {
+    val readers = listOf(
+        { Settings.System.getString(resolver, key) },
+        { Settings.Global.getString(resolver, key) },
+        { Settings.Secure.getString(resolver, key) }
+    )
+    for (read in readers) {
+        val value = runCatching { read() }.getOrNull()
+        if (!value.isNullOrBlank()) return value
+    }
+    return null
+}

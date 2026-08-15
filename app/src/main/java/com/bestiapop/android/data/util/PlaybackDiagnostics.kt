@@ -9,6 +9,7 @@ import android.os.Build
 import android.os.PowerManager
 import android.util.Log
 import androidx.media3.common.Player
+import com.bestiapop.android.data.system.BackgroundExecutionProbe
 
 /**
  * High-visibility diagnostics logger for debugging playback, service lifetime,
@@ -117,10 +118,13 @@ object PlaybackDiagnostics {
         } else {
             false
         }
+        val status = BackgroundExecutionProbe.current(context)
         log(
             TAG_SYSTEM,
             "System status: Device=${Build.MANUFACTURER} ${Build.MODEL}, Android=${Build.VERSION.RELEASE} (SDK ${Build.VERSION.SDK_INT}), " +
-                "IgnoringBatteryOptimizations=$ignoringBattery, BackgroundRestricted=$bgRestricted"
+                "IgnoringBatteryOptimizations=$ignoringBattery, BackgroundRestricted=$bgRestricted, " +
+                "RunAnyInBackgroundIgnored=${status.runAnyInBackgroundIgnored}, " +
+                "OemScreenOffCleanup=${status.oemScreenOffCleanupEnabled}"
         )
     }
 

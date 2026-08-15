@@ -124,6 +124,7 @@ object PlaybackDiagnostics {
             "System status: Device=${Build.MANUFACTURER} ${Build.MODEL}, Android=${Build.VERSION.RELEASE} (SDK ${Build.VERSION.SDK_INT}), " +
                 "IgnoringBatteryOptimizations=$ignoringBattery, BackgroundRestricted=$bgRestricted, " +
                 "RunAnyInBackgroundIgnored=${status.runAnyInBackgroundIgnored}, " +
+                "BlocksBackgroundPlayback=${status.blocksBackgroundPlayback}, " +
                 "OemScreenOffCleanup=${status.oemScreenOffCleanupEnabled}"
         )
     }

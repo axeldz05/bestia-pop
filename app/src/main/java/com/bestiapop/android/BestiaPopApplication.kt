@@ -16,9 +16,11 @@ import com.bestiapop.android.data.util.PlaybackDiagnostics
 import com.bestiapop.android.domain.radio.RadioEngine
 import com.bestiapop.android.domain.radio.createBestiaPopRadioEngine
 import com.bestiapop.android.service.PlaybackRuntime
+import com.bestiapop.android.service.IdentifyExecutionLauncher
 import com.bestiapop.android.service.OnlineDownloadServiceLauncher
 import com.bestiapop.android.service.ProcessDownloadCoordinator
 import com.bestiapop.android.service.ProcessDownloadRuntime
+import com.bestiapop.android.service.ProcessIdentifyRuntime
 import com.bestiapop.android.service.ProcessSaveWhileListeningCoordinator
 import com.google.firebase.crashlytics.FirebaseCrashlytics
 import kotlinx.coroutines.CoroutineScope
@@ -38,6 +40,9 @@ class BestiaPopApplication : Application(), ImageLoaderFactory {
         private set
 
     internal lateinit var processDownloadRuntime: ProcessDownloadRuntime
+        private set
+
+    internal lateinit var processIdentifyRuntime: ProcessIdentifyRuntime
         private set
 
     val shouldAutoResumeDownloads: Boolean by lazy {
@@ -104,6 +109,12 @@ class BestiaPopApplication : Application(), ImageLoaderFactory {
             acquireExecutionLease = { source ->
                 OnlineDownloadServiceLauncher.acquire(this, source)
             }
+        )
+        processIdentifyRuntime = ProcessIdentifyRuntime.create(
+            context = this,
+            scope = processScope,
+            repository = musicRepository,
+            acquireExecutionLease = { IdentifyExecutionLauncher.acquire(this) }
         )
         val saveWhileListeningDownloads = ProcessSaveWhileListeningCoordinator(
             scope = processScope,

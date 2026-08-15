@@ -83,6 +83,28 @@ object IdentifyRanking {
         return j.coerceIn(0f, 1f)
     }
 
+    /**
+     * Space-stripped similarity for sanitizer holes (`Fog n` ≈ `Fogón`) and
+     * apostrophes (`I m` ≈ `I'm`). Token Jaccard stays the default.
+     */
+    fun compactSimilarity(a: String, b: String): Float {
+        val ca = a.replace(" ", "")
+        val cb = b.replace(" ", "")
+        if (ca.isEmpty() || cb.isEmpty()) return 0f
+        if (ca == cb) return 1f
+        val short = if (ca.length <= cb.length) ca else cb
+        val long = if (ca.length <= cb.length) cb else ca
+        if (long.contains(short) && short.length >= 4) {
+            return max(short.length.toFloat() / long.length, CONTAINMENT_BOOST).coerceIn(0f, 1f)
+        }
+        if (ca.length > 80 || cb.length > 80) return 0f
+        val dist = levenshtein(ca, cb)
+        return (1f - dist.toFloat() / max(ca.length, cb.length)).coerceIn(0f, 1f)
+    }
+
+    fun fieldSimilarity(a: String, b: String): Float =
+        max(similarity(a, b), compactSimilarity(a, b))
+
     /** Generic/blank album → `"$artist - Single"`; otherwise keep [current]. */
     fun fallbackAlbum(artist: String, current: String = ""): String {
         val trimmed = current.trim()
@@ -129,31 +151,49 @@ object IdentifyRanking {
 
         val qTitle = stripTitleNoise(query.title)
         val cTitle = stripTitleNoise(track.title)
-        val titleSim = similarity(qTitle, cTitle)
-        total += 0.40f * titleSim
-        when {
-            titleSim >= 0.98f -> reasons.add("título exacto")
-            titleSim >= 0.70f -> reasons.add("título similar")
+        val qArtistForBag = if (query.artistIsPlaceholder) "" else query.artist
+        val qAll = stripTitleNoise("$qArtistForBag ${query.title}")
+        val cAll = stripTitleNoise("${track.artist} ${track.title}")
+        val combinedSim = fieldSimilarity(qAll, cAll)
+        val titleSim = fieldSimilarity(qTitle, cTitle)
+        val identityBagMatch = combinedSim >= SOURCE_AGREE_SIM
+
+        if (identityBagMatch) {
+            // Filename was `Artist_Title` with spaces as `_`, so the query split is
+            // wrong (`The` / `Doors Roadhouse Blues`) but artist+title together match.
+            total += 0.70f * combinedSim
+            when {
+                combinedSim >= 0.98f -> reasons.add("título exacto")
+                combinedSim >= 0.70f -> reasons.add("título similar")
+            }
+        } else {
+            total += 0.40f * titleSim
+            when {
+                titleSim >= 0.98f -> reasons.add("título exacto")
+                titleSim >= 0.70f -> reasons.add("título similar")
+            }
         }
 
         val cArtist = TrackMatchKeys.normalize(track.artist)
-        if (!query.artistIsPlaceholder) {
-            val qArtist = TrackMatchKeys.normalize(query.artist)
-            val artistSim = similarity(qArtist, cArtist)
-            total += 0.30f * artistSim
-            when {
-                artistSim >= 0.98f -> reasons.add("artista exacto")
-                artistSim >= 0.70f -> reasons.add("artista similar")
-            }
-        } else {
-            val hintArtist = query.filenameArtist?.let { TrackMatchKeys.normalize(it) }.orEmpty()
-            if (hintArtist.isNotEmpty()) {
-                val hintSim = similarity(hintArtist, cArtist)
-                total += 0.30f * hintSim
-                if (hintSim >= 0.85f) reasons.add("archivo")
+        if (!identityBagMatch) {
+            if (!query.artistIsPlaceholder) {
+                val qArtist = TrackMatchKeys.normalize(query.artist)
+                val artistSim = fieldSimilarity(qArtist, cArtist)
+                total += 0.30f * artistSim
+                when {
+                    artistSim >= 0.98f -> reasons.add("artista exacto")
+                    artistSim >= 0.70f -> reasons.add("artista similar")
+                }
             } else {
-                // Unknown artist: do not punish the top hit hard.
-                total += 0.15f
+                val hintArtist = query.filenameArtist?.let { TrackMatchKeys.normalize(it) }.orEmpty()
+                if (hintArtist.isNotEmpty()) {
+                    val hintSim = fieldSimilarity(hintArtist, cArtist)
+                    total += 0.30f * hintSim
+                    if (hintSim >= 0.85f) reasons.add("archivo")
+                } else {
+                    // Unknown artist: do not punish the top hit hard.
+                    total += 0.15f
+                }
             }
         }
 
@@ -195,19 +235,26 @@ object IdentifyRanking {
         }
 
         val srcArtist = query.sourceArtist?.trim().orEmpty()
-        if (srcArtist.isNotEmpty() && !isPlaceholderArtist(srcArtist)) {
-            val srcArtistSim = similarity(TrackMatchKeys.normalize(srcArtist), cArtist)
-            if (srcArtistSim < SOURCE_CONFLICT_SIM) {
-                reasons.add("artista distinto")
-            }
-        }
-
-        // Compared against the song's own tag, not against titleSim (which measures the *query*):
-        // when the query title came from a filename hint, a candidate contradicting the real tag
-        // title was never flagged and confidence() could still return HIGH, i.e. auto-apply.
         val srcTitle = query.sourceTitle?.let { stripTitleNoise(it) }.orEmpty()
-        if (srcTitle.isNotEmpty() && similarity(srcTitle, cTitle) < SOURCE_CONFLICT_SIM) {
-            reasons.add("título distinto")
+        val srcAll = stripTitleNoise(
+            "${srcArtist.takeUnless { isPlaceholderArtist(it) }.orEmpty()} ${query.sourceTitle.orEmpty()}"
+        )
+        val srcCombined = if (srcAll.isNotEmpty()) fieldSimilarity(srcAll, cAll) else 0f
+        // A first-underscore split (`Anibal` / `Troilo Barrio de Tango`) is not a real
+        // artist/title conflict when the concatenated tags match the candidate.
+        if (!identityBagMatch && srcCombined < SOURCE_AGREE_SIM) {
+            if (srcArtist.isNotEmpty() && !isPlaceholderArtist(srcArtist)) {
+                val srcArtistSim = fieldSimilarity(TrackMatchKeys.normalize(srcArtist), cArtist)
+                if (srcArtistSim < SOURCE_CONFLICT_SIM) {
+                    reasons.add("artista distinto")
+                }
+            }
+            // Compared against the song's own tag, not against titleSim (which measures the *query*):
+            // when the query title came from a filename hint, a candidate contradicting the real tag
+            // title was never flagged and confidence() could still return HIGH, i.e. auto-apply.
+            if (srcTitle.isNotEmpty() && fieldSimilarity(srcTitle, cTitle) < SOURCE_CONFLICT_SIM) {
+                reasons.add("título distinto")
+            }
         }
 
         when {
@@ -216,9 +263,12 @@ object IdentifyRanking {
         }
 
         val hintTitle = query.filenameTitle?.let { stripTitleNoise(it) }.orEmpty()
-        if (hintTitle.isNotEmpty() && similarity(hintTitle, cTitle) >= 0.85f) {
-            total += 0.05f
-            if ("archivo" !in reasons) reasons.add("archivo")
+        if (hintTitle.isNotEmpty()) {
+            val hintSim = max(fieldSimilarity(hintTitle, cTitle), fieldSimilarity(hintTitle, cAll))
+            if (hintSim >= 0.85f) {
+                total += 0.05f
+                if ("archivo" !in reasons) reasons.add("archivo")
+            }
         }
 
         val preferYear = query.preferYear
@@ -411,4 +461,22 @@ object IdentifyRanking {
         """\b(live|concert|performance|session|letra|letras|lyrics?|remix|bootleg|cover|karaoke|acoustic)\b""",
         RegexOption.IGNORE_CASE
     )
+
+    private fun levenshtein(a: String, b: String): Int {
+        if (a == b) return 0
+        if (a.isEmpty()) return b.length
+        if (b.isEmpty()) return a.length
+        val prev = IntArray(b.length + 1) { it }
+        val cur = IntArray(b.length + 1)
+        for (i in 1..a.length) {
+            cur[0] = i
+            val ca = a[i - 1]
+            for (j in 1..b.length) {
+                val cost = if (ca == b[j - 1]) 0 else 1
+                cur[j] = minOf(cur[j - 1] + 1, prev[j] + 1, prev[j - 1] + cost)
+            }
+            for (j in prev.indices) prev[j] = cur[j]
+        }
+        return prev[b.length]
+    }
 }

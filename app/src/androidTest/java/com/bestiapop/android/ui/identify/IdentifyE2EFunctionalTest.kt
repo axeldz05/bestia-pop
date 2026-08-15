@@ -117,6 +117,18 @@ class IdentifyE2EFunctionalTest {
         fixture.assertPersistedIdentities()
     }
 
+    @Test
+    fun identifyContinuesAfterActivityAndViewModelAreDestroyed() {
+        fixture.configureGatedSearch()
+        fixture.startIdentifyFromViewModel(fixture.highSongId)
+        fixture.awaitSearchRequest()
+        fixture.destroyMainActivity()
+        fixture.releaseSearch()
+        ui.await("HIGH identity auto-applied without a ViewModel") {
+            fixture.highIdentityWasAutoApplied()
+        }
+    }
+
     private fun identifyThroughSongOverflow(songId: Long) {
         composeRule
             .onNodeWithTag(

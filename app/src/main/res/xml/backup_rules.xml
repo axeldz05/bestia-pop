@@ -12,5 +12,6 @@
     <exclude domain="file" path="datastore/playback_session.preferences_pb" />
     <exclude domain="file" path="datastore/active_downloads.preferences_pb" />
     <exclude domain="file" path="datastore/identify_review.preferences_pb" />
+    <exclude domain="file" path="datastore/identify_work.preferences_pb" />
     <exclude domain="file" path="datastore/listenbrainz_settings.preferences_pb" />
 </full-backup-content>

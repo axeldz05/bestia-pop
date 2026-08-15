@@ -53,7 +53,7 @@ class BackgroundExecutionStatusTest {
     }
 
     @Test
-    fun runAnyInBackgroundIgnored_isTheConfirmedPlaybackBlock() {
+    fun runAnyInBackgroundIgnored_withoutUiRestriction_doesNotClaimBlockedPlayback() {
         val status = resolveBackgroundExecutionStatus(
             sdkInt = Build.VERSION_CODES.P,
             backgroundRestricted = { false },
@@ -63,16 +63,30 @@ class BackgroundExecutionStatusTest {
 
         assertFalse(status.backgroundRestricted)
         assertTrue(status.runAnyInBackgroundIgnored)
+        assertFalse(status.blocksBackgroundPlayback)
+    }
+
+    @Test
+    fun confirmedBlock_requiresUiRestrictionAndIgnoredAppOp() {
+        val status = resolveBackgroundExecutionStatus(
+            sdkInt = Build.VERSION_CODES.P,
+            backgroundRestricted = { true },
+            ignoringBatteryOptimizations = { true },
+            runAnyInBackgroundIgnored = { true }
+        )
+
+        assertTrue(status.backgroundRestricted)
+        assertTrue(status.runAnyInBackgroundIgnored)
         assertTrue(status.blocksBackgroundPlayback)
     }
 
     @Test
-    fun defaultAndForegroundAppOpModes_areNotARestriction() {
+    fun defaultForegroundAndErroredAppOpModes_areNotARestriction() {
         assertFalse(isRunAnyInBackgroundBlocked(AppOpsManager.MODE_ALLOWED))
         assertFalse(isRunAnyInBackgroundBlocked(AppOpsManager.MODE_DEFAULT))
         assertFalse(isRunAnyInBackgroundBlocked(AppOpsManager.MODE_FOREGROUND))
+        assertFalse(isRunAnyInBackgroundBlocked(AppOpsManager.MODE_ERRORED))
         assertTrue(isRunAnyInBackgroundBlocked(AppOpsManager.MODE_IGNORED))
-        assertTrue(isRunAnyInBackgroundBlocked(AppOpsManager.MODE_ERRORED))
     }
 
     @Test

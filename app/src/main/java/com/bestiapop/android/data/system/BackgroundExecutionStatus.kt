@@ -19,7 +19,7 @@ data class BackgroundExecutionStatus(
     val oemScreenOffCleanupEnabled: Boolean? = null
 ) {
     val blocksBackgroundPlayback: Boolean
-        get() = runAnyInBackgroundIgnored
+        get() = backgroundRestricted && runAnyInBackgroundIgnored
 
     val oemScreenOffCleanupActive: Boolean
         get() = oemScreenOffCleanupEnabled == true
@@ -135,7 +135,7 @@ internal fun applicationDetailsSettingsIntent(packageName: String, newTask: Bool
     }
 
 internal fun isRunAnyInBackgroundBlocked(mode: Int): Boolean =
-    mode == AppOpsManager.MODE_IGNORED || mode == AppOpsManager.MODE_ERRORED
+    mode == AppOpsManager.MODE_IGNORED
 
 internal fun parseOemScreenOffCleanupEnabled(raw: String?): Boolean? {
     val value = raw?.trim()?.lowercase() ?: return null

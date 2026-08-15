@@ -112,6 +112,16 @@
             android:foregroundServiceType="dataSync"
             android:stopWithTask="false"
             android:exported="false" />
+        <service
+            android:name=".service.IdentifyJobService"
+            android:permission="android.permission.BIND_JOB_SERVICE"
+            android:exported="true"
+            tools:targetApi="34" />
+        <service
+            android:name=".service.IdentifyForegroundService"
+            android:foregroundServiceType="dataSync"
+            android:stopWithTask="false"
+            android:exported="false" />
 
         <provider
             android:name="androidx.core.content.FileProvider"

@@ -426,4 +426,55 @@ class IdentifyRankingTest {
         )
         assertEquals(listOf("One", "Two", "Three"), merged.map { it.title })
     }
+
+    @Test
+    fun underscoreSplitQuery_matchesCombinedIdentity() {
+        val query = IdentifyRanking.Query(
+            artist = "The",
+            title = "Doors Roadhouse Blues",
+            durationMs = 240_000L,
+            sourceArtist = "The",
+            sourceTitle = "Doors Roadhouse Blues"
+        )
+        val ranked = IdentifyRanking.rank(
+            query,
+            listOf(track("Roadhouse Blues", "The Doors", album = "Morrison Hotel", durationMs = 240_000L))
+        )
+        assertEquals(IdentifyConfidence.HIGH, IdentifyRanking.confidence(ranked))
+        assertEquals("The Doors", ranked.first().artist)
+        assertEquals("Roadhouse Blues", ranked.first().title)
+        assertFalse(ranked.first().reasons.any { it.startsWith("artista distinto") })
+        assertFalse(ranked.first().reasons.any { it.startsWith("título distinto") })
+    }
+
+    @Test
+    fun compactSimilarity_matchesAccentSanitizerHoles() {
+        val query = IdentifyRanking.Query(
+            artist = "Anibal Troilo",
+            title = "Fog n de Huella",
+            durationMs = 200_000L
+        )
+        val (score, reasons) = IdentifyRanking.score(
+            query,
+            track("Fogón de Huella", "Aníbal Troilo", album = "Tinta Roja", durationMs = 200_000L)
+        )
+        assertTrue("score=$score reasons=$reasons", score >= IdentifyRanking.HIGH_SCORE)
+        assertTrue(reasons.any { it.contains("título") })
+    }
+
+    @Test
+    fun romanizedTitle_unknownArtist_ranksExactTitle() {
+        val query = IdentifyRanking.Query(
+            artist = "Unknown Artist",
+            title = "kick in the world",
+            durationMs = 210_000L,
+            artistIsPlaceholder = true
+        )
+        val ranked = IdentifyRanking.rank(
+            query,
+            listOf(track("kick in the world", "Haru Nemuri", album = "kick in the world", durationMs = 210_000L))
+        )
+        assertEquals("Haru Nemuri", ranked.first().artist)
+        assertTrue(ranked.first().score >= IdentifyRanking.MEDIUM_SCORE)
+    }
 }

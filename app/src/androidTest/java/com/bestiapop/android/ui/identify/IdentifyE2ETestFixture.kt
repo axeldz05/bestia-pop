@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.ViewModelProvider
 import androidx.test.core.app.ActivityScenario
 import androidx.test.platform.app.InstrumentationRegistry
 import com.bestiapop.android.BestiaPopApplication
@@ -20,7 +21,9 @@ import com.bestiapop.android.data.preferences.LibraryPreferencesRepository
 import com.bestiapop.android.data.preferences.PersistedIdentifyReviewQueue
 import com.bestiapop.android.data.preferences.UiNavSnapshot
 import com.bestiapop.android.testutil.PcmWavFixture
+import com.bestiapop.android.ui.MusicPlayerViewModel
 import java.io.File
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -72,6 +75,8 @@ internal class IdentifyE2ETestFixture : AutoCloseable {
     private var previousNavSnapshot: UiNavSnapshot? = null
     private var previousDisplaySettings: LibraryDisplaySettings? = null
     private var previousReviewQueue: PersistedIdentifyReviewQueue? = null
+    private var searchEntered: CountDownLatch? = null
+    private var searchGate: CountDownLatch? = null
 
     var highSongId: Long = 0L
         private set
@@ -138,10 +143,40 @@ internal class IdentifyE2ETestFixture : AutoCloseable {
     }
 
     /** Closes the Activity/ViewModel, then launches a fresh production graph consumer. */
-    fun relaunchMainActivity() {
+    fun destroyMainActivity() {
         scenario?.close()
         scenario = null
+    }
+
+    /** Closes the Activity/ViewModel, then launches a fresh production graph consumer. */
+    fun relaunchMainActivity() {
+        destroyMainActivity()
         launchMainActivity()
+    }
+
+    fun configureGatedSearch() {
+        searchEntered = CountDownLatch(1)
+        searchGate = CountDownLatch(1)
+    }
+
+    fun awaitSearchRequest() {
+        val entered = checkNotNull(searchEntered) { "configureGatedSearch was not called" }
+        check(entered.await(STATE_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
+            "Catalog search was not reached. ${diagnostic()}"
+        }
+    }
+
+    fun releaseSearch() {
+        checkNotNull(searchGate) { "configureGatedSearch was not called" }.countDown()
+    }
+
+    fun startIdentifyFromViewModel(songId: Long) {
+        val currentScenario = checkNotNull(scenario) { "MainActivity was not launched" }
+        val song = checkNotNull(song(songId)) { "Fixture song $songId missing. ${diagnostic()}" }
+        currentScenario.onActivity { activity ->
+            val viewModel = ViewModelProvider(activity)[MusicPlayerViewModel::class.java]
+            viewModel.identifySongs(listOf(song), force = true, showReview = true)
+        }
     }
 
     fun highIdentityWasAutoApplied(): Boolean =
@@ -336,6 +371,8 @@ internal class IdentifyE2ETestFixture : AutoCloseable {
         }
 
         private fun catalogSearchResponse(request: RecordedRequest): MockResponse {
+            searchEntered?.countDown()
+            searchGate?.await(STATE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
             val query = request.requestUrl?.queryParameter("q")
                 ?: request.requestUrl?.queryParameter("term")
                 ?: ""

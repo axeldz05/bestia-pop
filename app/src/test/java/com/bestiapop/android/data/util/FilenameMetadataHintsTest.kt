@@ -1,5 +1,6 @@
 package com.bestiapop.android.data.util
 
+import com.bestiapop.android.domain.util.identifySearchTexts
 import com.bestiapop.android.domain.util.isTrackNumberLabel
 import com.bestiapop.android.domain.util.parseFilenameMetadataHints
 import com.bestiapop.android.domain.util.resolveWeakIdentityHints
@@ -21,8 +22,48 @@ class FilenameMetadataHintsTest {
     @Test
     fun parse_underscoresBecomeSpacesInParts() {
         val hints = parseFilenameMetadataHints("The_Beatles_Hey_Jude")
-        assertEquals("The", hints.artist)
-        assertEquals("Beatles Hey Jude", hints.title)
+        assertNull(hints.artist)
+        assertEquals("The Beatles Hey Jude", hints.title)
+    }
+
+    @Test
+    fun parse_apostropheHole_howlinWolf() {
+        val hints = parseFilenameMetadataHints("Howlin__Wolf_Evil")
+        assertEquals("Howlin Wolf", hints.artist)
+        assertEquals("Evil", hints.title)
+    }
+
+    @Test
+    fun parse_collapsesRomanizedHolesAndRestoresContraction() {
+        val hints = parseFilenameMetadataHints("_______I_m__Waiting_for_the_Sun")
+        assertNull(hints.artist)
+        assertEquals("I'm Waiting for the Sun", hints.title)
+    }
+
+    @Test
+    fun parse_discTrackPrefix_andKhzSuffix() {
+        val hints = parseFilenameMetadataHints("1-03_Insisto__16-44.1_kHz_")
+        assertNull(hints.artist)
+        assertEquals("Insisto", hints.title)
+        assertEquals(3, hints.trackNumber)
+    }
+
+    @Test
+    fun parse_discTrackDotTitle_restoresContraction() {
+        val hints = parseFilenameMetadataHints("1-18._I_ll_Face_Myself")
+        assertEquals("I'll Face Myself", hints.title)
+        assertEquals(18, hints.trackNumber)
+    }
+
+    @Test
+    fun identifySearchTexts_gluesAccentHoles_andKeepsDistinctiveTail() {
+        val glued = identifySearchTexts("Ciro Y Los Persas F cil")
+        assertTrue(glued.any { it.contains("Fcil") })
+
+        val tail = identifySearchTexts(
+            "And So I Watch You From Afar Mother Belfast Part 2"
+        )
+        assertTrue(tail.any { it.contains("Mother Belfast") })
     }
 
     @Test

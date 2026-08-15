@@ -67,6 +67,7 @@ import com.bestiapop.android.domain.util.normalizeAlbumName
 import com.bestiapop.android.service.PlaybackRuntime
 import com.bestiapop.android.service.ProcessDownloadEvent
 import com.bestiapop.android.service.ProcessDownloadRequest
+import com.bestiapop.android.service.ProcessIdentifyEvent
 import com.bestiapop.android.service.WebServerService
 import com.bestiapop.android.ui.state.CatalogCollectionKind
 import com.bestiapop.android.ui.state.CatalogCollectionUiState
@@ -114,6 +115,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlin.coroutines.cancellation.CancellationException
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 
 import android.content.Context
@@ -149,6 +151,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private val repository = app.musicRepository
     private val playbackRuntime: PlaybackRuntime = app.playbackRuntime
     private val processDownloadRuntime = app.processDownloadRuntime
+    private val processIdentifyRuntime = app.processIdentifyRuntime
     private val themeRepository = ThemePreferencesRepository(application)
     private val listenBrainzPreferences = ListenBrainzPreferencesRepository(application)
     private val playbackPreferences = PlaybackPreferencesRepository(application)
@@ -401,27 +404,41 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     /** Set when MainActivity should switch to Descargas (notification / dialog deep-link). */
     private val _pendingOpenDownloads = MutableStateFlow(false)
-    private val _libraryJobProgress = MutableStateFlow<LibraryJobProgress?>(null)
-    val libraryJobProgress: StateFlow<LibraryJobProgress?> = _libraryJobProgress.asStateFlow()
+    private val _pendingOpenIdentifyReview = MutableStateFlow(false)
+    private val _localLibraryJobProgress = MutableStateFlow<LibraryJobProgress?>(null)
+    val libraryJobProgress: StateFlow<LibraryJobProgress?> =
+        combine(_localLibraryJobProgress, processIdentifyRuntime.progress) { local, identify ->
+            identify ?: local
+        }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
     private val _identifyReview = MutableStateFlow(IdentifyReviewState())
     val identifyReview: StateFlow<IdentifyReviewState> = _identifyReview.asStateFlow()
     private val _identifySetup = MutableStateFlow<IdentifySetupState?>(null)
     val identifySetup: StateFlow<IdentifySetupState?> = _identifySetup.asStateFlow()
     private val identifyMutex = Mutex()
+    private val identifyDroppedIds = mutableSetOf<Long>()
+    private val uiAttached = AtomicBoolean(false)
     /** Serializes the first-launch disk import: two callers race the completed-flag check. */
     private val initialImportMutex = Mutex()
     private val identifiedWifiSongIds = mutableSetOf<Long>()
     val pendingOpenDownloads = _pendingOpenDownloads.asStateFlow()
+    val pendingOpenIdentifyReview = _pendingOpenIdentifyReview.asStateFlow()
 
     fun requestOpenDownloads() {
         _pendingOpenDownloads.value = true
     }
 
+    fun requestOpenIdentifyReview() {
+        setSelectedNavIndex(NAV_LIBRARY)
+        _pendingOpenIdentifyReview.value = true
+    }
+
     fun onUiAttached() {
+        uiAttached.set(true)
         playbackRuntime.attachUi()
     }
 
     fun onUiDetached() {
+        uiAttached.set(false)
         playbackRuntime.detachUi()
     }
 
@@ -434,6 +451,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         publishBackgroundExecutionStatus()
         if (app.shouldAutoResumeDownloads) {
             processDownloadRuntime.resumeInterrupted()
+            processIdentifyRuntime.resumeInterrupted()
         }
     }
 
@@ -460,6 +478,10 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     fun consumeOpenDownloads() {
         _pendingOpenDownloads.value = false
+    }
+
+    fun consumeOpenIdentifyReview() {
+        _pendingOpenIdentifyReview.value = false
     }
 
     private fun getDeviceVolumeRatio(): Float {
@@ -525,7 +547,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     fun syncLibraryTagsToFiles() {
-        if (_libraryJobProgress.value != null) {
+        if (_localLibraryJobProgress.value != null || processIdentifyRuntime.progress.value != null) {
             toast("Ya hay una tarea de biblioteca en curso")
             return
         }
@@ -702,33 +724,61 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         }
 
         viewModelScope.launch {
-            identifyMutex.withLock {
-                val snap = withContext(Dispatchers.IO) { identifyReviewStore.load() }
-                if (snap.proposals.isNotEmpty()) {
-                    val songs = withContext(Dispatchers.IO) { repository.getAllSongsSync() }
-                    _identifyReview.value = identifyReviewFromPersisted(
-                        snap.proposals,
-                        snap.phase,
-                        songs,
-                        snap.applyFields
-                    )
+            identifyReviewStore.queueFlow.collect { snap ->
+                identifyMutex.withLock {
+                    applyPersistedIdentifyQueue(snap)
                 }
             }
+        }
+        viewModelScope.launch {
             identifyReview
                 .map { state ->
-                    PersistedIdentifyReviewQueue(
-                        proposals = state.items.drop(state.currentIndex).map { it.proposal },
-                        phase = state.phase.name,
-                        applyFields = state.applyFields
+                    Triple(
+                        PersistedIdentifyReviewQueue(
+                            proposals = state.items.drop(state.currentIndex).map { it.proposal },
+                            phase = state.phase.name,
+                            applyFields = state.applyFields
+                        ),
+                        state.items.map { it.song.id }.toSet(),
+                        identifyDroppedIds.toSet()
                     )
                 }
                 .distinctUntilChanged()
                 .debounce(300)
-                .collect { snap ->
+                .collect { (snap, knownIds, dropped) ->
                     withContext(Dispatchers.IO) {
-                        identifyReviewStore.save(snap)
+                        identifyReviewStore.mergeUiRemaining(
+                            remaining = snap.proposals,
+                            knownSongIds = knownIds,
+                            droppedIds = dropped,
+                            phase = snap.phase,
+                            applyFields = snap.applyFields
+                        )
                     }
                 }
+        }
+
+        viewModelScope.launch {
+            processIdentifyRuntime.events.collect { event ->
+                when (event) {
+                    is ProcessIdentifyEvent.Completed -> {
+                        toast(event.summary.toastMessage())
+                        if (event.summary.showReview &&
+                            event.summary.reviewCount > 0 &&
+                            uiAttached.get()
+                        ) {
+                            showIdentifyReview()
+                        }
+                    }
+                    is ProcessIdentifyEvent.AlreadyQueued -> {
+                        toast(
+                            if (event.count == 1) "1 ya está en revisión"
+                            else "${event.count} ya están en revisión"
+                        )
+                        if (event.showReview && uiAttached.get()) showIdentifyReview()
+                    }
+                }
+            }
         }
 
         viewModelScope.launch {
@@ -753,9 +803,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                     }
                     if (songs.isEmpty()) return@collect
                     identifiedWifiSongIds += songs.map { it.id }
-                    identifyMutex.withLock {
-                        runIdentifySongs(songs, force = true, showReview = false)
-                    }
+                    identifySongs(songs, force = true, showReview = false)
                 }
         }
 
@@ -1669,11 +1717,11 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         total: Int,
         label: String
     ) {
-        _libraryJobProgress.value = LibraryJobProgress(kind, done, total, label)
+        _localLibraryJobProgress.value = LibraryJobProgress(kind, done, total, label)
     }
 
     private fun clearLibraryProgress() {
-        _libraryJobProgress.value = null
+        _localLibraryJobProgress.value = null
     }
 
     private fun importScanProgress(): (Int, Int, String) -> Unit = { done, total, fileName ->
@@ -1792,11 +1840,8 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         fields: IdentifyApplyFields = IdentifyApplyFields.ALL
     ) {
         if (songs.isEmpty()) return
-        viewModelScope.launch {
-            identifyMutex.withLock {
-                runIdentifySongs(songs, force, showReview, fields)
-            }
-        }
+        identifyDroppedIds.removeAll(songs.map { it.id }.toSet())
+        processIdentifyRuntime.submit(songs, force, showReview, fields)
     }
 
     /** Single-song identify: open existing pending item, or open setup configuration dialog. */
@@ -1846,159 +1891,53 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         )
     }
 
-    private suspend fun runIdentifySongs(
-        songs: List<Song>,
-        force: Boolean,
-        showReview: Boolean,
-        fields: IdentifyApplyFields = IdentifyApplyFields.ALL
-    ) {
-        val pendingIds = _identifyReview.value.pendingSongIds
-        val alreadyQueued = songs.count { it.id in pendingIds }
-        val toProcess = songs.filter { it.id !in pendingIds }
-        if (toProcess.isEmpty()) {
-            if (alreadyQueued > 0) {
-                toast(
-                    if (alreadyQueued == 1) "1 ya está en revisión"
-                    else "$alreadyQueued ya están en revisión"
-                )
-                if (showReview) showIdentifyReview()
-            }
-            return
-        }
-        val lbToken = listenBrainzSettings.value
-            .takeIf { it.enabled && it.userToken.isNotBlank() }
-            ?.userToken
-        val total = toProcess.size
-        var updated = 0
-        var skipped = 0
-        var medium = 0
-        var low = 0
-        var none = 0
-        var lbHits = 0
-        val reviewItems = ArrayList<IdentifyReviewItem>()
-        toProcess.forEachIndexed { index, song ->
-            reportLibraryProgress(LibraryJobKind.IDENTIFY, index, total, song.title)
-            val proposal = withContext(Dispatchers.IO) {
-                repository.proposeSongIdentity(
-                    song,
-                    force = force,
-                    listenBrainzToken = lbToken
-                )
-            }
-            if (proposal.usedListenBrainz) lbHits++
-            when {
-                proposal.alreadyIdentified -> skipped++
-                proposal.confidence == IdentifyConfidence.HIGH && proposal.suggested != null -> {
-                    when (
-                        withContext(Dispatchers.IO) {
-                            repository.applySongIdentity(song.id, proposal.suggested, fields)
-                        }
-                    ) {
-                        is IdentifyResult.Updated -> updated++
-                        else -> {
-                            reviewItems.add(
-                                IdentifyReviewItem(songForIdentifyReview(song, proposal), proposal)
-                            )
-                            medium++
-                        }
-                    }
-                }
-                else -> {
-                    reviewItems.add(
-                        IdentifyReviewItem(songForIdentifyReview(song, proposal), proposal)
-                    )
-                    when (proposal.confidence) {
-                        IdentifyConfidence.MEDIUM -> medium++
-                        IdentifyConfidence.LOW -> low++
-                        else -> none++
-                    }
-                }
-            }
-        }
-        clearLibraryProgress()
-        reportIdentifyBatchTelemetry(
-            high = updated,
-            medium = medium,
-            low = low,
-            none = none,
-            skipped = skipped,
-            lbHits = lbHits
+    private suspend fun applyPersistedIdentifyQueue(snap: PersistedIdentifyReviewQueue) {
+        val songs = withContext(Dispatchers.IO) { repository.getAllSongsSync() }
+        val hydrated = identifyReviewFromPersisted(
+            snap.proposals,
+            snap.phase,
+            songs,
+            snap.applyFields
         )
-        if (reviewItems.isNotEmpty()) {
-            enqueueIdentifyReview(reviewItems, showReview, fields)
-        } else if (alreadyQueued > 0 && showReview) {
-            showIdentifyReview()
-        }
-        toast(
-            buildString {
-                append(if (updated == 1) "1 actualizada" else "$updated actualizadas")
-                if (reviewItems.isNotEmpty()) {
-                    append(
-                        if (reviewItems.size == 1) ", 1 para revisar"
-                        else ", ${reviewItems.size} para revisar"
-                    )
-                }
-                if (alreadyQueued > 0) {
-                    append(
-                        if (alreadyQueued == 1) ", 1 ya en revisión"
-                        else ", $alreadyQueued ya en revisión"
-                    )
-                }
-                if (skipped == 1) append(", 1 omitida")
-                else if (skipped > 1) append(", $skipped omitidas")
-            }
-        )
-    }
-
-    private fun reportIdentifyBatchTelemetry(
-        high: Int,
-        medium: Int,
-        low: Int,
-        none: Int,
-        skipped: Int,
-        lbHits: Int
-    ) {
-        CrashReporter.setKey("identify_high", "$high")
-        CrashReporter.setKey("identify_medium", "$medium")
-        CrashReporter.setKey("identify_low", "$low")
-        CrashReporter.setKey("identify_none", "$none")
-        CrashReporter.setKey("identify_skipped", "$skipped")
-        CrashReporter.setKey("identify_lb_hits", "$lbHits")
-        CrashReporter.log(
-            "identify_batch high=$high medium=$medium low=$low none=$none skipped=$skipped lb_hits=$lbHits"
-        )
-    }
-
-    private fun enqueueIdentifyReview(
-        items: List<IdentifyReviewItem>,
-        showReview: Boolean,
-        applyFields: IdentifyApplyFields = _identifyReview.value.applyFields
-    ) {
-        if (items.isEmpty()) return
         val current = _identifyReview.value
-        val existingIds = current.pendingSongIds
-        val incoming = items.filter { it.song.id !in existingIds }
-        if (current.items.isEmpty()) {
-            presentIdentifyQueue(incoming, showReview = showReview, applyFields = applyFields)
+        if (hydrated.items.isEmpty()) {
+            if (current.items.isEmpty()) {
+                if (snap.applyFields != current.applyFields) {
+                    _identifyReview.value = current.copy(applyFields = snap.applyFields)
+                }
+                return
+            }
+            _identifyReview.value = current.copy(
+                items = emptyList(),
+                currentIndex = 0,
+                isVisible = false,
+                phase = IdentifyReviewPhase.Item,
+                applyFields = snap.applyFields
+            )
+            clearCatalogPreview()
             return
         }
-        if (incoming.isEmpty()) {
-            if (showReview) showIdentifyReview()
-            return
+        val items = hydrated.items.map { item ->
+            IdentifyReviewItem(songForIdentifyReview(item.song, item.proposal), item.proposal)
         }
-        val merged = current.items + incoming
-        val visible = current.isVisible || showReview
-        val phase = if (current.isVisible) {
-            current.phase
-        } else {
-            reviewPhaseFor(merged.drop(current.currentIndex))
-        }
-        _identifyReview.value = current.copy(
-            items = merged,
-            isVisible = visible,
+        val currentSongId = current.current?.song?.id
+        val newIndex = currentSongId?.let { id -> items.indexOfFirst { it.song.id == id } }
+            ?.takeIf { it >= 0 }
+            ?: 0
+        val phase = if (current.isVisible) current.phase else hydrated.phase
+        val next = current.copy(
+            items = items,
+            currentIndex = newIndex,
             phase = phase,
-            applyFields = applyFields
+            applyFields = snap.applyFields,
+            isVisible = current.isVisible && items.isNotEmpty()
         )
+        _identifyReview.value = if (phase == IdentifyReviewPhase.Item) {
+            val focused = items.getOrNull(newIndex) ?: items.first()
+            next.withItemSearchChrome(focused)
+        } else {
+            next
+        }
     }
 
     private fun reviewPhaseFor(items: List<IdentifyReviewItem>): IdentifyReviewPhase =
@@ -2158,6 +2097,10 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     private fun pruneIdentifyReview(ids: Set<Long>) {
         if (ids.isEmpty()) return
+        identifyDroppedIds += ids
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { identifyReviewStore.removeSongIds(ids) }
+        }
         val state = _identifyReview.value
         if (state.items.none { it.song.id in ids }) return
         val before = state.items.take(state.currentIndex).filter { it.song.id !in ids }
@@ -2209,6 +2152,10 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 is IdentifyResult.Updated -> appliedIds += item.song.id
                 else -> Unit
             }
+        }
+        if (appliedIds.isNotEmpty()) {
+            identifyDroppedIds += appliedIds
+            identifyReviewStore.removeSongIds(appliedIds)
         }
         clearLibraryProgress()
         return appliedIds
@@ -2472,9 +2419,14 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     fun skipAllIdentifyReview() {
-        val pending = _identifyReview.value.pendingCount
+        val remainingIds = _identifyReview.value.remaining.map { it.song.id }.toSet()
+        identifyDroppedIds += remainingIds
+        val pending = remainingIds.size
         _identifyReview.value = IdentifyReviewState()
         clearCatalogPreview()
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { identifyReviewStore.removeSongIds(remainingIds) }
+        }
         if (pending > 0) {
             toast(if (pending == 1) "1 omitida" else "$pending omitidas")
         }
@@ -2523,6 +2475,13 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     private fun advanceIdentifyReview(applied: Boolean) {
         val state = _identifyReview.value
+        val droppedId = state.current?.song?.id
+        if (droppedId != null) {
+            identifyDroppedIds += droppedId
+            viewModelScope.launch {
+                withContext(Dispatchers.IO) { identifyReviewStore.removeSongIds(setOf(droppedId)) }
+            }
+        }
         val nextApplied = state.sessionApplied + if (applied) 1 else 0
         val nextSkipped = state.sessionSkipped + if (applied) 0 else 1
         val nextIndex = state.currentIndex + 1

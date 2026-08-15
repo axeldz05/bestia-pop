@@ -87,6 +87,7 @@ fun MainScreen(
     val radioLoading by viewModel.radioLoading.collectAsState()
     val activeDownloads by viewModel.activeDownloads.collectAsState()
     val pendingOpenDownloads by viewModel.pendingOpenDownloads.collectAsState()
+    val pendingOpenIdentifyReview by viewModel.pendingOpenIdentifyReview.collectAsState()
     val downloadConflict by viewModel.downloadConflict.collectAsState()
     val identifyReview by viewModel.identifyReview.collectAsState()
     val identifySetup by viewModel.identifySetup.collectAsState()
@@ -132,6 +133,15 @@ fun MainScreen(
             showFullPlayer = false
             clearPendingExit()
             viewModel.consumeOpenDownloads()
+        }
+    }
+
+    LaunchedEffect(pendingOpenIdentifyReview) {
+        if (pendingOpenIdentifyReview) {
+            showFullPlayer = false
+            clearPendingExit()
+            viewModel.showIdentifyReview()
+            viewModel.consumeOpenIdentifyReview()
         }
     }
 

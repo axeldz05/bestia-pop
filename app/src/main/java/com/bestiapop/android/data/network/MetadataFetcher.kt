@@ -410,6 +410,28 @@ object MetadataFetcher {
         return@withContext YouTubeExtractor.searchYouTube(cleanQ)
     }
 
+    /**
+     * Identify-only: Deezer often returns unrelated fuzzy hits for romanized leftover
+     * titles, which skips iTunes/YouTube. Fetch those providers anyway.
+     */
+    suspend fun searchIdentifyFallbacks(
+        query: String,
+        limit: Int = 25
+    ): List<OnlineCatalogTrack> = withContext(Dispatchers.IO) {
+        val cleanQ = query.trim()
+        if (cleanQ.isEmpty()) return@withContext emptyList()
+        val pageLimit = limit.coerceIn(1, 100)
+        val itunesUrl = endpoint(
+            endpoints.itunesBaseUrl,
+            "search?term=${encodeQuery(cleanQ)}&entity=song&limit=$pageLimit"
+        )
+        val itunesTracks = parseItunesSongResults(
+            getJson(itunesUrl, userAgent = "Mozilla/5.0")?.optJSONArray("results")
+        )
+        val youtubeTracks = YouTubeExtractor.searchYouTube(cleanQ)
+        return@withContext itunesTracks + youtubeTracks
+    }
+
     /** First 4-digit year from ISO-ish release strings (`2012-03-01`, `2012`). */
     fun parseReleaseYear(raw: String?): Int {
         val s = raw?.trim().orEmpty()

@@ -82,6 +82,39 @@ class IdentifyReviewStoreIntegrationTest {
         }
     }
 
+    @Test
+    fun appendProposals_mergesBySongId_andMergeKeepsRuntimeExtras() = runTest {
+        val storage = TemporaryPreferencesDataStore(
+            ApplicationProvider.getApplicationContext(),
+            "identify-review-merge"
+        )
+        try {
+            val repository = IdentifyReviewStore(storage.dataStore)
+            repository.appendProposals(listOf(proposal(songId = 1L)))
+            repository.appendProposals(listOf(proposal(songId = 1L), proposal(songId = 2L)))
+            assertEquals(listOf(1L, 2L), repository.load().proposals.map { it.songId })
+
+            repository.mergeUiRemaining(
+                remaining = listOf(proposal(songId = 2L)),
+                knownSongIds = setOf(2L),
+                droppedIds = setOf(1L),
+                phase = IdentifyReviewPhase.Item.name,
+                applyFields = com.bestiapop.android.data.model.IdentifyApplyFields.ALL
+            )
+            repository.appendProposals(listOf(proposal(songId = 3L)))
+            repository.mergeUiRemaining(
+                remaining = listOf(proposal(songId = 2L)),
+                knownSongIds = setOf(2L),
+                droppedIds = setOf(1L),
+                phase = IdentifyReviewPhase.Item.name,
+                applyFields = com.bestiapop.android.data.model.IdentifyApplyFields.ALL
+            )
+            assertEquals(listOf(2L, 3L), repository.load().proposals.map { it.songId })
+        } finally {
+            storage.close()
+        }
+    }
+
     private fun proposal(songId: Long): IdentifyProposal {
         val candidate = IdentifyCandidate(
             track = OnlineCatalogTrack(

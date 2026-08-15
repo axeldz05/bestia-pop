@@ -57,11 +57,13 @@ import com.bestiapop.android.domain.util.FilenameMetadataHints
 import com.bestiapop.android.domain.util.IdentifyCatalogQuery
 import com.bestiapop.android.domain.util.IdentifyRanking
 import com.bestiapop.android.domain.util.TrackMatchKeys
+import com.bestiapop.android.domain.util.identifySearchTexts
 import com.bestiapop.android.domain.util.mergeIdentityHints
 import com.bestiapop.android.domain.util.parseFilenameMetadataHints
 import com.bestiapop.android.domain.util.resolveWeakIdentityHints
 import com.bestiapop.android.domain.util.isTrackNumberLabel
 import com.bestiapop.android.domain.util.stripLeadingTitleJunk
+import com.bestiapop.android.domain.util.tidyFilenamePhrase
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -140,6 +142,11 @@ internal interface RepositoryMetadataSource {
         limit: Int = 25,
         index: Int = 0
     ): List<OnlineCatalogTrack>
+    /** iTunes + YouTube when Deezer already returned unrelated hits. */
+    suspend fun searchIdentifyFallbacks(
+        query: String,
+        limit: Int = 25
+    ): List<OnlineCatalogTrack> = emptyList()
 }
 
 private object ProductionRepositoryMetadataSource : RepositoryMetadataSource {
@@ -160,6 +167,11 @@ private object ProductionRepositoryMetadataSource : RepositoryMetadataSource {
         limit: Int,
         index: Int
     ): List<OnlineCatalogTrack> = MetadataFetcher.searchOnlineCatalog(query, limit, index)
+
+    override suspend fun searchIdentifyFallbacks(
+        query: String,
+        limit: Int
+    ): List<OnlineCatalogTrack> = MetadataFetcher.searchIdentifyFallbacks(query, limit)
 }
 
 /**
@@ -816,6 +828,8 @@ class MusicRepository private constructor(
         ) {
             queryTitle = hints.title
         }
+        queryArtist = tidyFilenamePhrase(queryArtist)
+        queryTitle = tidyFilenamePhrase(queryTitle).ifBlank { queryTitle }
 
         val tagHints = listOfNotNull(
             working.artist.takeUnless { IdentifyRanking.isPlaceholderArtist(it) },
@@ -899,6 +913,37 @@ class MusicRepository private constructor(
             ranked = IdentifyRanking.appendCandidates(existingCandidates, ranked)
         }
         var confidence = IdentifyRanking.confidence(ranked)
+        if (!refineSearch && confidence != IdentifyConfidence.HIGH) {
+            val searchTexts = identifySearchTexts(
+                if (artistPlaceholder) queryTitle else youtubeSearchQuery(queryArtist, queryTitle)
+            )
+            val extraQueries = searchTexts.drop(1)
+            if (extraQueries.isNotEmpty()) {
+                tracks = mergeIdentifyCatalogTracks(
+                    tracks,
+                    extraQueries.flatMap { metadataSource.searchOnlineCatalog(it) }
+                )
+                ranked = IdentifyRanking.rank(rankingQuery, tracks, limit = rankLimit)
+                if (existingCandidates.isNotEmpty()) {
+                    ranked = IdentifyRanking.appendCandidates(existingCandidates, ranked)
+                }
+                confidence = IdentifyRanking.confidence(ranked)
+            }
+            if (confidence == IdentifyConfidence.LOW || confidence == IdentifyConfidence.NONE) {
+                val fallbackQuery = searchTexts.firstOrNull().orEmpty().ifBlank { queryTitle }
+                if (fallbackQuery.isNotBlank()) {
+                    tracks = mergeIdentifyCatalogTracks(
+                        tracks,
+                        metadataSource.searchIdentifyFallbacks(fallbackQuery)
+                    )
+                    ranked = IdentifyRanking.rank(rankingQuery, tracks, limit = rankLimit)
+                    if (existingCandidates.isNotEmpty()) {
+                        ranked = IdentifyRanking.appendCandidates(existingCandidates, ranked)
+                    }
+                    confidence = IdentifyRanking.confidence(ranked)
+                }
+            }
+        }
         var usedListenBrainz = false
 
         val token = listenBrainzToken?.trim().orEmpty()
@@ -1006,16 +1051,17 @@ class MusicRepository private constructor(
         artistPlaceholder: Boolean
     ): List<OnlineCatalogTrack> {
         val tracks = ArrayList<OnlineCatalogTrack>()
-        metadataSource.fetchFullTrackMetadata(artist, title)?.let { meta ->
-            tracks.add(meta.toIdentifyCatalogTrack())
-        }
-        val primaryQuery = if (artistPlaceholder) title else youtubeSearchQuery(artist, title)
-        tracks.addAll(metadataSource.searchOnlineCatalog(primaryQuery.trim()))
         if (!artistPlaceholder) {
-            val titleOnly = title.trim()
-            if (titleOnly.isNotEmpty() && !titleOnly.equals(primaryQuery.trim(), ignoreCase = true)) {
-                tracks.addAll(metadataSource.searchOnlineCatalog(titleOnly))
+            metadataSource.fetchFullTrackMetadata(artist, title)?.let { meta ->
+                tracks.add(meta.toIdentifyCatalogTrack())
             }
+        }
+        val queries = identifySearchTexts(
+            if (artistPlaceholder) title else youtubeSearchQuery(artist, title)
+        )
+        val primary = queries.firstOrNull().orEmpty()
+        if (primary.isNotEmpty()) {
+            tracks.addAll(metadataSource.searchOnlineCatalog(primary))
         }
         return mergeIdentifyCatalogTracks(emptyList(), tracks)
     }

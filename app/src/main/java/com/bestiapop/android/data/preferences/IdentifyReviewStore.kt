@@ -2,6 +2,7 @@ package com.bestiapop.android.data.preferences
 
 import android.content.Context
 import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -184,5 +185,69 @@ class IdentifyReviewStore internal constructor(
         dataStore.edit { prefs ->
             prefs[Keys.QUEUE_JSON] = json
         }
+    }
+
+    /** Append proposals whose songIds are not already queued. */
+    suspend fun appendProposals(
+        proposals: List<IdentifyProposal>,
+        applyFields: IdentifyApplyFields? = null
+    ) {
+        if (proposals.isEmpty() && applyFields == null) return
+        dataStore.edit { prefs ->
+            val current = IdentifyReviewCodec.decode(prefs[Keys.QUEUE_JSON].orEmpty())
+            val existingIds = current.proposals.map { it.songId }.toSet()
+            val incoming = proposals.filter { it.songId !in existingIds }
+            if (incoming.isEmpty() && applyFields == null) return@edit
+            val merged = current.copy(
+                proposals = current.proposals + incoming,
+                applyFields = applyFields ?: current.applyFields
+            )
+            writeQueue(prefs, merged)
+        }
+    }
+
+    suspend fun removeSongIds(ids: Set<Long>) {
+        if (ids.isEmpty()) return
+        dataStore.edit { prefs ->
+            val current = IdentifyReviewCodec.decode(prefs[Keys.QUEUE_JSON].orEmpty())
+            val merged = current.copy(
+                proposals = current.proposals.filter { it.songId !in ids }
+            )
+            writeQueue(prefs, merged)
+        }
+    }
+
+    /**
+     * UI remaining is authoritative for [knownSongIds]; store proposals not in that set
+     * and not in [droppedIds] are kept (runtime appends during a debounce window).
+     */
+    suspend fun mergeUiRemaining(
+        remaining: List<IdentifyProposal>,
+        knownSongIds: Set<Long>,
+        droppedIds: Set<Long>,
+        phase: String,
+        applyFields: IdentifyApplyFields
+    ) {
+        dataStore.edit { prefs ->
+            val current = IdentifyReviewCodec.decode(prefs[Keys.QUEUE_JSON].orEmpty())
+            val remainingIds = remaining.map { it.songId }.toSet()
+            val extras = current.proposals.filter { proposal ->
+                proposal.songId !in remainingIds &&
+                    proposal.songId !in knownSongIds &&
+                    proposal.songId !in droppedIds
+            }
+            val merged = PersistedIdentifyReviewQueue(
+                proposals = remaining + extras,
+                phase = phase,
+                applyFields = applyFields
+            )
+            writeQueue(prefs, merged)
+        }
+    }
+
+    private fun writeQueue(prefs: MutablePreferences, queue: PersistedIdentifyReviewQueue) {
+        val json = if (queue.proposals.isEmpty()) "" else IdentifyReviewCodec.encode(queue)
+        if (prefs[Keys.QUEUE_JSON].orEmpty() == json) return
+        prefs[Keys.QUEUE_JSON] = json
     }
 }

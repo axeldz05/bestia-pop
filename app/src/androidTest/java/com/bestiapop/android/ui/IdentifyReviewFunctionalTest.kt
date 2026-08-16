@@ -8,8 +8,10 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.SmallTest
+import com.bestiapop.android.data.model.IdentifyApplyFields
 import com.bestiapop.android.data.model.IdentifyCandidate
 import com.bestiapop.android.data.model.OnlineCatalogTrack
+import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.data.model.TrackIdentity
 import com.bestiapop.android.testutil.DeviceAwakeRule
 import com.bestiapop.android.ui.screens.IdentifyCandidateRow
@@ -45,6 +47,15 @@ class IdentifyReviewFunctionalTest {
         reasons = listOf("Artista y título coinciden")
     )
 
+    private val localSong = Song(
+        id = 1L,
+        uriString = "file:///tmp/local.mp3",
+        title = "Local title",
+        artist = "Local artist",
+        album = "Local album",
+        durationMs = 180_000L
+    )
+
     @Test
     fun candidatePreview_isIndependentFromSelectingCandidate() {
         var selections = 0
@@ -54,6 +65,8 @@ class IdentifyReviewFunctionalTest {
             IdentifyCandidateRow(
                 candidate = candidate,
                 fileDurationMs = 180_000L,
+                song = localSong,
+                applyFields = IdentifyApplyFields.ALL,
                 selected = false,
                 isPlaying = false,
                 isResolving = false,
@@ -84,6 +97,8 @@ class IdentifyReviewFunctionalTest {
             IdentifyCandidateRow(
                 candidate = candidate,
                 fileDurationMs = 180_000L,
+                song = localSong,
+                applyFields = IdentifyApplyFields.ALL,
                 selected = true,
                 isPlaying = true,
                 isResolving = false,

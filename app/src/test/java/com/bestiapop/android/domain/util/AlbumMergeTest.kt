@@ -56,43 +56,54 @@ class AlbumMergeTest {
     }
 
     @Test
-    fun renamingTakkPeriodToAsciiDotsFindsUnicodeEllipsisAlbum() {
-        // Real device case: user edits "Takk." → types "Takk..." to match "Takk…"
+    fun renamingTakkPeriodToAsciiDotsIsAlreadySameAlbum() {
         val albums = listOf(
             album(takkPeriod, songCount = 8),
             album(takkUnicodeEllipsis, songCount = 1),
             album(takkMojibake, songCount = 1)
         )
-        val target = findAlbumMergeTarget(albums, takkPeriod, takkAsciiDots)
-        assertEquals(takkUnicodeEllipsis, target?.name)
+        assertNull(findAlbumMergeTarget(albums, takkPeriod, takkAsciiDots))
     }
 
     @Test
-    fun renamingToUnicodeEllipsisFindsAsciiDotsAlbum() {
+    fun renamingToUnicodeEllipsisFindsUnrelatedAlbumOnlyWhenIdentityDiffers() {
         val albums = listOf(
             album(takkPeriod, songCount = 8),
-            album(takkAsciiDots, songCount = 2)
+            album("Other", songCount = 2)
         )
-        val target = findAlbumMergeTarget(albums, takkPeriod, takkUnicodeEllipsis)
-        assertEquals(takkAsciiDots, target?.name)
+        assertNull(findAlbumMergeTarget(albums, takkPeriod, takkUnicodeEllipsis))
+        assertEquals("Other", findAlbumMergeTarget(albums, takkPeriod, "Other")?.name)
+    }
+
+    @Test
+    fun deluxeRenameFindsPlainAlbum() {
+        val albums = listOf(
+            album("Absolution (Deluxe)", songCount = 2),
+            album("Origin of Symmetry", songCount = 5)
+        )
+        assertNull(findAlbumMergeTarget(albums, "Absolution (Deluxe)", "Absolution"))
+        assertEquals(
+            "Origin of Symmetry",
+            findAlbumMergeTarget(albums, "Absolution (Deluxe)", "Origin of Symmetry")?.name
+        )
     }
 
     @Test
     fun prefersLargerConflictingAlbum() {
         val albums = listOf(
-            album(takkPeriod, songCount = 8),
-            album(takkUnicodeEllipsis, songCount = 1),
-            album(takkMojibake, songCount = 5)
+            album("Alpha", songCount = 8),
+            album("Beta", songCount = 1),
+            album("beta", songCount = 5)
         )
-        val target = findAlbumMergeTarget(albums, takkPeriod, takkAsciiDots)
-        assertEquals(takkMojibake, target?.name)
+        val target = findAlbumMergeTarget(albums, "Alpha", "BETA")
+        assertEquals("beta", target?.name)
     }
 
     @Test
-    fun findEquivalentAlbumKeysIncludesEllipsisVariants() {
+    fun findEquivalentAlbumKeysIncludesEllipsisAndPunctuationVariants() {
         val keys = listOf(takkPeriod, takkUnicodeEllipsis, takkMojibake, "Other")
         val equiv = findEquivalentAlbumKeys(keys, takkAsciiDots, excludeKey = takkUnicodeEllipsis)
-        assertEquals(setOf(takkMojibake), equiv.toSet())
+        assertEquals(setOf(takkPeriod, takkMojibake), equiv.toSet())
     }
 
     @Test

@@ -26,6 +26,9 @@ interface MusicDao {
     @Query("SELECT * FROM songs WHERE uriString = :uri LIMIT 1")
     suspend fun getSongByUri(uri: String): Song?
 
+    @Query("SELECT * FROM songs WHERE uriString IN (:uris)")
+    suspend fun getSongsByUris(uris: List<String>): List<Song>
+
     @Query("SELECT * FROM songs WHERE id = :id")
     suspend fun getSongById(id: Long): Song?
 

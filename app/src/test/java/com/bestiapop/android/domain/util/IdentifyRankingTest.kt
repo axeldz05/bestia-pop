@@ -280,6 +280,44 @@ class IdentifyRankingTest {
     }
 
     @Test
+    fun deluxeSourceAlbum_agreesWithPlainCatalogAlbum() {
+        val query = IdentifyRanking.Query(
+            artist = "Muse",
+            title = "Hysteria",
+            durationMs = 227_000L,
+            sourceArtist = "Muse",
+            sourceTitle = "Hysteria",
+            sourceAlbum = "Absolution (Deluxe)"
+        )
+        val ranked = IdentifyRanking.rank(
+            query,
+            listOf(track("Hysteria", "Muse", album = "Absolution", durationMs = 227_000L))
+        )
+        assertEquals(IdentifyConfidence.HIGH, IdentifyRanking.confidence(ranked))
+        assertTrue(ranked.first().reasons.any { it == "álbum coincidente" })
+    }
+
+    @Test
+    fun audiotreeCandidate_againstStudioSource_isNotHigh() {
+        val query = IdentifyRanking.Query(
+            artist = "TTNG",
+            title = "Pig",
+            durationMs = 200_000L,
+            sourceArtist = "TTNG",
+            sourceTitle = "Pig",
+            sourceAlbum = "This Town Needs Guns"
+        )
+        val ranked = IdentifyRanking.rank(
+            query,
+            listOf(
+                track("Pig", "TTNG", album = "Audiotree Live", durationMs = 200_000L)
+            )
+        )
+        assertNotEquals(IdentifyConfidence.HIGH, IdentifyRanking.confidence(ranked))
+        assertTrue(ranked.first().reasons.any { it.startsWith("álbum distinto") })
+    }
+
+    @Test
     fun sourceAlbumAgreement_staysHigh() {
         val query = IdentifyRanking.Query(
             artist = "Radiohead",
@@ -476,5 +514,109 @@ class IdentifyRankingTest {
         )
         assertEquals("Haru Nemuri", ranked.first().artist)
         assertTrue(ranked.first().score >= IdentifyRanking.MEDIUM_SCORE)
+    }
+
+    @Test
+    fun titleEqualsArtist_durationMatch_isNotHigh() {
+        val query = IdentifyRanking.Query(
+            artist = "Radiohead",
+            title = "Radiohead",
+            durationMs = 238_000L,
+            sourceArtist = "Radiohead",
+            sourceTitle = "Radiohead",
+            sourceAlbum = "Pablo Honey"
+        )
+        val ranked = IdentifyRanking.rank(
+            query,
+            listOf(
+                track("Creep", "Radiohead", album = "Pablo Honey", durationMs = 238_500L),
+                track("You", "Radiohead", album = "Pablo Honey", durationMs = 200_000L)
+            )
+        )
+        assertEquals("Creep", ranked.first().title)
+        assertNotEquals(IdentifyConfidence.HIGH, IdentifyRanking.confidence(ranked, query))
+        assertTrue(ranked.first().reasons.any { it.startsWith("duración") })
+    }
+
+    @Test
+    fun titleEqualsAlbum_durationMatch_isNotHigh() {
+        val query = IdentifyRanking.Query(
+            artist = "Radiohead",
+            title = "OK Computer",
+            durationMs = 387_000L,
+            sourceArtist = "Radiohead",
+            sourceTitle = "OK Computer",
+            sourceAlbum = "OK Computer"
+        )
+        val ranked = IdentifyRanking.rank(
+            query,
+            listOf(
+                track("Paranoid Android", "Radiohead", album = "OK Computer", durationMs = 387_200L),
+                track("Let Down", "Radiohead", album = "OK Computer", durationMs = 299_000L)
+            )
+        )
+        assertEquals("Paranoid Android", ranked.first().title)
+        assertNotEquals(IdentifyConfidence.HIGH, IdentifyRanking.confidence(ranked, query))
+    }
+
+    @Test
+    fun filenameHintQuery_doesNotAutoApplyAgainstDifferentSourceTitle() {
+        val query = IdentifyRanking.Query(
+            artist = "Radiohead",
+            title = "Creep",
+            durationMs = 238_000L,
+            sourceArtist = "Radiohead",
+            sourceTitle = "Radiohead",
+            sourceAlbum = "Pablo Honey"
+        )
+        val ranked = IdentifyRanking.rank(
+            query,
+            listOf(track("Creep", "Radiohead", album = "Pablo Honey", durationMs = 238_000L))
+        )
+        assertTrue(ranked.first().reasons.any { it.startsWith("título distinto") })
+        assertNotEquals(IdentifyConfidence.HIGH, IdentifyRanking.confidence(ranked, query))
+    }
+
+    @Test
+    fun titleTrackMatchingAlbum_ranksButNotHigh() {
+        val query = IdentifyRanking.Query(
+            artist = "Haru Nemuri",
+            title = "kick in the world",
+            durationMs = 210_000L,
+            sourceArtist = "Haru Nemuri",
+            sourceTitle = "kick in the world",
+            sourceAlbum = "kick in the world"
+        )
+        val ranked = IdentifyRanking.rank(
+            query,
+            listOf(track("kick in the world", "Haru Nemuri", album = "kick in the world", durationMs = 210_000L))
+        )
+        assertEquals("Haru Nemuri", ranked.first().artist)
+        assertTrue(ranked.first().score >= IdentifyRanking.MEDIUM_SCORE)
+        assertNotEquals(IdentifyConfidence.HIGH, IdentifyRanking.confidence(ranked, query))
+    }
+
+    @Test
+    fun catalogSearchText_titleEqualsArtist_usesAlbum() {
+        assertEquals(
+            "Radiohead Pablo Honey",
+            IdentifyRanking.catalogSearchText("Radiohead", "Radiohead", "Pablo Honey")
+        )
+        assertEquals(
+            "Radiohead",
+            IdentifyRanking.catalogSearchText("Radiohead", "Radiohead", "Unknown Album")
+        )
+        assertEquals(
+            "Radiohead Creep",
+            IdentifyRanking.catalogSearchText("Radiohead", "Creep", "Pablo Honey")
+        )
+    }
+
+    @Test
+    fun titleCollidesWithArtistOrAlbum_ignoresPlaceholderAndGeneric() {
+        assertTrue(IdentifyRanking.titleCollidesWithArtistOrAlbum("Radiohead", "Radiohead", "Pablo Honey"))
+        assertTrue(IdentifyRanking.titleCollidesWithArtistOrAlbum("OK Computer", "Radiohead", "OK Computer"))
+        assertFalse(IdentifyRanking.titleCollidesWithArtistOrAlbum("Creep", "Radiohead", "Pablo Honey"))
+        assertFalse(IdentifyRanking.titleCollidesWithArtistOrAlbum("Radiohead", "Unknown Artist", "Unknown Album"))
     }
 }

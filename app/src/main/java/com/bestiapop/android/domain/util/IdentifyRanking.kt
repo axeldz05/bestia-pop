@@ -30,6 +30,9 @@ object IdentifyRanking {
     private const val SOURCE_ALBUM_AGREE_BOOST = 0.08f
     private const val YEAR_EXACT_BOOST = 0.06f
     private const val YEAR_NEAR_BOOST = 0.03f
+    private const val UNINFORMATIVE_TITLE_WEIGHT = 0.15f
+    private const val UNINFORMATIVE_DURATION_CLOSE = 0.35f
+    private const val UNINFORMATIVE_DURATION_NEAR = 0.20f
 
     data class Query(
         val artist: String,
@@ -157,8 +160,11 @@ object IdentifyRanking {
         val combinedSim = fieldSimilarity(qAll, cAll)
         val titleSim = fieldSimilarity(qTitle, cTitle)
         val identityBagMatch = combinedSim >= SOURCE_AGREE_SIM
+        val uninformativeTitle = titleUninformative(query)
 
-        if (identityBagMatch) {
+        if (uninformativeTitle) {
+            total += UNINFORMATIVE_TITLE_WEIGHT * titleSim
+        } else if (identityBagMatch) {
             // Filename was `Artist_Title` with spaces as `_`, so the query split is
             // wrong (`The` / `Doors Roadhouse Blues`) but artist+title together match.
             total += 0.70f * combinedSim
@@ -201,13 +207,15 @@ object IdentifyRanking {
         val candDur = track.durationMs
         if (fileDur > 0L && candDur > 0L) {
             val diffSec = abs(fileDur - candDur) / 1000f
+            val closeBoost = if (uninformativeTitle) UNINFORMATIVE_DURATION_CLOSE else 0.20f
+            val nearBoost = if (uninformativeTitle) UNINFORMATIVE_DURATION_NEAR else 0.10f
             when {
                 diffSec <= 2f -> {
-                    total += 0.20f
+                    total += closeBoost
                     val rounded = diffSec.toInt()
                     reasons.add(if (rounded <= 0) "duración exacta" else "duración ±${rounded}s")
                 }
-                diffSec <= 5f -> total += 0.10f
+                diffSec <= 5f -> total += nearBoost
                 else -> total += 0.02f
             }
         } else {
@@ -224,13 +232,17 @@ object IdentifyRanking {
         if (srcAlbum.isNotEmpty() && !isGenericAlbum(srcAlbum) &&
             album.isNotBlank() && !isGenericAlbum(album)
         ) {
-            val albumSim = sourceAlbumSimilarity(srcAlbum, album)
-            when {
-                albumSim >= SOURCE_AGREE_SIM -> {
-                    total += SOURCE_ALBUM_AGREE_BOOST
-                    reasons.add("álbum coincidente")
+            if (isLiveSessionAlbum(album) && !isLiveSessionAlbum(srcAlbum)) {
+                reasons.add("álbum distinto")
+            } else {
+                val albumSim = sourceAlbumSimilarity(srcAlbum, album)
+                when {
+                    albumSim >= SOURCE_AGREE_SIM -> {
+                        total += SOURCE_ALBUM_AGREE_BOOST
+                        reasons.add("álbum coincidente")
+                    }
+                    albumSim < SOURCE_CONFLICT_SIM -> reasons.add("álbum distinto")
                 }
-                albumSim < SOURCE_CONFLICT_SIM -> reasons.add("álbum distinto")
             }
         }
 
@@ -249,12 +261,12 @@ object IdentifyRanking {
                     reasons.add("artista distinto")
                 }
             }
-            // Compared against the song's own tag, not against titleSim (which measures the *query*):
-            // when the query title came from a filename hint, a candidate contradicting the real tag
-            // title was never flagged and confidence() could still return HIGH, i.e. auto-apply.
-            if (srcTitle.isNotEmpty() && fieldSimilarity(srcTitle, cTitle) < SOURCE_CONFLICT_SIM) {
-                reasons.add("título distinto")
-            }
+        }
+        // Compared against the song's own tag even when the *query* bag-matches (filename hint
+        // `Creep` vs ID3 title `Radiohead`). Containment still lets `Doors Roadhouse Blues`
+        // agree with `Roadhouse Blues`.
+        if (srcTitle.isNotEmpty() && fieldSimilarity(srcTitle, cTitle) < SOURCE_CONFLICT_SIM) {
+            reasons.add("título distinto")
         }
 
         when {
@@ -371,7 +383,10 @@ object IdentifyRanking {
         return out
     }
 
-    fun confidence(ranked: List<IdentifyCandidate>): IdentifyConfidence {
+    fun confidence(
+        ranked: List<IdentifyCandidate>,
+        query: Query? = null
+    ): IdentifyConfidence {
         if (ranked.isEmpty()) return IdentifyConfidence.NONE
         val top = ranked.first()
         val gap = if (ranked.size >= 2) top.score - ranked[1].score else 1f
@@ -383,7 +398,15 @@ object IdentifyRanking {
         if (base != IdentifyConfidence.HIGH) return base
         if (isYouTubeProvider(top.provider)) return IdentifyConfidence.MEDIUM
         if (hasSevereConflict(top.reasons)) return IdentifyConfidence.MEDIUM
+        if (query != null && titleUninformative(query)) return IdentifyConfidence.MEDIUM
         return IdentifyConfidence.HIGH
+    }
+
+    private fun titleUninformative(query: Query): Boolean {
+        val title = query.sourceTitle ?: query.title
+        val artist = query.sourceArtist
+            ?: query.artist.takeUnless { query.artistIsPlaceholder || isPlaceholderArtist(it) }
+        return titleCollidesWithArtistOrAlbum(title, artist, query.sourceAlbum)
     }
 
     fun hasSevereConflict(reasons: List<String>): Boolean =
@@ -397,6 +420,44 @@ object IdentifyRanking {
     private fun sourceAlbumSimilarity(source: String, candidate: String): Float {
         if (albumNamesMatch(source, candidate)) return 1f
         return similarity(TrackMatchKeys.normalize(source), TrackMatchKeys.normalize(candidate))
+    }
+
+    /**
+     * Title tag is the artist or album name (rips / MediaStore), so it is not a
+     * usable recording title. Placeholder artist / generic album do not count.
+     */
+    fun titleCollidesWithArtistOrAlbum(
+        title: String,
+        artist: String? = null,
+        album: String? = null
+    ): Boolean {
+        val t = TrackMatchKeys.normalize(title)
+        if (t.isEmpty()) return false
+        val a = artist?.trim().orEmpty()
+        if (a.isNotEmpty() && !isPlaceholderArtist(a) && TrackMatchKeys.normalize(a) == t) {
+            return true
+        }
+        val alb = album?.trim().orEmpty()
+        return alb.isNotEmpty() && !isGenericAlbum(alb) && TrackMatchKeys.normalize(alb) == t
+    }
+
+    /**
+     * Default catalog query. When the title is the artist name, search artist+album
+     * (or artist alone) instead of repeating the artist as a track title.
+     */
+    fun catalogSearchText(
+        artist: String,
+        title: String,
+        album: String = "",
+        artistIsPlaceholder: Boolean = false
+    ): String {
+        val artistOk = !artistIsPlaceholder && artist.isNotBlank() && !isPlaceholderArtist(artist)
+        val albumOk = album.isNotBlank() && !isGenericAlbum(album)
+        if (!artistOk) return title.trim()
+        if (titleCollidesWithArtistOrAlbum(title, artist, album = null)) {
+            return if (albumOk) "$artist $album".trim() else artist.trim()
+        }
+        return "$artist $title".trim()
     }
 
     fun isPlaceholderArtist(artist: String): Boolean {

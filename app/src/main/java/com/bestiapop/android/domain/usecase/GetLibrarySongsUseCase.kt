@@ -8,6 +8,13 @@ import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.data.util.albumTrackSortKey
 import com.bestiapop.android.domain.util.IdentifyRanking
 import com.bestiapop.android.domain.util.TrackMatchKeys
+import com.bestiapop.android.domain.util.albumGroupingKey
+import com.bestiapop.android.domain.util.albumIdentityKey
+import com.bestiapop.android.domain.util.dominantNonBlank
+import com.bestiapop.android.domain.util.preferredAlbumDisplayName
+import com.bestiapop.android.domain.util.songsByAlbumBucket
+import com.bestiapop.android.domain.util.songsMatchingAlbumBucket
+import com.bestiapop.android.domain.util.studioAlbumKeysByArtist
 import com.bestiapop.android.ui.SortDirection
 import com.bestiapop.android.ui.SortOption
 import com.bestiapop.android.ui.state.LibraryBrowseFilter
@@ -25,13 +32,20 @@ class GetLibrarySongsUseCase {
     ): List<Song> {
         // Album artwork fallback, skipping generic albums: "Unknown Album" is the literal stored for
         // every albumless song, so inheriting inside that bucket showed one cover on unrelated tracks.
+        val studio = studioAlbumKeysByArtist(songs, IdentifyRanking::isGenericAlbum)
         val albumArtMap = songs.asSequence()
             .filterNot { IdentifyRanking.isGenericAlbum(it.album) }
-            .groupBy { it.album }
+            .groupBy { albumGroupingKey(it.album, it.artist, studio, IdentifyRanking::isGenericAlbum) }
             .mapValues { (_, albumSongs) -> firstArtwork(albumSongs) }
 
         val unifiedList = songs.map { song ->
-            val albumArt = song.artworkUri ?: albumArtMap[song.album]
+            val bucket = albumGroupingKey(
+                song.album,
+                song.artist,
+                studio,
+                IdentifyRanking::isGenericAlbum
+            )
+            val albumArt = song.artworkUri ?: albumArtMap[bucket]
             if (albumArt != song.artworkUri) song.copy(artworkUri = albumArt) else song
         }
 
@@ -99,19 +113,19 @@ class GetLibrarySongsUseCase {
             }
 
             LibraryViewMode.ALBUM_GROUPS -> {
+                val grouped = songsByAlbumBucket(songs, IdentifyRanking::isGenericAlbum)
                 val items = ArrayList<LibraryListItem>(songs.size + songs.size / 4 + 1)
                 var songIndex = 0
-                val grouped = songs.groupBy { it.album }
-                extractAlbums(songs, overrides, sortOption, sortDirection).forEach { album ->
-                    val groupSongs = grouped[album.name] ?: return@forEach
-                    val albumSongs = sortSongsWithinAlbum(groupSongs)
+                albumsFromGrouped(grouped, overrides, sortOption, sortDirection).forEach { album ->
+                    val albumSongs = songsInGroupedAlbum(grouped, album.groupingKey)
                     items += LibraryListItem.AlbumHeader(
                         albumName = album.name,
                         displayName = album.displayName,
                         artistName = album.artist,
                         artworkUri = album.artworkUri,
                         songCount = albumSongs.size,
-                        albumSongs = albumSongs
+                        albumSongs = albumSongs,
+                        groupingKey = album.groupingKey
                     )
                     albumSongs.forEach { song ->
                         items += LibraryListItem.SongRow(song = song, index = songIndex)
@@ -123,41 +137,22 @@ class GetLibrarySongsUseCase {
         }
     }
 
+    fun songsForAlbum(songs: List<Song>, albumKey: String): List<Song> =
+        sortSongsWithinAlbum(
+            songsMatchingAlbumBucket(songs, albumKey, IdentifyRanking::isGenericAlbum)
+        )
+
     fun extractAlbums(
         songs: List<Song>,
         overrides: Map<String, AlbumOverride> = emptyMap(),
         sortOption: SortOption = SortOption.TITLE,
         sortDirection: SortDirection = SortDirection.ASC
-    ): List<Album> {
-        val ascending = sortDirection == SortDirection.ASC
-        val albums = songs.groupBy { it.album }.map { (albumName, albumSongs) ->
-            val override = overrides[albumName]
-            val firstArt = firstArtwork(albumSongs)
-            val artistName = albumSongs.firstOrNull()?.artist ?: "Unknown Artist"
-            val derivedYear = albumSongs.map { it.year }.firstOrNull { it > 0 } ?: 0
-            Album(
-                name = albumName,
-                displayName = override?.displayName?.takeIf { it.isNotBlank() } ?: albumName,
-                artist = override?.artist?.takeIf { it.isNotBlank() } ?: artistName,
-                songCount = albumSongs.size,
-                artworkUri = override?.artworkUri?.takeIf { it.isNotBlank() } ?: firstArt,
-                genre = override?.genre?.takeIf { it.isNotBlank() }
-                    ?: dominantGenre(albumSongs.map { it.genre }),
-                year = if (override != null && override.year > 0) override.year else derivedYear,
-                dateAdded = albumSongs.maxOfOrNull { it.dateAdded }
-            )
-        }
-        return when (sortOption) {
-            SortOption.TITLE, SortOption.ALBUM ->
-                albums.sortedAggregates(ascending) { it.displayName }
-            SortOption.ARTIST ->
-                albums.sortedAggregates(ascending) { it.artist }
-            SortOption.GENRE ->
-                albums.sortedAggregates(ascending) { it.genre ?: "" }
-            SortOption.DATE_ADDED ->
-                albums.sortedAggregates(ascending, useLong = true, longKey = { it.dateAdded }) { it.displayName }
-        }
-    }
+    ): List<Album> = albumsFromGrouped(
+        songsByAlbumBucket(songs, IdentifyRanking::isGenericAlbum),
+        overrides,
+        sortOption,
+        sortDirection
+    )
 
     fun extractArtists(
         songs: List<Song>,
@@ -167,7 +162,10 @@ class GetLibrarySongsUseCase {
     ): List<Artist> {
         val ascending = sortDirection == SortDirection.ASC
         val artists = songs.groupBy { it.artist }.map { (artistName, artistSongs) ->
-            val albumCount = artistSongs.map { it.album }.distinct().size
+            val studio = studioAlbumKeysByArtist(artistSongs, IdentifyRanking::isGenericAlbum)
+            val albumCount = artistSongs.map { song ->
+                albumGroupingKey(song.album, song.artist, studio, IdentifyRanking::isGenericAlbum)
+            }.distinct().size
             val photoArt = artistPhotoMap[artistName]
             Artist(
                 name = artistName,
@@ -255,11 +253,9 @@ class GetLibrarySongsUseCase {
             LibraryBrowseFilter.RECENT ->
                 songs.filter { it.lastPlayedAt > 0 }.sortedByDescending { it.lastPlayedAt }
             LibraryBrowseFilter.ALBUMS -> {
-                val albumList = albums ?: extractAlbums(songs)
-                val byAlbum = songs.caseInsensitiveBuckets(Song::album)
-                albumList.flatMap { album ->
-                    sortSongsWithinAlbum(byAlbum[album.name].orEmpty())
-                }
+                val grouped = songsByAlbumBucket(songs, IdentifyRanking::isGenericAlbum)
+                val albumList = albums ?: albumsFromGrouped(grouped, emptyMap())
+                albumList.flatMap { album -> songsInGroupedAlbum(grouped, album.groupingKey) }
             }
             LibraryBrowseFilter.ARTISTS -> {
                 val artistList = artists ?: extractArtists(songs)
@@ -282,6 +278,69 @@ class GetLibrarySongsUseCase {
             buckets.getOrPut(keyOf(song)) { ArrayList() }.add(song)
         }
         return buckets
+    }
+
+    private fun albumsFromGrouped(
+        grouped: Map<String, List<Song>>,
+        overrides: Map<String, AlbumOverride> = emptyMap(),
+        sortOption: SortOption = SortOption.TITLE,
+        sortDirection: SortDirection = SortDirection.ASC
+    ): List<Album> {
+        val ascending = sortDirection == SortDirection.ASC
+        val albums = grouped.map { (bucketKey, albumSongs) ->
+            val albumName = preferredAlbumDisplayName(albumSongs.map { it.album }).ifBlank {
+                albumSongs.first().album
+            }
+            val override = overrideForBucket(overrides, bucketKey, albumName)
+            val firstArt = firstArtwork(albumSongs)
+            val artistName = dominantNonBlank(albumSongs.map { it.artist }, "Unknown Artist")
+            val derivedYear = albumSongs.map { it.year }.firstOrNull { it > 0 } ?: 0
+            Album(
+                name = albumName,
+                displayName = override?.displayName?.takeIf { it.isNotBlank() } ?: albumName,
+                artist = override?.artist?.takeIf { it.isNotBlank() } ?: artistName,
+                songCount = albumSongs.size,
+                artworkUri = override?.artworkUri?.takeIf { it.isNotBlank() } ?: firstArt,
+                genre = override?.genre?.takeIf { it.isNotBlank() }
+                    ?: dominantGenre(albumSongs.map { it.genre }),
+                year = if (override != null && override.year > 0) override.year else derivedYear,
+                dateAdded = albumSongs.maxOfOrNull { it.dateAdded },
+                groupingKey = bucketKey
+            )
+        }
+        return when (sortOption) {
+            SortOption.TITLE, SortOption.ALBUM ->
+                albums.sortedAggregates(ascending) { it.displayName }
+            SortOption.ARTIST ->
+                albums.sortedAggregates(ascending) { it.artist }
+            SortOption.GENRE ->
+                albums.sortedAggregates(ascending) { it.genre ?: "" }
+            SortOption.DATE_ADDED ->
+                albums.sortedAggregates(ascending, useLong = true, longKey = { it.dateAdded }) { it.displayName }
+        }
+    }
+
+    private fun songsInGroupedAlbum(
+        grouped: Map<String, List<Song>>,
+        albumKey: String
+    ): List<Song> {
+        val target = albumIdentityKey(albumKey)
+        val bucket = grouped[albumKey]
+            ?: grouped[target]
+            ?: grouped.entries.firstOrNull { (_, songs) ->
+                preferredAlbumDisplayName(songs.map { it.album }).equals(albumKey, ignoreCase = true)
+            }?.value
+        return sortSongsWithinAlbum(bucket.orEmpty())
+    }
+
+    private fun overrideForBucket(
+        overrides: Map<String, AlbumOverride>,
+        bucketKey: String,
+        preferredName: String
+    ): AlbumOverride? {
+        if (overrides.isEmpty() || bucketKey.isEmpty()) return null
+        overrides[preferredName]?.let { return it }
+        return overrides.entries.firstOrNull { albumIdentityKey(it.key) == bucketKey }?.value
     }
 
     private fun firstArtwork(songs: List<Song>): String? =

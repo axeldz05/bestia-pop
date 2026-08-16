@@ -33,7 +33,9 @@ data class IdentifyWorkSnapshot(
     val lbHits: Int = 0,
     val alreadyQueued: Int = 0,
     val reviewCount: Int = 0,
-    val interrupted: Boolean = false
+    val interrupted: Boolean = false,
+    /** Song ids whose HIGH apply must only fill missing/placeholder fields. */
+    val fillGapsOnlySongIds: Set<Long> = emptySet()
 ) {
     val hasRemaining: Boolean get() = remainingSongIds.isNotEmpty()
 }
@@ -57,6 +59,9 @@ object IdentifyWorkCodec {
             put("alreadyQueued", snapshot.alreadyQueued)
             put("reviewCount", snapshot.reviewCount)
             put("interrupted", snapshot.interrupted)
+            val gapIds = JSONArray()
+            for (id in snapshot.fillGapsOnlySongIds) gapIds.put(id)
+            put("fillGapsOnlySongIds", gapIds)
             put(
                 "applyFields",
                 JSONObject().apply {
@@ -95,6 +100,13 @@ object IdentifyWorkCodec {
             } else {
                 IdentifyApplyFields.ALL
             }
+            val gapIdsArr = obj.optJSONArray("fillGapsOnlySongIds") ?: JSONArray()
+            val gapIds = buildSet {
+                for (i in 0 until gapIdsArr.length()) {
+                    val id = gapIdsArr.optLong(i, Long.MIN_VALUE)
+                    if (id != Long.MIN_VALUE) add(id)
+                }
+            }
             IdentifyWorkSnapshot(
                 remainingSongIds = ids,
                 force = obj.optBoolean("force", false),
@@ -110,7 +122,8 @@ object IdentifyWorkCodec {
                 lbHits = obj.optInt("lbHits", 0),
                 alreadyQueued = obj.optInt("alreadyQueued", 0),
                 reviewCount = obj.optInt("reviewCount", 0),
-                interrupted = obj.optBoolean("interrupted", false)
+                interrupted = obj.optBoolean("interrupted", false),
+                fillGapsOnlySongIds = gapIds
             )
         } catch (_: Exception) {
             null

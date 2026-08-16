@@ -58,9 +58,7 @@ class BrowseLocalLibraryUseCase(
     }
 
     fun songsForAlbum(snapshot: BrowseLocalLibrarySnapshot, albumKey: String): List<Song> =
-        library.sortSongsWithinAlbum(
-            snapshot.songs.filter { it.album.equals(albumKey, ignoreCase = true) }
-        )
+        library.songsForAlbum(snapshot.songs, albumKey)
 
     fun songsForArtist(snapshot: BrowseLocalLibrarySnapshot, artistName: String): List<Song> =
         snapshot.songs.filter { it.artist.equals(artistName, ignoreCase = true) }

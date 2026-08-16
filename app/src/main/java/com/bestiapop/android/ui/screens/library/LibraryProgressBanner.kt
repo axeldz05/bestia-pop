@@ -29,10 +29,10 @@ fun LibraryProgressBanner(
         LibraryJobKind.IDENTIFY -> "Identificando"
         LibraryJobKind.TAG_WRITE -> "Escribiendo tags"
     }
-    val countLabel = if (progress.total > 0) {
-        "$verb ${progress.done}/${progress.total}"
-    } else {
-        verb
+    val countLabel = when {
+        progress.total > 0 -> "$verb ${progress.done}/${progress.total}"
+        progress.done > 0 -> "$verb · ${progress.done} archivos"
+        else -> verb
     }
     Surface(
         modifier = modifier

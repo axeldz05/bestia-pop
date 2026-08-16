@@ -2,21 +2,30 @@ package com.bestiapop.android.service
 
 import android.content.Context
 import com.bestiapop.android.data.model.IdentifyApplyFields
+import com.bestiapop.android.data.model.IdentifyCandidate
 import com.bestiapop.android.data.model.IdentifyConfidence
 import com.bestiapop.android.data.model.IdentifyProposal
 import com.bestiapop.android.data.model.IdentifyResult
 import com.bestiapop.android.data.model.LibraryJobKind
 import com.bestiapop.android.data.model.LibraryJobProgress
 import com.bestiapop.android.data.model.Song
+import com.bestiapop.android.data.network.ConnectivityObserver
 import com.bestiapop.android.data.preferences.IdentifyReviewStore
 import com.bestiapop.android.data.preferences.IdentifyWorkSnapshot
 import com.bestiapop.android.data.preferences.IdentifyWorkStore
 import com.bestiapop.android.data.preferences.ListenBrainzPreferencesRepository
 import com.bestiapop.android.data.repository.MusicRepository
 import com.bestiapop.android.data.util.CrashReporter
+import com.bestiapop.android.domain.util.IdentifyRanking
+import com.bestiapop.android.domain.util.KnownAlbumTracks
+import com.bestiapop.android.domain.util.assignUniqueKnownAlbumMatches
+import com.bestiapop.android.domain.util.gapApplyFields
+import com.bestiapop.android.domain.util.knownAlbumQueryOf
+import com.bestiapop.android.domain.util.toIdentifyCandidate
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -73,9 +82,12 @@ internal class ProcessIdentifyRuntime(
         val appendReview: suspend (IdentifyProposal, IdentifyApplyFields) -> Unit,
         val loadWork: suspend () -> IdentifyWorkSnapshot?,
         val saveWork: suspend (IdentifyWorkSnapshot?) -> Unit,
+        val isOnline: () -> Boolean = { true },
         val acquireExecutionLease: suspend () -> AutoCloseable = { AutoCloseable {} },
         val notifyCompleted: (IdentifyBatchSummary) -> Unit = {},
-        val reportTelemetry: (IdentifyWorkSnapshot) -> Unit = {}
+        val reportTelemetry: (IdentifyWorkSnapshot) -> Unit = {},
+        val loadScopedAlbumTracks: suspend (artist: String, album: String) -> KnownAlbumTracks? =
+            { _, _ -> null }
     )
 
     private val workMutex = Mutex()
@@ -94,9 +106,10 @@ internal class ProcessIdentifyRuntime(
         songs: List<Song>,
         force: Boolean = false,
         showReview: Boolean = true,
-        fields: IdentifyApplyFields = IdentifyApplyFields.ALL
+        fields: IdentifyApplyFields = IdentifyApplyFields.ALL,
+        fillGapsOnly: Boolean = false
     ): Job = scope.launch {
-        val started = enqueue(songs, force, showReview, fields)
+        val started = enqueue(songs, force, showReview, fields, fillGapsOnly)
         if (started) {
             runMutex.withLock { processUntilEmpty() }
         }
@@ -146,7 +159,8 @@ internal class ProcessIdentifyRuntime(
         songs: List<Song>,
         force: Boolean,
         showReview: Boolean,
-        fields: IdentifyApplyFields
+        fields: IdentifyApplyFields,
+        fillGapsOnly: Boolean
     ): Boolean {
         if (songs.isEmpty()) return false
         ensureHydrated()
@@ -171,6 +185,9 @@ internal class ProcessIdentifyRuntime(
             }
             val current = snapshot
             val remaining = (current?.remainingSongIds.orEmpty() + toProcess.map { it.id }).distinct()
+            val newIds = toProcess.map { it.id }
+            val fillGapsIds = current?.fillGapsOnlySongIds.orEmpty() +
+                if (fillGapsOnly) newIds else emptyList()
             snapshot = IdentifyWorkSnapshot(
                 remainingSongIds = remaining,
                 force = (current?.force == true) || force,
@@ -186,7 +203,8 @@ internal class ProcessIdentifyRuntime(
                 lbHits = current?.lbHits ?: 0,
                 alreadyQueued = (current?.alreadyQueued ?: 0) + alreadyQueued,
                 reviewCount = current?.reviewCount ?: 0,
-                interrupted = false
+                interrupted = false,
+                fillGapsOnlySongIds = fillGapsIds
             )
             persistLocked(snapshot)
             started = true
@@ -202,33 +220,40 @@ internal class ProcessIdentifyRuntime(
         var lease: AutoCloseable? = null
         _running.value = true
         try {
-            while (true) {
-                val next = workMutex.withLock {
-                    val current = snapshot
-                    val id = current?.remainingSongIds?.firstOrNull()
-                    if (current == null || id == null) {
-                        Triple(null, current, true)
-                    } else {
-                        Triple(id, current, false)
+            if (workMutex.withLock { snapshot?.hasRemaining == true }) {
+                lease = dependencies.acquireExecutionLease()
+            }
+            coroutineScope {
+                val inFlight = mutableSetOf<Long>()
+                repeat(IDENTIFY_PARALLEL) {
+                    launch {
+                        while (true) {
+                            if (!dependencies.isOnline()) {
+                                workMutex.withLock { markInterruptedLocked() }
+                                break
+                            }
+                            val songId = workMutex.withLock {
+                                snapshot?.remainingSongIds
+                                    ?.firstOrNull { it !in inFlight }
+                                    ?.also { inFlight += it }
+                            } ?: break
+                            try {
+                                val baseline = workMutex.withLock { snapshot } ?: break
+                                processOne(songId, baseline, inFlight)
+                            } catch (cancelled: CancellationException) {
+                                throw cancelled
+                            } catch (_: Exception) {
+                                commitProcessed(songId) { it.copy(skipped = it.skipped + 1) }
+                            } finally {
+                                workMutex.withLock { inFlight.remove(songId) }
+                            }
+                        }
                     }
                 }
-                val songId = next.first
-                val current = next.second
-                if (next.third) {
-                    finishBatch(current)
-                    break
-                }
-                if (songId == null || current == null) break
-                if (lease == null) {
-                    lease = dependencies.acquireExecutionLease()
-                }
-                try {
-                    processOne(songId, current)
-                } catch (cancelled: CancellationException) {
-                    throw cancelled
-                } catch (_: Exception) {
-                    commitProcessed(songId) { it.copy(skipped = it.skipped + 1) }
-                }
+            }
+            val current = workMutex.withLock { snapshot }
+            if (current == null || !current.hasRemaining) {
+                finishBatch(current)
             }
         } catch (cancelled: CancellationException) {
             workMutex.withLock {
@@ -247,7 +272,19 @@ internal class ProcessIdentifyRuntime(
         }
     }
 
-    private suspend fun processOne(songId: Long, baseline: IdentifyWorkSnapshot) {
+    private suspend fun markInterruptedLocked() {
+        val snap = snapshot ?: return
+        if (!snap.hasRemaining) return
+        val interrupted = snap.copy(interrupted = true)
+        snapshot = interrupted
+        persistLocked(interrupted)
+    }
+
+    private suspend fun processOne(
+        songId: Long,
+        baseline: IdentifyWorkSnapshot,
+        inFlight: MutableSet<Long>
+    ) {
         val song = dependencies.getSong(songId)
         val total = baseline.totalCount.coerceAtLeast(1)
         _progress.value = LibraryJobProgress(
@@ -262,6 +299,11 @@ internal class ProcessIdentifyRuntime(
         }
         val token = dependencies.listenBrainzToken()
         val proposal = dependencies.propose(song, baseline.force, token)
+        val fillGaps = songId in baseline.fillGapsOnlySongIds
+        val gapFields = if (fillGaps) gapApplyFields(song) else null
+        val applyFields = gapFields ?: baseline.applyFields.copy(title = false)
+        val reviewFields = gapFields ?: baseline.applyFields
+        val reviewProposal = if (fillGaps) proposal.copy(fillGapsOnly = true) else proposal
         var deltaUpdated = 0
         var deltaSkipped = 0
         var deltaMedium = 0
@@ -272,17 +314,25 @@ internal class ProcessIdentifyRuntime(
         when {
             proposal.alreadyIdentified -> deltaSkipped = 1
             proposal.confidence == IdentifyConfidence.HIGH && proposal.suggested != null -> {
-                when (dependencies.apply(song.id, proposal, baseline.applyFields)) {
-                    is IdentifyResult.Updated -> deltaUpdated = 1
+                when (dependencies.apply(song.id, proposal, applyFields)) {
+                    is IdentifyResult.Updated -> {
+                        deltaUpdated = 1
+                        fanOutKnownAlbum(
+                            seed = song,
+                            candidate = proposal.suggested,
+                            fillGaps = fillGaps,
+                            inFlight = inFlight
+                        )
+                    }
                     else -> {
-                        dependencies.appendReview(proposal, baseline.applyFields)
+                        dependencies.appendReview(reviewProposal, reviewFields)
                         deltaReview = 1
                         deltaMedium = 1
                     }
                 }
             }
             else -> {
-                dependencies.appendReview(proposal, baseline.applyFields)
+                dependencies.appendReview(reviewProposal, reviewFields)
                 deltaReview = 1
                 when (proposal.confidence) {
                     IdentifyConfidence.MEDIUM -> deltaMedium = 1
@@ -301,6 +351,89 @@ internal class ProcessIdentifyRuntime(
                 lbHits = snap.lbHits + deltaLbHits,
                 reviewCount = snap.reviewCount + deltaReview
             )
+        }
+    }
+
+    private suspend fun fanOutKnownAlbum(
+        seed: Song,
+        candidate: IdentifyCandidate,
+        fillGaps: Boolean,
+        inFlight: MutableSet<Long>
+    ) {
+        val albumName = candidate.album
+        val artist = candidate.artist
+        if (IdentifyRanking.isGenericAlbum(albumName) ||
+            IdentifyRanking.isPlaceholderArtist(artist)
+        ) {
+            return
+        }
+        val album = dependencies.loadScopedAlbumTracks(artist, albumName) ?: return
+        if (album.tracks.size < 2) return
+        val remainingIds = workMutex.withLock {
+            snapshot?.remainingSongIds.orEmpty().filter { id ->
+                id != seed.id && id !in inFlight
+            }
+        }
+        if (remainingIds.isEmpty()) return
+        val songs = remainingIds.mapNotNull { id -> dependencies.getSong(id) }
+        if (songs.isEmpty()) return
+        val queries = songs.map { knownAlbumQueryOf(it) }
+        val matches = assignUniqueKnownAlbumMatches(
+            queries = queries,
+            albums = listOf(album),
+            scoped = true,
+            seedFolderPath = seed.folderPath
+        )
+        if (matches.isEmpty()) return
+        val toApply = workMutex.withLock {
+            val ids = matches.keys.filter { id ->
+                id in snapshot?.remainingSongIds.orEmpty() && id !in inFlight
+            }
+            inFlight += ids
+            ids
+        }
+        if (toApply.isEmpty()) return
+        val fillGapsIds = workMutex.withLock { snapshot?.fillGapsOnlySongIds.orEmpty() }
+        val batchFields = workMutex.withLock {
+            snapshot?.applyFields ?: IdentifyApplyFields.ALL
+        }
+        val appliedIds = LinkedHashSet<Long>()
+        try {
+            for (id in toApply) {
+                val song = songs.firstOrNull { it.id == id } ?: continue
+                val match = matches[id] ?: continue
+                val fields = if (fillGaps || id in fillGapsIds) {
+                    gapApplyFields(song)
+                } else {
+                    batchFields
+                }
+                val candidate = match.toIdentifyCandidate()
+                val sibling = IdentifyProposal(
+                    songId = id,
+                    queryArtist = song.artist,
+                    queryTitle = song.title,
+                    candidates = listOf(candidate),
+                    confidence = IdentifyConfidence.HIGH,
+                    suggested = candidate
+                )
+                when (dependencies.apply(id, sibling, fields)) {
+                    is IdentifyResult.Updated -> appliedIds += id
+                    else -> Unit
+                }
+            }
+        } finally {
+            workMutex.withLock {
+                inFlight.removeAll(toApply)
+                if (appliedIds.isNotEmpty()) {
+                    val current = snapshot ?: return@withLock
+                    snapshot = current.copy(
+                        remainingSongIds = current.remainingSongIds.filterNot { it in appliedIds },
+                        processedCount = current.processedCount + appliedIds.size,
+                        updated = current.updated + appliedIds.size
+                    )
+                    persistLocked(snapshot)
+                }
+            }
         }
     }
 
@@ -360,6 +493,8 @@ internal class ProcessIdentifyRuntime(
     }
 
     companion object {
+        internal const val IDENTIFY_PARALLEL = 3
+
         fun create(
             context: Context,
             scope: CoroutineScope,
@@ -369,10 +504,11 @@ internal class ProcessIdentifyRuntime(
             val workStore = IdentifyWorkStore(context)
             val reviewStore = IdentifyReviewStore(context)
             val listenBrainzPreferences = ListenBrainzPreferencesRepository(context)
+            val connectivity = ConnectivityObserver(context)
             return ProcessIdentifyRuntime(
                 scope = scope,
                 dependencies = Dependencies(
-                    getSong = { id -> repository.getAllSongsSync().find { it.id == id } },
+                    getSong = { id -> repository.getSongById(id) },
                     propose = { song, force, token ->
                         repository.proposeSongIdentity(
                             song = song,
@@ -397,6 +533,7 @@ internal class ProcessIdentifyRuntime(
                     },
                     loadWork = { workStore.load() },
                     saveWork = { workStore.save(it) },
+                    isOnline = connectivity::isCurrentlyOnline,
                     acquireExecutionLease = acquireExecutionLease,
                     notifyCompleted = { summary ->
                         IdentifyNotificationHelper(context).notifyCompleted(summary)
@@ -413,6 +550,9 @@ internal class ProcessIdentifyRuntime(
                                 "low=${snap.low} none=${snap.none} skipped=${snap.skipped} " +
                                 "lb_hits=${snap.lbHits}"
                         )
+                    },
+                    loadScopedAlbumTracks = { artist, album ->
+                        repository.loadKnownAlbumTracks(artist, album, fetchCatalog = true)
                     }
                 )
             )

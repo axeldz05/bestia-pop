@@ -39,8 +39,8 @@ class MusicRepositoryResyncIntegrationTest {
         val secondCount = repository.resyncAppManagedMusic()
 
         val persisted = database.musicDao.getAllSongs().single()
-        assertEquals(1, firstCount)
-        assertEquals(0, secondCount)
+        assertEquals(1, firstCount.size)
+        assertEquals(0, secondCount.size)
         assertEquals(managed.absolutePath, persisted.uriString)
         assertEquals("Fixture Artist", persisted.artist)
         assertEquals("Recovered", persisted.title)

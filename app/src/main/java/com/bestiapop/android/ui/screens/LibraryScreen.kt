@@ -47,6 +47,7 @@ import androidx.compose.ui.unit.dp
 import com.bestiapop.android.data.model.Album
 import com.bestiapop.android.data.model.Playlist
 import com.bestiapop.android.data.model.Song
+import com.bestiapop.android.domain.util.albumNamesMatch
 import com.bestiapop.android.ui.MusicPlayerViewModel
 import com.bestiapop.android.ui.SortDirection
 import com.bestiapop.android.ui.SortOption
@@ -70,6 +71,7 @@ import com.bestiapop.android.ui.screens.library.libraryOrderSummary
 import com.bestiapop.android.ui.screens.library.libraryTuneContentDescription
 import com.bestiapop.android.ui.screens.library.rememberSongActionDialogs
 import com.bestiapop.android.ui.state.LibraryBrowseFilter
+import com.bestiapop.android.ui.state.LibraryListItem
 import com.bestiapop.android.ui.state.LibraryViewMode
 
 @Composable
@@ -179,7 +181,7 @@ fun LibraryScreen(
 
     val resolveAlbumByKey = remember(albums) {
         { albumKey: String ->
-            albums.firstOrNull { it.name.equals(albumKey, ignoreCase = true) }
+            albums.firstOrNull { albumNamesMatch(it.name, albumKey) || albumNamesMatch(it.displayName, albumKey) }
         }
     }
 
@@ -246,8 +248,11 @@ fun LibraryScreen(
         }
     }
 
-    val libraryAlbumNames = remember(songs) {
-        songs.map { it.album }.filter { it.isNotBlank() }.toSet()
+    val libraryAlbumNames = remember(songListItems) {
+        songListItems.filterIsInstance<LibraryListItem.AlbumHeader>()
+            .map { it.albumName }
+            .filter { it.isNotBlank() }
+            .toSet()
     }
     val allAlbumsCollapsed = libraryAlbumNames.isNotEmpty() &&
         libraryAlbumNames.all { collapsedAlbumNames.contains(it) }

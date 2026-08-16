@@ -6,9 +6,14 @@ import com.bestiapop.android.data.model.IdentifyConfidence
 import com.bestiapop.android.data.model.IdentifyProposal
 import com.bestiapop.android.data.model.IdentifySearchFilters
 import com.bestiapop.android.data.model.Song
+import com.bestiapop.android.data.util.looksLikeStoragePath
 import com.bestiapop.android.domain.util.IdentifyAlbumGroup
 import com.bestiapop.android.domain.util.IdentifyRanking
 import com.bestiapop.android.domain.util.clusterIdentifyAlbumGroups
+import com.bestiapop.android.domain.util.gapApplyFields
+import com.bestiapop.android.domain.util.knownAlbumQueryOf
+import com.bestiapop.android.domain.util.knownAlbumsFromLibrary
+import com.bestiapop.android.domain.util.promoteKnownAlbumMatches
 
 enum class IdentifyReviewPhase {
     Overview,
@@ -83,7 +88,10 @@ data class IdentifyReviewState(
         }
 
     val canApplyRemaining: Boolean
-        get() = remaining.any { it.proposal.hasMediumSuggestion }
+        get() = applyFields.hasAny && remaining.any { it.proposal.hasMediumSuggestion }
+
+    val canApplySelected: Boolean
+        get() = applyFields.hasAny && visibleCandidates.isNotEmpty()
 
     val pendingSongIds: Set<Long>
         get() = remaining.map { it.song.id }.toSet()
@@ -112,6 +120,82 @@ data class IdentifyReviewState(
 val IdentifyProposal.hasMediumSuggestion: Boolean
     get() = confidence == IdentifyConfidence.MEDIUM && suggested != null
 
+fun identifySearchDraft(item: IdentifyReviewItem): String {
+    val title = item.proposal.queryTitle.trim()
+        .takeUnless { it.isBlank() || looksLikeStoragePath(it) }
+        ?: item.song.title.trim().takeUnless { it.isBlank() || looksLikeStoragePath(it) }
+        .orEmpty()
+    return title
+}
+
+fun identifySearchFilterArtist(item: IdentifyReviewItem): String =
+    item.proposal.queryArtist.trim().takeUnless {
+        it.isBlank() || IdentifyRanking.isPlaceholderArtist(it) || looksLikeStoragePath(it)
+    } ?: item.song.artist.trim().takeUnless {
+        IdentifyRanking.isPlaceholderArtist(it) || looksLikeStoragePath(it)
+    }.orEmpty()
+
+fun identifySearchFilterAlbum(item: IdentifyReviewItem): String =
+    item.song.album.trim().takeUnless {
+        it.isBlank() || IdentifyRanking.isGenericAlbum(it)
+    }.orEmpty()
+
+fun identifySearchFilterYear(item: IdentifyReviewItem): String =
+    item.song.year.takeIf { it in 1000..9999 }?.toString().orEmpty()
+
+/**
+ * Title in the free-text box; artist/album/year in dedicated filters.
+ * Opens filters when search is shown and any filter has a seed.
+ */
+fun IdentifyReviewState.seedIdentifySearch(
+    item: IdentifyReviewItem,
+    forceShowSearch: Boolean? = null
+): IdentifyReviewState {
+    val showSearch = forceShowSearch ?: item.proposal.candidates.isEmpty()
+    val artist = identifySearchFilterArtist(item)
+    val album = identifySearchFilterAlbum(item)
+    val year = identifySearchFilterYear(item)
+    val hasFilters = artist.isNotBlank() || album.isNotBlank() || year.isNotBlank()
+    return copy(
+        searchQueryDraft = identifySearchDraft(item),
+        showSearchField = showSearch,
+        showSearchFilters = showSearch && hasFilters,
+        searchFilterArtist = artist,
+        searchFilterAlbum = album,
+        searchFilterYear = year
+    )
+}
+
+fun IdentifyReviewState.withItemSearchChrome(
+    item: IdentifyReviewItem,
+    forceShowSearch: Boolean? = null
+): IdentifyReviewState = seedIdentifySearch(item, forceShowSearch).copy(
+    isSearching = false,
+    isLoadingMore = false,
+    visibleCandidateCount = IdentifyRanking.TOP_N,
+    selectedCandidateIndex = 0
+).withGapApplyFields(item)
+
+fun IdentifyReviewState.withGapApplyFields(item: IdentifyReviewItem): IdentifyReviewState =
+    if (item.proposal.fillGapsOnly) copy(applyFields = gapApplyFields(item.song)) else this
+
+/**
+ * Overlay already open: append newly persisted songs without resetting search chrome,
+ * candidate selection, or the current item's in-memory proposal.
+ */
+fun IdentifyReviewState.mergeIncomingReviewItems(
+    incoming: List<IdentifyReviewItem>,
+    droppedIds: Set<Long>
+): IdentifyReviewState {
+    if (!isVisible || items.isEmpty()) return this
+    val existingIds = items.map { it.song.id }.toSet()
+    val extras = incoming.filter { item ->
+        item.song.id !in existingIds && item.song.id !in droppedIds
+    }
+    if (extras.isEmpty()) return this
+    return copy(items = items + extras)
+}
+
 fun identifyReviewPhaseOrItem(name: String): IdentifyReviewPhase =
     runCatching { IdentifyReviewPhase.valueOf(name) }.getOrDefault(IdentifyReviewPhase.Item)
 
@@ -127,19 +211,36 @@ fun identifyReviewFromPersisted(
         byId[proposal.songId]?.let { IdentifyReviewItem(it, proposal) }
     }
     if (items.isEmpty()) return IdentifyReviewState(applyFields = applyFields)
+    val attached = attachKnownAlbumMatches(items, songs)
     val requested = identifyReviewPhaseOrItem(phaseName)
     val phase = if (requested == IdentifyReviewPhase.Overview &&
-        clusterIdentifyAlbumGroups(items.map { it.proposal }).isEmpty()
+        clusterIdentifyAlbumGroups(attached.map { it.proposal }).isEmpty()
     ) {
         IdentifyReviewPhase.Item
     } else {
         requested
     }
     return IdentifyReviewState(
-        items = items,
+        items = attached,
         currentIndex = 0,
         phase = phase,
         isVisible = false,
         applyFields = applyFields
     )
+}
+
+fun attachKnownAlbumMatches(
+    items: List<IdentifyReviewItem>,
+    librarySongs: List<Song>
+): List<IdentifyReviewItem> {
+    if (items.isEmpty()) return items
+    val albums = knownAlbumsFromLibrary(librarySongs)
+    if (albums.isEmpty()) return items
+    val queries = items.map { knownAlbumQueryOf(it.song, queryTitle = it.proposal.queryTitle) }
+    val promoted = promoteKnownAlbumMatches(items.map { it.proposal }, queries, albums)
+    val byId = promoted.associateBy { it.songId }
+    return items.map { item ->
+        val proposal = byId[item.song.id] ?: return@map item
+        if (proposal == item.proposal) item else item.copy(proposal = proposal)
+    }
 }

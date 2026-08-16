@@ -25,9 +25,10 @@ sealed interface LibraryListItem {
         val artistName: String,
         val artworkUri: String?,
         val songCount: Int,
-        val albumSongs: List<Song>
+        val albumSongs: List<Song>,
+        val groupingKey: String = albumName
     ) : LibraryListItem {
-        override val key: Any get() = "header_$albumName"
+        override val key: Any get() = "header_$groupingKey"
         override val contentType: String get() = CONTENT_TYPE_ALBUM_HEADER
     }
 

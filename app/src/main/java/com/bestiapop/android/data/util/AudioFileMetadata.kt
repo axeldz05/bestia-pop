@@ -6,6 +6,7 @@ import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.data.model.TrackIdentity
 import com.bestiapop.android.data.model.TrackMeta
 import com.bestiapop.android.domain.util.IdentifyRanking
+import com.bestiapop.android.domain.util.isTrackNumberLabel
 import com.bestiapop.android.domain.util.mergeIdentityHints
 import com.bestiapop.android.domain.util.parseFilenameMetadataHints
 import com.bestiapop.android.domain.util.resolveWeakIdentityHints
@@ -23,6 +24,34 @@ fun looksLikeStoragePath(value: String): Boolean {
         lower.startsWith("file:") ||
         lower.contains("primary:") ||
         lower.contains("music/bestiapop")
+}
+
+/**
+ * Reuses one extracted cover per artist+album during a bulk scan so later tracks
+ * skip `MediaMetadataRetriever.embeddedPicture` (often the slowest tag read).
+ */
+class AlbumArtworkCache {
+    private val lock = Any()
+    private val uris = HashMap<String, String>()
+
+    fun lookup(artist: String, album: String): String? {
+        val key = key(artist, album) ?: return null
+        synchronized(lock) { return uris[key] }
+    }
+
+    fun remember(artist: String, album: String, uri: String?) {
+        if (!SongPathNormalizer.hasUsableArtwork(uri)) return
+        val key = key(artist, album) ?: return
+        synchronized(lock) { uris.putIfAbsent(key, uri!!) }
+    }
+
+    private fun key(artist: String, album: String): String? {
+        if (IdentifyRanking.isPlaceholderArtist(artist)) return null
+        if (IdentifyRanking.isGenericAlbum(album)) return null
+        val trimmedAlbum = album.trim()
+        if (trimmedAlbum.isEmpty()) return null
+        return artist.trim().lowercase() + "\u0000" + trimmedAlbum.lowercase()
+    }
 }
 
 data class AudioFileMetadata(
@@ -78,29 +107,35 @@ data class AudioFileMetadata(
             path: String,
             fallbackTitle: String,
             artworkIdentifier: String = path,
-            persistEmbeddedArtwork: (bytes: ByteArray, identifier: String) -> String?
+            persistEmbeddedArtwork: (bytes: ByteArray, identifier: String) -> String?,
+            artworkCache: AlbumArtworkCache? = null
         ): AudioFileMetadata {
             val store = MusicFileStore(context)
             val ref = AudioPersistRef.canonicalize(path)
             val retriever = MediaMetadataRetriever()
             try {
                 store.applyDataSource(retriever, ref)
+                val artist = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST)
+                    ?: "Unknown Artist"
+                val album = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM)
+                    ?: "Unknown Album"
+                val reusedArt = artworkCache?.lookup(artist, album)
+                val artworkUri = reusedArt ?: retriever.embeddedPicture
+                    ?.takeIf(ByteArray::isNotEmpty)
+                    ?.let { persistEmbeddedArtwork(it, artworkIdentifier) }
+                    ?.also { artworkCache?.remember(artist, album, it) }
                 val tagged = AudioFileMetadata(
                     title = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE)
                         ?: fallbackTitle,
-                    artist = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST)
-                        ?: "Unknown Artist",
-                    album = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM)
-                        ?: "Unknown Album",
+                    artist = artist,
+                    album = album,
                     genre = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_GENRE)
                         ?: "Music",
                     durationMs = retriever
                         .extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
                         ?.toLongOrNull()
                         ?: 0L,
-                    artworkUri = retriever.embeddedPicture
-                        ?.takeIf(ByteArray::isNotEmpty)
-                        ?.let { persistEmbeddedArtwork(it, artworkIdentifier) },
+                    artworkUri = artworkUri,
                     trackNumber = parseCdTrackNumber(
                         retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_CD_TRACK_NUMBER),
                         retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DISC_NUMBER)
@@ -118,7 +153,8 @@ data class AudioFileMetadata(
 
         /**
          * When embedded tags are Unknown / track-number rips, recover artist/title from
-         * filename shapes (`Artist_Title`, `NN_-_Title`, `Artist - Song`). Does not invent album.
+         * filename shapes (`Artist_Title`, `NN_-_Title`, `Artist - Song`). Does not invent
+         * album and does not replace a real ID3 title.
          */
         internal fun applyFilenameHints(
             metadata: AudioFileMetadata,
@@ -140,6 +176,7 @@ data class AudioFileMetadata(
             val titleWeak = tagTitleIsFilename ||
                 metadata.title.trimStart().let { it.startsWith("-") || it.startsWith("_") } ||
                 looksLikeStoragePath(metadata.title) ||
+                isTrackNumberLabel(metadata.title.trim()) ||
                 (artistWeak && (metadata.title.contains(" - ") || metadata.title.contains("_-_")))
 
             if (!artistWeak && !IdentifyRanking.isGenericAlbum(metadata.album) && !titleWeak) {
@@ -156,9 +193,9 @@ data class AudioFileMetadata(
                 artistWeak -> "Unknown Artist"
                 else -> metadata.artist
             }
+            // Keep a real ID3 title even when artist is Unknown; filename hints are for search.
             val title = when {
                 titleWeak && !hints.title.isNullOrBlank() -> hints.title
-                !hints.title.isNullOrBlank() && artistWeak -> hints.title
                 else -> stripLeadingTitleJunk(metadata.title).ifBlank { metadata.title }
             }
             val trackNumber = metadata.trackNumber.takeIf { it > 0 }

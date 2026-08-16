@@ -90,13 +90,14 @@ class SafImportFunctionalTest {
         val secondCount = repository.scanFolderUri(TestAudioDocumentsProvider.treeUri(namespace))
 
         val song = database.musicDao.getAllSongs().single()
-        assertEquals(1, firstCount)
-        assertEquals(0, secondCount)
+        assertEquals(1, firstCount.size)
+        assertEquals(0, secondCount.size)
         assertEquals(TestAudioDocumentsProvider.audioUri(namespace).toString(), song.uriString)
         assertTrue(song.durationMs >= 31_000L)
+        assertTrue(progress.any { it.second == 0 })
         assertEquals(
             listOf(Triple(1, 1, "BestiaPop SAF fixture.wav")),
-            progress
+            progress.filter { it.second > 0 }
         )
         assertEquals(
             "Each import must enumerate the SAF tree once",

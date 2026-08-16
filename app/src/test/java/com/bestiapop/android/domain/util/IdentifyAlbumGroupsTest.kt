@@ -50,6 +50,19 @@ class IdentifyAlbumGroupsTest {
     }
 
     @Test
+    fun clustersDeluxeAndCaseVariants() {
+        val groups = clusterIdentifyAlbumGroups(
+            listOf(
+                proposal(1, "Hysteria", "Absolution"),
+                proposal(2, "Time Is Running Out", "absolution (deluxe)"),
+                proposal(3, "Stockholm Syndrome", "Absolution (Remastered 2012)")
+            )
+        )
+        assertEquals(1, groups.size)
+        assertEquals(3, groups[0].songIds.size)
+    }
+
+    @Test
     fun clustersMediumSameAlbum() {
         val groups = clusterIdentifyAlbumGroups(
             listOf(

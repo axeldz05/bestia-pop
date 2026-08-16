@@ -28,11 +28,11 @@ interface IMusicRepository {
     suspend fun getPlaylistSongsOrdered(playlistId: Long): List<Song> =
         getPlaylistSongsFlow(playlistId).first()
 
-    suspend fun scanMediaStore(onProgress: LibraryScanProgress? = null)
-    /** Indexes audio under public Music/BestiaPop after reinstall (Room wipe). Returns inserted count. */
-    suspend fun resyncAppManagedMusic(onProgress: LibraryScanProgress? = null): Int
-    /** SAF folder import. Returns number of newly inserted songs. */
-    suspend fun scanFolderUri(treeUri: Uri, onProgress: LibraryScanProgress? = null): Int
+    suspend fun scanMediaStore(onProgress: LibraryScanProgress? = null): List<Song>
+    /** Indexes audio under public Music/BestiaPop after reinstall (Room wipe). */
+    suspend fun resyncAppManagedMusic(onProgress: LibraryScanProgress? = null): List<Song>
+    /** SAF folder import. Returns newly inserted songs (with ids). */
+    suspend fun scanFolderUri(treeUri: Uri, onProgress: LibraryScanProgress? = null): List<Song>
     suspend fun getAllSongsSync(): List<Song>
     suspend fun findSongByArtistTitle(artist: String, title: String): Song?
     suspend fun saveUploadedSong(song: Song): Long
@@ -42,8 +42,8 @@ interface IMusicRepository {
     /**
      * Ranked online candidates for a library song.
      * May persist a soft cleanup of rip-style tags (`01` / `- Title`) before searching.
-     * Songs that already have usable artist+album return [IdentifyProposal.alreadyIdentified]
-     * unless [force] is true (WiFi import always forces to detect catalog conflicts).
+     * Songs that already have usable title+artist+album+artwork return
+     * [IdentifyProposal.alreadyIdentified] unless [force] is true (manual identify).
      * Song tags are predominant ranking source; [customQuery] replaces the default search text.
      * [filters] refine artist/album/year (Deezer advanced query + ranking boosts).
      * [catalogIndex] + [existingCandidates] page/append for “mostrar más” without reshuffling shown rows.
@@ -69,7 +69,8 @@ interface IMusicRepository {
     /**
      * Look up artist/album online for a library song with missing/placeholder metadata.
      * Auto-applies only [com.bestiapop.android.data.model.IdentifyConfidence.HIGH] matches
-     * (propose + apply). Medium/low are left unchanged ([IdentifyResult.NoMatch]).
+     * (propose + apply) and never overwrites the local title. Medium/low are left
+     * unchanged ([IdentifyResult.NoMatch]).
      */
     suspend fun identifySongMetadata(song: Song): IdentifyResult
     suspend fun updateSongDuration(songId: Long, durationMs: Long)

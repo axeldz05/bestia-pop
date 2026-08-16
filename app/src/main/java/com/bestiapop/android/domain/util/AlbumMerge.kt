@@ -4,7 +4,7 @@ import com.bestiapop.android.data.model.Album
 
 /**
  * Returns another album that [proposedName] would collide with, or null if safe to rename.
- * Match is on [Album.name] or [Album.displayName], after [normalizeAlbumName], ignoreCase.
+ * Match is on [Album.name] or [Album.displayName], after [albumIdentityKey].
  * Prefer the conflicting album with the most songs (stable tie-break by name).
  */
 fun findAlbumMergeTarget(
@@ -22,7 +22,7 @@ fun findAlbumMergeTarget(
 }
 
 /**
- * All album keys in [albumKeys] that normalize to the same title as [targetName],
+ * All album keys in [albumKeys] that share an [albumIdentityKey] with [targetName],
  * excluding the exact [excludeKey] string (typically the canonical target key).
  */
 fun findEquivalentAlbumKeys(

@@ -63,8 +63,45 @@ data class IdentifyApplyFields(
 
     companion object {
         val ALL = IdentifyApplyFields()
+        val NONE = IdentifyApplyFields(
+            artwork = false,
+            title = false,
+            artist = false,
+            album = false,
+            year = false,
+            trackNumber = false
+        )
     }
 }
+
+/** One toggleable identify-apply field; [label] is setup copy, [chipLabel] is review chrome. */
+enum class IdentifyApplyField(val label: String, val chipLabel: String) {
+    ARTWORK("Portada", "Portada"),
+    TITLE("Título / Nombre", "Título"),
+    ARTIST("Artista", "Artista"),
+    ALBUM("Álbum", "Álbum"),
+    YEAR("Año", "Año"),
+    TRACK_NUMBER("Número de pista", "Pista")
+}
+
+fun IdentifyApplyFields.isEnabled(field: IdentifyApplyField): Boolean = when (field) {
+    IdentifyApplyField.ARTWORK -> artwork
+    IdentifyApplyField.TITLE -> title
+    IdentifyApplyField.ARTIST -> artist
+    IdentifyApplyField.ALBUM -> album
+    IdentifyApplyField.YEAR -> year
+    IdentifyApplyField.TRACK_NUMBER -> trackNumber
+}
+
+fun IdentifyApplyFields.withField(field: IdentifyApplyField, enabled: Boolean): IdentifyApplyFields =
+    when (field) {
+        IdentifyApplyField.ARTWORK -> copy(artwork = enabled)
+        IdentifyApplyField.TITLE -> copy(title = enabled)
+        IdentifyApplyField.ARTIST -> copy(artist = enabled)
+        IdentifyApplyField.ALBUM -> copy(album = enabled)
+        IdentifyApplyField.YEAR -> copy(year = enabled)
+        IdentifyApplyField.TRACK_NUMBER -> copy(trackNumber = enabled)
+    }
 
 /**
  * Optional refine fields for identify review search (alongside free-text query).
@@ -107,7 +144,9 @@ data class IdentifyProposal(
     /** Deezer/iTunes `index` for the next catalog page (0 = first page). */
     val nextCatalogIndex: Int = 0,
     /** False when the last catalog page returned fewer than a full page. */
-    val catalogMayHaveMore: Boolean = false
+    val catalogMayHaveMore: Boolean = false,
+    /** Import/WiFi: apply only missing/placeholder fields (do not overwrite real tags). */
+    val fillGapsOnly: Boolean = false
 )
 
 data class Album(
@@ -120,7 +159,9 @@ data class Album(
     val dateAdded: Long? = null,
     val year: Int = 0,
     /** UI label; may differ from [name] when an override renames without propagating to songs. */
-    val displayName: String = name
+    val displayName: String = name,
+    /** Unique album-identity bucket; two albums can share [displayName] (e.g. session EPs). */
+    val groupingKey: String = name
 )
 
 enum class WifiTransferState {

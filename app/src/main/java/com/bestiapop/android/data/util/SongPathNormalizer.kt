@@ -15,7 +15,7 @@ object SongPathNormalizer {
         if (raw.isEmpty()) return null
         return when {
             raw.startsWith("content://com.android.externalstorage.documents", ignoreCase = true) ->
-                safTreeDocumentToAbsolutePath(raw)
+                safUriToAbsolutePath(raw)
             raw.startsWith("content://", ignoreCase = true) -> null
             raw.startsWith("file://", ignoreCase = true) -> {
                 // file:///storage/... or file://localhost/storage/...
@@ -37,16 +37,13 @@ object SongPathNormalizer {
 
     /**
      * SAF tree/document URIs lose persistable grants after reinstall; the document id
-     * still encodes a filesystem path (primary:Music/BestiaPop/track.mp3).
+     * still encodes a filesystem path (`primary:Music/BestiaPop/track.mp3`).
+     * Prefers `/document/` (file) over `/tree/` (folder root).
      */
-    internal fun safTreeDocumentToAbsolutePath(uri: String): String? {
-        val marker = "/document/"
-        val idx = uri.indexOf(marker, ignoreCase = true)
-        if (idx < 0) return null
-        val encoded = uri.substring(idx + marker.length)
-            .substringBefore('?')
-            .substringBefore('#')
-        if (encoded.isBlank()) return null
+    internal fun safUriToAbsolutePath(uri: String): String? {
+        val encoded = safEncodedId(uri, "/document/")
+            ?: safEncodedId(uri, "/tree/")
+            ?: return null
         val docId = percentDecode(encoded)
         val colon = docId.indexOf(':')
         if (colon <= 0 || colon >= docId.length - 1) return null
@@ -59,6 +56,16 @@ object SongPathNormalizer {
             "/storage/$volume"
         }
         return "$root/$rel"
+    }
+
+    private fun safEncodedId(uri: String, marker: String): String? {
+        val idx = uri.indexOf(marker, ignoreCase = true)
+        if (idx < 0) return null
+        val encoded = uri.substring(idx + marker.length)
+            .substringBefore("/document/")
+            .substringBefore('?')
+            .substringBefore('#')
+        return encoded.takeIf { it.isNotBlank() }
     }
 
     private fun percentDecode(value: String): String {

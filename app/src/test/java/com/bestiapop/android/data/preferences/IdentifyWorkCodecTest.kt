@@ -32,7 +32,8 @@ class IdentifyWorkCodecTest {
             lbHits = 3,
             alreadyQueued = 4,
             reviewCount = 3,
-            interrupted = true
+            interrupted = true,
+            fillGapsOnlySongIds = setOf(3L, 21L)
         )
         val restored = IdentifyWorkCodec.decode(IdentifyWorkCodec.encode(original))
         assertEquals(original, restored)
@@ -52,5 +53,6 @@ class IdentifyWorkCodecTest {
         assertEquals(listOf(9L), decoded.remainingSongIds)
         assertTrue(decoded.force)
         assertEquals(IdentifyApplyFields.ALL, decoded.applyFields)
+        assertTrue(decoded.fillGapsOnlySongIds.isEmpty())
     }
 }

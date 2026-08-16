@@ -42,8 +42,11 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.bestiapop.android.data.model.IdentifyApplyField
 import com.bestiapop.android.data.model.IdentifyApplyFields
 import com.bestiapop.android.data.model.Song
+import com.bestiapop.android.data.model.isEnabled
+import com.bestiapop.android.data.model.withField
 
 @Composable
 fun IdentifySetupDialog(
@@ -144,16 +147,7 @@ fun IdentifySetupDialog(
                         selected = applyFields.isAll,
                         onClick = {
                             if (applyFields.isAll) {
-                                onFieldsChanged(
-                                    IdentifyApplyFields(
-                                        artwork = false,
-                                        title = false,
-                                        artist = false,
-                                        album = false,
-                                        year = false,
-                                        trackNumber = false
-                                    )
-                                )
+                                onFieldsChanged(IdentifyApplyFields.NONE)
                             } else {
                                 onFieldsChanged(IdentifyApplyFields.ALL)
                             }
@@ -175,42 +169,14 @@ fun IdentifySetupDialog(
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    IdentifyFieldToggleRow(
-                        icon = Icons.Default.Image,
-                        label = "Portada",
-                        checked = applyFields.artwork,
-                        onCheckedChange = { onFieldsChanged(applyFields.copy(artwork = it)) }
-                    )
-                    IdentifyFieldToggleRow(
-                        icon = Icons.Default.MusicNote,
-                        label = "Título / Nombre",
-                        checked = applyFields.title,
-                        onCheckedChange = { onFieldsChanged(applyFields.copy(title = it)) }
-                    )
-                    IdentifyFieldToggleRow(
-                        icon = Icons.Default.Person,
-                        label = "Artista",
-                        checked = applyFields.artist,
-                        onCheckedChange = { onFieldsChanged(applyFields.copy(artist = it)) }
-                    )
-                    IdentifyFieldToggleRow(
-                        icon = Icons.Default.Album,
-                        label = "Álbum",
-                        checked = applyFields.album,
-                        onCheckedChange = { onFieldsChanged(applyFields.copy(album = it)) }
-                    )
-                    IdentifyFieldToggleRow(
-                        icon = Icons.Default.CalendarToday,
-                        label = "Año",
-                        checked = applyFields.year,
-                        onCheckedChange = { onFieldsChanged(applyFields.copy(year = it)) }
-                    )
-                    IdentifyFieldToggleRow(
-                        icon = Icons.Default.FormatListNumbered,
-                        label = "Número de pista",
-                        checked = applyFields.trackNumber,
-                        onCheckedChange = { onFieldsChanged(applyFields.copy(trackNumber = it)) }
-                    )
+                    IdentifyApplyField.entries.forEach { field ->
+                        IdentifyFieldToggleRow(
+                            icon = identifyApplyFieldIcon(field),
+                            label = field.label,
+                            checked = applyFields.isEnabled(field),
+                            onCheckedChange = { onFieldsChanged(applyFields.withField(field, it)) }
+                        )
+                    }
                 }
             }
         },
@@ -261,6 +227,15 @@ private fun IdentifySongPreviewRow(song: Song) {
             )
         }
     }
+}
+
+private fun identifyApplyFieldIcon(field: IdentifyApplyField): ImageVector = when (field) {
+    IdentifyApplyField.ARTWORK -> Icons.Default.Image
+    IdentifyApplyField.TITLE -> Icons.Default.MusicNote
+    IdentifyApplyField.ARTIST -> Icons.Default.Person
+    IdentifyApplyField.ALBUM -> Icons.Default.Album
+    IdentifyApplyField.YEAR -> Icons.Default.CalendarToday
+    IdentifyApplyField.TRACK_NUMBER -> Icons.Default.FormatListNumbered
 }
 
 @Composable

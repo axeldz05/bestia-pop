@@ -35,7 +35,7 @@ fun LibraryAlbumBrowseList(
     }
 
     LazyColumn(modifier = modifier.fillMaxSize()) {
-        items(albums, key = { it.name }) { album ->
+        items(albums, key = { it.groupingKey.ifBlank { it.name } }) { album ->
             val sortHint = remember(album.genre, album.dateAdded, sortOption) {
                 formatSortRelevantInfo(
                     sortOption = sortOption,

@@ -4,6 +4,8 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,9 +26,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
@@ -52,13 +55,20 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.bestiapop.android.data.model.IdentifyApplyField
+import com.bestiapop.android.data.model.IdentifyApplyFields
 import com.bestiapop.android.data.model.IdentifyCandidate
 import com.bestiapop.android.data.model.IdentifyConfidence
 import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.data.model.Song
+import com.bestiapop.android.data.model.isEnabled
+import com.bestiapop.android.data.model.withField
+import com.bestiapop.android.data.util.albumTrackDisplayNumber
 import com.bestiapop.android.data.util.looksLikeStoragePath
 import com.bestiapop.android.domain.util.IdentifyAlbumGroup
 import com.bestiapop.android.domain.util.IdentifyRanking
+import com.bestiapop.android.domain.util.formatIdentifyApplyChanges
+import com.bestiapop.android.domain.util.identifyApplyChanges
 import com.bestiapop.android.ui.MusicPlayerViewModel
 import com.bestiapop.android.ui.components.ArtworkThumbnail
 import com.bestiapop.android.ui.components.PreviewPlayPauseButton
@@ -113,7 +123,8 @@ fun IdentifyReviewScreen(
                 },
                 onClose = { viewModel.dismissIdentifyReview() },
                 onApplyRemaining = { viewModel.applyRemainingIdentifySuggestions() },
-                onSkipAll = { viewModel.skipAllIdentifyReview() }
+                onSkipAll = { viewModel.skipAllIdentifyReview() },
+                onApplyFieldsChanged = viewModel::setIdentifyReviewApplyFields
             )
             HorizontalDivider()
 
@@ -219,6 +230,8 @@ fun IdentifyReviewScreen(
                         IdentifyCandidateRow(
                             candidate = candidate,
                             fileDurationMs = item.song.durationMs,
+                            song = item.song,
+                            applyFields = state.applyFields,
                             selected = index == state.selectedCandidateIndex,
                             isPlaying = flags.isPlaying,
                             isResolving = flags.isResolving,
@@ -239,7 +252,7 @@ fun IdentifyReviewScreen(
                 }
 
                 IdentifyReviewFooter(
-                    hasCandidates = state.visibleCandidates.isNotEmpty(),
+                    canApply = state.canApplySelected,
                     showSearchField = state.showSearchField,
                     showSearchFilters = state.showSearchFilters,
                     isSearching = state.isSearching || state.isLoadingMore,
@@ -282,6 +295,7 @@ private fun IdentifyReviewOverview(
                 IdentifyAlbumGroupCard(
                     group = group,
                     titles = titles,
+                    canApply = state.applyFields.hasAny,
                     onApplyAll = { onApplyGroup(group.key) },
                     onReviewOneByOne = { onReviewGroup(group.key) }
                 )
@@ -302,6 +316,7 @@ private fun IdentifyReviewOverview(
 private fun IdentifyAlbumGroupCard(
     group: IdentifyAlbumGroup,
     titles: List<String>,
+    canApply: Boolean,
     onApplyAll: () -> Unit,
     onReviewOneByOne: () -> Unit
 ) {
@@ -350,7 +365,7 @@ private fun IdentifyAlbumGroupCard(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Button(onClick = onApplyAll, modifier = Modifier.weight(1f)) {
+            Button(onClick = onApplyAll, enabled = canApply, modifier = Modifier.weight(1f)) {
                 Text("Aplicar a todas", maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             OutlinedButton(onClick = onReviewOneByOne, modifier = Modifier.weight(1f)) {
@@ -391,7 +406,8 @@ private fun IdentifyReviewHeader(
     onBack: () -> Unit,
     onClose: () -> Unit,
     onApplyRemaining: () -> Unit,
-    onSkipAll: () -> Unit
+    onSkipAll: () -> Unit,
+    onApplyFieldsChanged: (IdentifyApplyFields) -> Unit
 ) {
     Column(modifier = Modifier.fillMaxWidth()) {
         ScreenBackHeader(
@@ -412,6 +428,11 @@ private fun IdentifyReviewHeader(
                 Icon(Icons.Default.Close, contentDescription = "Cerrar")
             }
         }
+        IdentifyApplyFieldsChips(
+            applyFields = state.applyFields,
+            onApplyFieldsChanged = onApplyFieldsChanged,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+        )
         if (state.pendingCount > 0) {
             Row(
                 modifier = Modifier
@@ -433,6 +454,40 @@ private fun IdentifyReviewHeader(
                 ) {
                     Text("Omitir todas", maxLines = 2)
                 }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun IdentifyApplyFieldsChips(
+    applyFields: IdentifyApplyFields,
+    onApplyFieldsChanged: (IdentifyApplyFields) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(
+            text = "Se aplicará",
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.primary
+        )
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            IdentifyApplyField.entries.forEach { field ->
+                val selected = applyFields.isEnabled(field)
+                FilterChip(
+                    selected = selected,
+                    onClick = { onApplyFieldsChanged(applyFields.withField(field, !selected)) },
+                    label = { Text(field.chipLabel) },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                        selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                )
             }
         }
     }
@@ -465,6 +520,8 @@ private fun IdentifySourceBlock(
             )
             val meta = buildList {
                 if (song.durationMs > 0) add(formatDuration(song.durationMs))
+                song.year.takeIf { it in 1000..9999 }?.let { add(it.toString()) }
+                albumTrackDisplayNumber(song.trackNumber).takeIf { it > 0 }?.let { add("Pista $it") }
                 if (!sourceHints.isNullOrBlank()) add("Origen: $sourceHints")
                 add(confidenceLabel(confidence))
             }.joinToString(" · ")
@@ -475,6 +532,14 @@ private fun IdentifySourceBlock(
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
             )
+            if (IdentifyRanking.titleCollidesWithArtistOrAlbum(song.title, song.artist, song.album)) {
+                Text(
+                    text = "El título coincide con el artista/álbum — revisá por duración",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    maxLines = 2
+                )
+            }
         }
         PreviewPlayPauseButton(
             isResolving = false,
@@ -488,6 +553,8 @@ private fun IdentifySourceBlock(
 fun IdentifyCandidateRow(
     candidate: IdentifyCandidate,
     fileDurationMs: Long,
+    song: Song,
+    applyFields: IdentifyApplyFields,
     selected: Boolean,
     isPlaying: Boolean,
     isResolving: Boolean,
@@ -561,6 +628,18 @@ fun IdentifyCandidateRow(
                     )
                 }
             }
+            val changes = identifyApplyChanges(song, candidate, applyFields)
+            Text(
+                text = formatIdentifyApplyChanges(changes),
+                style = MaterialTheme.typography.labelSmall,
+                color = if (changes.isEmpty()) {
+                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f)
+                } else {
+                    MaterialTheme.colorScheme.primary
+                },
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
         }
         PreviewPlayPauseButton(
             isResolving = isResolving,
@@ -703,7 +782,7 @@ private fun IdentifyLoadMoreButton(
 
 @Composable
 private fun IdentifyReviewFooter(
-    hasCandidates: Boolean,
+    canApply: Boolean,
     showSearchField: Boolean,
     showSearchFilters: Boolean,
     isSearching: Boolean,
@@ -720,7 +799,7 @@ private fun IdentifyReviewFooter(
     ) {
         Button(
             onClick = onUse,
-            enabled = hasCandidates && !isSearching,
+            enabled = canApply && !isSearching,
             modifier = Modifier.fillMaxWidth()
         ) {
             Text("Usar este")

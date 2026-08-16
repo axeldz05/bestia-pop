@@ -42,6 +42,22 @@ class SongPathNormalizerTest {
     }
 
     @Test
+    fun toAbsolutePath_decodesSafTreeRootUri() {
+        assertEquals(
+            "/storage/emulated/0/Music",
+            SongPathNormalizer.toAbsolutePath(
+                "content://com.android.externalstorage.documents/tree/primary%3AMusic"
+            )
+        )
+        assertEquals(
+            "/storage/ABCD-1234/Music/Albums",
+            SongPathNormalizer.toAbsolutePath(
+                "content://com.android.externalstorage.documents/tree/ABCD-1234%3AMusic%2FAlbums"
+            )
+        )
+    }
+
+    @Test
     fun fileName_usesBasename() {
         assertEquals(
             "a.mp3",

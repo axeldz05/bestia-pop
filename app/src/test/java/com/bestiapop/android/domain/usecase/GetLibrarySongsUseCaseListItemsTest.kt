@@ -1,6 +1,7 @@
 package com.bestiapop.android.domain.usecase
 
 import com.bestiapop.android.data.model.Song
+import com.bestiapop.android.domain.util.albumNamesMatch
 import com.bestiapop.android.ui.SortDirection
 import com.bestiapop.android.ui.SortOption
 import com.bestiapop.android.ui.components.formatSortRelevantInfo
@@ -115,6 +116,85 @@ class GetLibrarySongsUseCaseListItemsTest {
     @Test
     fun buildListItems_empty_returnsEmpty() {
         assertTrue(useCase.buildListItems(emptyList(), LibraryViewMode.ALBUM_GROUPS).isEmpty())
+    }
+
+    @Test
+    fun extractAlbums_groupsCaseDeluxeAndCjkVariants() {
+        val list = listOf(
+            Song(id = 1, uriString = "u1", title = "A", artist = "Muse", album = "eureka"),
+            Song(id = 2, uriString = "u2", title = "B", artist = "Muse", album = "Eureka"),
+            Song(id = 3, uriString = "u3", title = "C", artist = "Muse", album = "Eureka (Deluxe)"),
+            Song(id = 4, uriString = "u4", title = "D", artist = "Band", album = "Balance - EP"),
+            Song(id = 5, uriString = "u5", title = "E", artist = "Band", album = "Balance - 平衡")
+        )
+        val albums = useCase.extractAlbums(list)
+        assertEquals(setOf("Eureka", "Balance"), albums.map { it.name }.toSet())
+        assertEquals(3, albums.first { it.name == "Eureka" }.songCount)
+        assertEquals(2, albums.first { it.name == "Balance" }.songCount)
+        assertEquals(3, useCase.songsForAlbum(list, "Eureka").size)
+        assertEquals(2, useCase.songsForAlbum(list, "Balance - EP").size)
+    }
+
+    @Test
+    fun extractAlbums_sessionFoldsIntoSoleStudioAlbum() {
+        val list = listOf(
+            Song(id = 1, uriString = "u1", title = "A", artist = "TTNG", album = "This Town Needs Guns"),
+            Song(id = 2, uriString = "u2", title = "B", artist = "TTNG", album = "Audiotree Live"),
+            Song(id = 3, uriString = "u3", title = "C", artist = "Other", album = "Audiotree Live")
+        )
+        val albums = useCase.extractAlbums(list)
+        assertEquals(2, albums.size)
+        val studio = albums.first { it.name == "This Town Needs Guns" }
+        assertEquals(2, studio.songCount)
+        assertEquals(2, useCase.songsForAlbum(list, "This Town Needs Guns").size)
+        val sessionOnly = albums.first { albumNamesMatch(it.name, "Audiotree Live") }
+        assertEquals(1, sessionOnly.songCount)
+        assertEquals(listOf(3L), useCase.songsForAlbum(list, "Audiotree Live").map { it.id })
+
+        val items = useCase.buildListItems(list, LibraryViewMode.ALBUM_GROUPS)
+        val keys = items.map { it.key }
+        assertEquals(keys.distinct().size, keys.size)
+        val songIds = items.filterIsInstance<LibraryListItem.SongRow>().map { it.song.id }
+        assertEquals(listOf(1L, 2L, 3L).sorted(), songIds.sorted())
+        assertEquals(songIds.distinct().size, songIds.size)
+    }
+
+    @Test
+    fun buildListItems_sessionMajorityDoesNotDuplicateAudiotreeHeaderKeys() {
+        val list = listOf(
+            Song(id = 1, uriString = "u1", title = "Studio", artist = "TTNG", album = "This Town Needs Guns"),
+            Song(id = 2, uriString = "u2", title = "Live1", artist = "TTNG", album = "Audiotree Live"),
+            Song(id = 3, uriString = "u3", title = "Live2", artist = "TTNG", album = "Audiotree Live"),
+            Song(id = 4, uriString = "u4", title = "Live3", artist = "TTNG", album = "Audiotree Live"),
+            Song(id = 5, uriString = "u5", title = "Live4", artist = "TTNG", album = "Audiotree Live"),
+            Song(id = 6, uriString = "u6", title = "Live5", artist = "TTNG", album = "Audiotree Live"),
+            Song(id = 7, uriString = "u7", title = "OtherLive", artist = "Other", album = "Audiotree Live")
+        )
+        val albums = useCase.extractAlbums(list)
+        assertEquals(2, albums.size)
+        assertEquals("This Town Needs Guns", albums.first { it.songCount == 6 }.name)
+        assertEquals("Audiotree Live", albums.first { it.songCount == 1 }.name)
+        assertEquals(2, albums.map { it.groupingKey }.distinct().size)
+
+        val items = useCase.buildListItems(list, LibraryViewMode.ALBUM_GROUPS)
+        val keys = items.map { it.key }
+        assertEquals(keys.distinct().size, keys.size)
+        val headers = items.filterIsInstance<LibraryListItem.AlbumHeader>()
+        assertEquals(2, headers.map { it.key }.distinct().size)
+        assertEquals(listOf(1L, 2L, 3L, 4L, 5L, 6L, 7L), items.filterIsInstance<LibraryListItem.SongRow>().map { it.song.id }.sorted())
+    }
+
+    @Test
+    fun extractAlbums_dominantArtistIgnoresFirstRowTrioSuffix() {
+        val list = listOf(
+            Song(id = 1, uriString = "u1", title = "A", artist = "Björk Trió", album = "Gling-Gló"),
+            Song(id = 2, uriString = "u2", title = "B", artist = "Björk", album = "Gling-Gló"),
+            Song(id = 3, uriString = "u3", title = "C", artist = "Björk", album = "Gling-Glo")
+        )
+        val albums = useCase.extractAlbums(list)
+        assertEquals(1, albums.size)
+        assertEquals("Björk", albums.single().artist)
+        assertEquals(3, albums.single().songCount)
     }
 
     @Test
@@ -276,6 +356,31 @@ class GetLibrarySongsUseCaseListItemsTest {
         assertTrue(filtered[1] is LibraryListItem.SongRow)
         assertTrue(filtered[2] is LibraryListItem.AlbumHeader)
         assertEquals("Opera", (filtered[2] as LibraryListItem.AlbumHeader).albumName)
+    }
+
+    @Test
+    fun filterCollapsedAlbumSongs_hidesVariantAndSessionRowsInSameGroup() {
+        val mixed = listOf(
+            Song(id = 1, uriString = "u1", title = "A", artist = "Muse", album = "eureka"),
+            Song(id = 2, uriString = "u2", title = "B", artist = "Muse", album = "Eureka"),
+            Song(id = 3, uriString = "u3", title = "C", artist = "Muse", album = "Eureka (Deluxe)"),
+            Song(id = 4, uriString = "u4", title = "D", artist = "TTNG", album = "This Town Needs Guns"),
+            Song(id = 5, uriString = "u5", title = "E", artist = "TTNG", album = "Audiotree Live")
+        )
+        val items = useCase.buildListItems(mixed, LibraryViewMode.ALBUM_GROUPS)
+        val eureka = items.filterIsInstance<LibraryListItem.AlbumHeader>()
+            .first { it.albumName.equals("Eureka", ignoreCase = true) }
+        val filtered = filterCollapsedAlbumSongs(items, setOf(eureka.albumName))
+        val leftover = filtered.filterIsInstance<LibraryListItem.SongRow>()
+            .filter { row -> eureka.albumSongs.any { it.id == row.song.id } }
+        assertEquals(emptyList<String>(), leftover.map { it.song.album })
+
+        val studio = items.filterIsInstance<LibraryListItem.AlbumHeader>()
+            .first { it.albumName == "This Town Needs Guns" }
+        val filteredStudio = filterCollapsedAlbumSongs(items, setOf(studio.albumName))
+        val leftoverStudio = filteredStudio.filterIsInstance<LibraryListItem.SongRow>()
+            .filter { row -> studio.albumSongs.any { it.id == row.song.id } }
+        assertEquals(emptyList<String>(), leftoverStudio.map { it.song.album })
     }
 
     @Test

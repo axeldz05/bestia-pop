@@ -8,6 +8,7 @@ import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.ui.state.IdentifyReviewPhase
 import com.bestiapop.android.ui.state.identifyReviewFromPersisted
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -61,6 +62,14 @@ class IdentifyReviewCodecTest {
         assertEquals("Deezer", p.suggested?.provider)
         assertEquals("", p.suggested?.track?.audioUrl)
         assertTrue(p.usedListenBrainz)
+        assertFalse(p.fillGapsOnly)
+    }
+
+    @Test
+    fun roundTrip_persistsFillGapsOnly() {
+        val original = PersistedIdentifyReviewQueue(proposals = listOf(proposal().copy(fillGapsOnly = true)))
+        val restored = IdentifyReviewCodec.decode(IdentifyReviewCodec.encode(original))
+        assertTrue(restored.proposals.single().fillGapsOnly)
     }
 
     @Test

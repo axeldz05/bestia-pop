@@ -250,4 +250,35 @@ class FilenameMetadataHintsTest {
         assertEquals("El Cuarteto de Nos", result.artist)
         assertEquals("Cuna de colores", result.title)
     }
+
+    @Test
+    fun applyFilenameHints_keepsId3TitleWhenArtistUnknown() {
+        val tagged = AudioFileMetadata(
+            title = "OK Computer",
+            artist = "Unknown Artist",
+            album = "Unknown Album",
+            genre = "Music",
+            durationMs = 387_000L,
+            artworkUri = null
+        )
+        val result = AudioFileMetadata.applyFilenameHints(tagged, "03 Paranoid Android")
+        assertEquals("OK Computer", result.title)
+        assertEquals("Unknown Artist", result.artist)
+    }
+
+    @Test
+    fun applyFilenameHints_keepsTitleEqualToArtist() {
+        val tagged = AudioFileMetadata(
+            title = "Radiohead",
+            artist = "Radiohead",
+            album = "Pablo Honey",
+            genre = "Rock",
+            durationMs = 238_000L,
+            artworkUri = null
+        )
+        val result = AudioFileMetadata.applyFilenameHints(tagged, "Radiohead - Creep")
+        assertEquals("Radiohead", result.title)
+        assertEquals("Radiohead", result.artist)
+        assertEquals("Pablo Honey", result.album)
+    }
 }

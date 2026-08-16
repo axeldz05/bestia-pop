@@ -94,7 +94,7 @@ class MediaStoreImportFunctionalTest {
                 harness.repository.scanMediaStore()
                 assertTrue(harness.repository.allSongsFlow.first().none(fixture::owns))
 
-                assertEquals(1, harness.repository.resyncAppManagedMusic())
+                assertEquals(1, harness.repository.resyncAppManagedMusic().size)
 
                 val imported = harness.repository.allSongsFlow.first().single(fixture::owns)
                 assertEquals(fixture.exactFile.absolutePath, imported.uriString)
@@ -105,7 +105,7 @@ class MediaStoreImportFunctionalTest {
                 assertTrue(imported.durationMs >= 30_000L)
                 assertPlayable(context, imported)
 
-                assertEquals(0, harness.repository.resyncAppManagedMusic())
+                assertEquals(0, harness.repository.resyncAppManagedMusic().size)
                 assertEquals(1, harness.repository.allSongsFlow.first().count(fixture::owns))
             } finally {
                 try {

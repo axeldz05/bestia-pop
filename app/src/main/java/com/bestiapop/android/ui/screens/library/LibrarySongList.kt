@@ -176,7 +176,7 @@ fun LibrarySongList(
                                 dateAdded = item.albumSongs.maxOfOrNull { it.dateAdded }
                             )
                         },
-                        isCollapsed = collapsedAlbumNames.contains(item.albumName),
+                        isCollapsed = item.matchesCollapsed(collapsedAlbumNames),
                         isSelectionMode = isSelectionMode,
                         selectionState = selectionState,
                         onPlayAlbum = playAlbum,
@@ -224,22 +224,23 @@ internal fun filterCollapsedAlbumSongs(
 ): List<LibraryListItem> {
     if (collapsedAlbumNames.isEmpty()) return items
     val result = ArrayList<LibraryListItem>(items.size)
-    var hidingAlbum: String? = null
+    var hiding = false
     for (item in items) {
         when (item) {
             is LibraryListItem.AlbumHeader -> {
-                hidingAlbum = if (collapsedAlbumNames.contains(item.albumName)) item.albumName else null
+                hiding = item.matchesCollapsed(collapsedAlbumNames)
                 result += item
             }
             is LibraryListItem.SongRow -> {
-                if (hidingAlbum == null || item.song.album != hidingAlbum) {
-                    result += item
-                }
+                if (!hiding) result += item
             }
         }
     }
     return result
 }
+
+internal fun LibraryListItem.AlbumHeader.matchesCollapsed(collapsed: Set<String>): Boolean =
+    collapsed.contains(albumName) || (groupingKey.isNotBlank() && collapsed.contains(groupingKey))
 
 enum class AlbumHeaderSelectionState {
     NONE,

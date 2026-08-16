@@ -29,9 +29,10 @@ open class FakeMusicRepository : IMusicRepository {
     override val albumOverridesFlow: Flow<List<AlbumOverride>> = emptyFlow()
     override fun getPlaylistSongsFlow(playlistId: Long): Flow<List<Song>> = emptyFlow()
     override fun getPlaylistDetailsFlow(playlistId: Long): Flow<Pair<Playlist, List<Song>>?> = emptyFlow()
-    override suspend fun scanMediaStore(onProgress: LibraryScanProgress?) = Unit
-    override suspend fun resyncAppManagedMusic(onProgress: LibraryScanProgress?): Int = 0
-    override suspend fun scanFolderUri(treeUri: Uri, onProgress: LibraryScanProgress?) = 0
+    override suspend fun scanMediaStore(onProgress: LibraryScanProgress?): List<Song> = emptyList()
+    override suspend fun resyncAppManagedMusic(onProgress: LibraryScanProgress?): List<Song> = emptyList()
+    override suspend fun scanFolderUri(treeUri: Uri, onProgress: LibraryScanProgress?): List<Song> =
+        emptyList()
     override suspend fun getAllSongsSync(): List<Song> = emptyList()
     override suspend fun findSongByArtistTitle(artist: String, title: String): Song? = null
     override suspend fun saveUploadedSong(song: Song): Long = 0L

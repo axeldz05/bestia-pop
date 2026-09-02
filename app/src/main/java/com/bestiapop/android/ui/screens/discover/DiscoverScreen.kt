@@ -822,7 +822,8 @@ fun DiscoverHomeFeedView(
     onAlreadyInLibrary: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    if (isLoading) {
+    val isFeedEmpty = feed.recommendedTracks.isEmpty() && feed.recommendedAlbums.isEmpty() && feed.chartTracks.isEmpty()
+    if (isLoading && isFeedEmpty) {
         Box(
             modifier = modifier.fillMaxSize(),
             contentAlignment = Alignment.Center

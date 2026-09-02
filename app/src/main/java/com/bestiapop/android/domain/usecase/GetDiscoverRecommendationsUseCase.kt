@@ -14,6 +14,7 @@ import com.bestiapop.android.domain.util.TrackMatchKeys
 import com.bestiapop.android.domain.util.matchKey
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 
@@ -81,21 +82,32 @@ class GetDiscoverRecommendationsUseCase {
             if (recTracks.isEmpty()) {
                 val deezerTracks = ArrayList<OnlineCatalogTrack>()
                 if (topArtists.isNotEmpty()) {
-                    for (artist in topArtists.take(3)) {
-                        try {
-                            val artistId = MetadataFetcher.resolveDeezerArtistId(artist)
-                            if (artistId != null) {
-                                val relatedIds = MetadataFetcher.fetchDeezerRelatedArtistIds(artistId, limit = 3)
-                                for (relId in relatedIds) {
-                                    val tops = MetadataFetcher.fetchDeezerArtistTop(relId, limit = 4)
-                                    tops.forEach { identity ->
-                                        deezerTracks.add(identity.toCatalogTrack(provider = "Deezer"))
+                    val artistTrackJobs = topArtists.take(3).map { artist ->
+                        async {
+                            val tracks = mutableListOf<OnlineCatalogTrack>()
+                            try {
+                                val artistId = MetadataFetcher.resolveDeezerArtistId(artist)
+                                if (artistId != null) {
+                                    val relatedIds = MetadataFetcher.fetchDeezerRelatedArtistIds(artistId, limit = 3)
+                                    val topJobs = relatedIds.map { relId ->
+                                        async {
+                                            try {
+                                                MetadataFetcher.fetchDeezerArtistTop(relId, limit = 4).map { identity ->
+                                                    identity.toCatalogTrack(provider = "Deezer")
+                                                }
+                                            } catch (_: Exception) {
+                                                emptyList()
+                                            }
+                                        }
                                     }
+                                    tracks.addAll(topJobs.awaitAll().flatten())
                                 }
+                            } catch (_: Exception) {
                             }
-                        } catch (_: Exception) {
+                            tracks
                         }
                     }
+                    deezerTracks.addAll(artistTrackJobs.awaitAll().flatten())
                 }
 
                 // Fallback: If library was empty or artist matching produced no results, fallback to Deezer charts
@@ -111,13 +123,16 @@ class GetDiscoverRecommendationsUseCase {
             // Recommended Albums from top artists with Deezer chart albums fallback
             val albums = ArrayList<CatalogAlbum>()
             if (topArtists.isNotEmpty()) {
-                for (artist in topArtists.take(4)) {
-                    try {
-                        val artistAlbums = MetadataFetcher.searchAlbums(artist).take(4)
-                        albums.addAll(artistAlbums)
-                    } catch (_: Exception) {
+                val albumJobs = topArtists.take(4).map { artist ->
+                    async {
+                        try {
+                            MetadataFetcher.searchAlbums(artist).take(4)
+                        } catch (_: Exception) {
+                            emptyList()
+                        }
                     }
                 }
+                albums.addAll(albumJobs.awaitAll().flatten())
             }
 
             // Fallback for recommended albums when library is empty or no albums found

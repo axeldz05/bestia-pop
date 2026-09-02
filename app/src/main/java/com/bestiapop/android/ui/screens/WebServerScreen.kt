@@ -68,7 +68,7 @@ fun WebServerScreen(viewModel: MusicPlayerViewModel) {
     val context = LocalContext.current
     val serverAddress by WebServerService.serverState.collectAsState()
     val transfers by WebServerService.transfers.collectAsState()
-    val songs by viewModel.libraryProjection.songs.collectAsState()
+    val songList by viewModel.libraryProjection.songList.collectAsState()
     val identifyReview by viewModel.identifyReview.collectAsState()
     val playlists by viewModel.playlists.collectAsState(initial = emptyList())
     val currentItem by viewModel.currentItem.collectAsState()
@@ -90,7 +90,7 @@ fun WebServerScreen(viewModel: MusicPlayerViewModel) {
     )
 
     val songActions = rememberSongQueueActions(viewModel)
-    val songsById = remember(songs) { songs.associateBy { it.id } }
+    val songsById = songList.songsById
 
     Column(
         modifier = Modifier

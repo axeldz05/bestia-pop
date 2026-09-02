@@ -354,9 +354,8 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     private val _navigation = MutableStateFlow(UiNavigationState())
     val navigation = _navigation.asStateFlow()
-    val selectedNavIndex = navigation.mapToUiState(viewModelScope, NAV_LIBRARY) {
-        it.selectedNavIndex
-    }
+    private val _selectedNavIndex = MutableStateFlow(NAV_LIBRARY)
+    val selectedNavIndex = _selectedNavIndex.asStateFlow()
 
     private var uiPrefsHydrated = false
 
@@ -754,14 +753,14 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private fun openSettingsSection(section: String) {
         navIndexBeforeTransient = _navigation.value.selectedNavIndex
         _pendingSettingsSection.value = section
-        _navigation.update { it.copy(selectedNavIndex = NAV_SETTINGS) }
+        updateNavigation { it.copy(selectedNavIndex = NAV_SETTINGS) }
     }
 
     /** True when it consumed a pending transient jump and restored the previous tab. */
     fun returnFromTransientSettings(): Boolean {
         val previous = navIndexBeforeTransient ?: return false
         navIndexBeforeTransient = null
-        _navigation.update { it.copy(selectedNavIndex = previous) }
+        updateNavigation { it.copy(selectedNavIndex = previous) }
         return true
     }
 
@@ -1718,17 +1717,23 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             val current = _navigation.value
             val updated = transform(current)
             if (updated == current) return false
-            if (_navigation.compareAndSet(current, updated)) return true
+            if (_navigation.compareAndSet(current, updated)) {
+                if (_selectedNavIndex.value != updated.selectedNavIndex) {
+                    _selectedNavIndex.value = updated.selectedNavIndex
+                }
+                return true
+            }
         }
     }
 
     fun setSelectedNavIndex(index: Int, persist: Boolean = true) {
         val sanitized = LibraryUiPreferencesCodec.sanitizeNavIndex(index)
         navIndexBeforeTransient = null
-        if (_navigation.value.selectedNavIndex == sanitized) {
+        if (_selectedNavIndex.value == sanitized && _navigation.value.selectedNavIndex == sanitized) {
             if (sanitized == NAV_PLAYLISTS) maybeRestoreDiscoverDetail()
             return
         }
+        _selectedNavIndex.value = sanitized
         updateNavigation { it.copy(selectedNavIndex = sanitized) }
         if (persist) {
             persistedNavIndex = sanitized
@@ -1867,6 +1872,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     private fun applyNavSnapshot(nav: UiNavSnapshot) {
         _navigation.value = UiNavigationState.fromSnapshot(nav)
+        _selectedNavIndex.value = nav.navIndex
         persistedNavIndex = nav.navIndex
     }
 
@@ -1875,7 +1881,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         // persistedNavIndex, not the live one: a transient tab (download notification deep link,
         // the Ajustes → Descargas shortcut) would otherwise become the next cold-start tab.
         val snapshot = _navigation.value.toSnapshot(persistedNavIndex)
-        viewModelScope.launch { libraryPreferences.setNavSnapshot(snapshot) }
+        viewModelScope.launch(Dispatchers.IO) { libraryPreferences.setNavSnapshot(snapshot) }
     }
 
     private suspend fun pruneRestoredLibraryStack() {

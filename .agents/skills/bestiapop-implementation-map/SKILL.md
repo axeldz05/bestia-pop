@@ -60,7 +60,8 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 
 | Concern | Archivo |
 |---------|---------|
-| ViewModel central | `ui/MusicPlayerViewModel.kt` (`rawSongs` identity-slim `stateIn` Eagerly; `currentSongId`; `playCurrentLibraryBrowse` / `songsInOrder`; `songById` para letra; façade playback/download: adjunta `PlaybackRuntime`, expone `ProcessDownloadRuntime.downloads`/conflict/events, `runTrackedDownload` solo adapta `ProcessDownloadRequest`; estado cohesivo vía `libraryProjection`, `navigation`, `catalogSearch`, `catalogCollection`, `lbDiscover`, `lbPlaylistDetail`, `cfRecommendations`; no posee jobs ni notificación de descarga) |
+| ViewModel central | `ui/MusicPlayerViewModel.kt` (`rawSongs` identity-slim `stateIn` Eagerly; `currentSongId`; `playCurrentLibraryBrowse` / `songsInOrder`; `songById` para letra; façade playback/download: adjunta `PlaybackRuntime`, expone `ProcessDownloadRuntime.downloads`/conflict/events, `runTrackedDownload` solo adapta `ProcessDownloadRequest`; delega Identify a `identifyCoordinator`; estado cohesivo vía `libraryProjection`, `navigation`, `catalogSearch`, `catalogCollection`, `lbDiscover`, `lbPlaylistDetail`, `cfRecommendations`; no posee jobs ni notificación de descarga) |
+| Coordinador Identify Review | `ui/identify/IdentifyReviewCoordinator.kt` (lote identify, cola persistida en `IdentifyReviewStore`, búsqueda de candidatos, filtros artista/álbum/año, aplicación optimista y fan out de álbum conocido; desacoplado de `MusicPlayerViewModel`) |
 | Mini player | `ui/components/BottomPlayerBar.kt` (`statusLabel`, Previous/Next/Play; `BottomPlayerProgress` es el único collector del tick 200 ms); wiring `ui/screens/MainScreen.kt`; estado desde los flows de `PlaybackRuntime` reexpuestos por `MusicPlayerViewModel` |
 | Active download row | `ui/components/ActiveDownloadRow.kt` |
 | Download conflict dialog | `ui/components/DownloadConflictDialog.kt` |

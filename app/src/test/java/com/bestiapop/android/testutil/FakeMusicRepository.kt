@@ -110,4 +110,9 @@ open class FakeMusicRepository : IMusicRepository {
         tracks: List<com.bestiapop.android.data.model.CatalogTrackCandidate>
     ): List<Song> = emptyList()
     override suspend fun removeSavedAlbumFromLibrary(albumName: String, artistName: String): Int = 0
+    override suspend fun loadKnownAlbumTracks(
+        artist: String,
+        album: String,
+        fetchCatalog: Boolean
+    ): com.bestiapop.android.domain.util.KnownAlbumTracks? = null
 }

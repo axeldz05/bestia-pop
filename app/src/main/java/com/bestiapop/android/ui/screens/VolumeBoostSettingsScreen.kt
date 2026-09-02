@@ -11,8 +11,8 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.contentDescription
@@ -26,9 +26,9 @@ import kotlin.math.roundToInt
 
 @Composable
 fun VolumeBoostSettingsScreen(viewModel: MusicPlayerViewModel) {
-    val boostEnabled by viewModel.volumeBoostEnabled.collectAsState()
-    val leftGain by viewModel.stereoLeftGain.collectAsState()
-    val rightGain by viewModel.stereoRightGain.collectAsState()
+    val boostEnabled by viewModel.volumeBoostEnabled.collectAsStateWithLifecycle()
+    val leftGain by viewModel.stereoLeftGain.collectAsStateWithLifecycle()
+    val rightGain by viewModel.stereoRightGain.collectAsStateWithLifecycle()
 
     SettingsScrollColumn(
         intro = "El volumen de Now Playing es general. Acá podés amplificar por encima del 100% y atenuar el canal izquierdo o derecho por separado."
@@ -40,7 +40,7 @@ fun VolumeBoostSettingsScreen(viewModel: MusicPlayerViewModel) {
         )
         Spacer(modifier = Modifier.height(8.dp))
         Text(
-            text = "Permite subir el volumen de Now Playing por encima del 100% del sistema. Puede distorsionar temas ya masterizados a alto volumen.",
+            text = "Permite subir el volumen de Now Playing por encima del 100% del sistema. Puede distorsionar temas ya masterizados a alto volumen. Nota: Deshabilita la decodificación por hardware de ultra-bajo consumo (Audio Offload) del sistema, lo que puede incrementar el consumo de batería durante la reproducción en segundo plano.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )

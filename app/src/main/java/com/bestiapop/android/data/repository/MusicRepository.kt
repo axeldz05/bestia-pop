@@ -1385,10 +1385,10 @@ class MusicRepository private constructor(
             ?.toIdentifyCandidate()
     }
 
-    suspend fun loadKnownAlbumTracks(
+    override suspend fun loadKnownAlbumTracks(
         artist: String,
         album: String,
-        fetchCatalog: Boolean = true
+        fetchCatalog: Boolean
     ): KnownAlbumTracks? = withContext(Dispatchers.IO) {
         if (album.isBlank() || IdentifyRanking.isGenericAlbum(album)) return@withContext null
         val key = albumGroupKey(artist, album)

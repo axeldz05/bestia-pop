@@ -317,11 +317,7 @@ class MusicService : MediaLibraryService() {
         val clampedAmount =
             if (settings.volumeBoostEnabled) settings.volumeBoostAmount.coerceIn(0f, 1f) else 0f
         if (clampedAmount <= 0f) {
-            try {
-                loudnessEnhancer?.setTargetGain(0)
-                loudnessEnhancer?.enabled = false
-            } catch (_: Exception) {
-            }
+            releaseLoudnessEnhancer()
             appliedSettings = appliedSettings.copy(targetGainMb = 0)
             publishAppliedSettings()
             return

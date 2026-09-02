@@ -138,6 +138,12 @@ interface IMusicRepository {
      */
     suspend fun mergeAlbumInto(sourceAlbumKey: String, targetAlbumKey: String)
 
+    suspend fun loadKnownAlbumTracks(
+        artist: String,
+        album: String,
+        fetchCatalog: Boolean = true
+    ): com.bestiapop.android.domain.util.KnownAlbumTracks?
+
     suspend fun getAlbumOverride(albumKey: String): AlbumOverride?
 
     fun extractAndSaveEmbeddedArtwork(audioPathOrUri: String, identifier: String): String?

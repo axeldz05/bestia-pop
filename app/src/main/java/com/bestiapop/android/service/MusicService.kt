@@ -13,6 +13,7 @@ import android.media.audiofx.LoudnessEnhancer
 import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
+import android.os.SystemClock
 import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
@@ -77,6 +78,8 @@ class MusicService : MediaLibraryService() {
     private var appliedSettings = MusicServiceAppliedSettings(1f, 1f, 0)
     private var foregroundPromoteRetryScheduled = false
     private var foregroundPromoteRetryAttempts = 0
+    private var lastPausedAtElapsedRealtime: Long = 0L
+    private var pauseGraceJob: Job? = null
     private var restrictionNoticePosted = false
     private var restrictionConfirmJob: Job? = null
     private var appOpsWatcher: AppOpsManager.OnOpChangedListener? = null
@@ -217,8 +220,28 @@ class MusicService : MediaLibraryService() {
                     foregroundPromoteRetryAttempts = 0
                     persistPlaybackEngaged(isPlaybackEngaged())
                     updateWakeMode()
-                    if (!playWhenReady) {
+                    if (playWhenReady) {
+                        pauseGraceJob?.cancel()
+                        pauseGraceJob = null
+                        lastPausedAtElapsedRealtime = 0L
+                    } else {
                         releaseTransientWakeLock()
+                        if (p.mediaItemCount > 0 && p.playbackState != Player.STATE_ENDED) {
+                            lastPausedAtElapsedRealtime = SystemClock.elapsedRealtime()
+                            pauseGraceJob?.cancel()
+                            pauseGraceJob = serviceScope.launch {
+                                delay(PAUSE_GRACE_PERIOD_MS)
+                                PlaybackDiagnostics.log(
+                                    PlaybackDiagnostics.TAG_SERVICE,
+                                    "MusicService: Pause grace period expired. Refreshing foreground status."
+                                )
+                                triggerNotificationUpdate()
+                            }
+                        } else {
+                            pauseGraceJob?.cancel()
+                            pauseGraceJob = null
+                            lastPausedAtElapsedRealtime = 0L
+                        }
                     }
                 }
 
@@ -379,7 +402,8 @@ class MusicService : MediaLibraryService() {
             startInForegroundRequired = startInForegroundRequired,
             playWhenReady = p?.playWhenReady == true,
             mediaItemCount = p?.mediaItemCount ?: 0,
-            playbackState = p?.playbackState ?: Player.STATE_IDLE
+            playbackState = p?.playbackState ?: Player.STATE_IDLE,
+            isWithinPauseGracePeriod = isWithinPauseGracePeriod()
         )
         PlaybackDiagnostics.log(
             PlaybackDiagnostics.TAG_SERVICE,
@@ -486,6 +510,13 @@ class MusicService : MediaLibraryService() {
         )
     }
 
+    private fun isWithinPauseGracePeriod(): Boolean {
+        val pausedAt = lastPausedAtElapsedRealtime
+        if (pausedAt <= 0L) return false
+        val elapsed = SystemClock.elapsedRealtime() - pausedAt
+        return elapsed in 0L..PAUSE_GRACE_PERIOD_MS
+    }
+
     private fun createPlaybackNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val notificationManager = getSystemService(NotificationManager::class.java) ?: return
@@ -573,12 +604,11 @@ class MusicService : MediaLibraryService() {
         }
     }
 
-    @SuppressLint("ApplySharedPref")
     private fun persistPlaybackEngaged(engaged: Boolean) {
         getSharedPreferences(PLAYBACK_LIFETIME_PREFS, MODE_PRIVATE)
             .edit()
             .putBoolean(KEY_PLAYBACK_ENGAGED, engaged)
-            .commit()
+            .apply()
     }
 
     private fun wasPlaybackEngaged(): Boolean =
@@ -673,6 +703,7 @@ class MusicService : MediaLibraryService() {
         const val PLAYBACK_NOTIFICATION_ID = 1001
         const val ACTION_SET_SHUFFLE_ORDER = "com.bestiapop.android.SET_SHUFFLE_ORDER"
         const val EXTRA_SHUFFLE_ORDER = "shuffle_order"
+        const val PAUSE_GRACE_PERIOD_MS = 10 * 60 * 1000L
         /** Head start buffered for upcoming queue items (10s). */
         private const val PRELOAD_TARGET_DURATION_US = 10_000_000L
         private val FOREGROUND_RETRY_DELAYS_MS = longArrayOf(750L, 2_000L, 5_000L)
@@ -803,9 +834,11 @@ internal fun playbackForegroundRequired(
     startInForegroundRequired: Boolean,
     playWhenReady: Boolean,
     mediaItemCount: Int,
-    playbackState: Int
+    playbackState: Int,
+    isWithinPauseGracePeriod: Boolean = false
 ): Boolean = startInForegroundRequired ||
-    (playWhenReady && mediaItemCount > 0)
+    (playWhenReady && mediaItemCount > 0) ||
+    (isWithinPauseGracePeriod && mediaItemCount > 0 && playbackState != Player.STATE_ENDED)
 
 @OptIn(UnstableApi::class)
 internal fun boundGoogleVideoRequest(dataSpec: DataSpec): DataSpec {

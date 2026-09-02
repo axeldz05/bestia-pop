@@ -18,7 +18,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -34,13 +34,13 @@ import com.bestiapop.android.ui.components.previewFlags
 
 @Composable
 fun DownloadsScreen(viewModel: MusicPlayerViewModel) {
-    val activeDownloads by viewModel.activeDownloads.collectAsState()
-    val downloadSettings by viewModel.downloadSettings.collectAsState()
-    val catalogPreviewKey by viewModel.catalogPreviewKey.collectAsState()
-    val isPlaying by viewModel.isPlaying.collectAsState()
-    val resolvingRemote by viewModel.resolvingRemote.collectAsState()
-    val currentItem by viewModel.currentItem.collectAsState()
-    val backgroundExecutionStatus by viewModel.backgroundExecutionStatus.collectAsState()
+    val activeDownloads by viewModel.activeDownloads.collectAsStateWithLifecycle()
+    val downloadSettings by viewModel.downloadSettings.collectAsStateWithLifecycle()
+    val catalogPreviewKey by viewModel.catalogPreviewKey.collectAsStateWithLifecycle()
+    val isPlaying by viewModel.isPlaying.collectAsStateWithLifecycle()
+    val resolvingRemote by viewModel.resolvingRemote.collectAsStateWithLifecycle()
+    val currentItem by viewModel.currentItem.collectAsStateWithLifecycle()
+    val backgroundExecutionStatus by viewModel.backgroundExecutionStatus.collectAsStateWithLifecycle()
 
     val totalBytes = downloadSettings.totalMeteredBytes + downloadSettings.totalUnmeteredBytes
     Column(

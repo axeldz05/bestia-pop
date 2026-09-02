@@ -71,7 +71,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -122,9 +122,9 @@ fun AddMusicDialog(
     var linkUrlInput by remember { mutableStateOf("") }
     var catalogSearchInput by remember { mutableStateOf("") }
 
-    val catalogSearch by viewModel.catalogSearch.collectAsState()
-    val catalogCollection by viewModel.catalogCollection.collectAsState()
-    val activeDownloads by viewModel.activeDownloads.collectAsState()
+    val catalogSearch by viewModel.catalogSearch.collectAsStateWithLifecycle()
+    val catalogCollection by viewModel.catalogCollection.collectAsStateWithLifecycle()
+    val activeDownloads by viewModel.activeDownloads.collectAsStateWithLifecycle()
 
     val catalogResults = catalogSearch.tracks
     val isSearchingCatalog = catalogSearch.isSearching
@@ -136,10 +136,10 @@ fun AddMusicDialog(
     val activeTrackCandidates = catalogCollection.candidates
     val isLoadingCollection = catalogCollection.isLoading
 
-    val catalogPreviewKey by viewModel.catalogPreviewKey.collectAsState()
-    val currentItem by viewModel.currentItem.collectAsState()
-    val isPlaying by viewModel.isPlaying.collectAsState()
-    val resolvingRemote by viewModel.resolvingRemote.collectAsState()
+    val catalogPreviewKey by viewModel.catalogPreviewKey.collectAsStateWithLifecycle()
+    val currentItem by viewModel.currentItem.collectAsStateWithLifecycle()
+    val isPlaying by viewModel.isPlaying.collectAsStateWithLifecycle()
+    val resolvingRemote by viewModel.resolvingRemote.collectAsStateWithLifecycle()
 
     fun dismissDialog() {
         viewModel.clearSelectedCollection()
@@ -1223,7 +1223,7 @@ private fun CatalogPreviewProgress(
     durationMs: Long,
     isResolving: Boolean
 ) {
-    val positionMs by positionMsFlow.collectAsState()
+    val positionMs by positionMsFlow.collectAsStateWithLifecycle()
     val progressFraction = previewProgressFraction(positionMs, durationMs)
     LinearProgressIndicator(
         progress = { if (isResolving) 0f else progressFraction },
@@ -1500,7 +1500,7 @@ private fun CatalogPreviewBar(
     onPlayPause: () -> Unit,
     onStop: () -> Unit
 ) {
-    val positionMs by positionMsFlow.collectAsState()
+    val positionMs by positionMsFlow.collectAsStateWithLifecycle()
     val progressFraction = previewProgressFraction(positionMs, durationMs)
 
     Surface(

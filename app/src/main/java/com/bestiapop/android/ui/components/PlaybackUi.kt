@@ -13,7 +13,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -71,7 +71,7 @@ fun PlaybackScrubber(
     enabled: Boolean = true,
     holdAtZero: Boolean = false
 ) {
-    val livePositionMs by positionMsFlow.collectAsState()
+    val livePositionMs by positionMsFlow.collectAsStateWithLifecycle()
     val positionMs = if (holdAtZero) 0L else livePositionMs
     var isDragging by remember { mutableStateOf(false) }
     var dragPosition by remember { mutableFloatStateOf(0f) }

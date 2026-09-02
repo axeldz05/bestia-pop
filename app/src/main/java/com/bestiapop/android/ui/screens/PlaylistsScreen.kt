@@ -52,7 +52,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -116,17 +116,17 @@ fun PlaylistsScreen(
     searchQuery: String = "",
     onAddSongsRequest: (Playlist) -> Unit = {}
 ) {
-    val playlists by viewModel.playlists.collectAsState(initial = emptyList())
+    val playlists by viewModel.playlists.collectAsStateWithLifecycle(initialValue = emptyList())
     val visiblePlaylists = remember(playlists, searchQuery) {
         if (searchQuery.isBlank()) playlists
         else playlists.filter { it.name.contains(searchQuery.trim(), ignoreCase = true) }
     }
-    val allSongs by viewModel.libraryProjection.songs.collectAsState()
-    val lbSettings by viewModel.listenBrainzSettings.collectAsState()
-    val lbDiscover by viewModel.lbDiscover.collectAsState()
-    val lbPlaylistDetail by viewModel.lbPlaylistDetail.collectAsState()
-    val cfRecommendationsState by viewModel.cfRecommendations.collectAsState()
-    val navigation by viewModel.navigation.collectAsState()
+    val allSongs by viewModel.libraryProjection.songs.collectAsStateWithLifecycle()
+    val lbSettings by viewModel.listenBrainzSettings.collectAsStateWithLifecycle()
+    val lbDiscover by viewModel.lbDiscover.collectAsStateWithLifecycle()
+    val lbPlaylistDetail by viewModel.lbPlaylistDetail.collectAsStateWithLifecycle()
+    val cfRecommendationsState by viewModel.cfRecommendations.collectAsStateWithLifecycle()
+    val navigation by viewModel.navigation.collectAsStateWithLifecycle()
     val playlistDetail = navigation.playlistDetail
     val lbDiscoverPlaylists = lbDiscover.data
     val selectedLbPlaylist = lbPlaylistDetail.data
@@ -385,13 +385,13 @@ fun PlaylistsScreen(
         // Selected local Playlist Detail View Screen
         if (selectedPlaylistId != null) {
             val playlistId = selectedPlaylistId!!
-            val detailsState by viewModel.getPlaylistDetailsFlow(playlistId).collectAsState(initial = null)
+            val detailsState by viewModel.getPlaylistDetailsFlow(playlistId).collectAsStateWithLifecycle(initialValue = null)
 
             detailsState?.let { pair ->
                 val playlist = pair.first
                 val songsInPlaylist = pair.second
                 val pendingTracks by viewModel.getPlaylistPendingTracksFlow(playlistId)
-                    .collectAsState(initial = emptyList())
+                    .collectAsStateWithLifecycle(initialValue = emptyList())
                 PlaylistDetailScreen(
                     playlist = playlist,
                     songs = songsInPlaylist,
@@ -409,8 +409,8 @@ fun PlaylistsScreen(
 
         // ListenBrainz Discover playlist detail
         if (selectedLbPlaylistMbid != null) {
-            val currentItem by viewModel.currentItem.collectAsState()
-            val activeDownloads by viewModel.activeDownloads.collectAsState()
+            val currentItem by viewModel.currentItem.collectAsStateWithLifecycle()
+            val activeDownloads by viewModel.activeDownloads.collectAsStateWithLifecycle()
             LbPlaylistDetailScreen(
                 state = lbPlaylistDetail,
                 onBack = { viewModel.closePlaylistDetail() },
@@ -450,8 +450,8 @@ fun PlaylistsScreen(
 
         // CF Recommendations detail
         if (cfDetailOpen) {
-            val currentItem by viewModel.currentItem.collectAsState()
-            val activeDownloads by viewModel.activeDownloads.collectAsState()
+            val currentItem by viewModel.currentItem.collectAsStateWithLifecycle()
+            val activeDownloads by viewModel.activeDownloads.collectAsStateWithLifecycle()
             CfRecommendationsDetailScreen(
                 state = cfRecommendationsState,
                 onBack = { viewModel.closePlaylistDetail() },
@@ -960,8 +960,8 @@ private fun PlaylistDetailScreen(
     var showEditDialog by remember { mutableStateOf(false) }
     val totalCount = songs.size + pendingTracks.size
     val songActions = rememberSongQueueActions(viewModel)
-    val currentSong by viewModel.currentSong.collectAsState()
-    val currentItem by viewModel.currentItem.collectAsState()
+    val currentSong by viewModel.currentSong.collectAsStateWithLifecycle()
+    val currentItem by viewModel.currentItem.collectAsStateWithLifecycle()
 
     Surface(
         modifier = Modifier.fillMaxSize(),

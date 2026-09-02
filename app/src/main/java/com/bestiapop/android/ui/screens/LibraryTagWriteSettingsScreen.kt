@@ -7,7 +7,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -17,8 +17,8 @@ import com.bestiapop.android.ui.components.SettingsSwitchRow
 
 @Composable
 fun LibraryTagWriteSettingsScreen(viewModel: MusicPlayerViewModel) {
-    val settings by viewModel.libraryTagWriteSettings.collectAsState()
-    val job by viewModel.libraryJobProgress.collectAsState()
+    val settings by viewModel.libraryTagWriteSettings.collectAsStateWithLifecycle()
+    val job by viewModel.libraryJobProgress.collectAsStateWithLifecycle()
     val syncBusy = job != null
 
     SettingsScrollColumn(

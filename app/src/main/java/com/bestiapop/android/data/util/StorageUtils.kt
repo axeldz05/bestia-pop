@@ -3,6 +3,7 @@ package com.bestiapop.android.data.util
 import android.content.ContentUris
 import android.content.ContentValues
 import android.content.Context
+import android.media.MediaScannerConnection
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
@@ -124,7 +125,10 @@ object StorageUtils {
         val dir = publicBestiaPopDir()
         if (ensureWritableDir(dir)) {
             val dest = File(dir, safeName)
-            return PendingWrite(dest) { dest.absolutePath }
+            return PendingWrite(dest) {
+                scanFile(context, dest.absolutePath, mime)
+                dest.absolutePath
+            }
         }
         val staging = File(context.cacheDir, "bp_${System.currentTimeMillis()}_$safeName")
         return PendingWrite(staging) {
@@ -133,6 +137,14 @@ object StorageUtils {
             } finally {
                 staging.delete()
             }
+        }
+    }
+
+    fun scanFile(context: Context, path: String, mime: String? = null) {
+        try {
+            val mimes = if (mime != null) arrayOf(mime) else null
+            MediaScannerConnection.scanFile(context.applicationContext, arrayOf(path), mimes, null)
+        } catch (_: Exception) {
         }
     }
 

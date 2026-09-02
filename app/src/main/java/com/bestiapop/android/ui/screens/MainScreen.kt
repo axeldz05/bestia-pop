@@ -39,7 +39,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
@@ -73,7 +73,7 @@ fun MainScreen(
     onSelectFolderClick: () -> Unit,
     onRequestUnknownSources: () -> Unit
 ) {
-    val selectedNavIndex by viewModel.selectedNavIndex.collectAsState()
+    val selectedNavIndex by viewModel.selectedNavIndex.collectAsStateWithLifecycle()
     var showFullPlayer by remember { mutableStateOf(false) }
     /** Ignores only the same-gesture UP after mid-drag dismiss lands on the mini bar. */
     var suppressBarOpenUntilElapsedRealtime by remember { mutableLongStateOf(0L) }
@@ -83,22 +83,22 @@ fun MainScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
-    val currentItem by viewModel.currentItem.collectAsState()
-    val isPlaying by viewModel.isPlaying.collectAsState()
-    val radioStatusLabel by viewModel.radioStatusLabel.collectAsState()
-    val resolvingRemote by viewModel.resolvingRemote.collectAsState()
-    val radioLoading by viewModel.radioLoading.collectAsState()
-    val activeDownloads by viewModel.activeDownloads.collectAsState()
-    val pendingOpenDownloads by viewModel.pendingOpenDownloads.collectAsState()
-    val pendingOpenIdentifyReview by viewModel.pendingOpenIdentifyReview.collectAsState()
-    val downloadConflict by viewModel.downloadConflict.collectAsState()
-    val identifyReview by viewModel.identifyReview.collectAsState()
-    val identifySetup by viewModel.identifySetup.collectAsState()
-    val pendingAlbumMerge by viewModel.pendingAlbumMerge.collectAsState()
-    val appUpdateState by appUpdateViewModel.state.collectAsState()
+    val currentItem by viewModel.currentItem.collectAsStateWithLifecycle()
+    val isPlaying by viewModel.isPlaying.collectAsStateWithLifecycle()
+    val radioStatusLabel by viewModel.radioStatusLabel.collectAsStateWithLifecycle()
+    val resolvingRemote by viewModel.resolvingRemote.collectAsStateWithLifecycle()
+    val radioLoading by viewModel.radioLoading.collectAsStateWithLifecycle()
+    val activeDownloads by viewModel.activeDownloads.collectAsStateWithLifecycle()
+    val pendingOpenDownloads by viewModel.pendingOpenDownloads.collectAsStateWithLifecycle()
+    val pendingOpenIdentifyReview by viewModel.pendingOpenIdentifyReview.collectAsStateWithLifecycle()
+    val downloadConflict by viewModel.downloadConflict.collectAsStateWithLifecycle()
+    val identifyReview by viewModel.identifyReview.collectAsStateWithLifecycle()
+    val identifySetup by viewModel.identifySetup.collectAsStateWithLifecycle()
+    val pendingAlbumMerge by viewModel.pendingAlbumMerge.collectAsStateWithLifecycle()
+    val appUpdateState by appUpdateViewModel.state.collectAsStateWithLifecycle()
     val downloadBadgeCount = activeDownloadBadgeCount(activeDownloads)
-    val backgroundExecutionStatus by viewModel.backgroundExecutionStatus.collectAsState()
-    val oemScreenOffCleanupHintDismissed by viewModel.oemScreenOffCleanupHintDismissed.collectAsState()
+    val backgroundExecutionStatus by viewModel.backgroundExecutionStatus.collectAsStateWithLifecycle()
+    val oemScreenOffCleanupHintDismissed by viewModel.oemScreenOffCleanupHintDismissed.collectAsStateWithLifecycle()
     val oemScreenOffCleanupIntent = remember(context) {
         BackgroundExecutionProbe.oemScreenOffCleanupIntent(context)
     }

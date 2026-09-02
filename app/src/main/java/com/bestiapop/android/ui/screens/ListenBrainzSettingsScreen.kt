@@ -24,7 +24,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -49,9 +49,9 @@ import java.util.Date
 
 @Composable
 fun ListenBrainzSettingsScreen(viewModel: MusicPlayerViewModel) {
-    val settings by viewModel.listenBrainzSettings.collectAsState()
-    val pendingCount by viewModel.pendingListenCount.collectAsState()
-    val validationState by viewModel.tokenValidation.collectAsState()
+    val settings by viewModel.listenBrainzSettings.collectAsStateWithLifecycle()
+    val pendingCount by viewModel.pendingListenCount.collectAsStateWithLifecycle()
+    val validationState by viewModel.tokenValidation.collectAsStateWithLifecycle()
 
     var tokenDraft by remember(settings.userToken) { mutableStateOf(settings.userToken) }
     var showToken by remember { mutableStateOf(false) }

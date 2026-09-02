@@ -42,7 +42,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -86,7 +86,7 @@ import com.bestiapop.android.ui.state.IdentifyReviewState
 fun IdentifyReviewScreen(
     viewModel: MusicPlayerViewModel
 ) {
-    val state by viewModel.identifyReview.collectAsState()
+    val state by viewModel.identifyReview.collectAsStateWithLifecycle()
     if (!state.isOpen) return
 
     BackHandler {
@@ -433,8 +433,8 @@ private fun IdentifySourcePlaying(
     sourceHints: String?,
     confidence: IdentifyConfidence
 ) {
-    val isPlaying by viewModel.isPlaying.collectAsState()
-    val currentItem by viewModel.currentItem.collectAsState()
+    val isPlaying by viewModel.isPlaying.collectAsStateWithLifecycle()
+    val currentItem by viewModel.currentItem.collectAsStateWithLifecycle()
     val localPlaying = currentItem is PlayableItem.Local &&
         (currentItem as PlayableItem.Local).song.id == song.id &&
         isPlaying
@@ -457,9 +457,9 @@ private fun IdentifyCandidateList(
     state: IdentifyReviewState,
     modifier: Modifier = Modifier
 ) {
-    val isPlaying by viewModel.isPlaying.collectAsState()
-    val resolvingRemote by viewModel.resolvingRemote.collectAsState()
-    val catalogPreviewKey by viewModel.catalogPreviewKey.collectAsState()
+    val isPlaying by viewModel.isPlaying.collectAsStateWithLifecycle()
+    val resolvingRemote by viewModel.resolvingRemote.collectAsStateWithLifecycle()
+    val catalogPreviewKey by viewModel.catalogPreviewKey.collectAsStateWithLifecycle()
     LazyColumn(
         modifier = modifier,
         contentPadding = PaddingValues(16.dp),

@@ -651,7 +651,9 @@ class MusicRepository private constructor(
         if (scanned.isEmpty()) return emptyList()
         musicDao.insertSongs(scanned)
         invalidateIdentityLibrary()
-        return musicDao.getSongsByUris(scanned.map { it.uriString })
+        return scanned.map { it.uriString }
+            .chunked(IDENTITY_SONG_ID_CHUNK)
+            .flatMap { chunk -> musicDao.getSongsByUris(chunk) }
     }
 
     private data class IndexSource(
@@ -990,9 +992,13 @@ class MusicRepository private constructor(
     private suspend fun deleteSongRows(songs: List<Song>) {
         val ids = songs.map { it.id }
         if (ids.isEmpty()) return
-        musicDao.deletePlayStatsForSongs(ids)
-        musicDao.deletePlaylistRefsForSongs(ids)
-        musicDao.deleteSongsByIds(ids)
+        db.withTransaction {
+            ids.chunked(IDENTITY_SONG_ID_CHUNK).forEach { chunk ->
+                musicDao.deletePlayStatsForSongs(chunk)
+                musicDao.deletePlaylistRefsForSongs(chunk)
+                musicDao.deleteSongsByIds(chunk)
+            }
+        }
         invalidateIdentityLibrary()
     }
 
@@ -2389,7 +2395,11 @@ class MusicRepository private constructor(
     private fun writeTagsToFile(song: Song): TagWriteResult {
         val file = audioStore.writableFile(song.uriString, song.folderPath)
             ?: return TagWriteResult.NotWritable
-        return AudioTagWriter.write(song, file)
+        val result = AudioTagWriter.write(song, file)
+        if (result is TagWriteResult.Success) {
+            StorageUtils.scanFile(context, file.absolutePath)
+        }
+        return result
     }
 
     private suspend fun lookupSongByArtistTitle(artist: String, title: String): Song? {

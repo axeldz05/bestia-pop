@@ -30,7 +30,7 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -89,21 +89,21 @@ fun LibraryScreen(
     onSelectFolderClick: () -> Unit,
     onOpenDownloads: () -> Unit = {}
 ) {
-    val identifyReview by viewModel.identifyReview.collectAsState()
-    val catalogLoaded by viewModel.libraryProjection.catalogLoaded.collectAsState()
-    val songList by viewModel.libraryProjection.songList.collectAsState()
-    val playlists by viewModel.playlists.collectAsState(initial = emptyList())
-    val searchQuery by viewModel.searchQuery.collectAsState()
-    val sortOption by viewModel.sortOption.collectAsState()
-    val sortDirection by viewModel.sortDirection.collectAsState()
-    val libraryViewMode by viewModel.libraryViewMode.collectAsState()
-    val navigation by viewModel.navigation.collectAsState()
+    val identifyReview by viewModel.identifyReview.collectAsStateWithLifecycle()
+    val catalogLoaded by viewModel.libraryProjection.catalogLoaded.collectAsStateWithLifecycle()
+    val songList by viewModel.libraryProjection.songList.collectAsStateWithLifecycle()
+    val playlists by viewModel.playlists.collectAsStateWithLifecycle(initialValue = emptyList())
+    val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
+    val sortOption by viewModel.sortOption.collectAsStateWithLifecycle()
+    val sortDirection by viewModel.sortDirection.collectAsStateWithLifecycle()
+    val libraryViewMode by viewModel.libraryViewMode.collectAsStateWithLifecycle()
+    val navigation by viewModel.navigation.collectAsStateWithLifecycle()
     val browseFilter = navigation.libraryBrowseFilter
     val selectedAlbumName = navigation.libraryStack.albumName
     val selectedArtistName = navigation.libraryStack.artistName
     val selectedGenreName = navigation.libraryStack.genreName
-    val libraryJobProgress by viewModel.libraryJobProgress.collectAsState()
-    val similarPlaylistPreview by viewModel.similarPlaylistPreview.collectAsState()
+    val libraryJobProgress by viewModel.libraryJobProgress.collectAsStateWithLifecycle()
+    val similarPlaylistPreview by viewModel.similarPlaylistPreview.collectAsStateWithLifecycle()
 
     var showBrowseSortSheet by remember { mutableStateOf(false) }
     var searchExpanded by remember { mutableStateOf(false) }
@@ -851,7 +851,7 @@ private fun NestedAlbumDisplayName(
     viewModel: MusicPlayerViewModel,
     albumKey: String
 ): String {
-    val albums by viewModel.libraryProjection.albums.collectAsState()
+    val albums by viewModel.libraryProjection.albums.collectAsStateWithLifecycle()
     return albums.firstOrNull {
         albumNamesMatch(it.name, albumKey) || albumNamesMatch(it.displayName, albumKey)
     }?.displayName ?: albumKey
@@ -913,12 +913,12 @@ private fun NestedLibraryBrowse(
     actions: LibrarySongListActions,
     onToggleSelect: (Song) -> Unit
 ) {
-    val songs by viewModel.libraryProjection.songs.collectAsState()
+    val songs by viewModel.libraryProjection.songs.collectAsStateWithLifecycle()
     val browseSongs = remember(songs, selectedAlbumName, selectedArtistName, selectedGenreName) {
         libraryNestedSongs(viewModel, songs, selectedAlbumName, selectedArtistName, selectedGenreName)
     }
     // Keyed on albums so an album rename refreshes the group headers, which read the override name.
-    val albums by viewModel.libraryProjection.albums.collectAsState()
+    val albums by viewModel.libraryProjection.albums.collectAsStateWithLifecycle()
     val list by produceState(
         initialValue = LibraryListModel.EMPTY,
         browseSongs,
@@ -968,7 +968,7 @@ private fun LibraryAlbumsTab(
     onChangeAlbumCover: (Album) -> Unit,
     onIdentifyAlbum: (Album) -> Unit
 ) {
-    val albums by viewModel.libraryProjection.albums.collectAsState()
+    val albums by viewModel.libraryProjection.albums.collectAsStateWithLifecycle()
     LibraryAlbumBrowseList(
         albums = albums,
         sortOption = sortOption,
@@ -992,8 +992,8 @@ private fun LibraryRecentTab(
     searchQuery: String,
     onToggleSelect: (Song) -> Unit
 ) {
-    val recentSongs by viewModel.libraryProjection.recentSongs.collectAsState()
-    val recentList by viewModel.libraryProjection.recentList.collectAsState()
+    val recentSongs by viewModel.libraryProjection.recentSongs.collectAsStateWithLifecycle()
+    val recentList by viewModel.libraryProjection.recentList.collectAsStateWithLifecycle()
     val recentEmptyFromSearch = searchQuery.isNotBlank()
     val onSongClick = remember(isSelectionMode, recentSongs, onToggleSelect) {
         { song: Song, index: Int ->
@@ -1033,7 +1033,7 @@ private fun LibraryArtistsTab(
     onPlayArtist: (Artist) -> Unit,
     onShuffleArtist: (Artist) -> Unit
 ) {
-    val artists by viewModel.libraryProjection.artists.collectAsState()
+    val artists by viewModel.libraryProjection.artists.collectAsStateWithLifecycle()
     LibraryArtistList(
         artists = artists,
         sortOption = sortOption,
@@ -1051,7 +1051,7 @@ private fun LibraryGenresTab(
     onPlayGenre: (GenreGroup) -> Unit,
     onShuffleGenre: (GenreGroup) -> Unit
 ) {
-    val genres by viewModel.libraryProjection.genres.collectAsState()
+    val genres by viewModel.libraryProjection.genres.collectAsStateWithLifecycle()
     LibraryGenreList(
         genres = genres,
         sortOption = sortOption,

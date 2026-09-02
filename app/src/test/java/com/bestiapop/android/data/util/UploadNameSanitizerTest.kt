@@ -53,4 +53,12 @@ class UploadNameSanitizerTest {
             UploadNameSanitizer.sanitize("a:b.mp3")
         )
     }
+
+    @Test
+    fun dotOnlyNames_fallbackToSafeAudioTimestamp() {
+        val dotSanitized = UploadNameSanitizer.sanitize("..")
+        assertTrue(dotSanitized.startsWith("audio_") && dotSanitized.endsWith(".mp3"))
+        val singleDotSanitized = UploadNameSanitizer.sanitize(".")
+        assertTrue(singleDotSanitized.startsWith("audio_") && singleDotSanitized.endsWith(".mp3"))
+    }
 }

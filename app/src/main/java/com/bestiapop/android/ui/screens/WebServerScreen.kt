@@ -38,7 +38,7 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -66,12 +66,12 @@ import com.bestiapop.android.ui.screens.library.rememberSongActionDialogs
 @Composable
 fun WebServerScreen(viewModel: MusicPlayerViewModel) {
     val context = LocalContext.current
-    val serverAddress by WebServerService.serverState.collectAsState()
-    val transfers by WebServerService.transfers.collectAsState()
-    val songList by viewModel.libraryProjection.songList.collectAsState()
-    val identifyReview by viewModel.identifyReview.collectAsState()
-    val playlists by viewModel.playlists.collectAsState(initial = emptyList())
-    val currentItem by viewModel.currentItem.collectAsState()
+    val serverAddress by WebServerService.serverState.collectAsStateWithLifecycle()
+    val transfers by WebServerService.transfers.collectAsStateWithLifecycle()
+    val songList by viewModel.libraryProjection.songList.collectAsStateWithLifecycle()
+    val identifyReview by viewModel.identifyReview.collectAsStateWithLifecycle()
+    val playlists by viewModel.playlists.collectAsStateWithLifecycle(initialValue = emptyList())
+    val currentItem by viewModel.currentItem.collectAsStateWithLifecycle()
     val currentSongId = (currentItem as? PlayableItem.Local)?.song?.id
 
     val songDialogs = rememberSongActionDialogs(

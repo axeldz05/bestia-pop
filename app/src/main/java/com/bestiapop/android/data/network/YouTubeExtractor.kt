@@ -1,5 +1,6 @@
 package com.bestiapop.android.data.network
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -541,7 +542,10 @@ object YouTubeExtractor {
     private var cachedVisitorData: String? = null
 
     private fun fetchVisitorData(videoId: String): String? {
-        cachedVisitorData?.let { return it }
+        val cached = cachedVisitorData
+        if (cached != null) {
+            return cached.ifEmpty { null }
+        }
         return try {
             val url = endpoint(endpoints.webBaseUrl, "watch?v=$videoId")
             val req = Request.Builder()
@@ -555,14 +559,17 @@ object YouTubeExtractor {
                     val html = resp.body?.string() ?: ""
                     val match = VISITOR_DATA_REGEX.find(html)
                     val vData = match?.groupValues?.get(1)
-                    if (vData != null) {
-                        cachedVisitorData = vData
-                    }
+                    cachedVisitorData = vData ?: ""
                     vData
-                } else null
+                } else {
+                    cachedVisitorData = ""
+                    null
+                }
             }
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             e.printStackTrace()
+            cachedVisitorData = ""
             null
         }
     }
@@ -654,6 +661,7 @@ object YouTubeExtractor {
 
             fun checkFormatArray(arr: JSONArray?) {
                 if (arr == null) return
+                val isAdaptive = (arr === adaptiveFormats)
                 for (i in 0 until arr.length()) {
                     val fmt = arr.getJSONObject(i)
                     val url = fmt.optString("url")
@@ -662,10 +670,12 @@ object YouTubeExtractor {
 
                     if (url.isEmpty()) continue
 
-                    val isMp4Audio = mime.contains("audio/mp4") || mime.contains("mp4a")
-                    val isGeneralAudio = mime.contains("audio/") || mime.contains("video/mp4")
+                    val isAudioOnly = mime.contains("audio/")
+                    val isMuxedMp4 = !isAdaptive && mime.contains("video/mp4")
 
-                    if (!isGeneralAudio) continue
+                    if (!isAudioOnly && !isMuxedMp4) continue
+
+                    val isMp4Audio = isAudioOnly && (mime.contains("audio/mp4") || mime.contains("mp4a"))
 
                     // Prioritize AAC/m4a audio (audio/mp4) over WebM/Opus for 100% ExoPlayer native compatibility
                     if (isMp4Audio) {

@@ -12,10 +12,13 @@ import com.bestiapop.android.data.network.MetadataFetcher
 import com.bestiapop.android.domain.util.IdentifyRanking
 import com.bestiapop.android.domain.util.TrackMatchKeys
 import com.bestiapop.android.domain.util.matchKey
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 
 data class DiscoverFeed(
@@ -26,6 +29,8 @@ data class DiscoverFeed(
 )
 
 class GetDiscoverRecommendationsUseCase {
+
+    private val deezerSemaphore = Semaphore(4)
 
     suspend fun execute(
         librarySongs: List<Song>,
@@ -73,7 +78,8 @@ class GetDiscoverRecommendationsUseCase {
                             }
                         }
                     }
-                } catch (_: Exception) {
+                } catch (e: Exception) {
+                    if (e is CancellationException) throw e
                     // Fallback to Deezer
                 }
             }
@@ -86,23 +92,31 @@ class GetDiscoverRecommendationsUseCase {
                         async {
                             val tracks = mutableListOf<OnlineCatalogTrack>()
                             try {
-                                val artistId = MetadataFetcher.resolveDeezerArtistId(artist)
+                                val artistId = deezerSemaphore.withPermit {
+                                    MetadataFetcher.resolveDeezerArtistId(artist)
+                                }
                                 if (artistId != null) {
-                                    val relatedIds = MetadataFetcher.fetchDeezerRelatedArtistIds(artistId, limit = 3)
+                                    val relatedIds = deezerSemaphore.withPermit {
+                                        MetadataFetcher.fetchDeezerRelatedArtistIds(artistId, limit = 3)
+                                    }
                                     val topJobs = relatedIds.map { relId ->
                                         async {
                                             try {
-                                                MetadataFetcher.fetchDeezerArtistTop(relId, limit = 4).map { identity ->
-                                                    identity.toCatalogTrack(provider = "Deezer")
+                                                deezerSemaphore.withPermit {
+                                                    MetadataFetcher.fetchDeezerArtistTop(relId, limit = 4).map { identity ->
+                                                        identity.toCatalogTrack(provider = "Deezer")
+                                                    }
                                                 }
-                                            } catch (_: Exception) {
+                                            } catch (e: Exception) {
+                                                if (e is CancellationException) throw e
                                                 emptyList()
                                             }
                                         }
                                     }
                                     tracks.addAll(topJobs.awaitAll().flatten())
                                 }
-                            } catch (_: Exception) {
+                            } catch (e: Exception) {
+                                if (e is CancellationException) throw e
                             }
                             tracks
                         }
@@ -126,8 +140,11 @@ class GetDiscoverRecommendationsUseCase {
                 val albumJobs = topArtists.take(4).map { artist ->
                     async {
                         try {
-                            MetadataFetcher.searchAlbums(artist).take(4)
-                        } catch (_: Exception) {
+                            deezerSemaphore.withPermit {
+                                MetadataFetcher.searchAlbums(artist).take(4)
+                            }
+                        } catch (e: Exception) {
+                            if (e is CancellationException) throw e
                             emptyList()
                         }
                     }

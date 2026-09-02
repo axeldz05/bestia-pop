@@ -2601,11 +2601,13 @@ class PlaybackRuntime internal constructor(
                 }
                 if (windowStart > 0) {
                     val head = items.subList(0, windowStart)
+                    var insertIndex = 0
                     for (chunk in head.chunked(QUEUE_APPEND_CHUNK_SIZE)) {
                         if (!isActive || !isPlaybackGenerationCurrent(generation)) break
                         withContext(Dispatchers.Main.immediate) {
                             if (hasMaterializedTimeline() && isPlaybackGenerationCurrent(generation)) {
-                                mutateMaterializedTimeline { it.addMediaItems(0, chunk) }
+                                mutateMaterializedTimeline { it.addMediaItems(insertIndex, chunk) }
+                                insertIndex += chunk.size
                             }
                         }
                     }

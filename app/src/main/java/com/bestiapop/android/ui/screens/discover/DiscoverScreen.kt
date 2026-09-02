@@ -19,6 +19,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -43,11 +44,11 @@ fun DiscoverScreen(
     viewModel: MusicPlayerViewModel,
     modifier: Modifier = Modifier
 ) {
-    val catalogSearch by viewModel.catalogSearch.collectAsState()
-    val catalogCollection by viewModel.catalogCollection.collectAsState()
-    val recentSearches by viewModel.recentSearches.collectAsState()
-    val discoverFeed by viewModel.discoverFeed.collectAsState()
-    val isLoadingFeed by viewModel.isLoadingDiscoverFeed.collectAsState()
+    val catalogSearch by viewModel.catalogSearch.collectAsStateWithLifecycle()
+    val catalogCollection by viewModel.catalogCollection.collectAsStateWithLifecycle()
+    val recentSearches by viewModel.recentSearches.collectAsStateWithLifecycle()
+    val discoverFeed by viewModel.discoverFeed.collectAsStateWithLifecycle()
+    val isLoadingFeed by viewModel.isLoadingDiscoverFeed.collectAsStateWithLifecycle()
 
     var searchInput by remember { mutableStateOf(catalogSearch.searchQueryDraft) }
     var isSearchFocused by remember { mutableStateOf(false) }

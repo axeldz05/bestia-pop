@@ -4141,7 +4141,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         val download = activeDownloads.value.find { it.id == id } ?: return
         val songId = download.resultSongId ?: return
         viewModelScope.launch {
-            val song = repository.allSongsFlow.first().find { it.id == songId } ?: return@launch
+            val song = repository.getSongById(songId) ?: return@launch
             playSong(song)
         }
     }

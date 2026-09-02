@@ -15,12 +15,15 @@ object UploadNameSanitizer {
         for (ch in base) {
             if (isPathUnsafe(ch)) sb.append('_') else sb.append(ch)
         }
-        return sb.toString()
+        val result = sb.toString().trim()
+        return if (result.isEmpty() || result.all { it == '.' }) "audio_${System.currentTimeMillis()}.mp3" else result
     }
 
     /** Pre-unicode sanitizer: non-ASCII letters became `_`. */
-    fun asciiLegacy(rawName: String): String =
-        fileNameOnly(rawName).replace(ASCII_ONLY, "_")
+    fun asciiLegacy(rawName: String): String {
+        val legacy = fileNameOnly(rawName).replace(ASCII_ONLY, "_").trim()
+        return if (legacy.isEmpty() || legacy.all { it == '.' }) "audio_${System.currentTimeMillis()}.mp3" else legacy
+    }
 
     fun matchingBasenames(rawName: String): List<String> {
         val current = sanitize(rawName)

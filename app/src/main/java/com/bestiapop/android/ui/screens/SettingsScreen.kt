@@ -34,7 +34,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -65,7 +65,7 @@ private enum class SettingsSection {
 @Composable
 fun SettingsScreen(viewModel: MusicPlayerViewModel, appUpdateViewModel: AppUpdateViewModel) {
     var section by remember { mutableStateOf<SettingsSection?>(null) }
-    val pendingSettingsSection by viewModel.pendingSettingsSection.collectAsState()
+    val pendingSettingsSection by viewModel.pendingSettingsSection.collectAsStateWithLifecycle()
 
     LaunchedEffect(pendingSettingsSection) {
         when (pendingSettingsSection) {
@@ -152,7 +152,7 @@ private fun SettingsHome(
     onOpenUpdate: () -> Unit
 ) {
     val context = LocalContext.current
-    val updateNotes by appUpdateViewModel.notes.collectAsState()
+    val updateNotes by appUpdateViewModel.notes.collectAsStateWithLifecycle()
     val repo = BuildConfig.GITHUB_REPOSITORY.trim()
     val latestUrl = if (repo.isNotEmpty()) GitHubReleaseUrls.latestPageUrl(repo) else ""
     val inviteText = """

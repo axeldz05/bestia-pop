@@ -48,6 +48,19 @@ class PlaybackNotificationContractTest {
     }
 
     @Test
+    fun pausedPlaybackWithinGracePeriod_retainsForeground() {
+        assertTrue(
+            playbackForegroundRequired(
+                startInForegroundRequired = false,
+                playWhenReady = false,
+                mediaItemCount = 1,
+                playbackState = Player.STATE_READY,
+                isWithinPauseGracePeriod = true
+            )
+        )
+    }
+
+    @Test
     fun emptyQueueWithoutIntent_doesNotInventForegroundDemand() {
         assertFalse(
             playbackForegroundRequired(

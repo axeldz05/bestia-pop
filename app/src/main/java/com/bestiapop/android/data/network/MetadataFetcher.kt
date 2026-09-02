@@ -11,6 +11,7 @@ import com.bestiapop.android.data.model.toCatalogTrack
 import com.bestiapop.android.data.model.youtubeSearchQuery
 import com.bestiapop.android.data.util.encodeAlbumTrack
 import com.bestiapop.android.domain.util.IdentifyQueryVariants
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -94,17 +95,35 @@ object MetadataFetcher {
     }
 
     fun getJson(url: String, userAgent: String = "BestiaPop/1.0"): JSONObject? {
-        return try {
-            val request = Request.Builder().url(url).header("User-Agent", userAgent).build()
-            client.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) return null
-                val body = response.body?.string() ?: return null
-                JSONObject(body)
+        var attempts = 0
+        while (attempts < 3) {
+            attempts++
+            try {
+                val request = Request.Builder().url(url).header("User-Agent", userAgent).build()
+                val (statusCode, bodyString, retryAfterSec) = client.newCall(request).execute().use { response ->
+                    val retrySec = response.header("Retry-After")?.toLongOrNull()
+                    Triple(response.code, if (response.isSuccessful) response.body?.string() else null, retrySec)
+                }
+                if (statusCode == 429 && attempts < 3) {
+                    val waitMs = (retryAfterSec?.times(1000L) ?: 500L).coerceIn(250L, 3000L)
+                    Thread.sleep(waitMs)
+                    continue
+                }
+                if (bodyString == null) return null
+                return JSONObject(bodyString)
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                if (e is InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    return null
+                }
+                if (attempts >= 3) {
+                    e.printStackTrace()
+                    return null
+                }
             }
-        } catch (e: Exception) {
-            e.printStackTrace()
-            null
         }
+        return null
     }
 
     private fun JSONObject.toDeezerTrackIdentity(

@@ -26,7 +26,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -145,7 +145,7 @@ private fun BottomPlayerProgress(
     positionMsFlow: StateFlow<Long>,
     durationMs: Long
 ) {
-    val positionMs by positionMsFlow.collectAsState()
+    val positionMs by positionMsFlow.collectAsStateWithLifecycle()
     val progressFraction = playbackProgressFraction(positionMs, durationMs)
     LinearProgressIndicator(
         progress = { progressFraction },

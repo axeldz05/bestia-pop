@@ -201,25 +201,26 @@ fun DiscoverScreen(
                     onQueryChange = {
                         searchInput = it
                         viewModel.setCatalogSearchDraft(it)
-                        if (it.isNotBlank()) {
-                            viewModel.searchCatalog(query = it)
-                        }
+                        viewModel.searchCatalogDebounced(query = it)
                     },
                     onSearch = { query ->
                         if (query.isNotBlank()) {
-                            viewModel.searchCatalog(query = query)
+                            viewModel.submitCatalogSearch(query = query)
                             isSearchFocused = false
                         }
                     },
                     onClear = {
                         searchInput = ""
                         viewModel.setCatalogSearchDraft("")
-                        viewModel.searchCatalog(query = "")
+                        viewModel.searchCatalog(query = "", saveToRecent = false)
                     },
                     showFilters = catalogSearch.showSearchFilters,
                     onToggleFilters = { viewModel.toggleCatalogSearchFilters() },
                     hasActiveFilters = catalogSearch.hasActiveFilters,
-                    onRefreshFeed = { viewModel.refreshDiscoverFeed() },
+                    onRefreshFeed = {
+                        viewModel.refreshDiscoverFeed(forceRefresh = true)
+                        viewModel.refreshTopRelatedFeed(forceRefresh = true)
+                    },
                     isLoading = isLoadingFeed || catalogSearch.isSearching
                 )
 
@@ -229,7 +230,7 @@ fun DiscoverScreen(
                         selectedCategory = catalogSearch.category,
                         onSelectCategory = { category ->
                             viewModel.setCatalogCategory(category)
-                            viewModel.searchCatalog(query = searchInput)
+                            viewModel.searchCatalog(query = searchInput, saveToRecent = false)
                         }
                     )
                 }
@@ -239,10 +240,10 @@ fun DiscoverScreen(
                     DiscoverAdvancedFiltersPanel(
                         filters = catalogSearch.searchFilters,
                         onFiltersChange = viewModel::setCatalogSearchFilters,
-                        onApply = { viewModel.searchCatalog(query = searchInput) },
+                        onApply = { viewModel.searchCatalog(query = searchInput, saveToRecent = false) },
                         onClear = {
                             viewModel.clearCatalogSearchFilters()
-                            viewModel.searchCatalog(query = searchInput)
+                            viewModel.searchCatalog(query = searchInput, saveToRecent = false)
                         }
                     )
                 }
@@ -254,7 +255,7 @@ fun DiscoverScreen(
                         onSelectQuery = { query ->
                             searchInput = query
                             viewModel.setCatalogSearchDraft(query)
-                            viewModel.searchCatalog(query = query)
+                            viewModel.submitCatalogSearch(query = query)
                             isSearchFocused = false
                         },
                         onRemoveQuery = { viewModel.removeRecentSearch(it) },
@@ -291,7 +292,7 @@ fun DiscoverScreen(
                         DiscoverHomeFeedView(
                             feed = discoverFeed,
                             isLoading = isLoadingFeed,
-                            onRefresh = { viewModel.refreshDiscoverFeed() },
+                            onRefresh = { viewModel.refreshDiscoverFeed(forceRefresh = true) },
                             source = discoverSource,
                             onSourceChange = { viewModel.setDiscoverSource(it) },
                             topRelatedFeed = topRelatedFeed,
@@ -300,7 +301,7 @@ fun DiscoverScreen(
                                 onSelectArtist = { artistName ->
                                     searchInput = artistName
                                     viewModel.setCatalogSearchDraft(artistName)
-                                    viewModel.searchCatalog(artistName)
+                                    viewModel.submitCatalogSearch(artistName)
                                 },
                                 onStartRadioForArtist = { viewModel.startRadio() },
                                 onSelectAlbum = viewModel::selectAlbumForInspection,
@@ -310,10 +311,10 @@ fun DiscoverScreen(
                                     } else {
                                         searchInput = item.title
                                         viewModel.setCatalogSearchDraft(item.title)
-                                        viewModel.searchCatalog(item.title)
+                                        viewModel.submitCatalogSearch(item.title)
                                     }
                                 },
-                                onRefresh = { viewModel.refreshTopRelatedFeed() }
+                                onRefresh = { viewModel.refreshTopRelatedFeed(forceRefresh = true) }
                             ),
                             lbDiscoverPlaylists = lbDiscover.data ?: emptyList(),
                             cfRecommendations = cfRecommendations,

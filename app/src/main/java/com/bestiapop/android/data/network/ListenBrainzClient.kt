@@ -356,53 +356,115 @@ object ListenBrainzClient {
         }
     }
 
+    private data class CachedStatsEntry<T>(
+        val timestampMs: Long,
+        val data: List<T>
+    )
+
+    private val statsCache = java.util.concurrent.ConcurrentHashMap<String, CachedStatsEntry<*>>()
+    private const val STATS_CACHE_TTL_MS = 5 * 60 * 1000L // 5 minutes
+
+    /** Clears in-memory cache of user statistics (artists, releases, recordings, listens). */
+    fun clearUserStatsCache() {
+        statsCache.clear()
+    }
+
     private suspend fun <T> fetchUserStats(
         username: String,
         entity: String,
         range: String,
         count: Int,
         token: String?,
+        forceRefresh: Boolean = false,
         parser: (JSONObject) -> List<T>
     ): LbApiResult<List<T>> = withContext(Dispatchers.IO) {
         if (username.isBlank()) return@withContext LbApiResult.Failure("Usuario vacío")
-        val encodedUser = URLEncoder.encode(username.trim(), Charsets.UTF_8.name())
-        val url = endpoint("stats/user/$encodedUser/$entity?range=$range&count=$count")
-        lbGet(url, token) { body -> parser(JSONObject(body)) }
+        val cleanUser = username.trim()
+        val cacheKey = "${cleanUser.lowercase()}:$entity:$range"
+        val now = System.currentTimeMillis()
+
+        if (!forceRefresh) {
+            val cached = statsCache[cacheKey]
+            if (cached != null && (now - cached.timestampMs) < STATS_CACHE_TTL_MS) {
+                @Suppress("UNCHECKED_CAST")
+                val items = cached.data as? List<T>
+                if (items != null && items.isNotEmpty()) {
+                    return@withContext LbApiResult.Success(items.take(count))
+                }
+            }
+        }
+
+        val requestCount = maxOf(count, 25)
+        val encodedUser = URLEncoder.encode(cleanUser, Charsets.UTF_8.name())
+        val url = endpoint("stats/user/$encodedUser/$entity?range=$range&count=$requestCount")
+        val result = lbGet(url, token) { body -> parser(JSONObject(body)) }
+        if (result is LbApiResult.Success) {
+            statsCache[cacheKey] = CachedStatsEntry(timestampMs = now, data = result.data)
+            LbApiResult.Success(result.data.take(count))
+        } else {
+            result
+        }
     }
 
     suspend fun fetchUserTopArtists(
         username: String,
         range: String = "all_time",
         count: Int = 20,
-        token: String? = null
+        token: String? = null,
+        forceRefresh: Boolean = false
     ): LbApiResult<List<LbUserStatArtist>> =
-        fetchUserStats(username, "artists", range, count, token, ::parseUserTopArtists)
+        fetchUserStats(username, "artists", range, count, token, forceRefresh, ::parseUserTopArtists)
 
     suspend fun fetchUserTopReleases(
         username: String,
         range: String = "all_time",
         count: Int = 20,
-        token: String? = null
+        token: String? = null,
+        forceRefresh: Boolean = false
     ): LbApiResult<List<LbUserStatRelease>> =
-        fetchUserStats(username, "releases", range, count, token, ::parseUserTopReleases)
+        fetchUserStats(username, "releases", range, count, token, forceRefresh, ::parseUserTopReleases)
 
     suspend fun fetchUserTopRecordings(
         username: String,
         range: String = "all_time",
         count: Int = 20,
-        token: String? = null
+        token: String? = null,
+        forceRefresh: Boolean = false
     ): LbApiResult<List<LbUserStatRecording>> =
-        fetchUserStats(username, "recordings", range, count, token, ::parseUserTopRecordings)
+        fetchUserStats(username, "recordings", range, count, token, forceRefresh, ::parseUserTopRecordings)
 
     suspend fun fetchUserRecentListens(
         username: String,
         count: Int = 30,
-        token: String? = null
+        token: String? = null,
+        forceRefresh: Boolean = false
     ): LbApiResult<List<ListenPayload>> = withContext(Dispatchers.IO) {
         if (username.isBlank()) return@withContext LbApiResult.Failure("Usuario vacío")
-        val encodedUser = URLEncoder.encode(username.trim(), Charsets.UTF_8.name())
-        val url = endpoint("user/$encodedUser/listens?count=$count")
-        lbGet(url, token) { body -> parseUserRecentListens(JSONObject(body)) }
+        val cleanUser = username.trim()
+        val cacheKey = "${cleanUser.lowercase()}:recent_listens"
+        val now = System.currentTimeMillis()
+
+        if (!forceRefresh) {
+            val cached = statsCache[cacheKey]
+            if (cached != null && (now - cached.timestampMs) < STATS_CACHE_TTL_MS) {
+                @Suppress("UNCHECKED_CAST")
+                val items = cached.data as? List<ListenPayload>
+                if (items != null && items.isNotEmpty()) {
+                    return@withContext LbApiResult.Success(items.take(count))
+                }
+            }
+        }
+
+        val requestCount = maxOf(count, 30)
+        val encodedUser = URLEncoder.encode(cleanUser, Charsets.UTF_8.name())
+        val url = endpoint("user/$encodedUser/listens?count=$requestCount")
+        val result = lbGet(url, token) { body -> parseUserRecentListens(JSONObject(body)) }
+        if (result is LbApiResult.Success) {
+            statsCache[cacheKey] = CachedStatsEntry(timestampMs = now, data = result.data)
+            LbApiResult.Success(result.data.take(count))
+        } else {
+            result
+        }
     }
 
     /**
@@ -412,14 +474,15 @@ object ListenBrainzClient {
     suspend fun fetchUserTopArtistsWithRecentFallback(
         username: String,
         count: Int = 20,
-        token: String? = null
+        token: String? = null,
+        forceRefresh: Boolean = false
     ): List<String> {
         if (username.isBlank()) return emptyList()
-        val topResult = fetchUserTopArtists(username, count = count, token = token)
+        val topResult = fetchUserTopArtists(username, count = count, token = token, forceRefresh = forceRefresh)
         if (topResult is LbApiResult.Success && topResult.data.isNotEmpty()) {
             return topResult.data.map { it.artistName }
         }
-        val recentResult = fetchUserRecentListens(username, count = maxOf(count * 2, 25), token = token)
+        val recentResult = fetchUserRecentListens(username, count = maxOf(count * 2, 25), token = token, forceRefresh = forceRefresh)
         if (recentResult is LbApiResult.Success) {
             return recentResult.data.map { it.artistName }.distinct()
         }

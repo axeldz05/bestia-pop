@@ -38,6 +38,10 @@ class TrackMatchKeysTest {
         assertEquals("cancion", TrackMatchKeys.normalize("Canción"))
         assertEquals("senor", TrackMatchKeys.normalize("Señor"))
         assertEquals("radiohead|creep", TrackMatchKeys.matchKey("Radiohead", "Creep!"))
+        assertEquals("radiohead|creep", TrackMatchKeys.composeKey("radiohead", "creep"))
+        assertEquals("radiohead|creep", TrackMatchKeys.matchKeyPreNormalized("radiohead", "creep"))
+        assertEquals("", TrackMatchKeys.composeKey("", "creep"))
+        assertEquals("", TrackMatchKeys.composeKey("radiohead", ""))
     }
 
     @Test

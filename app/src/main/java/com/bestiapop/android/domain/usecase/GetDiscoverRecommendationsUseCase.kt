@@ -119,7 +119,7 @@ class GetDiscoverRecommendationsUseCase {
 
                 val collectedDeezer = ArrayList<OnlineCatalogTrack>()
                 if (candidateArtists.isNotEmpty()) {
-                    val artistTrackJobs = candidateArtists.take(3).map { artist ->
+                    val artistTrackJobs = candidateArtists.take(2).map { artist ->
                         async {
                             val tracks = mutableListOf<OnlineCatalogTrack>()
                             try {
@@ -127,8 +127,22 @@ class GetDiscoverRecommendationsUseCase {
                                     MetadataFetcher.resolveDeezerArtistId(artist)
                                 }
                                 if (artistId != null) {
+                                    // Direct top tracks for seed artist
+                                    val directTopDeferred = async {
+                                        try {
+                                            deezerSemaphore.withPermit {
+                                                MetadataFetcher.fetchDeezerArtistTop(artistId, limit = 5).map { identity ->
+                                                    identity.toCatalogTrack(provider = "Deezer")
+                                                }
+                                            }
+                                        } catch (e: Exception) {
+                                            if (e is CancellationException) throw e
+                                            emptyList()
+                                        }
+                                    }
+                                    // Related artists top tracks (limit to 2 for diversity without request explosion)
                                     val relatedIds = deezerSemaphore.withPermit {
-                                        MetadataFetcher.fetchDeezerRelatedArtistIds(artistId, limit = 3)
+                                        MetadataFetcher.fetchDeezerRelatedArtistIds(artistId, limit = 2)
                                     }
                                     val topJobs = relatedIds.map { relId ->
                                         async {
@@ -144,6 +158,7 @@ class GetDiscoverRecommendationsUseCase {
                                             }
                                         }
                                     }
+                                    tracks.addAll(directTopDeferred.await())
                                     tracks.addAll(topJobs.awaitAll().flatten())
                                 }
                             } catch (e: Exception) {
@@ -201,7 +216,7 @@ class GetDiscoverRecommendationsUseCase {
 
             val albums = ArrayList<CatalogAlbum>()
             if (albumSeedArtists.isNotEmpty()) {
-                val albumJobs = albumSeedArtists.take(5).map { artist ->
+                val albumJobs = albumSeedArtists.take(3).map { artist ->
                     async {
                         try {
                             deezerSemaphore.withPermit {

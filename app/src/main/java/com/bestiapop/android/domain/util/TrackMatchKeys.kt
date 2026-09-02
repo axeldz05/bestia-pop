@@ -34,9 +34,18 @@ object TrackMatchKeys {
     fun matchKey(artist: String, title: String): String {
         val a = normalize(artist)
         val t = normalize(title)
-        if (a.isEmpty() || t.isEmpty()) return ""
-        return "$a|$t"
+        return composeKey(a, t)
     }
+
+    /** Level 1: Combines two pre-normalized strings into a composite key ($part1|$part2). */
+    fun composeKey(part1: String, part2: String): String {
+        if (part1.isEmpty() || part2.isEmpty()) return ""
+        return "$part1|$part2"
+    }
+
+    /** Level 1: Combines pre-normalized components without re-executing Normalizer or Regex. */
+    fun matchKeyPreNormalized(normalizedArtist: String, normalizedTitle: String): String =
+        composeKey(normalizedArtist, normalizedTitle)
 
     /** L2: stable [ActiveDownload] / queue id from artist+title (empty if either blank). */
     fun downloadIdFor(artist: String, title: String): String = matchKey(artist, title)

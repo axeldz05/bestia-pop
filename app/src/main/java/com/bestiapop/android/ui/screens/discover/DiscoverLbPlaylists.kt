@@ -213,8 +213,12 @@ internal fun MatchedPlaylistContent(
 
         Spacer(modifier = Modifier.height(16.dp))
 
+        val listItems = remember(matches) {
+            matches.mapIndexed { index, match -> match.toListItem(index) }
+        }
+
         MatchedTrackLazyColumn(
-            matches = matches.mapIndexed { index, match -> match.toListItem(index) },
+            matches = listItems,
             remoteBadge = remoteBadge,
             currentItem = actions.currentItem,
             activeDownloads = actions.activeDownloads,

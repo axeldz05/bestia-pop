@@ -150,9 +150,11 @@ class GetTopRelatedItemsUseCase {
 
             for (song in librarySongs) {
                 val artist = song.artist.trim()
-                if (artist.isNotBlank() && !IdentifyRanking.isPlaceholderArtist(artist)) {
-                    val artistKey = TrackMatchKeys.normalize(artist)
-                    val lastPlayed = playStats[song.id] ?: song.lastPlayedAt
+                val isArtistValid = artist.isNotBlank() && !IdentifyRanking.isPlaceholderArtist(artist)
+                val artistKey = if (isArtistValid) TrackMatchKeys.normalize(artist) else ""
+                val lastPlayed = playStats[song.id] ?: song.lastPlayedAt
+
+                if (isArtistValid && artistKey.isNotEmpty()) {
                     val artistEntry = localArtists.getOrPut(artistKey) {
                         LocalArtistAccumulator(displayName = artist)
                     }
@@ -164,23 +166,33 @@ class GetTopRelatedItemsUseCase {
 
                 val album = song.album.trim()
                 if (album.isNotBlank() && !IdentifyRanking.isGenericAlbum(album)) {
-                    val albumKey = TrackMatchKeys.matchKey(artist, album)
-                    val lastPlayed = playStats[song.id] ?: song.lastPlayedAt
-                    val albumEntry = localAlbums.getOrPut(albumKey) {
-                        LocalAlbumAccumulator(title = album, artist = artist)
+                    val albumKey = if (artistKey.isNotEmpty()) {
+                        TrackMatchKeys.composeKey(artistKey, TrackMatchKeys.normalize(album))
+                    } else {
+                        TrackMatchKeys.matchKey(artist, album)
                     }
-                    albumEntry.playScore += (if (lastPlayed > 0) 5L else 1L)
-                    if (albumEntry.artworkUri == null && !song.artworkUri.isNullOrBlank()) {
-                        albumEntry.artworkUri = song.artworkUri
+                    if (albumKey.isNotEmpty()) {
+                        val albumEntry = localAlbums.getOrPut(albumKey) {
+                            LocalAlbumAccumulator(title = album, artist = artist)
+                        }
+                        albumEntry.playScore += (if (lastPlayed > 0) 5L else 1L)
+                        if (albumEntry.artworkUri == null && !song.artworkUri.isNullOrBlank()) {
+                            albumEntry.artworkUri = song.artworkUri
+                        }
                     }
                 }
 
-                val trackKey = song.matchKey()
-                val lastPlayed = playStats[song.id] ?: song.lastPlayedAt
-                val trackEntry = localTracks.getOrPut(trackKey) {
-                    LocalTrackAccumulator(song = song)
+                val trackKey = if (artistKey.isNotEmpty()) {
+                    TrackMatchKeys.composeKey(artistKey, TrackMatchKeys.normalize(song.title))
+                } else {
+                    song.matchKey()
                 }
-                trackEntry.playScore += (if (lastPlayed > 0) 10L else 1L)
+                if (trackKey.isNotEmpty()) {
+                    val trackEntry = localTracks.getOrPut(trackKey) {
+                        LocalTrackAccumulator(song = song)
+                    }
+                    trackEntry.playScore += (if (lastPlayed > 0) 10L else 1L)
+                }
             }
 
             // 3. Merges using semantic compression helper
@@ -319,11 +331,19 @@ private inline fun <K, L, R, T> mergeLocalAndRemoteStats(
     crossinline itemScore: (T) -> Long,
     limit: Int
 ): List<T> {
-    val merged = LinkedHashMap<K, T>()
-    val processedKeys = HashSet<K>()
+    val remoteByKey = HashMap<K, R>(remoteList.size)
+    for (remote in remoteList) {
+        val key = remoteKey(remote)
+        if (!remoteByKey.containsKey(key)) {
+            remoteByKey[key] = remote
+        }
+    }
+
+    val merged = LinkedHashMap<K, T>(localMap.size + remoteList.size)
+    val processedKeys = HashSet<K>(localMap.size + remoteList.size)
 
     for ((key, local) in localMap) {
-        val matchingRemote = remoteList.firstOrNull { remoteKey(it) == key }
+        val matchingRemote = remoteByKey[key]
         val baseScore = localScore(local)
         val (source, totalScore) = if (matchingRemote != null) {
             "Local + ListenBrainz" to (baseScore + remoteCount(matchingRemote) * 2)

@@ -63,4 +63,9 @@ class GetTopRelatedItemsUseCaseTest {
         assertEquals(3, feed.topTracks.size)
         assertEquals("Local", feed.topTracks[0].source)
     }
+
+    @Test
+    fun clearUserStatsCache_runsSafely() {
+        com.bestiapop.android.data.network.ListenBrainzClient.clearUserStatsCache()
+    }
 }

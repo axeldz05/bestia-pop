@@ -238,10 +238,15 @@ object MetadataFetcher {
     fun toCatalogCandidate(track: OnlineCatalogTrack): CatalogTrackCandidate =
         CatalogTrackCandidate(identity = track.identity, candidates = listOf(track))
 
+    private val deezerArtistCache = java.util.concurrent.ConcurrentHashMap<String, DeezerArtistHit>()
+
     /** Deezer artist search hit (id + picture). Shared by photo URL and artist-id resolve. */
     fun searchDeezerArtist(name: String): DeezerArtistHit? {
         val cleanArtistName = cleanArtist(name)
         if (cleanArtistName.isEmpty()) return null
+        val cacheKey = cleanArtistName.lowercase()
+        deezerArtistCache[cacheKey]?.let { return it }
+
         val url = endpoint(
             endpoints.deezerBaseUrl,
             "search/artist?q=${encodeQuery(cleanArtistName)}&limit=1"
@@ -252,10 +257,12 @@ object MetadataFetcher {
         val item = data.getJSONObject(0)
         val id = item.optLong("id", 0L)
         if (id <= 0L) return null
-        return DeezerArtistHit(
+        val hit = DeezerArtistHit(
             id = id,
             pictureUrl = pickCoverUrl(item.optString("picture_xl"), item.optString("picture_big"))
         )
+        deezerArtistCache[cacheKey] = hit
+        return hit
     }
 
     private fun searchDeezerTrack(queryText: String): TrackIdentity? {

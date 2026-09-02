@@ -2691,7 +2691,10 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
-    fun refreshDiscoverFeed() {
+    fun refreshDiscoverFeed(forceRefresh: Boolean = false) {
+        if (forceRefresh) {
+            ListenBrainzClient.clearUserStatsCache()
+        }
         viewModelScope.launch {
             _isLoadingDiscoverFeed.value = true
             try {
@@ -2721,7 +2724,10 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
-    fun refreshTopRelatedFeed() {
+    fun refreshTopRelatedFeed(forceRefresh: Boolean = false) {
+        if (forceRefresh) {
+            ListenBrainzClient.clearUserStatsCache()
+        }
         viewModelScope.launch {
             _isLoadingTopRelatedFeed.value = true
             try {
@@ -2808,14 +2814,44 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
-    fun searchCatalog(
+    private var catalogDebounceJob: kotlinx.coroutines.Job? = null
+
+    /** Level 2: Debounced search for live typing in search bars without spamming HTTP or canceling early. */
+    fun searchCatalogDebounced(
+        query: String = _catalogSearch.value.searchQueryDraft,
+        filters: IdentifySearchFilters = _catalogSearch.value.searchFilters,
+        debounceMs: Long = 350L
+    ) {
+        catalogDebounceJob?.cancel()
+        val cleanQ = query.trim()
+        if (cleanQ.isEmpty()) {
+            searchCatalog(query = "", filters = filters, saveToRecent = false)
+            return
+        }
+        catalogDebounceJob = viewModelScope.launch {
+            kotlinx.coroutines.delay(debounceMs)
+            searchCatalog(query = cleanQ, filters = filters, saveToRecent = false)
+        }
+    }
+
+    /** Level 2: Submits an explicit catalog search (e.g. on keyboard Enter or suggestion tap), saving to recent searches. */
+    fun submitCatalogSearch(
         query: String = _catalogSearch.value.searchQueryDraft,
         filters: IdentifySearchFilters = _catalogSearch.value.searchFilters
     ) {
+        searchCatalog(query = query, filters = filters, saveToRecent = true)
+    }
+
+    fun searchCatalog(
+        query: String = _catalogSearch.value.searchQueryDraft,
+        filters: IdentifySearchFilters = _catalogSearch.value.searchFilters,
+        saveToRecent: Boolean = false
+    ) {
+        catalogDebounceJob?.cancel()
         lastCatalogQuery = query
         lastCatalogFilters = filters
         val cleanQ = query.trim()
-        if (cleanQ.isNotBlank()) {
+        if (saveToRecent && cleanQ.isNotBlank()) {
             addRecentSearch(cleanQ)
         }
         val normalizedFilters = filters.normalized()

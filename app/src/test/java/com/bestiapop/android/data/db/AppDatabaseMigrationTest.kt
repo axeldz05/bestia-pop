@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -134,7 +135,7 @@ class AppDatabaseMigrationTest {
         val helper = FrameworkSQLiteOpenHelperFactory().create(
             SupportSQLiteOpenHelper.Configuration.builder(context)
                 .name(DATABASE_NAME)
-                .callback(object : SupportSQLiteOpenHelper.Callback(12) {
+                .callback(object : SupportSQLiteOpenHelper.Callback(AppDatabase.VERSION) {
                     override fun onCreate(db: SupportSQLiteDatabase) {}
                     override fun onUpgrade(db: SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) {}
                 })
@@ -150,8 +151,8 @@ class AppDatabaseMigrationTest {
         helper.close()
 
         assertTrue(indexNames.contains("index_songs_album"))
-        assertTrue(indexNames.contains("index_songs_artist"))
         assertTrue(indexNames.contains("index_songs_dateAdded"))
+        assertTrue(indexNames.contains("index_songs_artist_album"))
     }
 
     @Test
@@ -179,7 +180,7 @@ class AppDatabaseMigrationTest {
         val helper = FrameworkSQLiteOpenHelperFactory().create(
             SupportSQLiteOpenHelper.Configuration.builder(context)
                 .name(DATABASE_NAME)
-                .callback(object : SupportSQLiteOpenHelper.Callback(12) {
+                .callback(object : SupportSQLiteOpenHelper.Callback(AppDatabase.VERSION) {
                     override fun onCreate(db: SupportSQLiteDatabase) {}
                     override fun onUpgrade(db: SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) {}
                 })
@@ -198,7 +199,51 @@ class AppDatabaseMigrationTest {
     }
 
     @Test
-    fun migration1To12_runsWholeChainAndKeepsLegacyLibraryDataUsable() = runTest {
+    fun migration12To13_createsArtistAlbumIndexOnSongsTable() = runTest {
+        createLegacyDatabase(version = 12, schema = ::createVersion12Schema) { db ->
+            db.execSQL(
+                """
+                INSERT INTO songs (
+                    id, uriString, title, artist, album, genre, durationMs, year, trackNumber,
+                    artworkUri, lyrics, folderPath, dateAdded, lastPlayedAt
+                ) VALUES (
+                    1, '/music/song1.mp3', 'Song 1', 'Artist A', 'Album X', 'Pop',
+                    200000, 2022, 1, NULL, NULL, '/music', 123456, 0
+                )
+                """.trimIndent()
+            )
+        }
+
+        val database = AppDatabase.getDatabase(context)
+        val musicDao = database.musicDao()
+        val songs = musicDao.getAllSongs()
+        assertEquals(1, songs.size)
+        assertEquals("Song 1", songs[0].title)
+
+        val helper = FrameworkSQLiteOpenHelperFactory().create(
+            SupportSQLiteOpenHelper.Configuration.builder(context)
+                .name(DATABASE_NAME)
+                .callback(object : SupportSQLiteOpenHelper.Callback(AppDatabase.VERSION) {
+                    override fun onCreate(db: SupportSQLiteDatabase) {}
+                    override fun onUpgrade(db: SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) {}
+                })
+                .build()
+        )
+        val db = helper.readableDatabase
+        val cursor = db.query("PRAGMA index_list('songs')")
+        val indexNames = mutableListOf<String>()
+        while (cursor.moveToNext()) {
+            indexNames.add(cursor.getString(cursor.getColumnIndexOrThrow("name")))
+        }
+        cursor.close()
+        helper.close()
+
+        assertTrue(indexNames.contains("index_songs_artist_album"))
+        assertFalse(indexNames.contains("index_songs_artist"))
+    }
+
+    @Test
+    fun migration1To13_runsWholeChainAndKeepsLegacyLibraryDataUsable() = runTest {
         createLegacyDatabase(version = 1, schema = ::createVersion1Schema) { db ->
             db.execSQL(
                 legacySongInsert(
@@ -439,6 +484,11 @@ class AppDatabaseMigrationTest {
         db.execSQL("CREATE INDEX IF NOT EXISTS `index_songs_album` ON `songs` (`album`)")
         db.execSQL("CREATE INDEX IF NOT EXISTS `index_songs_artist` ON `songs` (`artist`)")
         db.execSQL("CREATE INDEX IF NOT EXISTS `index_songs_dateAdded` ON `songs` (`dateAdded`)")
+    }
+
+    private fun createVersion12Schema(db: SupportSQLiteDatabase) {
+        createVersion11Schema(db)
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_songs_title` ON `songs` (`title`)")
     }
 
     private fun createSongsTableWithoutLastPlayed(db: SupportSQLiteDatabase) {

@@ -45,6 +45,16 @@ class TrackMatchKeysTest {
     }
 
     @Test
+    fun normalize_handlesAsciiAndDiacriticsCorrectly() {
+        assertEquals("bjork", TrackMatchKeys.normalize("Björk"))
+        assertEquals("radiohead", TrackMatchKeys.normalize("Radiohead"))
+        // Second call should hit the LRU cache
+        assertEquals("radiohead", TrackMatchKeys.normalize("Radiohead"))
+        assertEquals("post 1995", TrackMatchKeys.normalize("Post (1995)"))
+        assertEquals("", TrackMatchKeys.normalize(""))
+    }
+
+    @Test
     fun lookupLocalSong_matchesWithoutTildes() {
         val library = listOf(song(2, "La Canción", "José"))
         val found = TrackMatchKeys.lookupLocalSong(

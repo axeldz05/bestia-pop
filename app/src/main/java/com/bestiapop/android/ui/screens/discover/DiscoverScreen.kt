@@ -900,6 +900,7 @@ fun DiscoverTrackListItem(
 /**
  * Level 2: Shared stack frame bundling user interaction callbacks across Discover feed and search.
  */
+@Immutable
 data class DiscoverCatalogActions(
     val onPlayTrack: (OnlineCatalogTrack) -> Unit,
     val onDownloadTrack: (OnlineCatalogTrack) -> Unit,
@@ -915,6 +916,7 @@ data class DiscoverCatalogActions(
 /**
  * Level 2: Actions for the top related section (artists, albums, tracks).
  */
+@Immutable
 data class DiscoverTopRelatedActions(
     val onSelectArtist: (String) -> Unit = {},
     val onStartRadioForArtist: (String) -> Unit = {},
@@ -926,6 +928,7 @@ data class DiscoverTopRelatedActions(
 /**
  * Level 2: Actions for ListenBrainz discover playlists and CF recommendations.
  */
+@Immutable
 data class DiscoverListenBrainzActions(
     val onOpenPlaylist: (String) -> Unit = {},
     val onOpenCfRecommendations: () -> Unit = {}
@@ -1165,7 +1168,7 @@ fun DiscoverHomeFeedView(
                     badgeText = "Fuente: ${feed.recommendationSource}",
                     badgeColor = MaterialTheme.colorScheme.primary
                 ) {
-                    items(feed.recommendedTracks.take(12)) { track ->
+                    items(feed.recommendedTracks.take(12), key = { "rec-track-${it.id}" }) { track ->
                         val trackStatus = getTrackStatus(track.identity)
                         DiscoverTrackCard(
                             track = track,
@@ -1185,7 +1188,7 @@ fun DiscoverHomeFeedView(
                 DiscoverFeedHorizontalSection(
                     title = "Álbumes recomendados"
                 ) {
-                    items(feed.recommendedAlbums) { album ->
+                    items(feed.recommendedAlbums, key = { "rec-album-${it.id.ifEmpty { "${it.artist}|${it.title}" }}" }) { album ->
                         val albumStatus = getAlbumStatus(album.title, album.artist)
                         DiscoverAlbumCard(
                             album = album,
@@ -1209,7 +1212,7 @@ fun DiscoverHomeFeedView(
                 )
             }
 
-            items(feed.chartTracks.take(8)) { track ->
+            items(feed.chartTracks.take(8), key = { "chart-track-${it.id}" }) { track ->
                 val trackStatus = getTrackStatus(track.identity)
                 Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp)) {
                     DiscoverTrackListItem(
@@ -1353,7 +1356,7 @@ fun DiscoverTopRelatedSection(
                         LazyRow(
                             horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
-                            items(feed.topArtists) { artist ->
+                            items(feed.topArtists, key = { "rel-artist-${it.name}" }) { artist ->
                                 RelatedArtistCard(
                                     artist = artist,
                                     onSelect = { onSelectArtist(artist.name) },
@@ -1373,7 +1376,7 @@ fun DiscoverTopRelatedSection(
                         LazyRow(
                             horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
-                            items(feed.topAlbums) { album ->
+                            items(feed.topAlbums, key = { "rel-album-${it.artist}|${it.title}" }) { album ->
                                 RelatedAlbumCard(
                                     album = album,
                                     onSelect = { onSelectAlbum(album) }

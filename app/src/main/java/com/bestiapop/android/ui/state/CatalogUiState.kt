@@ -1,5 +1,6 @@
 package com.bestiapop.android.ui.state
 
+import androidx.compose.runtime.Immutable
 import com.bestiapop.android.data.model.CatalogAlbum
 import com.bestiapop.android.data.model.CatalogCategory
 import com.bestiapop.android.data.model.CatalogGenre
@@ -9,6 +10,7 @@ import com.bestiapop.android.data.model.OnlineCatalogTrack
 
 import com.bestiapop.android.data.model.IdentifySearchFilters
 
+@Immutable
 data class CatalogSearchUiState(
     val category: CatalogCategory = CatalogCategory.SONGS,
     val tracks: List<OnlineCatalogTrack> = emptyList(),
@@ -52,6 +54,7 @@ enum class CatalogCollectionKind {
     GENRE
 }
 
+@Immutable
 data class CatalogCollectionUiState(
     val selectionKey: String? = null,
     val title: String? = null,

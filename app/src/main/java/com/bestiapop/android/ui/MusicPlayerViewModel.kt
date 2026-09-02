@@ -551,8 +551,13 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private val _isLoadingTopRelatedFeed = MutableStateFlow(false)
     val isLoadingTopRelatedFeed: StateFlow<Boolean> = _isLoadingTopRelatedFeed.asStateFlow()
 
-    private val _catalogSearch = MutableStateFlow(CatalogSearchUiState())
-    val catalogSearch = _catalogSearch.asStateFlow()
+    private val catalogSearchCoordinator = com.bestiapop.android.ui.state.CatalogSearchCoordinator(
+        scope = viewModelScope,
+        isOnline = { connectivityObserver.isCurrentlyOnline() },
+        onNotifyToast = ::toast,
+        onSaveRecentSearch = ::addRecentSearch
+    )
+    val catalogSearch: StateFlow<CatalogSearchUiState> = catalogSearchCoordinator.state
 
     private val _catalogCollection = MutableStateFlow(CatalogCollectionUiState())
     val catalogCollection = _catalogCollection.asStateFlow()
@@ -2638,50 +2643,37 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     // Online Catalog & Link Downloader Actions
-    private var lastCatalogQuery = ""
-    private var lastCatalogFilters = IdentifySearchFilters()
-
     fun setCatalogCategory(category: CatalogCategory) {
-        _catalogSearch.update { it.copy(category = category) }
-        searchCatalog(lastCatalogQuery, lastCatalogFilters)
+        catalogSearchCoordinator.setCategory(category)
     }
 
     fun setCatalogSearchDraft(query: String) {
-        _catalogSearch.update { it.copy(searchQueryDraft = query) }
+        catalogSearchCoordinator.setDraft(query)
     }
 
     fun setCatalogSearchFilterArtist(artist: String) {
-        _catalogSearch.update { it.copy(searchFilterArtist = artist) }
+        catalogSearchCoordinator.setFilterArtist(artist)
     }
 
     fun setCatalogSearchFilterAlbum(album: String) {
-        _catalogSearch.update { it.copy(searchFilterAlbum = album) }
+        catalogSearchCoordinator.setFilterAlbum(album)
     }
 
     fun setCatalogSearchFilterYear(year: String) {
-        _catalogSearch.update { it.copy(searchFilterYear = year) }
+        catalogSearchCoordinator.setFilterYear(year)
     }
 
     /** Level 2: Update all catalog search filters at once using [IdentifySearchFilters]. */
     fun setCatalogSearchFilters(filters: IdentifySearchFilters) {
-        _catalogSearch.update { it.withSearchFilters(filters) }
+        catalogSearchCoordinator.setFilters(filters)
     }
 
     fun toggleCatalogSearchFilters(show: Boolean? = null) {
-        _catalogSearch.update { state ->
-            val next = show ?: !state.showSearchFilters
-            state.copy(showSearchFilters = next)
-        }
+        catalogSearchCoordinator.toggleFilters(show)
     }
 
     fun clearCatalogSearchFilters() {
-        _catalogSearch.update {
-            it.copy(
-                searchFilterArtist = "",
-                searchFilterAlbum = "",
-                searchFilterYear = ""
-            )
-        }
+        catalogSearchCoordinator.clearFilters()
     }
 
     fun setDiscoverSource(source: DiscoverSourcePreference) {
@@ -2805,104 +2797,29 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
-    private inline fun updateCatalogSearchIfCurrent(
-        generation: Long,
-        crossinline transform: (CatalogSearchUiState) -> CatalogSearchUiState
-    ) {
-        if (generation == catalogSearchGeneration) {
-            _catalogSearch.update { transform(it) }
-        }
-    }
-
-    private var catalogDebounceJob: kotlinx.coroutines.Job? = null
-
     /** Level 2: Debounced search for live typing in search bars without spamming HTTP or canceling early. */
     fun searchCatalogDebounced(
-        query: String = _catalogSearch.value.searchQueryDraft,
-        filters: IdentifySearchFilters = _catalogSearch.value.searchFilters,
+        query: String = catalogSearch.value.searchQueryDraft,
+        filters: IdentifySearchFilters = catalogSearch.value.searchFilters,
         debounceMs: Long = 350L
     ) {
-        catalogDebounceJob?.cancel()
-        val cleanQ = query.trim()
-        if (cleanQ.isEmpty()) {
-            searchCatalog(query = "", filters = filters, saveToRecent = false)
-            return
-        }
-        catalogDebounceJob = viewModelScope.launch {
-            kotlinx.coroutines.delay(debounceMs)
-            searchCatalog(query = cleanQ, filters = filters, saveToRecent = false)
-        }
+        catalogSearchCoordinator.searchDebounced(query, filters, debounceMs)
     }
 
     /** Level 2: Submits an explicit catalog search (e.g. on keyboard Enter or suggestion tap), saving to recent searches. */
     fun submitCatalogSearch(
-        query: String = _catalogSearch.value.searchQueryDraft,
-        filters: IdentifySearchFilters = _catalogSearch.value.searchFilters
+        query: String = catalogSearch.value.searchQueryDraft,
+        filters: IdentifySearchFilters = catalogSearch.value.searchFilters
     ) {
-        searchCatalog(query = query, filters = filters, saveToRecent = true)
+        catalogSearchCoordinator.submitSearch(query, filters)
     }
 
     fun searchCatalog(
-        query: String = _catalogSearch.value.searchQueryDraft,
-        filters: IdentifySearchFilters = _catalogSearch.value.searchFilters,
+        query: String = catalogSearch.value.searchQueryDraft,
+        filters: IdentifySearchFilters = catalogSearch.value.searchFilters,
         saveToRecent: Boolean = false
     ) {
-        catalogDebounceJob?.cancel()
-        lastCatalogQuery = query
-        lastCatalogFilters = filters
-        val cleanQ = query.trim()
-        if (saveToRecent && cleanQ.isNotBlank()) {
-            addRecentSearch(cleanQ)
-        }
-        val normalizedFilters = filters.normalized()
-        val effectiveQuery = IdentifyCatalogQuery.build(cleanQ, normalizedFilters)
-        val generation = ++catalogSearchGeneration
-        val category = _catalogSearch.value.category
-        catalogSearchJob?.cancel()
-        catalogSearchJob = viewModelScope.launch {
-            _catalogSearch.update { it.copy(isSearching = true) }
-            when (category) {
-                CatalogCategory.SONGS -> {
-                    val results = if (effectiveQuery.isEmpty() && !normalizedFilters.hasAny) {
-                        MetadataFetcher.getFeaturedDemoCatalog()
-                    } else {
-                        MetadataFetcher.searchOnlineCatalog(effectiveQuery)
-                    }
-                    updateCatalogSearchIfCurrent(generation) { it.copy(tracks = results) }
-                }
-
-                CatalogCategory.ALBUMS -> {
-                    val results = MetadataFetcher.searchAlbums(effectiveQuery.ifEmpty { cleanQ })
-                    updateCatalogSearchIfCurrent(generation) { it.copy(albums = results) }
-                }
-
-                CatalogCategory.PLAYLISTS -> {
-                    val results = MetadataFetcher.searchPlaylists(cleanQ.ifEmpty { effectiveQuery })
-                    updateCatalogSearchIfCurrent(generation) { it.copy(playlists = results) }
-                }
-
-                CatalogCategory.GENRES -> {
-                    val genres = MetadataFetcher.listGenres()
-                    val results = if (cleanQ.isEmpty()) {
-                        genres
-                    } else {
-                        genres.filter { TrackMatchKeys.containsNormalized(it.name, cleanQ) }
-                    }
-                    updateCatalogSearchIfCurrent(generation) { it.copy(genres = results) }
-                }
-
-                CatalogCategory.CHARTS -> {
-                    val results = MetadataFetcher.fetchChartTracks()
-                    updateCatalogSearchIfCurrent(generation) { it.copy(tracks = results) }
-                }
-            }
-            updateCatalogSearchIfCurrent(generation) { it.copy(isSearching = false) }
-            // The fetchers degrade to an empty list on any transport error, so an empty list reads as
-            // "this song does not exist". Say it out loud when the reason is simply no connection.
-            if (_catalogSearch.value.currentResultsAreEmpty() && !connectivityObserver.isCurrentlyOnline()) {
-                toast("Sin conexión: no se pudo buscar en el catálogo")
-            }
-        }
+        catalogSearchCoordinator.search(query, filters, saveToRecent)
     }
 
     fun searchOnlineCatalog(query: String) {
@@ -3064,7 +2981,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     /** Cycle YouTube match for a song result in the catalog songs list ("Buscar otro"). */
     fun cycleSongCatalogResult(index: Int) {
-        val list = _catalogSearch.value.tracks.toMutableList()
+        val list = catalogSearch.value.tracks.toMutableList()
         if (index !in list.indices) return
         val current = list[index]
         val wasPreviewing = _catalogPreviewKey.value == catalogPreviewKeyFor(current)
@@ -3078,9 +2995,15 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             val currentIdx = searchResults.indexOfFirst { it.id == current.id }
             val next = searchResults[(currentIdx + 1).coerceAtLeast(0) % searchResults.size]
             // Keep catalog album metadata when YouTube only says "YouTube"
-            list[index] = next.preferMetaFrom(current)
-            _catalogSearch.update { it.copy(tracks = list) }
-            list[index]
+            val updated = next.preferMetaFrom(current)
+            catalogSearchCoordinator.updateTracks { currentTracks ->
+                val mutable = currentTracks.toMutableList()
+                if (index in mutable.indices) {
+                    mutable[index] = updated
+                }
+                mutable
+            }
+            updated
         }
     }
 

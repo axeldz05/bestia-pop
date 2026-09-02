@@ -11,7 +11,7 @@ import androidx.room.PrimaryKey
         Index(value = ["uriString"], unique = true),
         Index(value = ["title"]),
         Index(value = ["album"]),
-        Index(value = ["artist"]),
+        Index(value = ["artist", "album"]),
         Index(value = ["dateAdded"])
     ]
 )

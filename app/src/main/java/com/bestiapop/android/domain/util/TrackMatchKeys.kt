@@ -13,14 +13,49 @@ object TrackMatchKeys {
     private val PUNCT = Regex("[\\p{Punct}\\p{IsPunctuation}]")
     private val WHITESPACE = Regex("\\s+")
 
+    private const val MAX_NORMALIZE_CACHE_ENTRIES = 1000
+
+    private val normalizeCache = object : java.util.LinkedHashMap<String, String>(128, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, String>?): Boolean {
+            return size > MAX_NORMALIZE_CACHE_ENTRIES
+        }
+    }
+    private val cacheLock = Any()
+
+    private fun hasNonAscii(s: String): Boolean {
+        for (i in 0 until s.length) {
+            if (s[i].code > 127) return true
+        }
+        return false
+    }
+
     fun normalize(value: String): String {
-        val folded = Normalizer.normalize(value, Normalizer.Form.NFD)
-            .replace(COMBINING_MARKS, "")
-        return folded
+        if (value.isEmpty()) return ""
+        val cacheCandidate = value.length <= 80
+        if (cacheCandidate) {
+            synchronized(cacheLock) {
+                normalizeCache[value]?.let { return it }
+            }
+        }
+
+        val base = if (hasNonAscii(value)) {
+            Normalizer.normalize(value, Normalizer.Form.NFD).replace(COMBINING_MARKS, "")
+        } else {
+            value
+        }
+
+        val result = base
             .lowercase()
             .replace(PUNCT, " ")
             .replace(WHITESPACE, " ")
             .trim()
+
+        if (cacheCandidate) {
+            synchronized(cacheLock) {
+                normalizeCache[value] = result
+            }
+        }
+        return result
     }
 
     /** Substring match after [normalize] (blank [needle] matches everything). */

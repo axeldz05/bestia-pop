@@ -98,6 +98,7 @@ class BestiaPopApplication : Application(), ImageLoaderFactory {
 
     override fun onCreate() {
         super.onCreate()
+        com.bestiapop.android.data.network.HttpClients.initialize(this)
         PlaybackDiagnostics.init(this)
         // Collect crashes/non-fatals on release/beta builds only (not local debug noise).
         FirebaseCrashlytics.getInstance().setCrashlyticsCollectionEnabled(!BuildConfig.DEBUG)

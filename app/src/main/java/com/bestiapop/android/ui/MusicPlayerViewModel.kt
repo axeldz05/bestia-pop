@@ -519,6 +519,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     fun onAppForeground() {
         onUiAttached()
         viewModelScope.launch(Dispatchers.IO) {
+            delay(150L) // Ceder prioridad inmediata al render del primer frame y carga de catálogo
             val snapshot = BackgroundExecutionProbe.current(getApplication())
             withContext(Dispatchers.Main.immediate) {
                 publishBackgroundExecutionStatus(snapshot)

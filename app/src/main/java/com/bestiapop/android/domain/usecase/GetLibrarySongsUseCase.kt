@@ -323,22 +323,15 @@ class GetLibrarySongsUseCase {
             song.artworkUri.isNullOrEmpty() && !IdentifyRanking.isGenericAlbum(song.album)
         }
         if (!needsInherit) return emptyMap()
-        val inherited = HashMap<String, String?>(grouped.size)
-        val bucketById = HashMap<Long, String>(songs.size * 2)
-        for ((key, albumSongs) in grouped) {
-            if (albumSongs.any { !IdentifyRanking.isGenericAlbum(it.album) }) {
-                inherited[key] = firstArtwork(albumSongs)
-            }
-            for (song in albumSongs) {
-                bucketById[song.id] = key
-            }
-        }
-        if (inherited.isEmpty()) return emptyMap()
         val out = HashMap<Long, String>()
-        for (song in songs) {
-            if (IdentifyRanking.isGenericAlbum(song.album) || !song.artworkUri.isNullOrEmpty()) continue
-            val albumArt = inherited[bucketById[song.id]]
-            if (!albumArt.isNullOrEmpty()) out[song.id] = albumArt
+        for ((_, albumSongs) in grouped) {
+            if (albumSongs.none { !IdentifyRanking.isGenericAlbum(it.album) }) continue
+            val albumArt = firstArtwork(albumSongs) ?: continue
+            for (song in albumSongs) {
+                if (song.artworkUri.isNullOrEmpty() && !IdentifyRanking.isGenericAlbum(song.album)) {
+                    out[song.id] = albumArt
+                }
+            }
         }
         return out
     }

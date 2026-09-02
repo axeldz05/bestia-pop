@@ -2,7 +2,10 @@ package com.bestiapop.android.data.model
 
 import java.util.UUID
 
-private fun newQueueEntryId(): String = UUID.randomUUID().toString()
+private val queueEntryCounter = java.util.concurrent.atomic.AtomicLong(1L)
+private val processInstancePrefix = "${System.currentTimeMillis().toString(36)}-${java.util.concurrent.ThreadLocalRandom.current().nextInt(0, 0xFFFF).toString(16)}"
+
+fun newQueueEntryId(): String = "q-${processInstancePrefix}-${queueEntryCounter.getAndIncrement().toString(36)}"
 
 /**
  * Unified queue item: local library song or ephemeral remote stream.
@@ -126,22 +129,31 @@ data class ResolvedStream(
     val resolvedAtEpochMs: Long
 )
 
+private inline fun <T, R> List<T>.mapFast(transform: (T) -> R): List<R> {
+    if (isEmpty()) return emptyList()
+    val out = ArrayList<R>(size)
+    for (i in indices) {
+        out.add(transform(this[i]))
+    }
+    return out
+}
+
 fun Song.toPlayable(): PlayableItem.Local = PlayableItem.Local(this)
 
-fun List<Song>.toPlayableItems(): List<PlayableItem> = map { it.toPlayable() }
+fun List<Song>.toPlayableItems(): List<PlayableItem> = mapFast { it.toPlayable() }
 
 /** Transforms songs into playable items with fresh queue IDs in a single pass. */
-fun List<Song>.toPlayableItemsWithFreshIds(): List<PlayableItem> = map { song ->
-    PlayableItem.Local(song, queueEntryId = newQueueEntryId())
-}
+fun List<Song>.toPlayableItemsWithFreshIds(): List<PlayableItem> =
+    mapFast { PlayableItem.Local(it, queueEntryId = newQueueEntryId()) }
 
 /** Every occurrence entering a queue gets its own identity, even if the same object repeats. */
-fun List<PlayableItem>.withFreshQueueEntryIds(): List<PlayableItem> = map { item ->
-    when (item) {
-        is PlayableItem.Local -> item.copy(queueEntryId = newQueueEntryId())
-        is PlayableItem.Remote -> item.copy(queueEntryId = newQueueEntryId())
+fun List<PlayableItem>.withFreshQueueEntryIds(): List<PlayableItem> =
+    mapFast { item ->
+        when (item) {
+            is PlayableItem.Local -> item.copy(queueEntryId = newQueueEntryId())
+            is PlayableItem.Remote -> item.copy(queueEntryId = newQueueEntryId())
+        }
     }
-}
 
 /** Ensures every item in the queue has a unique non-empty queueEntryId without duplicate list allocation if already present. */
 fun List<PlayableItem>.ensureFreshQueueEntryIds(): List<PlayableItem> {

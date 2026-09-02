@@ -7,7 +7,12 @@ import androidx.room.PrimaryKey
 
 @Entity(
     tableName = "songs",
-    indices = [Index(value = ["uriString"], unique = true)]
+    indices = [
+        Index(value = ["uriString"], unique = true),
+        Index(value = ["album"]),
+        Index(value = ["artist"]),
+        Index(value = ["dateAdded"])
+    ]
 )
 @Immutable
 data class Song(

@@ -27,6 +27,7 @@ import com.bestiapop.android.data.model.indexOfQueueEntry
 import com.bestiapop.android.data.model.indexOfRemoteSlot
 import com.bestiapop.android.data.model.toPlayable
 import com.bestiapop.android.data.model.withFreshQueueEntryIds
+import com.bestiapop.android.data.model.ensureFreshQueueEntryIds
 import com.bestiapop.android.data.network.ConnectivityObserver
 import com.bestiapop.android.data.playback.PlaybackChangeHint
 import com.bestiapop.android.data.playback.PlaybackFallbackPlanner
@@ -1198,7 +1199,7 @@ class PlaybackRuntime internal constructor(
         _discoverPlaybackOrigin.value =
             if (fromRadio) DiscoverPlaybackOrigin.None else origin
         launchPlayableCollection(
-            items = items.withFreshQueueEntryIds(),
+            items = items.ensureFreshQueueEntryIds(),
             startIndex = startIndex,
             fromRadio = fromRadio,
             rotate = rotate,
@@ -1217,7 +1218,7 @@ class PlaybackRuntime internal constructor(
         invalidatePlaybackWork()
         clearRadioSession()
         clearDiscoverPlaybackOrigin()
-        val staged = items.withFreshQueueEntryIds()
+        val staged = items.ensureFreshQueueEntryIds()
         val index = startIndex.coerceIn(staged.indices)
         stageQueueCore(staged, index)
         preShuffleOrder = null

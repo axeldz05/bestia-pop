@@ -32,8 +32,7 @@ class BestiaPopApplication : Application(), ImageLoaderFactory {
     lateinit var musicRepository: MusicRepository
         private set
 
-    lateinit var radioEngine: RadioEngine
-        private set
+    val radioEngine: RadioEngine by lazy { createBestiaPopRadioEngine() }
 
     internal lateinit var processDownloads: ProcessDownloadCoordinator
         private set
@@ -41,8 +40,14 @@ class BestiaPopApplication : Application(), ImageLoaderFactory {
     internal lateinit var processDownloadRuntime: ProcessDownloadRuntime
         private set
 
-    internal lateinit var processIdentifyRuntime: ProcessIdentifyRuntime
-        private set
+    internal val processIdentifyRuntime: ProcessIdentifyRuntime by lazy {
+        ProcessIdentifyRuntime.create(
+            context = this,
+            scope = processScope,
+            repository = musicRepository,
+            acquireExecutionLease = { IdentifyExecutionLauncher.acquire(this) }
+        )
+    }
 
     val shouldAutoResumeDownloads: Boolean by lazy {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
@@ -87,7 +92,6 @@ class BestiaPopApplication : Application(), ImageLoaderFactory {
         })
 
         musicRepository = MusicRepository(this)
-        radioEngine = createBestiaPopRadioEngine()
         processDownloads = ProcessDownloadCoordinator.create(
             context = this,
             scope = processScope,
@@ -109,12 +113,6 @@ class BestiaPopApplication : Application(), ImageLoaderFactory {
                 OnlineDownloadServiceLauncher.acquire(this, source)
             }
         )
-        processIdentifyRuntime = ProcessIdentifyRuntime.create(
-            context = this,
-            scope = processScope,
-            repository = musicRepository,
-            acquireExecutionLease = { IdentifyExecutionLauncher.acquire(this) }
-        )
         val saveWhileListeningDownloads = ProcessSaveWhileListeningCoordinator(
             scope = processScope,
             runtime = processDownloadRuntime
@@ -132,7 +130,7 @@ class BestiaPopApplication : Application(), ImageLoaderFactory {
         return ImageLoader.Builder(this)
             .memoryCache {
                 MemoryCache.Builder(this)
-                    .maxSizePercent(0.10)
+                    .maxSizePercent(0.15)
                     .build()
             }
             .diskCache {
@@ -141,6 +139,7 @@ class BestiaPopApplication : Application(), ImageLoaderFactory {
                     .maxSizeBytes(50L * 1024 * 1024)
                     .build()
             }
+            .crossfade(false)
             .allowHardware(true)
             .allowRgb565(true)
             .decoderDispatcher(Dispatchers.IO.limitedParallelism(2))

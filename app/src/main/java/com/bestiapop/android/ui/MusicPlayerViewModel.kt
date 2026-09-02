@@ -191,7 +191,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     // ListenBrainz state
     val listenBrainzSettings: StateFlow<ListenBrainzSettings> =
         listenBrainzPreferences.settingsFlow
-            .stateIn(viewModelScope, SharingStarted.Eagerly, ListenBrainzSettings())
+            .stateInUi(viewModelScope, ListenBrainzSettings())
 
     private val playbackSettings: StateFlow<PlaybackSettings> = playbackRuntime.playbackSettings
 
@@ -270,9 +270,8 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private val _identifyReview = MutableStateFlow(IdentifyReviewState())
     val identifyReview: StateFlow<IdentifyReviewState> = _identifyReview.asStateFlow()
     val rawSongs = repository.allSongsFlow
-        .stateIn(
+        .stateInUi(
             viewModelScope,
-            SharingStarted.Eagerly,
             emptyList()
         )
     val playlists = repository.playlistsFlow
@@ -1025,7 +1024,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
         val targetQueue = if (indexInBase != -1) baseList else listOf(song)
         val index = if (indexInBase != -1) indexInBase else 0
-        playPlayableCollection(targetQueue.toPlayableItems(), index, applyManualModes = applyManualModes)
+        playPlayableCollection(targetQueue.toPlayableItemsWithFreshIds(), index, applyManualModes = applyManualModes)
     }
 
     fun playPlayableCollection(

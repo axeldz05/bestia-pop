@@ -431,7 +431,7 @@ class MusicRepository private constructor(
                 )
             }
         }
-        .shareIn(libraryShareScope, SharingStarted.Eagerly, replay = 1)
+        .shareIn(libraryShareScope, SharingStarted.WhileSubscribed(5_000L), replay = 1)
 
     override val songPlayStatsFlow: Flow<Map<Long, Long>> = musicDao.getPlayStatsFlow()
         .map { stats -> stats.associate { it.songId to it.lastPlayedAt } }

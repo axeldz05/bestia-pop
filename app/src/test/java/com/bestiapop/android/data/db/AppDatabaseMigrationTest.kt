@@ -110,7 +110,52 @@ class AppDatabaseMigrationTest {
     }
 
     @Test
-    fun migration1To10_runsWholeChainAndKeepsLegacyLibraryDataUsable() = runTest {
+    fun migration10To11_createsIndexesOnSongsTable() = runTest {
+        createLegacyDatabase(version = 10, schema = ::createVersion10Schema) { db ->
+            db.execSQL(
+                """
+                INSERT INTO songs (
+                    id, uriString, title, artist, album, genre, durationMs, year, trackNumber,
+                    artworkUri, lyrics, folderPath, dateAdded, lastPlayedAt
+                ) VALUES (
+                    1, '/music/song1.mp3', 'Song 1', 'Artist A', 'Album X', 'Pop',
+                    200000, 2022, 1, NULL, NULL, '/music', 123456, 0
+                )
+                """.trimIndent()
+            )
+        }
+
+        val database = AppDatabase.getDatabase(context)
+        val musicDao = database.musicDao()
+        val songs = musicDao.getAllSongs()
+        assertEquals(1, songs.size)
+        assertEquals("Song 1", songs[0].title)
+
+        val helper = FrameworkSQLiteOpenHelperFactory().create(
+            SupportSQLiteOpenHelper.Configuration.builder(context)
+                .name(DATABASE_NAME)
+                .callback(object : SupportSQLiteOpenHelper.Callback(11) {
+                    override fun onCreate(db: SupportSQLiteDatabase) {}
+                    override fun onUpgrade(db: SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) {}
+                })
+                .build()
+        )
+        val db = helper.readableDatabase
+        val cursor = db.query("PRAGMA index_list('songs')")
+        val indexNames = mutableListOf<String>()
+        while (cursor.moveToNext()) {
+            indexNames.add(cursor.getString(cursor.getColumnIndexOrThrow("name")))
+        }
+        cursor.close()
+        helper.close()
+
+        assertTrue(indexNames.contains("index_songs_album"))
+        assertTrue(indexNames.contains("index_songs_artist"))
+        assertTrue(indexNames.contains("index_songs_dateAdded"))
+    }
+
+    @Test
+    fun migration1To11_runsWholeChainAndKeepsLegacyLibraryDataUsable() = runTest {
         createLegacyDatabase(version = 1, schema = ::createVersion1Schema) { db ->
             db.execSQL(
                 legacySongInsert(
@@ -327,6 +372,22 @@ class AppDatabaseMigrationTest {
         createVersion7Schema(db)
         db.execSQL(
             "ALTER TABLE songs ADD COLUMN lastPlayedAt INTEGER NOT NULL DEFAULT 0"
+        )
+    }
+
+    private fun createVersion10Schema(db: SupportSQLiteDatabase) {
+        createVersion8Schema(db)
+        db.execSQL(
+            "ALTER TABLE playlist_pending_tracks ADD COLUMN trackNumber INTEGER NOT NULL DEFAULT 0"
+        )
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS song_play_stats (
+                songId INTEGER NOT NULL,
+                lastPlayedAt INTEGER NOT NULL,
+                PRIMARY KEY(songId)
+            )
+            """.trimIndent()
         )
     }
 

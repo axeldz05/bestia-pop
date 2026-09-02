@@ -130,12 +130,30 @@ fun Song.toPlayable(): PlayableItem.Local = PlayableItem.Local(this)
 
 fun List<Song>.toPlayableItems(): List<PlayableItem> = map { it.toPlayable() }
 
+/** Transforms songs into playable items with fresh queue IDs in a single pass. */
+fun List<Song>.toPlayableItemsWithFreshIds(): List<PlayableItem> = map { song ->
+    PlayableItem.Local(song, queueEntryId = newQueueEntryId())
+}
+
 /** Every occurrence entering a queue gets its own identity, even if the same object repeats. */
 fun List<PlayableItem>.withFreshQueueEntryIds(): List<PlayableItem> = map { item ->
     when (item) {
         is PlayableItem.Local -> item.copy(queueEntryId = newQueueEntryId())
         is PlayableItem.Remote -> item.copy(queueEntryId = newQueueEntryId())
     }
+}
+
+/** Ensures every item in the queue has a unique non-empty queueEntryId without duplicate list allocation if already present. */
+fun List<PlayableItem>.ensureFreshQueueEntryIds(): List<PlayableItem> {
+    if (isEmpty()) return emptyList()
+    var needsFresh = false
+    for (i in indices) {
+        if (this[i].queueEntryId.isBlank()) {
+            needsFresh = true
+            break
+        }
+    }
+    return if (needsFresh) withFreshQueueEntryIds() else this
 }
 
 /** Compatibility alias for callers that previously refreshed Remote slots only. */

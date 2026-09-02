@@ -85,6 +85,8 @@ import kotlin.coroutines.ContinuationInterceptor
 import kotlin.coroutines.EmptyCoroutineContext
 
 private const val STREAM_READY_MAX_AGE_MS = 60_000L
+private const val INITIAL_PLAYBACK_WINDOW_SIZE = 30
+private const val QUEUE_APPEND_CHUNK_SIZE = 100
 
 private fun controllerReconnectBackoffMs(attempt: Int): Long {
     val exponent = (attempt - 1).coerceIn(0, 4)
@@ -249,6 +251,7 @@ internal data class PlaybackRuntimeDependencies(
             SaveWhileListeningDownloadResult.Failed(
                 IllegalStateException("Save while listening unavailable")
             )
+
         override fun dismiss(id: String) = Unit
     },
     val radioSuggester: PlaybackRuntimeRadioSuggester = PlaybackRuntimeRadioSuggester {
@@ -374,6 +377,7 @@ class PlaybackRuntime internal constructor(
     private var resolvingTransitionJob: Job? = null
     private var resolvingTransitionQueueEntryId: String? = null
     private var queueSelectionJob: Job? = null
+    private var queueAppendJob: Job? = null
     private val selectionGate = PlaybackSelectionIntentGate()
     private val rejectedQueueEntries = linkedSetOf<String>()
 
@@ -639,10 +643,10 @@ class PlaybackRuntime internal constructor(
 
     private fun shouldRetainController(): Boolean =
         warmingUp.get() ||
-            uiAttachments.get() > 0 ||
-            _queue.value.isNotEmpty() ||
-            playWhenReadyIntent ||
-            _isPlaying.value
+                uiAttachments.get() > 0 ||
+                _queue.value.isNotEmpty() ||
+                playWhenReadyIntent ||
+                _isPlaying.value
 
     private fun releaseControllerIfIdle() {
         val shouldRetain = shouldRetainController()
@@ -675,8 +679,8 @@ class PlaybackRuntime internal constructor(
 
     private fun updateTickerLifecycle() {
         val shouldTick = dependencies.startTicker &&
-            controller?.isPlaying == true &&
-            uiAttachments.get() > 0
+                controller?.isPlaying == true &&
+                uiAttachments.get() > 0
         if (!shouldTick) {
             tickerJob?.cancel()
             tickerJob = null
@@ -1303,6 +1307,7 @@ class PlaybackRuntime internal constructor(
                 )
                 if (nextRepeat != _repeatMode.value) setRepeatMode(nextRepeat)
             }
+
             applyManualModes -> applyManualPlayModes()
             fromRadio -> setShuffleEnabled(false)
         }
@@ -1617,12 +1622,13 @@ class PlaybackRuntime internal constructor(
                         is PlayableItem.Local -> {
                             if (selectionGate.isCurrent(token)) {
                                 val shouldPlay = playWhenReadyIntent &&
-                                    (pendingPlayIntentEpoch == playIntent || controller != null)
+                                        (pendingPlayIntentEpoch == playIntent || controller != null)
                                 if (shouldPlay) pendingPlayIntentEpoch = null
                                 applyQueueSelection(live, startPlaying = shouldPlay)
                             }
                             return@launch
                         }
+
                         is PlayableItem.Remote -> {
                             val ready = if (dependencies.streamAccess.needsResolve(live)) {
                                 dependencies.streamAccess.resolve(live)
@@ -1642,7 +1648,7 @@ class PlaybackRuntime internal constructor(
                             val applied = _queue.value.getOrNull(slot) ?: continue
                             if (selectionGate.isCurrent(token)) {
                                 val shouldPlay = playWhenReadyIntent &&
-                                    (pendingPlayIntentEpoch == playIntent || controller != null)
+                                        (pendingPlayIntentEpoch == playIntent || controller != null)
                                 if (shouldPlay) pendingPlayIntentEpoch = null
                                 applyQueueSelection(applied, startPlaying = shouldPlay)
                             }
@@ -1708,12 +1714,12 @@ class PlaybackRuntime internal constructor(
         }
         val queueSize = _queue.value.size
         val wrappedShuffleCycle = !suppressShuffleWrapDetection &&
-            _isShuffle.value &&
-            _repeatMode.value == RepeatMode.ALL &&
-            reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO &&
-            lastMediaItemIndex == queueSize - 1 &&
-            newIndex == 0 &&
-            queueSize > 1
+                _isShuffle.value &&
+                _repeatMode.value == RepeatMode.ALL &&
+                reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO &&
+                lastMediaItemIndex == queueSize - 1 &&
+                newIndex == 0 &&
+                queueSize > 1
 
         if (incoming != null) {
             val previous = _currentItem.value
@@ -1725,14 +1731,15 @@ class PlaybackRuntime internal constructor(
             if (explicitStart) pendingNewPlaybackQueueEntryId = null
             val metadataOnly =
                 reason == Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED &&
-                    sameOccurrence &&
-                    !explicitStart
+                        sameOccurrence &&
+                        !explicitStart
             if (!metadataOnly) {
                 (previous as? PlayableItem.Remote)?.let { outgoing ->
                     val event = when (reason) {
                         Player.MEDIA_ITEM_TRANSITION_REASON_AUTO,
                         Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT ->
                             SaveWhileListeningEvent.AUTOMATIC_TRANSITION
+
                         else -> SaveWhileListeningEvent.MANUAL_SKIP
                     }
                     maybeSaveWhileListening(
@@ -1853,6 +1860,7 @@ class PlaybackRuntime internal constructor(
                             )
                             return@launch
                         }
+
                         is PlayableItem.Remote -> {
                             val ready = if (dependencies.streamAccess.needsResolve(live)) {
                                 dependencies.streamAccess.resolve(live)
@@ -1947,8 +1955,8 @@ class PlaybackRuntime internal constructor(
         expectedController: PlaybackControllerFacade
     ): Boolean =
         generation == playbackGeneration &&
-            controller === expectedController &&
-            _currentItem.value?.queueEntryId == triggerQueueEntryId
+                controller === expectedController &&
+                _currentItem.value?.queueEntryId == triggerQueueEntryId
 
     private fun pauseAfterFallbackExhausted(
         expectedController: PlaybackControllerFacade,
@@ -2199,6 +2207,7 @@ class PlaybackRuntime internal constructor(
                         }
                         dependencies.listenTracker.onDurationKnown(current.song.id, duration)
                     }
+
                     is PlayableItem.Remote -> {
                         val index = player.currentMediaItemIndex
                         val updated = current.withIdentity { copy(durationMs = duration) }
@@ -2280,17 +2289,19 @@ class PlaybackRuntime internal constructor(
                     saveWhileListeningFailures.remove(key)
                     _events.tryEmit("«${result.song.title}» guardada en la biblioteca")
                 }
+
                 is SaveWhileListeningDownloadResult.InFlight -> {
                     // Neutral: another owner holds the claim. Clear attempted so autosave can retry
                     // if that owner fails, is dismissed, or is cancelled.
                     saveWhileListeningAttempted.remove(key)
                 }
+
                 is SaveWhileListeningDownloadResult.Failed -> {
                     saveWhileListeningFailures[key] = dependencies.clockMs()
                     saveWhileListeningAttempted.remove(key)
                     _events.tryEmit(
                         "No se pudo guardar «${remote.title}»: " +
-                            (result.error.localizedMessage ?: "error")
+                                (result.error.localizedMessage ?: "error")
                     )
                 }
             }
@@ -2330,7 +2341,7 @@ class PlaybackRuntime internal constructor(
         if (_radioLoading.value) return
         if (mode != null) radioPreferredMode = mode
         val resolvedMode = mode ?: radioPreferredMode
-            ?: if (dependencies.isOnline()) RadioMode.BOTH else RadioMode.KNOWN
+        ?: if (dependencies.isOnline()) RadioMode.BOTH else RadioMode.KNOWN
         val keepCurrent = !auto && shouldKeepCurrentWhenStartingRadio()
         radioStartJob?.cancel()
         radioStartJob = scope.launch {
@@ -2469,9 +2480,9 @@ class PlaybackRuntime internal constructor(
         val player = controller ?: return false
         val index = player.currentMediaItemIndex
         return _queue.value.isNotEmpty() &&
-            index in _queue.value.indices &&
-            player.playbackState != Player.STATE_ENDED &&
-            player.playbackState != Player.STATE_IDLE
+                index in _queue.value.indices &&
+                player.playbackState != Player.STATE_ENDED &&
+                player.playbackState != Player.STATE_IDLE
     }
 
     private fun clearRadioSessionKeepPreference() {
@@ -2542,9 +2553,20 @@ class PlaybackRuntime internal constructor(
         if (newPlayback) pendingNewPlaybackQueueEntryId = items[validIndex].queueEntryId
         playWhenReadyIntent = startPlaying
         if (!startPlaying) player.pause()
+
+        queueAppendJob?.cancel()
+        queueAppendJob = null
+
+        val useWindow = items.size > INITIAL_PLAYBACK_WINDOW_SIZE
+        val windowStart = if (useWindow) (validIndex - 10).coerceAtLeast(0) else 0
+        val windowEnd =
+            if (useWindow) (windowStart + INITIAL_PLAYBACK_WINDOW_SIZE).coerceAtMost(items.size) else items.size
+        val initialItems = if (useWindow) items.subList(windowStart, windowEnd) else items
+        val initialIndex = validIndex - windowStart
+
         player.setMediaItems(
-            items,
-            validIndex,
+            initialItems,
+            initialIndex,
             startPositionMs.coerceAtLeast(0L)
         )
         timelineMaterialized = true
@@ -2562,6 +2584,34 @@ class PlaybackRuntime internal constructor(
         }
         syncShuffleToPlayer()
         updateTickerLifecycle()
+
+        if (useWindow) {
+            val generation = playbackGeneration
+            queueAppendJob = scope.launch(Dispatchers.Default) {
+                if (windowEnd < items.size) {
+                    val tail = items.subList(windowEnd, items.size)
+                    for (chunk in tail.chunked(QUEUE_APPEND_CHUNK_SIZE)) {
+                        if (!isActive || !isPlaybackGenerationCurrent(generation)) break
+                        withContext(Dispatchers.Main.immediate) {
+                            if (hasMaterializedTimeline() && isPlaybackGenerationCurrent(generation)) {
+                                mutateMaterializedTimeline { it.addMediaItems(chunk) }
+                            }
+                        }
+                    }
+                }
+                if (windowStart > 0) {
+                    val head = items.subList(0, windowStart)
+                    for (chunk in head.chunked(QUEUE_APPEND_CHUNK_SIZE)) {
+                        if (!isActive || !isPlaybackGenerationCurrent(generation)) break
+                        withContext(Dispatchers.Main.immediate) {
+                            if (hasMaterializedTimeline() && isPlaybackGenerationCurrent(generation)) {
+                                mutateMaterializedTimeline { it.addMediaItems(0, chunk) }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     private fun hasMaterializedTimeline(): Boolean =
@@ -2750,6 +2800,8 @@ class PlaybackRuntime internal constructor(
         cancelRemoteRecoveryJob()
         prefetchJob?.cancel()
         prefetchJob = null
+        queueAppendJob?.cancel()
+        queueAppendJob = null
         invalidateQueueSelection()
         seekPersistenceJob?.cancel()
         seekPersistenceJob = null
@@ -2861,8 +2913,8 @@ class PlaybackRuntime internal constructor(
                             limit = RADIO_BATCH_SIZE,
                             lbToken = settings.userToken.takeIf { it.isNotBlank() },
                             lbAvailable = settings.enabled &&
-                                settings.userToken.isNotBlank() &&
-                                online,
+                                    settings.userToken.isNotBlank() &&
+                                    online,
                             lbUsername = settings.username,
                             networkAvailable = online,
                             coPlaylistSongIds = request.coPlaylistSongIds
@@ -3110,7 +3162,11 @@ private class MediaControllerFacade(
         startIndex: Int,
         startPositionMs: Long
     ) {
-        controller.setMediaItems(items.map(::encode), startIndex, startPositionMs)
+        val encoded = ArrayList<MediaItem>(items.size)
+        for (i in items.indices) {
+            encoded.add(encode(items[i]))
+        }
+        controller.setMediaItems(encoded, startIndex, startPositionMs)
     }
 
     override fun replaceMediaItem(index: Int, item: PlayableItem) {
@@ -3118,11 +3174,19 @@ private class MediaControllerFacade(
     }
 
     override fun addMediaItems(items: List<PlayableItem>) {
-        controller.addMediaItems(items.map(::encode))
+        val encoded = ArrayList<MediaItem>(items.size)
+        for (i in items.indices) {
+            encoded.add(encode(items[i]))
+        }
+        controller.addMediaItems(encoded)
     }
 
     override fun addMediaItems(index: Int, items: List<PlayableItem>) {
-        controller.addMediaItems(index, items.map(::encode))
+        val encoded = ArrayList<MediaItem>(items.size)
+        for (i in items.indices) {
+            encoded.add(encode(items[i]))
+        }
+        controller.addMediaItems(index, encoded)
     }
 
     override fun removeMediaItem(index: Int) = controller.removeMediaItem(index)

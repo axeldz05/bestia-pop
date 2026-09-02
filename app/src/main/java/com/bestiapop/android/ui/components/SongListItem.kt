@@ -54,6 +54,7 @@ fun SongListItem(
     onClick: () -> Unit,
     onLongClick: () -> Unit = {},
     onToggleSelect: () -> Unit = {},
+    onOptionsClick: (() -> Unit)? = null,
     onPlayNext: () -> Unit,
     onAddToQueue: () -> Unit,
     onStartRadio: (() -> Unit)? = null,
@@ -137,9 +138,9 @@ fun SongListItem(
         )
 
         if (!isSelectionMode) {
-            Box {
+            if (onOptionsClick != null) {
                 IconButton(
-                    onClick = { menuExpanded = true },
+                    onClick = onOptionsClick,
                     modifier = Modifier.testTag("song-options-${song.id}")
                 ) {
                     Icon(
@@ -148,18 +149,31 @@ fun SongListItem(
                         tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                     )
                 }
-                if (menuExpanded) {
-                    SongOptionsMenu(
-                        onDismiss = { menuExpanded = false },
-                        onPlayNext = onPlayNext,
-                        onAddToQueue = onAddToQueue,
-                        onStartRadio = onStartRadio,
-                        onAddToPlaylist = onAddToPlaylist,
-                        onEditMetadata = onEditMetadata,
-                        onEditLyrics = onEditLyrics,
-                        onIdentify = onIdentify,
-                        onDelete = onDelete
-                    )
+            } else {
+                Box {
+                    IconButton(
+                        onClick = { menuExpanded = true },
+                        modifier = Modifier.testTag("song-options-${song.id}")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.MoreVert,
+                            contentDescription = "Opciones",
+                            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                        )
+                    }
+                    if (menuExpanded) {
+                        SongOptionsMenu(
+                            onDismiss = { menuExpanded = false },
+                            onPlayNext = onPlayNext,
+                            onAddToQueue = onAddToQueue,
+                            onStartRadio = onStartRadio,
+                            onAddToPlaylist = onAddToPlaylist,
+                            onEditMetadata = onEditMetadata,
+                            onEditLyrics = onEditLyrics,
+                            onIdentify = onIdentify,
+                            onDelete = onDelete
+                        )
+                    }
                 }
             }
         }
@@ -200,7 +214,7 @@ private fun optionalOverflowItem(
 }
 
 @Composable
-private fun SongOptionsMenu(
+internal fun SongOptionsMenu(
     onDismiss: () -> Unit,
     onPlayNext: () -> Unit,
     onAddToQueue: () -> Unit,

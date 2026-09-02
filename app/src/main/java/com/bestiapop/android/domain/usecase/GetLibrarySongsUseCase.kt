@@ -579,25 +579,38 @@ class GetLibrarySongsUseCase {
         sortDirection: SortDirection = SortDirection.ASC
     ): List<Album> {
         val ascending = sortDirection == SortDirection.ASC
-        val albums = grouped.map { (bucketKey, albumSongs) ->
-            val albumName = preferredAlbumDisplayName(albumSongs.map { it.album }).ifBlank {
+        val albums = ArrayList<Album>(grouped.size)
+        for ((bucketKey, albumSongs) in grouped) {
+            val albumName = preferredAlbumDisplayNameFromSongs(albumSongs).ifBlank {
                 albumSongs.first().album
             }
             val override = overrideForBucket(overrides, bucketKey, albumName)
             val firstArt = firstArtwork(albumSongs)
-            val artistName = dominantNonBlank(albumSongs.map { it.artist }, "Unknown Artist")
-            val derivedYear = albumSongs.map { it.year }.firstOrNull { it > 0 } ?: 0
-            Album(
-                name = albumName,
-                displayName = override?.displayName?.takeIf { it.isNotBlank() } ?: albumName,
-                artist = override?.artist?.takeIf { it.isNotBlank() } ?: artistName,
-                songCount = albumSongs.size,
-                artworkUri = override?.artworkUri?.takeIf { it.isNotBlank() } ?: firstArt,
-                genre = override?.genre?.takeIf { it.isNotBlank() }
-                    ?: dominantGenreFromSongs(albumSongs),
-                year = if (override != null && override.year > 0) override.year else derivedYear,
-                dateAdded = albumSongs.maxOfOrNull { it.dateAdded },
-                groupingKey = bucketKey
+            val artistName = dominantArtistFromSongs(albumSongs, "Unknown Artist")
+            var derivedYear = 0
+            var maxDateAdded: Long? = null
+            for (i in albumSongs.indices) {
+                val song = albumSongs[i]
+                if (derivedYear == 0 && song.year > 0) {
+                    derivedYear = song.year
+                }
+                if (maxDateAdded == null || song.dateAdded > maxDateAdded) {
+                    maxDateAdded = song.dateAdded
+                }
+            }
+            albums.add(
+                Album(
+                    name = albumName,
+                    displayName = override?.displayName?.takeIf { it.isNotBlank() } ?: albumName,
+                    artist = override?.artist?.takeIf { it.isNotBlank() } ?: artistName,
+                    songCount = albumSongs.size,
+                    artworkUri = override?.artworkUri?.takeIf { it.isNotBlank() } ?: firstArt,
+                    genre = override?.genre?.takeIf { it.isNotBlank() }
+                        ?: dominantGenreFromSongs(albumSongs),
+                    year = if (override != null && override.year > 0) override.year else derivedYear,
+                    dateAdded = maxDateAdded,
+                    groupingKey = bucketKey
+                )
             )
         }
         return when (sortOption) {
@@ -612,6 +625,34 @@ class GetLibrarySongsUseCase {
         }
     }
 
+    private fun preferredAlbumDisplayNameFromSongs(songs: List<Song>): String {
+        if (songs.isEmpty()) return ""
+        if (songs.size == 1) return songs.first().album.trim()
+        val names = ArrayList<String>(songs.size)
+        for (i in songs.indices) {
+            names.add(songs[i].album)
+        }
+        return preferredAlbumDisplayName(names)
+    }
+
+    private fun dominantArtistFromSongs(songs: List<Song>, default: String = "Unknown Artist"): String {
+        if (songs.isEmpty()) return default
+        if (songs.size == 1) return songs.first().artist.ifBlank { default }
+        val counts = HashMap<String, Int>(4)
+        for (i in songs.indices) {
+            val artist = songs[i].artist
+            if (artist.isNotBlank()) {
+                counts[artist] = (counts[artist] ?: 0) + 1
+            }
+        }
+        if (counts.isEmpty()) return default
+        return counts.entries.maxWith(
+            compareBy<Map.Entry<String, Int>> { it.value }
+                .thenBy { -it.key.length }
+                .thenBy { it.key }
+        ).key
+    }
+
     private fun songsInGroupedAlbum(
         grouped: Map<String, List<Song>>,
         albumKey: String
@@ -620,7 +661,7 @@ class GetLibrarySongsUseCase {
         val bucket = grouped[albumKey]
             ?: grouped[target]
             ?: grouped.entries.firstOrNull { (_, songs) ->
-                preferredAlbumDisplayName(songs.map { it.album }).equals(albumKey, ignoreCase = true)
+                preferredAlbumDisplayNameFromSongs(songs).equals(albumKey, ignoreCase = true)
             }?.value
         return sortSongsWithinAlbum(bucket.orEmpty())
     }

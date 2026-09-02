@@ -4,19 +4,26 @@ import com.bestiapop.android.data.model.Song
 
 import java.util.concurrent.ConcurrentHashMap
 
+private val normalizeCache = ConcurrentHashMap<String, String>()
+private val stripDecorCache = ConcurrentHashMap<String, String>()
+private val liveSessionCache = ConcurrentHashMap<String, Boolean>()
+
 /**
  * Display-level album title cleanup (trim, ellipsis / mojibake). Matching uses
  * [albumIdentityKey], which also folds case, diacritics, edition suffixes, and
  * other-script subtitles.
  */
-fun normalizeAlbumName(name: String): String {
-    var s = name.trim()
-    s = s.replace("\u2026", "...")
-    s = s.replace("\u00E2\u0080\u00A6", "...")
-    s = s.replace("\u00E2\u20AC\u00A6", "...")
-    s = s.replace(WHITESPACE, " ")
-    return s
-}
+fun normalizeAlbumName(name: String): String =
+    normalizeCache.computeIfAbsent(name) { raw ->
+        var s = raw.trim()
+        if (s.contains('\u2026') || s.contains("\u00E2\u0080\u00A6") || s.contains("\u00E2\u20AC\u00A6")) {
+            s = s.replace("\u2026", "...")
+            s = s.replace("\u00E2\u0080\u00A6", "...")
+            s = s.replace("\u00E2\u20AC\u00A6", "...")
+        }
+        s = s.replace(WHITESPACE, " ")
+        s
+    }
 
 fun albumIdentityKey(name: String): String =
     identityKeyCache.computeIfAbsent(name) {
@@ -29,45 +36,58 @@ fun albumNamesMatch(a: String, b: String): Boolean {
     return ka.isNotEmpty() && ka == kb
 }
 
-fun stripAlbumEditionDecor(name: String): String {
-    var s = name.trim()
-    if (s.isEmpty()) return s
-    var previous = ""
-    while (s != previous) {
-        previous = s
-        s = EDITION_PAREN.replace(s, " ").trim()
-        s = EDITION_BRACKET.replace(s, " ").trim()
-        s = EDITION_SUFFIX.replace(s, " ").trim()
-        s = OTHER_SCRIPT_SUFFIX.replace(s) { match ->
-            if (isOtherScriptSubtitle(match.groupValues[1])) "" else match.value
-        }.trim()
-        s = s.replace(WHITESPACE, " ").trim()
+fun stripAlbumEditionDecor(name: String): String =
+    stripDecorCache.computeIfAbsent(name) { raw ->
+        var s = raw.trim()
+        if (s.isEmpty()) return@computeIfAbsent s
+        var previous = ""
+        while (s != previous) {
+            previous = s
+            s = EDITION_PAREN.replace(s, " ").trim()
+            s = EDITION_BRACKET.replace(s, " ").trim()
+            s = EDITION_SUFFIX.replace(s, " ").trim()
+            s = OTHER_SCRIPT_SUFFIX.replace(s) { match ->
+                if (isOtherScriptSubtitle(match.groupValues[1])) "" else match.value
+            }.trim()
+            s = s.replace(WHITESPACE, " ").trim()
+        }
+        s.ifBlank { raw.trim() }
     }
-    return s.ifBlank { name.trim() }
-}
 
-fun isLiveSessionAlbum(name: String): Boolean {
-    val n = TrackMatchKeys.normalize(name)
-    if (n.isEmpty()) return false
-    return SESSION_PHRASES.any { phrase ->
-        n == phrase || n.endsWith(" $phrase") || n.startsWith("$phrase ") || n.contains(" $phrase ")
+fun isLiveSessionAlbum(name: String): Boolean =
+    liveSessionCache.computeIfAbsent(name) { raw ->
+        val n = TrackMatchKeys.normalize(raw)
+        if (n.isEmpty()) return@computeIfAbsent false
+        SESSION_PHRASES.any { phrase ->
+            n == phrase || n.endsWith(" $phrase") || n.startsWith("$phrase ") || n.contains(" $phrase ")
+        }
     }
-}
 
 fun preferredAlbumDisplayName(names: Collection<String>): String {
-    val cleaned = names.map { it.trim() }.filter { it.isNotEmpty() }
-    if (cleaned.isEmpty()) return ""
-    val counts = cleaned.groupingBy { it }.eachCount()
-    val winner = cleaned.distinct().minWith(
+    if (names.isEmpty()) return ""
+
+    val counts = HashMap<String, Int>(names.size)
+    for (name in names) {
+        val trimmed = name.trim()
+        if (trimmed.isNotEmpty()) {
+            counts[trimmed] = (counts[trimmed] ?: 0) + 1
+        }
+    }
+    if (counts.isEmpty()) return ""
+
+    val winner = counts.keys.minWith(
         compareBy<String> { if (isLiveSessionAlbum(it)) 1 else 0 }
-            .thenByDescending { counts.getValue(it) }
+            .thenByDescending { counts[it] ?: 0 }
             .thenBy { if (normalizeAlbumName(it) == stripAlbumEditionDecor(it)) 0 else 1 }
             .thenBy { it.length }
             .thenBy { it }
     )
     val stripped = stripAlbumEditionDecor(normalizeAlbumName(winner))
     if (stripped.isEmpty()) return winner
-    return cleaned.firstOrNull { normalizeAlbumName(it) == stripped } ?: stripped
+    for (key in counts.keys) {
+        if (normalizeAlbumName(key) == stripped) return key
+    }
+    return stripped
 }
 
 fun studioAlbumKeysByArtist(

@@ -51,6 +51,7 @@ import com.bestiapop.android.ui.components.EmptyListHint
 import com.bestiapop.android.ui.components.LocalAllowArtworkDecode
 import com.bestiapop.android.ui.components.PlayShuffleIconPair
 import com.bestiapop.android.ui.components.SongListItem
+import com.bestiapop.android.ui.components.SongOptionsMenu
 import com.bestiapop.android.ui.components.SortEmphasizedTexts
 import com.bestiapop.android.ui.state.LibraryListItem
 import com.bestiapop.android.ui.state.LibraryListModel
@@ -146,6 +147,7 @@ fun LibrarySongList(
     val allowArtworkDecode by remember {
         derivedStateOf { !listState.isScrollInProgress }
     }
+    var menuSong by remember { mutableStateOf<Song?>(null) }
 
     CompositionLocalProvider(LocalAllowArtworkDecode provides allowArtworkDecode) {
     LazyColumn(state = listState, modifier = modifier.fillMaxSize()) {
@@ -182,6 +184,7 @@ fun LibrarySongList(
                         isSelectionMode = isSelectionMode,
                         isSelected = selectedSongIds.contains(item.song.id),
                         emphasis = item.emphasis,
+                        onOptionsClick = { menuSong = it },
                         onSongClickState = onSongClickState,
                         onSongLongClickState = onSongLongClickState,
                         onToggleSelectState = onToggleSelectState,
@@ -198,6 +201,21 @@ fun LibrarySongList(
             }
         }
     }
+    }
+
+    val currentMenuSong = menuSong
+    if (currentMenuSong != null) {
+        SongOptionsMenu(
+            onDismiss = { menuSong = null },
+            onPlayNext = { onPlayNextState.value(currentMenuSong) },
+            onAddToQueue = { onAddToQueueState.value(currentMenuSong) },
+            onStartRadio = { onStartRadioState.value(currentMenuSong) },
+            onAddToPlaylist = { onAddToPlaylistState.value(currentMenuSong) },
+            onEditMetadata = { onEditMetadataState.value(currentMenuSong) },
+            onEditLyrics = { onEditLyricsState.value(currentMenuSong) },
+            onIdentify = { onIdentifyState.value(currentMenuSong) },
+            onDelete = { onDeleteSongState.value(currentMenuSong) }
+        )
     }
 }
 
@@ -323,6 +341,7 @@ private fun LibrarySongRow(
     isSelectionMode: Boolean,
     isSelected: Boolean,
     emphasis: SortEmphasizedTexts,
+    onOptionsClick: (Song) -> Unit,
     onSongClickState: State<(Song, Int) -> Unit>,
     onSongLongClickState: State<(Song) -> Unit>,
     onToggleSelectState: State<(Song) -> Unit>,
@@ -386,6 +405,7 @@ private fun LibrarySongRow(
         onClick = onClick,
         onLongClick = onLongClick,
         onToggleSelect = onToggleSelect,
+        onOptionsClick = remember(song.id) { { onOptionsClick(songState.value) } },
         onPlayNext = onPlayNext,
         onAddToQueue = onAddToQueue,
         onStartRadio = onStartRadio,

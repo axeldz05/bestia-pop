@@ -249,20 +249,42 @@ object PlaybackMediaItemCodec {
             putString(EXTRA_QUEUE_ENTRY_ID, queueEntryId)
         }
 
+    private const val EXTRA_IDENTITY_TITLE = "bestiapop.playback.id_title"
+    private const val EXTRA_IDENTITY_ARTIST = "bestiapop.playback.id_artist"
+    private const val EXTRA_IDENTITY_ALBUM = "bestiapop.playback.id_album"
+    private const val EXTRA_IDENTITY_ARTWORK_URI = "bestiapop.playback.id_artworkUri"
+    private const val EXTRA_IDENTITY_DURATION_MS = "bestiapop.playback.id_durationMs"
+    private const val EXTRA_IDENTITY_TRACK_NUMBER = "bestiapop.playback.id_trackNumber"
+
     private fun metadata(identity: TrackIdentity, extras: Bundle): MediaMetadata {
-        extras.putString(
-            EXTRA_IDENTITY_JSON,
-            JSONObject().also { TrackIdentityJson.putInto(it, identity) }.toString()
-        )
+        extras.putString(EXTRA_IDENTITY_TITLE, identity.title)
+        extras.putString(EXTRA_IDENTITY_ARTIST, identity.artist)
+        extras.putString(EXTRA_IDENTITY_ALBUM, identity.album)
+        identity.artworkUri?.let { extras.putString(EXTRA_IDENTITY_ARTWORK_URI, it) }
+        extras.putLong(EXTRA_IDENTITY_DURATION_MS, identity.durationMs)
+        extras.putInt(EXTRA_IDENTITY_TRACK_NUMBER, identity.trackNumber)
         return identity.mediaMetadataBuilder()
             .setExtras(extras)
             .build()
     }
 
-    private fun decodeIdentity(extras: Bundle): TrackIdentity =
-        runCatching {
-            TrackIdentityJson.decode(
-                JSONObject(extras.getString(EXTRA_IDENTITY_JSON).orEmpty())
+    private fun decodeIdentity(extras: Bundle): TrackIdentity {
+        if (extras.containsKey(EXTRA_IDENTITY_TITLE)) {
+            return TrackIdentity(
+                title = extras.getString(EXTRA_IDENTITY_TITLE).orEmpty(),
+                artist = extras.getString(EXTRA_IDENTITY_ARTIST).orEmpty(),
+                album = extras.getString(EXTRA_IDENTITY_ALBUM).orEmpty(),
+                artworkUri = extras.getString(EXTRA_IDENTITY_ARTWORK_URI),
+                durationMs = extras.getLong(EXTRA_IDENTITY_DURATION_MS, 0L),
+                trackNumber = extras.getInt(EXTRA_IDENTITY_TRACK_NUMBER, 0)
             )
-        }.getOrElse { TrackIdentity(title = "") }
+        }
+        val json = extras.getString(EXTRA_IDENTITY_JSON)
+        if (!json.isNullOrBlank()) {
+            return runCatching {
+                TrackIdentityJson.decode(JSONObject(json))
+            }.getOrElse { TrackIdentity(title = "") }
+        }
+        return TrackIdentity(title = "")
+    }
 }

@@ -765,48 +765,12 @@ private fun LibraryBrowsePane(
     onShuffleGenre: (GenreGroup) -> Unit
 ) {
     when {
-        selectedAlbumName != null -> {
+        selectedAlbumName != null || selectedArtistName != null || selectedGenreName != null -> {
             NestedLibraryBrowse(
                 selectedAlbumName = selectedAlbumName,
-                selectedArtistName = null,
-                selectedGenreName = null,
-                viewMode = LibraryViewMode.FLAT,
-                viewModel = viewModel,
-                currentSongIdFlow = currentSongIdFlow,
-                isSelectionMode = isMultiSelectMode,
-                selectedSongIds = selectedSongIds,
-                collapsedAlbumNames = collapsedAlbumNames,
-                sortOption = sortOption,
-                sortDirection = sortDirection,
-                actions = actions,
-                onToggleSelect = onToggleSelect
-            )
-        }
-
-        selectedArtistName != null -> {
-            NestedLibraryBrowse(
-                selectedAlbumName = null,
                 selectedArtistName = selectedArtistName,
-                selectedGenreName = null,
-                viewMode = LibraryViewMode.ALBUM_GROUPS,
-                viewModel = viewModel,
-                currentSongIdFlow = currentSongIdFlow,
-                isSelectionMode = isMultiSelectMode,
-                selectedSongIds = selectedSongIds,
-                collapsedAlbumNames = collapsedAlbumNames,
-                sortOption = sortOption,
-                sortDirection = sortDirection,
-                actions = actions,
-                onToggleSelect = onToggleSelect
-            )
-        }
-
-        selectedGenreName != null -> {
-            NestedLibraryBrowse(
-                selectedAlbumName = null,
-                selectedArtistName = null,
                 selectedGenreName = selectedGenreName,
-                viewMode = LibraryViewMode.ALBUM_GROUPS,
+                viewMode = if (selectedAlbumName != null) LibraryViewMode.FLAT else LibraryViewMode.ALBUM_GROUPS,
                 viewModel = viewModel,
                 currentSongIdFlow = currentSongIdFlow,
                 isSelectionMode = isMultiSelectMode,

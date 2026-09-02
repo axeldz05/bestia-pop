@@ -577,7 +577,7 @@ private fun IdentifySourceBlock(
                 song.year.takeIf { it in 1000..9999 }?.let { add(it.toString()) }
                 albumTrackDisplayNumber(song.trackNumber).takeIf { it > 0 }?.let { add("Pista $it") }
                 if (!sourceHints.isNullOrBlank()) add("Origen: $sourceHints")
-                add(confidenceLabel(confidence))
+                add(confidence.label)
             }.joinToString(" · ")
             Text(
                 text = meta,
@@ -707,11 +707,7 @@ fun IdentifyCandidateRow(
 
 @Composable
 private fun ConfidenceChip(score: Float) {
-    val label = when {
-        score >= IdentifyRanking.HIGH_SCORE -> "Alta"
-        score >= IdentifyRanking.MEDIUM_SCORE -> "Posible"
-        else -> "Baja"
-    }
+    val label = IdentifyRanking.scoreToConfidence(score).label
     Text(
         text = label,
         style = MaterialTheme.typography.labelSmall,
@@ -901,9 +897,3 @@ private fun IdentifyReviewFooter(
     }
 }
 
-private fun confidenceLabel(confidence: IdentifyConfidence): String = when (confidence) {
-    IdentifyConfidence.HIGH -> "Alta"
-    IdentifyConfidence.MEDIUM -> "Posible"
-    IdentifyConfidence.LOW -> "Baja"
-    IdentifyConfidence.NONE -> "Sin match"
-}

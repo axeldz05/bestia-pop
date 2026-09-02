@@ -423,12 +423,6 @@ fun DiscoverRecentSearchesView(
     }
 }
 
-fun albumLibraryStatusMessage(status: ItemLibraryStatus): String = when (status) {
-    ItemLibraryStatus.DOWNLOADED -> "El álbum ya está descargado en tu biblioteca"
-    ItemLibraryStatus.SAVED_REMOTE -> "El álbum ya está guardado en tu biblioteca"
-    ItemLibraryStatus.NOT_IN_LIBRARY -> ""
-}
-
 /** Level 2: Track library action buttons (Downloaded, Saved Remote, Download). */
 @Composable
 fun TrackLibraryActionButtons(
@@ -530,7 +524,7 @@ fun AlbumLibraryHeaderButton(
     when (status) {
         ItemLibraryStatus.DOWNLOADED -> {
             FilledTonalButton(
-                onClick = { onAlreadyInLibrary(albumLibraryStatusMessage(status)) },
+                onClick = { onAlreadyInLibrary(status.albumMessage) },
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
             ) {
                 Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -540,7 +534,7 @@ fun AlbumLibraryHeaderButton(
         }
         ItemLibraryStatus.SAVED_REMOTE -> {
             OutlinedButton(
-                onClick = { onAlreadyInLibrary(albumLibraryStatusMessage(status)) },
+                onClick = { onAlreadyInLibrary(status.albumMessage) },
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
             ) {
                 Icon(Icons.Default.BookmarkAdded, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -570,16 +564,17 @@ fun DiscoverMediaCard(
     title: String,
     subtitle: String,
     artworkUri: String?,
-    cardWidth: Dp,
-    imageSize: Dp,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    cardWidth: Dp? = null,
+    imageSize: Dp? = null,
+    aspectRatio: Float = 1f,
     topEndBadge: @Composable (BoxScope.() -> Unit)? = null,
     bottomEndAction: @Composable (BoxScope.() -> Unit)? = null
 ) {
     Card(
         modifier = modifier
-            .width(cardWidth)
+            .then(if (cardWidth != null) Modifier.width(cardWidth) else Modifier.fillMaxWidth())
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
@@ -587,7 +582,14 @@ fun DiscoverMediaCard(
         )
     ) {
         Column(modifier = Modifier.padding(8.dp)) {
-            Box(modifier = Modifier.size(imageSize)) {
+            val imageBoxModifier = if (imageSize != null) {
+                Modifier.size(imageSize)
+            } else {
+                Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(aspectRatio)
+            }
+            Box(modifier = imageBoxModifier) {
                 ArtworkThumbnail(
                     artworkUri = artworkUri,
                     size = imageSize,
@@ -608,14 +610,62 @@ fun DiscoverMediaCard(
                 overflow = TextOverflow.Ellipsis
             )
 
-            Text(
-                text = subtitle,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
+            if (subtitle.isNotEmpty()) {
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
         }
+    }
+}
+
+/** Level 1: Reusable top-end badge container for media cards. */
+@Composable
+fun BoxScope.MediaCardBadge(
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit
+) {
+    Box(
+        modifier = modifier
+            .align(Alignment.TopEnd)
+            .padding(4.dp)
+            .size(26.dp)
+            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.85f), CircleShape),
+        contentAlignment = Alignment.Center
+    ) {
+        content()
+    }
+}
+
+/** Level 1: Reusable bottom-end circular action button for media cards. */
+@Composable
+fun BoxScope.MediaCardAction(
+    onClick: () -> Unit,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    contentDescription: String?,
+    modifier: Modifier = Modifier,
+    containerColor: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.primary,
+    contentColor: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.onPrimary,
+    size: Dp = 36.dp
+) {
+    IconButton(
+        onClick = onClick,
+        modifier = modifier
+            .align(Alignment.BottomEnd)
+            .padding(4.dp)
+            .size(size)
+            .background(containerColor, CircleShape)
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = contentDescription,
+            tint = contentColor,
+            modifier = Modifier.size(size * 0.55f)
+        )
     }
 }
 
@@ -638,19 +688,9 @@ fun DiscoverTrackCard(
         onClick = onPlay,
         modifier = modifier,
         topEndBadge = {
-            if (status == ItemLibraryStatus.DOWNLOADED) {
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(4.dp)
-                        .size(26.dp)
-                        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.85f), CircleShape),
-                    contentAlignment = Alignment.Center
-                ) {
-                    IconButton(
-                        onClick = onAlreadyInLibrary,
-                        modifier = Modifier.size(26.dp)
-                    ) {
+            when (status) {
+                ItemLibraryStatus.DOWNLOADED -> MediaCardBadge {
+                    IconButton(onClick = onAlreadyInLibrary, modifier = Modifier.size(26.dp)) {
                         Icon(
                             imageVector = Icons.Default.CheckCircle,
                             contentDescription = "En la biblioteca",
@@ -659,15 +699,7 @@ fun DiscoverTrackCard(
                         )
                     }
                 }
-            } else if (status == ItemLibraryStatus.SAVED_REMOTE) {
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(4.dp)
-                        .size(26.dp)
-                        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.85f), CircleShape),
-                    contentAlignment = Alignment.Center
-                ) {
+                ItemLibraryStatus.SAVED_REMOTE -> MediaCardBadge {
                     Icon(
                         imageVector = Icons.Default.BookmarkAdded,
                         contentDescription = "Guardado (remoto)",
@@ -675,24 +707,15 @@ fun DiscoverTrackCard(
                         modifier = Modifier.size(16.dp)
                     )
                 }
+                ItemLibraryStatus.NOT_IN_LIBRARY -> Unit
             }
         },
         bottomEndAction = {
-            IconButton(
+            MediaCardAction(
                 onClick = onPlay,
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(4.dp)
-                    .size(36.dp)
-                    .background(MaterialTheme.colorScheme.primary, CircleShape)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.PlayArrow,
-                    contentDescription = "Reproducir",
-                    tint = MaterialTheme.colorScheme.onPrimary,
-                    modifier = Modifier.size(20.dp)
-                )
-            }
+                icon = Icons.Default.PlayArrow,
+                contentDescription = "Reproducir"
+            )
         }
     )
 }
@@ -853,7 +876,7 @@ fun DiscoverHomeFeedView(
                                 onSave = { onSaveAlbum(album) },
                                 status = albumStatus,
                                 onAlreadySaved = {
-                                    onAlreadyInLibrary(albumLibraryStatusMessage(albumStatus))
+                                    onAlreadyInLibrary(albumStatus.albumMessage)
                                 }
                             )
                         }
@@ -960,7 +983,7 @@ fun DiscoverSearchResultsView(
                             onSave = { onSaveAlbum(album) },
                             status = albumStatus,
                             onAlreadySaved = {
-                                onAlreadyInLibrary(albumLibraryStatusMessage(albumStatus))
+                                onAlreadyInLibrary(albumStatus.albumMessage)
                             }
                         )
                     }
@@ -979,30 +1002,12 @@ fun DiscoverSearchResultsView(
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     items(playlists) { playlist ->
-                        Card(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { onSelectPlaylist(playlist) },
-                            shape = RoundedCornerShape(16.dp)
-                        ) {
-                            Column(modifier = Modifier.padding(8.dp)) {
-                                ArtworkThumbnail(
-                                    artworkUri = playlist.coverUrl,
-                                    size = null,
-                                    cornerRadius = 12.dp,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .aspectRatio(1f)
-                                )
-                                Spacer(modifier = Modifier.height(6.dp))
-                                Text(
-                                    text = playlist.title,
-                                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                        }
+                        DiscoverMediaCard(
+                            title = playlist.title,
+                            subtitle = "",
+                            artworkUri = playlist.coverUrl,
+                            onClick = { onSelectPlaylist(playlist) }
+                        )
                     }
                 }
             }

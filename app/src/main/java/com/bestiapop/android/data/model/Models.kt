@@ -51,7 +51,15 @@ enum class IdentifyConfidence {
     HIGH,
     MEDIUM,
     LOW,
-    NONE
+    NONE;
+
+    val label: String
+        get() = when (this) {
+            HIGH -> "Alta"
+            MEDIUM -> "Posible"
+            LOW -> "Baja"
+            NONE -> "Sin match"
+        }
 }
 
 /**

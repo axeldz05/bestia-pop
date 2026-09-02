@@ -9,6 +9,7 @@ import com.bestiapop.android.data.model.toListenBrainzCatalogTrack
 import com.bestiapop.android.data.network.DeezerArtistHit
 import com.bestiapop.android.data.network.ListenBrainzClient
 import com.bestiapop.android.data.network.MetadataFetcher
+import com.bestiapop.android.domain.util.IdentifyRanking
 import com.bestiapop.android.domain.util.TrackMatchKeys
 import com.bestiapop.android.domain.util.matchKey
 import kotlinx.coroutines.Dispatchers
@@ -103,7 +104,7 @@ class GetDiscoverRecommendationsUseCase {
                     deezerTracks.addAll(chartTracks)
                 }
 
-                recTracks = deezerTracks.distinctBy { it.matchKey().ifEmpty { "${it.artist}|${it.title}".lowercase() } }.take(25)
+                recTracks = deezerTracks.distinctCatalogTracks(25)
                 source = "Deezer"
             }
 
@@ -133,7 +134,7 @@ class GetDiscoverRecommendationsUseCase {
                     }
                 }
             }
-            recAlbums = albums.distinctBy { TrackMatchKeys.matchKey(it.artist, it.title).ifEmpty { "${it.artist}|${it.title}".lowercase() } }.take(16)
+            recAlbums = albums.distinctCatalogAlbums(16)
 
             val chartTracks = chartTracksDeferred.await()
 
@@ -159,7 +160,7 @@ class GetDiscoverRecommendationsUseCase {
         val scoreByArtist = HashMap<String, Long>()
         for (song in librarySongs) {
             val artist = song.artist.trim()
-            if (artist.isBlank() || artist.equals("Unknown Artist", ignoreCase = true)) continue
+            if (artist.isBlank() || IdentifyRanking.isPlaceholderArtist(artist)) continue
             val lastPlayed = playStats[song.id] ?: song.lastPlayedAt
             val currentScore = scoreByArtist[artist] ?: 0L
             scoreByArtist[artist] = currentScore + (if (lastPlayed > 0) 10L else 1L)
@@ -170,3 +171,10 @@ class GetDiscoverRecommendationsUseCase {
             .map { it.key }
     }
 }
+
+private fun List<OnlineCatalogTrack>.distinctCatalogTracks(limit: Int): List<OnlineCatalogTrack> =
+    distinctBy { it.matchKey().ifEmpty { "${it.artist}|${it.title}".lowercase() } }.take(limit)
+
+private fun List<CatalogAlbum>.distinctCatalogAlbums(limit: Int): List<CatalogAlbum> =
+    distinctBy { TrackMatchKeys.matchKey(it.artist, it.title).ifEmpty { "${it.artist}|${it.title}".lowercase() } }.take(limit)
+

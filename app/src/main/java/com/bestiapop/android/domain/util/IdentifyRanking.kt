@@ -17,6 +17,13 @@ object IdentifyRanking {
     const val HIGH_GAP = 0.12f
     const val MEDIUM_SCORE = 0.55f
     const val TOP_N = 5
+
+    fun scoreToConfidence(score: Float): IdentifyConfidence = when {
+        score >= HIGH_SCORE -> IdentifyConfidence.HIGH
+        score >= MEDIUM_SCORE -> IdentifyConfidence.MEDIUM
+        score > 0f -> IdentifyConfidence.LOW
+        else -> IdentifyConfidence.NONE
+    }
     /** Page size for “mostrar más” in identify review. */
     const val PAGE_SIZE = 5
     /** Catalog fetch page (Deezer/iTunes limit). */

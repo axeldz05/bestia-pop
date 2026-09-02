@@ -636,23 +636,9 @@ class GetLibrarySongsUseCase {
         return preferredAlbumDisplayName(names)
     }
 
-    private fun dominantArtistFromSongs(songs: List<Song>, default: String = "Unknown Artist"): String {
-        if (songs.isEmpty()) return default
-        if (songs.size == 1) return songs.first().artist.ifBlank { default }
-        val counts = HashMap<String, Int>(4)
-        for (i in songs.indices) {
-            val artist = songs[i].artist
-            if (artist.isNotBlank()) {
-                counts[artist] = (counts[artist] ?: 0) + 1
-            }
-        }
-        if (counts.isEmpty()) return default
-        return counts.entries.maxWith(
-            compareBy<Map.Entry<String, Int>> { it.value }
-                .thenBy { -it.key.length }
-                .thenBy { it.key }
-        ).key
-    }
+    private fun dominantArtistFromSongs(songs: List<Song>, default: String = "Unknown Artist"): String =
+        dominantNonBlank(songs.map { it.artist }, default)
+
 
     private fun songsInGroupedAlbum(
         grouped: Map<String, List<Song>>,

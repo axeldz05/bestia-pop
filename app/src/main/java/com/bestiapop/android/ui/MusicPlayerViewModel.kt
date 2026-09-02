@@ -300,27 +300,27 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             started = SharingStarted.Eagerly,
             initialValue = emptyMap()
         )
-    val savedAlbumsIndex: StateFlow<Map<String, List<Song>>> = rawSongs
+    private data class SavedAlbumIndices(
+        val byArtistAndAlbum: Map<String, List<Song>> = emptyMap(),
+        val byAlbumTitle: Map<String, List<Song>> = emptyMap()
+    )
+
+    private val savedAlbumsIndices: StateFlow<SavedAlbumIndices> = rawSongs
         .map { songs ->
-            songs.groupBy {
-                val albumKey = albumIdentityKey(it.album)
-                val artistKey = TrackMatchKeys.normalize(it.artist)
-                "$albumKey|$artistKey"
+            val byArtist = HashMap<String, MutableList<Song>>()
+            val byTitle = HashMap<String, MutableList<Song>>()
+            for (song in songs) {
+                val albumKey = albumIdentityKey(song.album)
+                val artistKey = TrackMatchKeys.normalize(song.artist)
+                byArtist.getOrPut("$albumKey|$artistKey") { ArrayList() }.add(song)
+                byTitle.getOrPut(albumKey) { ArrayList() }.add(song)
             }
+            SavedAlbumIndices(byArtist, byTitle)
         }
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.Eagerly,
-            initialValue = emptyMap()
-        )
-    val savedAlbumsByTitleIndex: StateFlow<Map<String, List<Song>>> = rawSongs
-        .map { songs ->
-            songs.groupBy { albumIdentityKey(it.album) }
-        }
-        .stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.Eagerly,
-            initialValue = emptyMap()
+            initialValue = SavedAlbumIndices()
         )
     val playlists = repository.playlistsFlow
 
@@ -1016,8 +1016,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 .collect { artists ->
                     val newPhotos = mutableMapOf<String, String>()
                     val unattempted = artists.filter {
-                        it.isNotBlank() && !it.equals("Unknown Artist", ignoreCase = true) &&
-                                it !in artistPhotoAttempted
+                        !IdentifyRanking.isPlaceholderArtist(it) && it !in artistPhotoAttempted
                     }
                     for (artist in unattempted) {
                         artistPhotoAttempted.add(artist)
@@ -1192,8 +1191,10 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     /** Returns status of album in library (DOWNLOADED, SAVED_REMOTE, or NOT_IN_LIBRARY) in O(1). */
     fun getAlbumLibraryStatus(albumTitle: String, artistName: String): ItemLibraryStatus {
-        val key = "${albumIdentityKey(albumTitle)}|${TrackMatchKeys.normalize(artistName)}"
-        val songs = savedAlbumsIndex.value[key] ?: savedAlbumsByTitleIndex.value[albumIdentityKey(albumTitle)]
+        val indices = savedAlbumsIndices.value
+        val albumKey = albumIdentityKey(albumTitle)
+        val key = "$albumKey|${TrackMatchKeys.normalize(artistName)}"
+        val songs = indices.byArtistAndAlbum[key] ?: indices.byAlbumTitle[albumKey]
         if (songs.isNullOrEmpty()) return ItemLibraryStatus.NOT_IN_LIBRARY
         return if (songs.any { !it.isRemote }) ItemLibraryStatus.DOWNLOADED else ItemLibraryStatus.SAVED_REMOTE
     }

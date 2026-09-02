@@ -134,7 +134,7 @@ class AppDatabaseMigrationTest {
         val helper = FrameworkSQLiteOpenHelperFactory().create(
             SupportSQLiteOpenHelper.Configuration.builder(context)
                 .name(DATABASE_NAME)
-                .callback(object : SupportSQLiteOpenHelper.Callback(11) {
+                .callback(object : SupportSQLiteOpenHelper.Callback(12) {
                     override fun onCreate(db: SupportSQLiteDatabase) {}
                     override fun onUpgrade(db: SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) {}
                 })
@@ -155,7 +155,50 @@ class AppDatabaseMigrationTest {
     }
 
     @Test
-    fun migration1To11_runsWholeChainAndKeepsLegacyLibraryDataUsable() = runTest {
+    fun migration11To12_createsTitleIndexOnSongsTable() = runTest {
+        createLegacyDatabase(version = 11, schema = ::createVersion11Schema) { db ->
+            db.execSQL(
+                """
+                INSERT INTO songs (
+                    id, uriString, title, artist, album, genre, durationMs, year, trackNumber,
+                    artworkUri, lyrics, folderPath, dateAdded, lastPlayedAt
+                ) VALUES (
+                    1, '/music/song1.mp3', 'Song 1', 'Artist A', 'Album X', 'Pop',
+                    200000, 2022, 1, NULL, NULL, '/music', 123456, 0
+                )
+                """.trimIndent()
+            )
+        }
+
+        val database = AppDatabase.getDatabase(context)
+        val musicDao = database.musicDao()
+        val songs = musicDao.getAllSongs()
+        assertEquals(1, songs.size)
+        assertEquals("Song 1", songs[0].title)
+
+        val helper = FrameworkSQLiteOpenHelperFactory().create(
+            SupportSQLiteOpenHelper.Configuration.builder(context)
+                .name(DATABASE_NAME)
+                .callback(object : SupportSQLiteOpenHelper.Callback(12) {
+                    override fun onCreate(db: SupportSQLiteDatabase) {}
+                    override fun onUpgrade(db: SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) {}
+                })
+                .build()
+        )
+        val db = helper.readableDatabase
+        val cursor = db.query("PRAGMA index_list('songs')")
+        val indexNames = mutableListOf<String>()
+        while (cursor.moveToNext()) {
+            indexNames.add(cursor.getString(cursor.getColumnIndexOrThrow("name")))
+        }
+        cursor.close()
+        helper.close()
+
+        assertTrue(indexNames.contains("index_songs_title"))
+    }
+
+    @Test
+    fun migration1To12_runsWholeChainAndKeepsLegacyLibraryDataUsable() = runTest {
         createLegacyDatabase(version = 1, schema = ::createVersion1Schema) { db ->
             db.execSQL(
                 legacySongInsert(
@@ -389,6 +432,13 @@ class AppDatabaseMigrationTest {
             )
             """.trimIndent()
         )
+    }
+
+    private fun createVersion11Schema(db: SupportSQLiteDatabase) {
+        createVersion10Schema(db)
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_songs_album` ON `songs` (`album`)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_songs_artist` ON `songs` (`artist`)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_songs_dateAdded` ON `songs` (`dateAdded`)")
     }
 
     private fun createSongsTableWithoutLastPlayed(db: SupportSQLiteDatabase) {

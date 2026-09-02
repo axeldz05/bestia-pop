@@ -38,6 +38,31 @@ class GetLibrarySongsUseCase {
         }
     }
 
+    private data class CachedProjection(
+        val songsRef: Any,
+        val songsSize: Int,
+        val query: String,
+        val sortOption: SortOption,
+        val sortDirection: SortDirection,
+        val overrides: Map<String, AlbumOverride>,
+        val listMode: LibraryViewMode,
+        val emphasizeLastPlayed: Boolean,
+        val projection: CatalogProjection
+    )
+
+    private data class CachedGroupedAlbums(
+        val songsRef: Any,
+        val songsSize: Int,
+        val grouped: Map<String, List<Song>>,
+        val inheritedArtwork: Map<Long, String>
+    )
+
+    @Volatile
+    private var lastCachedProjection: CachedProjection? = null
+
+    @Volatile
+    private var lastCachedGrouped: CachedGroupedAlbums? = null
+
     fun execute(
         songs: List<Song>,
         query: String,
@@ -56,6 +81,20 @@ class GetLibrarySongsUseCase {
         emphasizeLastPlayed: Boolean = false,
         haystackById: Map<Long, String>? = null
     ): CatalogProjection {
+        val cached = lastCachedProjection
+        if (cached != null &&
+            cached.songsRef === songs &&
+            cached.songsSize == songs.size &&
+            cached.query == query &&
+            cached.sortOption == sortOption &&
+            cached.sortDirection == sortDirection &&
+            cached.overrides == overrides &&
+            cached.listMode == listMode &&
+            cached.emphasizeLastPlayed == emphasizeLastPlayed
+        ) {
+            return cached.projection
+        }
+
         val filtered = filterSongs(songs, query, haystackById)
         if (filtered.isEmpty()) {
             return CatalogProjection.EMPTY
@@ -66,10 +105,27 @@ class GetLibrarySongsUseCase {
         } else {
             filtered
         }
-        val grouped = songsByAlbumBucket(pool, IdentifyRanking::isGenericAlbum)
-        val inherited = inheritedArtworkBySongId(pool, grouped)
+
+        val cachedGrouped = lastCachedGrouped
+        val (grouped, inherited) = if (cachedGrouped != null &&
+            cachedGrouped.songsRef === filtered &&
+            cachedGrouped.songsSize == filtered.size
+        ) {
+            cachedGrouped.grouped to cachedGrouped.inheritedArtwork
+        } else {
+            val g = songsByAlbumBucket(pool, IdentifyRanking::isGenericAlbum)
+            val inh = inheritedArtworkBySongId(pool, g)
+            lastCachedGrouped = CachedGroupedAlbums(
+                songsRef = filtered,
+                songsSize = filtered.size,
+                grouped = g,
+                inheritedArtwork = inh
+            )
+            g to inh
+        }
+
         val albums = albumsFromGrouped(grouped, overrides, sortOption, sortDirection)
-        return CatalogProjection(
+        val projection = CatalogProjection(
             songs = pool,
             albums = albums,
             list = listModelFrom(
@@ -82,6 +138,19 @@ class GetLibrarySongsUseCase {
                 inheritedArtwork = inherited
             )
         )
+
+        lastCachedProjection = CachedProjection(
+            songsRef = songs,
+            songsSize = songs.size,
+            query = query,
+            sortOption = sortOption,
+            sortDirection = sortDirection,
+            overrides = overrides,
+            listMode = listMode,
+            emphasizeLastPlayed = emphasizeLastPlayed,
+            projection = projection
+        )
+        return projection
     }
 
     fun recentSongs(

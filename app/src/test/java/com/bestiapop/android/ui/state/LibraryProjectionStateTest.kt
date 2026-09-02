@@ -313,7 +313,7 @@ class LibraryProjectionStateTest {
             projectionDispatcher = dispatcher
         )
         val collector = backgroundScope.launch(dispatcher) {
-            combine(state.songs, state.songList, state.albums) { _, _, _ -> }.collect {}
+            combine(state.songs, state.songList, state.albums, state.catalogLoaded) { _, _, _, _ -> }.collect {}
         }
 
         rawSongs.value = listOf(

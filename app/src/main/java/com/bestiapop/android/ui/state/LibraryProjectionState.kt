@@ -45,17 +45,32 @@ class LibraryProjectionState internal constructor(
     prefsReady: Flow<Boolean> = flowOf(true),
     projectionDispatcher: CoroutineDispatcher = Dispatchers.Default
 ) {
-    private data class SongListSpec(
+    private data class SortCriteria(
+        val option: SortOption,
+        val direction: SortDirection
+    )
+
+    private val sortCriteria: Flow<SortCriteria> = combine(sortOption, sortDirection, ::SortCriteria)
+        .distinctUntilChanged()
+
+    private data class DisplaySpec(
         val viewMode: LibraryViewMode,
-        val browseFilter: LibraryBrowseFilter,
-        val sortOption: SortOption,
-        val sortDirection: SortDirection,
+        val browseFilter: LibraryBrowseFilter
+    )
+
+    private val displaySpec: Flow<DisplaySpec> = combine(viewMode, browseFilter, ::DisplaySpec)
+        .distinctUntilChanged()
+
+    private data class SongListSpec(
+        val display: DisplaySpec,
+        val sort: SortCriteria,
         val overrides: Map<String, AlbumOverride>
     )
 
     private val overridesByAlbum: StateFlow<Map<String, AlbumOverride>> = albumOverrides
         .map { overrides -> overrides.associateBy { it.albumKey } }
-        .stateIn(scope, SharingStarted.Eagerly, emptyMap())
+        .distinctUntilChanged()
+        .stateInUi(scope, emptyMap())
 
     private val catalogSongs: Flow<List<Song>> = rawSongs
         .distinctUntilChanged(::sameLibraryCatalog)
@@ -74,8 +89,7 @@ class LibraryProjectionState internal constructor(
     private data class CatalogFilter(
         val songs: List<Song>,
         val query: String,
-        val sortOption: SortOption,
-        val sortDirection: SortDirection,
+        val sort: SortCriteria,
         val paused: Boolean
     )
 
@@ -84,19 +98,32 @@ class LibraryProjectionState internal constructor(
         val projection: GetLibrarySongsUseCase.CatalogProjection
     )
 
+    private val filterFlow: Flow<CatalogFilter> = combine(
+        catalogSongs,
+        catalogQuery,
+        sortCriteria,
+        overlayOpen
+    ) { songs, query, sort, paused ->
+        CatalogFilter(songs, query, sort, paused)
+    }.distinctUntilChanged()
+
+    private val specFlow: Flow<SongListSpec> = combine(
+        displaySpec,
+        sortCriteria,
+        overridesByAlbum,
+        ::SongListSpec
+    ).distinctUntilChanged()
+
     private val catalog: StateFlow<CatalogSnapshot> = combine(
-        combine(catalogSongs, catalogQuery, sortOption, sortDirection, overlayOpen) {
-                songs, query, sort, direction, paused ->
-            CatalogFilter(songs, query, sort, direction, paused)
-        },
+        filterFlow,
         prefsReady,
-        combine(viewMode, browseFilter, sortOption, sortDirection, overridesByAlbum, ::SongListSpec)
+        specFlow
     ) { filter, ready, spec ->
         if (filter.paused || !ready) {
             null
         } else {
-            val listMode = if (spec.viewMode == LibraryViewMode.ALBUM_GROUPS &&
-                spec.browseFilter != LibraryBrowseFilter.RECENT
+            val listMode = if (spec.display.viewMode == LibraryViewMode.ALBUM_GROUPS &&
+                spec.display.browseFilter != LibraryBrowseFilter.RECENT
             ) {
                 LibraryViewMode.ALBUM_GROUPS
             } else {
@@ -115,8 +142,8 @@ class LibraryProjectionState internal constructor(
             val projection = useCase.projectCatalog(
                 songs = filter.songs,
                 query = filter.query,
-                sortOption = filter.sortOption,
-                sortDirection = filter.sortDirection,
+                sortOption = filter.sort.option,
+                sortDirection = filter.sort.direction,
                 overrides = spec.overrides,
                 listMode = listMode,
                 haystackById = haystack
@@ -134,9 +161,8 @@ class LibraryProjectionState internal constructor(
     }
         .filterNotNull()
         .flowOn(projectionDispatcher)
-        .stateIn(
+        .stateInUi(
             scope,
-            SharingStarted.Eagerly,
             CatalogSnapshot(
                 loaded = false,
                 projection = GetLibrarySongsUseCase.CatalogProjection.EMPTY
@@ -146,40 +172,38 @@ class LibraryProjectionState internal constructor(
     val catalogLoaded: StateFlow<Boolean> = catalog
         .map { it.loaded }
         .distinctUntilChanged()
-        .stateIn(scope, SharingStarted.Eagerly, false)
+        .stateInUi(scope, false)
 
     val songs: StateFlow<List<Song>> = catalog
         .map { it.projection.songs }
-        .stateIn(scope, SharingStarted.Eagerly, emptyList())
+        .stateInUi(scope, emptyList())
 
     val albums: StateFlow<List<Album>> = catalog
         .map { it.projection.albums }
-        .stateIn(scope, SharingStarted.Eagerly, emptyList())
+        .stateInUi(scope, emptyList())
 
     val artists: StateFlow<List<Artist>> = combine(
         songs,
         artistPhotos,
-        sortOption,
-        sortDirection
-    ) { projectedSongs, photos, sort, direction ->
-        useCase.extractArtists(projectedSongs, photos, sort, direction)
+        sortCriteria
+    ) { projectedSongs, photos, sort ->
+        useCase.extractArtists(projectedSongs, photos, sort.option, sort.direction)
     }
         .flowOn(projectionDispatcher)
         .stateInUi(scope, emptyList())
 
     val genres: StateFlow<List<GenreGroup>> = combine(
         songs,
-        sortOption,
-        sortDirection
-    ) { projectedSongs, sort, direction ->
-        useCase.extractGenres(projectedSongs, sort, direction)
+        sortCriteria
+    ) { projectedSongs, sort ->
+        useCase.extractGenres(projectedSongs, sort.option, sort.direction)
     }
         .flowOn(projectionDispatcher)
         .stateInUi(scope, emptyList())
 
     val songList: StateFlow<LibraryListModel> = catalog
         .map { it.projection.list }
-        .stateIn(scope, SharingStarted.Eagerly, LibraryListModel.EMPTY)
+        .stateInUi(scope, LibraryListModel.EMPTY)
 
     val recentSongs: StateFlow<List<Song>> = combine(
         rawSongs,

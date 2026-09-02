@@ -9,6 +9,7 @@ import androidx.room.PrimaryKey
     tableName = "songs",
     indices = [
         Index(value = ["uriString"], unique = true),
+        Index(value = ["title"]),
         Index(value = ["album"]),
         Index(value = ["artist"]),
         Index(value = ["dateAdded"])

@@ -19,7 +19,7 @@ Módulo único Gradle: `:app`. Nombre del proyecto: **BestiaPop**.
 | UI | Jetpack Compose + Material3 |
 | Estado UI | `MusicPlayerViewModel` (AndroidViewModel) + StateFlow; owners tipados en `ui/state` para proyecciones, cargas, catálogo y navegación; playback observado desde `PlaybackRuntime` process-scoped |
 | Reproducción | Media3 1.11.0 ExoPlayer + `MediaLibraryService` (`MusicService`) |
-| Persistencia | Room (`bestiapop_music_db`, v10) |
+| Persistencia | Room (`bestiapop_music_db`, v12) |
 | Tags de archivo | jaudiotagger 3 (`AudioTagReader` / `AudioTagWriter`) + `MediaMetadataRetriever` fallback |
 | Preferencias | DataStore (`ThemePreferencesRepository`, `ListenBrainzPreferencesRepository`, `PlaybackPreferencesRepository`, `DownloadPreferencesRepository` metered/path prefs, `LibraryPreferencesRepository` display+nav, `ActiveDownloadsStore`, `IdentifyReviewStore` cola identify, `IdentifyWorkStore` lote identify en curso, `PlaybackSessionStore` last-played + cola, `AppUpdateCheckStore` last GitHub check) |
 | Red / catálogo | OkHttp + `MetadataFetcher` (iTunes/Deezer) + `YouTubeExtractor` + `ListenBrainzClient` + `MusicBrainzClient` (identify + Cover Art Archive, 1 req/s; timeout no reintenta duration y circuit-skip 5 min tras 3 fallos) + `GitHubUpdateClient` (releases) |
@@ -99,7 +99,7 @@ Ownership process-scoped: `service/PlaybackRuntime.kt` (`create`, `attachUi`, `d
 
 Entidades: filas de app en `data.model` — `Song` (`songs`), `AlbumOverride` (`album_overrides`), `SongPlayStat` (`song_play_stats`). El resto sigue en `data/db`: `PlaylistEntity`, `PlaylistSongCrossRef`, `PlaylistPendingTrackEntity`, `PendingListenEntity`.
 Índice único Room: `songs.uriString`. Deduplicación lógica por `matchKey(artist, title)` en filtros de scan / download conflict (`Music/BestiaPop` app-managed). I/O local solo vía `MusicFileStore` / `AudioPersistRef.canonicalize`: BestiaPop = path absoluto; MediaStore ajeno = `content://media`. One-shot `migrateCanonicalAudioUris` (`canonical_audio_uris_migrated`; identity-slim + `updateSongUri`, no clobbea `lyrics`). Migrator dedup histórico: branch `archive/library-dedup-v1-migrator`.
-Migraciones Room: 1→2 (dedupe + unique index), 2→3 (playlist description/coverUri), 3→4 (pending_listens), 4→5 (playlist_pending_tracks), 5→6 (`album_overrides`), 6→7 (index `playlist_song_cross_ref.songId`), 7→8 (`songs.lastPlayedAt`), 8→9 (`playlist_pending_tracks.trackNumber`), 9→10 (`song_play_stats` + copy de `songs.lastPlayedAt > 0`).
+Migraciones Room: 1→2 (dedupe + unique index), 2→3 (playlist description/coverUri), 3→4 (pending_listens), 4→5 (playlist_pending_tracks), 5→6 (`album_overrides`), 6→7 (index `playlist_song_cross_ref.songId`), 7→8 (`songs.lastPlayedAt`), 8→9 (`playlist_pending_tracks.trackNumber`), 9→10 (`song_play_stats` + copy de `songs.lastPlayedAt > 0`), 10→11 (indices `album`, `artist`, `dateAdded`), 11→12 (index `title`).
 Downgrade (instalar un APK viejo) sigue siendo destructivo para que la app abra, pero **no es silencioso**: `AppDatabase.VERSION` vs `LibraryPreferencesRepository.highestDbVersionSeen` (fuera de Room, sobrevive el wipe) → `warnIfDatabaseWasDowngraded` avisa que se perdieron playlists y overrides.
 
 ## Relacionado

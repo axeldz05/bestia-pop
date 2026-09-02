@@ -29,16 +29,38 @@ import kotlinx.coroutines.SupervisorJob
 class BestiaPopApplication : Application(), ImageLoaderFactory {
     private val processScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
-    lateinit var musicRepository: MusicRepository
-        private set
+    val musicRepository: MusicRepository by lazy {
+        MusicRepository(this)
+    }
 
     val radioEngine: RadioEngine by lazy { createBestiaPopRadioEngine() }
 
-    internal lateinit var processDownloads: ProcessDownloadCoordinator
-        private set
+    internal val processDownloads: ProcessDownloadCoordinator by lazy {
+        ProcessDownloadCoordinator.create(
+            context = this,
+            scope = processScope,
+            onPlaylistTargetCompleted = { target, song ->
+                musicRepository.addSongToPlaylist(target.playlistId, song.id)
+                musicRepository.removePlaylistPendingTrack(
+                    playlistId = target.playlistId,
+                    artist = target.identity.artist,
+                    title = target.identity.title
+                )
+            }
+        )
+    }
 
-    internal lateinit var processDownloadRuntime: ProcessDownloadRuntime
-        private set
+    internal val processDownloadRuntime: ProcessDownloadRuntime by lazy {
+        ProcessDownloadRuntime.create(
+            context = this,
+            scope = processScope,
+            repository = musicRepository,
+            processDownloads = processDownloads,
+            acquireExecutionLease = { source ->
+                OnlineDownloadServiceLauncher.acquire(this, source)
+            }
+        )
+    }
 
     internal val processIdentifyRuntime: ProcessIdentifyRuntime by lazy {
         ProcessIdentifyRuntime.create(
@@ -60,8 +82,19 @@ class BestiaPopApplication : Application(), ImageLoaderFactory {
         }
     }
 
-    lateinit var playbackRuntime: PlaybackRuntime
-        private set
+    val playbackRuntime: PlaybackRuntime by lazy {
+        val saveWhileListeningDownloads = ProcessSaveWhileListeningCoordinator(
+            scope = processScope,
+            runtime = processDownloadRuntime
+        )
+        PlaybackRuntime.create(
+            context = this,
+            repository = musicRepository,
+            radioEngine = radioEngine,
+            pendingListenDao = AppDatabase.getDatabase(this).pendingListenDao(),
+            saveDownloads = saveWhileListeningDownloads
+        )
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -90,59 +123,25 @@ class BestiaPopApplication : Application(), ImageLoaderFactory {
                 PlaybackDiagnostics.log(PlaybackDiagnostics.TAG_LIFECYCLE, "${activity.javaClass.simpleName}.onDestroy(isFinishing=${activity.isFinishing})")
             }
         })
-
-        musicRepository = MusicRepository(this)
-        processDownloads = ProcessDownloadCoordinator.create(
-            context = this,
-            scope = processScope,
-            onPlaylistTargetCompleted = { target, song ->
-                musicRepository.addSongToPlaylist(target.playlistId, song.id)
-                musicRepository.removePlaylistPendingTrack(
-                    playlistId = target.playlistId,
-                    artist = target.identity.artist,
-                    title = target.identity.title
-                )
-            }
-        )
-        processDownloadRuntime = ProcessDownloadRuntime.create(
-            context = this,
-            scope = processScope,
-            repository = musicRepository,
-            processDownloads = processDownloads,
-            acquireExecutionLease = { source ->
-                OnlineDownloadServiceLauncher.acquire(this, source)
-            }
-        )
-        val saveWhileListeningDownloads = ProcessSaveWhileListeningCoordinator(
-            scope = processScope,
-            runtime = processDownloadRuntime
-        )
-        playbackRuntime = PlaybackRuntime.create(
-            context = this,
-            repository = musicRepository,
-            radioEngine = radioEngine,
-            pendingListenDao = AppDatabase.getDatabase(this).pendingListenDao(),
-            saveDownloads = saveWhileListeningDownloads
-        )
     }
 
     override fun newImageLoader(): ImageLoader {
         return ImageLoader.Builder(this)
             .memoryCache {
                 MemoryCache.Builder(this)
-                    .maxSizePercent(0.15)
+                    .maxSizePercent(0.25)
                     .build()
             }
             .diskCache {
                 DiskCache.Builder()
                     .directory(cacheDir.resolve("image_cache"))
-                    .maxSizeBytes(50L * 1024 * 1024)
+                    .maxSizeBytes(100L * 1024 * 1024)
                     .build()
             }
-            .crossfade(false)
+            .crossfade(true)
             .allowHardware(true)
             .allowRgb565(true)
-            .decoderDispatcher(Dispatchers.IO.limitedParallelism(2))
+            .decoderDispatcher(Dispatchers.IO.limitedParallelism(4))
             .respectCacheHeaders(false)
             .build()
     }

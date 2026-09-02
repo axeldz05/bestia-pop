@@ -249,7 +249,11 @@ Centro de descargas online → sección 2 (`DownloadsScreen`, tab Descargas).
 
 **Invariantes:**
 - Scrobbling solo si `ListenBrainzSettings.enabled` + token válido; offline encola en `pending_listens`. Runtime espera la primera emisión real de `ListenBrainzPreferencesRepository.settingsFlow` antes de decidir autosave o pedir Radio; nunca usa el objeto default del cold start.
-- Sección **Para Ti** / **Recomendados** en Playlists solo si `showDiscoverPlaylists` (`enabled && discoverEnabled && username`).
+- Sección **Para Ti** / **Recomendados** reside en la pestaña **Descubrir** (`DiscoverScreen`). `PlaylistsScreen` muestra únicamente las playlists locales del usuario.
+- En Descubrir, el usuario puede filtrar la fuente de recomendaciones entre **Ambos (Deezer + ListenBrainz)**, **Deezer**, y **ListenBrainz** (`DiscoverSourcePreference` en DataStore).
+- Al conectar ListenBrainz o cambiar credenciales, el feed de Descubrir y los relacionados se actualizan automáticamente.
+- Álbumes recomendados en Descubrir integran artistas y releases de ListenBrainz (además de Deezer).
+- Sección **"Buscar más relacionados"** (`GetTopRelatedItemsUseCase`) consolida los artistas, álbumes y canciones más escuchados de la biblioteca local (`playStats` / `lastPlayedAt`) y de ListenBrainz (stats de usuario / listens recientes), mostrando badges `Local`, `ListenBrainz` o `Local + ListenBrainz`, con acciones para explorar en catálogo o iniciar Radio.
 - Playlists Discover = `GET /1/user/{user}/playlists/createdfor`; detalle = `GET /1/playlist/{mbid}`.
 - CF Recomendados = `GET /1/cf/recommendation/user/{user}/recording` + metadata → match Local|Remote.
 - Match local por artist+title normalizado (`TrackMatchKeys.normalize` pliega case/puntuación/tildes; `matchMetasAgainstLibrary` / `matchAgainstLibrary`; L1 `buildLibraryIndex` + `lookupLocalSong` para radio); faltantes = `PlayableItem.Remote`. Rematch LB/CF tras descarga = `List.rematchLocals`. Query YT / id catálogo = `TrackMeta.youtubeSearchQuery` / `TrackIdentity.toCatalogTrack`.
@@ -261,11 +265,14 @@ Centro de descargas online → sección 2 (`DownloadsScreen`, tab Descargas).
 
 | Capacidad | Entry point |
 |-----------|-------------|
-| Prefs | `ListenBrainzPreferencesRepository` / `ListenBrainzSettings` (`saveWhileListening`, `saveWhileListeningPercent`) |
+| Prefs | `ListenBrainzPreferencesRepository` / `ListenBrainzSettings` (`saveWhileListening`, `saveWhileListeningPercent`) + `LibraryPreferencesRepository.discoverSourceFlow` |
 | Settings UI | `ListenBrainzSettingsScreen` — registrar + **Mostrar Para Ti** + **Guardar al escuchar** (+ slider %) |
 | Política de cambio de track | `PlaybackTrackChangePolicy.resolve` + `PlaybackChangeHint` / `PlaybackTrackChange` en `data/playback/PlaybackTrackChangePolicy.kt` |
 | Política Guardar al escuchar | `SaveWhileListeningPolicy.shouldSave` + `SaveWhileListeningEvent` en `data/listenbrainz/SaveWhileListeningPolicy.kt` |
 | Submit listens | `PlaybackRuntime` → `ListenTracker.onTrackChanged` / `ListenSyncCoordinator` → `ListenBrainzClient.submitListens` |
+| Stats y recientes LB | `ListenBrainzClient.fetchUserTopArtists`, `fetchUserTopReleases`, `fetchUserTopRecordings`, `fetchUserRecentListens` |
+| Buscar más relacionados | `GetTopRelatedItemsUseCase.execute` → `MusicPlayerViewModel.refreshTopRelatedFeed` |
+| Recomendaciones Descubrir | `GetDiscoverRecommendationsUseCase.execute(..., sourcePreference)` |
 | List Discover | `ListenBrainzClient.fetchCreatedForPlaylists` → `MusicPlayerViewModel.refreshListenBrainzDiscoverPlaylists` |
 | Abrir playlist | `openListenBrainzPlaylist` + `MatchListenBrainzTracksUseCase` |
 | Map a cola | `MatchedLbPlaylist.toPlayableItems` / `MatchedRemoteTrack.toPlayableItem` |
@@ -274,8 +281,8 @@ Centro de descargas online → sección 2 (`DownloadsScreen`, tab Descargas).
 | Import + descarga ya | `importListenBrainzPlaylistWithDownloads` / `downloadPlaylistPendingTracks` → `runTrackedDownload` (`LB_IMPORT`) |
 | Descarga manual Remote | `downloadRemoteItem` → `runTrackedDownload` (`DISCOVER`); UI `RemoteTrackPlaceholderRow.onDownload` en detalle LB/CF; NP `NowPlayingRemoteDownloadAction` |
 | CF Recomendados | `ListenBrainzClient.fetchCfRecordingRecommendations` → `FetchAndMatchCfRecommendationsUseCase` → `refreshCfRecommendations` / `openCfRecommendations` / `playMatchedTracks` / `shuffleMatchedTracks` |
-| UI sección | `PlaylistsScreen` — "Para Ti" + "Recomendados"; Guardar / Descargar faltantes / descarga por track; detalle local muestra pendientes |
-| Restore sesión | `MusicPlayerViewModel.navigation` → `UiNavigationState.playlistDetail` (`ListenBrainz` / `CfRecommendations`) + `UiNavigationState.selectedNavIndex`; fetch al hidratar/abrir tab Playlists; fallo (sin red, Discover off, API) → lista general + toast (`restoreDiscoverDetailOrFallback`) |
+| UI sección | `DiscoverScreen` — Fuente (Ambos/Deezer/LB), "Buscar más relacionados", "Para Ti" + "Recomendados", Canciones y Álbumes recomendados; detalle de playlist y CF con navegación interna |
+| Restore sesión | `MusicPlayerViewModel.navigation` → `UiNavigationState.playlistDetail` (`ListenBrainz` / `CfRecommendations`) + `UiNavigationState.selectedNavIndex`; fetch al hidratar/abrir tab Descubrir; fallo (sin red, Discover off, API) → feed general + toast (`restoreDiscoverDetailOrFallback`) |
 
 ## 10. Stream remoto (playback sin descarga)
 

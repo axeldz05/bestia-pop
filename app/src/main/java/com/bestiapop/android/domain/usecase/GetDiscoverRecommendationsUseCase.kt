@@ -6,11 +6,14 @@ import com.bestiapop.android.data.model.OnlineCatalogTrack
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.data.model.toCatalogTrack
 import com.bestiapop.android.data.model.toListenBrainzCatalogTrack
-import com.bestiapop.android.data.network.DeezerArtistHit
 import com.bestiapop.android.data.network.ListenBrainzClient
 import com.bestiapop.android.data.network.MetadataFetcher
+import com.bestiapop.android.data.preferences.DiscoverSourcePreference
+import com.bestiapop.android.domain.util.CollectionUtils
 import com.bestiapop.android.domain.util.IdentifyRanking
 import com.bestiapop.android.domain.util.TrackMatchKeys
+import com.bestiapop.android.domain.util.distinctCatalogAlbums
+import com.bestiapop.android.domain.util.distinctCatalogTracks
 import com.bestiapop.android.domain.util.matchKey
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -36,7 +39,9 @@ class GetDiscoverRecommendationsUseCase {
         librarySongs: List<Song>,
         playStats: Map<Long, Long>,
         userToken: String?,
-        username: String?
+        username: String?,
+        sourcePreference: DiscoverSourcePreference = DiscoverSourcePreference.BOTH,
+        preloadedLbTracks: List<OnlineCatalogTrack> = emptyList()
     ): DiscoverFeed = withContext(Dispatchers.IO) {
         coroutineScope {
             val chartTracksDeferred = async {
@@ -47,48 +52,74 @@ class GetDiscoverRecommendationsUseCase {
                 }
             }
 
-            // Find top played or recent artists
-            val topArtists = getTopArtists(librarySongs, playStats)
+            // Find top played or recent local artists using shared CollectionUtils
+            val localTopArtists = CollectionUtils.calculateTopLocalArtists(librarySongs, playStats)
 
             val lbToken = userToken?.takeIf { it.isNotBlank() }
             val lbUser = username?.takeIf { it.isNotBlank() }
+            val hasLb = lbToken != null && lbUser != null
 
-            var recTracks: List<OnlineCatalogTrack> = emptyList()
-            var recAlbums: List<CatalogAlbum> = emptyList()
-            var source = "Deezer"
+            // 1. Fetch ListenBrainz tracks & artists if required by source preference
+            var lbTracks = preloadedLbTracks
+            val lbArtists = mutableListOf<String>()
 
-            if (lbToken != null && lbUser != null) {
-                // Try ListenBrainz CF first
-                try {
-                    val cfResult = ListenBrainzClient.fetchCfRecordingRecommendations(
-                        username = lbUser,
-                        token = lbToken,
-                        count = 20
-                    )
-                    if (cfResult is LbApiResult.Success && cfResult.data.recordings.isNotEmpty()) {
-                        val mbids = cfResult.data.recordings.map { it.recordingMbid }
-                        val metaResult = ListenBrainzClient.fetchRecordingMetadata(mbids, lbToken)
-                        if (metaResult is LbApiResult.Success) {
-                            recTracks = cfResult.data.recordings.mapNotNull { rec ->
-                                val meta = metaResult.data[rec.recordingMbid] ?: return@mapNotNull null
-                                meta.identity.toListenBrainzCatalogTrack(rec.recordingMbid)
-                            }
-                            if (recTracks.isNotEmpty()) {
-                                source = "ListenBrainz"
+            if (hasLb && sourcePreference != DiscoverSourcePreference.DEEZER) {
+                // CF Recording recommendations (reuse preloaded if available)
+                if (lbTracks.isEmpty()) {
+                    try {
+                        val cfResult = ListenBrainzClient.fetchCfRecordingRecommendations(
+                            username = lbUser,
+                            token = lbToken,
+                            count = 25
+                        )
+                        if (cfResult is LbApiResult.Success && cfResult.data.recordings.isNotEmpty()) {
+                            val mbids = cfResult.data.recordings.map { it.recordingMbid }
+                            val metaResult = ListenBrainzClient.fetchRecordingMetadata(mbids, lbToken)
+                            if (metaResult is LbApiResult.Success) {
+                                lbTracks = cfResult.data.recordings.mapNotNull { rec ->
+                                    val meta = metaResult.data[rec.recordingMbid] ?: return@mapNotNull null
+                                    meta.identity.toListenBrainzCatalogTrack(rec.recordingMbid)
+                                }
                             }
                         }
+                    } catch (e: Exception) {
+                        if (e is CancellationException) throw e
                     }
+                }
+
+                // Top artists from ListenBrainz for albums / related
+                try {
+                    val topArtists = ListenBrainzClient.fetchUserTopArtistsWithRecentFallback(lbUser, count = 10, token = lbToken)
+                    lbArtists.addAll(topArtists)
                 } catch (e: Exception) {
                     if (e is CancellationException) throw e
-                    // Fallback to Deezer
+                }
+
+                // Also incorporate artists from CF recommendations
+                for (track in lbTracks) {
+                    val artist = track.artist.trim()
+                    if (artist.isNotBlank() && !IdentifyRanking.isPlaceholderArtist(artist)) {
+                        lbArtists.add(artist)
+                    }
                 }
             }
 
-            // If ListenBrainz did not return tracks, use Deezer recommendations based on library or charts
-            if (recTracks.isEmpty()) {
-                val deezerTracks = ArrayList<OnlineCatalogTrack>()
-                if (topArtists.isNotEmpty()) {
-                    val artistTrackJobs = topArtists.take(3).map { artist ->
+            val distinctLbArtists = lbArtists.distinct().filter {
+                it.isNotBlank() && !IdentifyRanking.isPlaceholderArtist(it)
+            }
+
+            // 2. Fetch Deezer tracks if needed
+            val shouldFetchDeezerTracks = sourcePreference == DiscoverSourcePreference.DEEZER ||
+                sourcePreference == DiscoverSourcePreference.BOTH ||
+                lbTracks.isEmpty()
+
+            var deezerTracks = emptyList<OnlineCatalogTrack>()
+            if (shouldFetchDeezerTracks) {
+                val candidateArtists = resolveSeedArtists(sourcePreference, distinctLbArtists, localTopArtists, limit = 4)
+
+                val collectedDeezer = ArrayList<OnlineCatalogTrack>()
+                if (candidateArtists.isNotEmpty()) {
+                    val artistTrackJobs = candidateArtists.take(3).map { artist ->
                         async {
                             val tracks = mutableListOf<OnlineCatalogTrack>()
                             try {
@@ -121,23 +152,56 @@ class GetDiscoverRecommendationsUseCase {
                             tracks
                         }
                     }
-                    deezerTracks.addAll(artistTrackJobs.awaitAll().flatten())
+                    collectedDeezer.addAll(artistTrackJobs.awaitAll().flatten())
                 }
 
-                // Fallback: If library was empty or artist matching produced no results, fallback to Deezer charts
-                if (deezerTracks.isEmpty()) {
+                if (collectedDeezer.isEmpty()) {
                     val chartTracks = chartTracksDeferred.await()
-                    deezerTracks.addAll(chartTracks)
+                    collectedDeezer.addAll(chartTracks)
                 }
-
-                recTracks = deezerTracks.distinctCatalogTracks(25)
-                source = "Deezer"
+                deezerTracks = collectedDeezer.distinctCatalogTracks(25)
             }
 
-            // Recommended Albums from top artists with Deezer chart albums fallback
+            // 3. Resolve Recommended Tracks and Source Label
+            val chartTracks = chartTracksDeferred.await()
+            val fallbackTracks = if (deezerTracks.isNotEmpty()) deezerTracks else chartTracks.take(20)
+            val recTracks: List<OnlineCatalogTrack>
+            val sourceLabel: String
+
+            when (sourcePreference) {
+                DiscoverSourcePreference.LISTENBRAINZ -> {
+                    if (lbTracks.isNotEmpty()) {
+                        recTracks = lbTracks.distinctCatalogTracks(25)
+                        sourceLabel = "ListenBrainz"
+                    } else {
+                        recTracks = fallbackTracks
+                        sourceLabel = "Deezer (Fallback)"
+                    }
+                }
+                DiscoverSourcePreference.DEEZER -> {
+                    recTracks = fallbackTracks
+                    sourceLabel = "Deezer"
+                }
+                DiscoverSourcePreference.BOTH -> {
+                    if (lbTracks.isNotEmpty() && deezerTracks.isNotEmpty()) {
+                        recTracks = CollectionUtils.interleaveEquitable(lbTracks, deezerTracks, limit = 25).distinctCatalogTracks(25)
+                        sourceLabel = "Ambos (Deezer + ListenBrainz)"
+                    } else if (lbTracks.isNotEmpty()) {
+                        recTracks = lbTracks.distinctCatalogTracks(25)
+                        sourceLabel = "ListenBrainz"
+                    } else {
+                        recTracks = fallbackTracks
+                        sourceLabel = "Deezer"
+                    }
+                }
+            }
+
+            // 4. Resolve Recommended Albums
+            val albumSeedArtists = resolveSeedArtists(sourcePreference, distinctLbArtists, localTopArtists, limit = 6)
+
             val albums = ArrayList<CatalogAlbum>()
-            if (topArtists.isNotEmpty()) {
-                val albumJobs = topArtists.take(4).map { artist ->
+            if (albumSeedArtists.isNotEmpty()) {
+                val albumJobs = albumSeedArtists.take(5).map { artist ->
                     async {
                         try {
                             deezerSemaphore.withPermit {
@@ -152,7 +216,7 @@ class GetDiscoverRecommendationsUseCase {
                 albums.addAll(albumJobs.awaitAll().flatten())
             }
 
-            // Fallback for recommended albums when library is empty or no albums found
+            // Fallback for recommended albums when empty
             if (albums.isEmpty()) {
                 try {
                     val chartAlbums = MetadataFetcher.fetchChartAlbums(limit = 16)
@@ -166,50 +230,39 @@ class GetDiscoverRecommendationsUseCase {
                     }
                 }
             }
-            recAlbums = albums.distinctCatalogAlbums(16)
 
-            val chartTracks = chartTracksDeferred.await()
-
-            // If recommendations are still sparse, use charts as fallback
-            val finalRecTracks = if (recTracks.isEmpty()) chartTracks.take(20) else recTracks
+            val recAlbums = albums.distinctCatalogAlbums(16, artistOf = { it.artist }, titleOf = { it.title })
 
             DiscoverFeed(
-                recommendedTracks = finalRecTracks,
+                recommendedTracks = recTracks,
                 recommendedAlbums = recAlbums,
                 chartTracks = chartTracks,
-                recommendationSource = source
+                recommendationSource = sourceLabel
             )
         }
     }
-
-    private fun getTopArtists(
-        librarySongs: List<Song>,
-        playStats: Map<Long, Long>
-    ): List<String> {
-        if (librarySongs.isEmpty()) return emptyList()
-
-        // Group by artist and score by play count or recent playback
-        val scoreByArtist = HashMap<String, Long>()
-        for (song in librarySongs) {
-            val artist = song.artist.trim()
-            if (artist.isBlank() || IdentifyRanking.isPlaceholderArtist(artist)) continue
-            val lastPlayed = playStats[song.id] ?: song.lastPlayedAt
-            val currentScore = scoreByArtist[artist] ?: 0L
-            scoreByArtist[artist] = currentScore + (if (lastPlayed > 0) 10L else 1L)
-        }
-
-        return scoreByArtist.entries
-            .sortedByDescending { it.value }
-            .map { it.key }
-    }
 }
 
-private inline fun <T> List<T>.distinctByTrackKey(limit: Int, crossinline keyOf: (T) -> String): List<T> =
-    distinctBy { keyOf(it).ifEmpty { it.hashCode().toString() } }.take(limit)
-
-private fun List<OnlineCatalogTrack>.distinctCatalogTracks(limit: Int): List<OnlineCatalogTrack> =
-    distinctByTrackKey(limit) { it.matchKey() }
-
-private fun List<CatalogAlbum>.distinctCatalogAlbums(limit: Int): List<CatalogAlbum> =
-    distinctByTrackKey(limit) { TrackMatchKeys.matchKey(it.artist, it.title) }
+private fun resolveSeedArtists(
+    sourcePreference: DiscoverSourcePreference,
+    lbArtists: List<String>,
+    localArtists: List<String>,
+    limit: Int
+): List<String> = when (sourcePreference) {
+    DiscoverSourcePreference.LISTENBRAINZ -> {
+        if (lbArtists.isNotEmpty()) lbArtists.take(limit) else localArtists.take(limit)
+    }
+    DiscoverSourcePreference.DEEZER -> {
+        localArtists.take(limit)
+    }
+    DiscoverSourcePreference.BOTH -> {
+        if (lbArtists.isNotEmpty() && localArtists.isNotEmpty()) {
+            CollectionUtils.interleaveEquitable(lbArtists, localArtists, limit = limit)
+        } else if (lbArtists.isNotEmpty()) {
+            lbArtists.take(limit)
+        } else {
+            localArtists.take(limit)
+        }
+    }
+}
 

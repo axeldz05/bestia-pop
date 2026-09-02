@@ -7,11 +7,13 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
+import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -34,8 +36,22 @@ import com.bestiapop.android.ui.components.ArtworkThumbnail
 import com.bestiapop.android.ui.components.EmptyListHint
 import com.bestiapop.android.ui.components.ScreenBackHeader
 import com.bestiapop.android.ui.components.TrackMetaRow
+import com.bestiapop.android.data.listenbrainz.MatchedCfRecommendations
+import com.bestiapop.android.data.listenbrainz.LbPlaylistSummary
+import com.bestiapop.android.data.model.DiscoverPlaybackOrigin
+import com.bestiapop.android.data.preferences.DiscoverSourcePreference
+import com.bestiapop.android.domain.usecase.RelatedAlbumItem
+import com.bestiapop.android.domain.usecase.RelatedArtistItem
+import com.bestiapop.android.domain.usecase.RelatedTrackItem
+import com.bestiapop.android.domain.usecase.TopRelatedFeed
+import com.bestiapop.android.ui.components.artistAlbumLabel
+import com.bestiapop.android.ui.screens.library.rememberSongActionDialogs
+import com.bestiapop.android.ui.components.rememberSongQueueActions
+import com.bestiapop.android.ui.state.PlaylistDetailNav
 import com.bestiapop.android.ui.state.CatalogCollectionKind
 import com.bestiapop.android.ui.state.ItemLibraryStatus
+import com.bestiapop.android.ui.components.PlayIconButton
+import com.bestiapop.android.ui.components.isCurrentPlaying
 import com.bestiapop.android.ui.theme.ListDensity
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -49,6 +65,26 @@ fun DiscoverScreen(
     val recentSearches by viewModel.recentSearches.collectAsStateWithLifecycle()
     val discoverFeed by viewModel.discoverFeed.collectAsStateWithLifecycle()
     val isLoadingFeed by viewModel.isLoadingDiscoverFeed.collectAsStateWithLifecycle()
+    val discoverSource by viewModel.discoverSource.collectAsStateWithLifecycle()
+    val topRelatedFeed by viewModel.topRelatedFeed.collectAsStateWithLifecycle()
+    val isLoadingTopRelated by viewModel.isLoadingTopRelatedFeed.collectAsStateWithLifecycle()
+
+    val lbDiscover by viewModel.lbDiscover.collectAsStateWithLifecycle()
+    val lbPlaylistDetail by viewModel.lbPlaylistDetail.collectAsStateWithLifecycle()
+    val selectedLbPlaylist = lbPlaylistDetail.data
+    val cfRecommendationsState by viewModel.cfRecommendations.collectAsStateWithLifecycle()
+    val cfRecommendations = cfRecommendationsState.data
+    val lbSettings by viewModel.listenBrainzSettings.collectAsStateWithLifecycle()
+    val navigation by viewModel.navigation.collectAsStateWithLifecycle()
+    val playlistDetail = navigation.playlistDetail
+    val selectedLbPlaylistMbid = (playlistDetail as? PlaylistDetailNav.ListenBrainz)?.mbid
+    val cfDetailOpen = playlistDetail is PlaylistDetailNav.CfRecommendations
+
+    val currentItem by viewModel.currentItem.collectAsStateWithLifecycle()
+    val activeDownloads by viewModel.activeDownloads.collectAsStateWithLifecycle()
+    val playlists by viewModel.playlists.collectAsStateWithLifecycle(emptyList())
+    val songActions = rememberSongQueueActions(viewModel)
+    val songDialogs = rememberSongActionDialogs(viewModel = viewModel, playlists = playlists)
 
     var searchInput by remember { mutableStateOf(catalogSearch.searchQueryDraft) }
     var isSearchFocused by remember { mutableStateOf(false) }
@@ -57,14 +93,22 @@ fun DiscoverScreen(
         if (discoverFeed.recommendedTracks.isEmpty() && discoverFeed.recommendedAlbums.isEmpty()) {
             viewModel.refreshDiscoverFeed()
         }
+        if (topRelatedFeed.topArtists.isEmpty() && topRelatedFeed.topAlbums.isEmpty()) {
+            viewModel.refreshTopRelatedFeed()
+        }
     }
 
     val selectedCollectionTitle = catalogCollection.title
     val activeCandidates = catalogCollection.candidates
     val isLoadingCollection = catalogCollection.isLoading
 
-    BackHandler(enabled = selectedCollectionTitle != null) {
-        viewModel.clearSelectedCollection()
+    val hasNestedBack = selectedCollectionTitle != null || selectedLbPlaylistMbid != null || cfDetailOpen
+    BackHandler(enabled = hasNestedBack) {
+        if (selectedCollectionTitle != null) {
+            viewModel.clearSelectedCollection()
+        } else if (selectedLbPlaylistMbid != null || cfDetailOpen) {
+            viewModel.closePlaylistDetail()
+        }
     }
 
     Box(modifier = modifier.fillMaxSize()) {
@@ -74,6 +118,39 @@ fun DiscoverScreen(
                 artistName = activeCandidates.firstOrNull()?.artist.orEmpty()
             )
 
+            val collectionActions = remember(activeCandidates, selectedCollectionTitle) {
+                DiscoverCollectionActions(
+                    onBack = { viewModel.clearSelectedCollection() },
+                    onPlayAll = {
+                        viewModel.playCatalogCandidates(activeCandidates, startIndex = 0, startShuffled = false)
+                    },
+                    onShuffle = {
+                        viewModel.playCatalogCandidates(activeCandidates, startIndex = 0, startShuffled = true)
+                    },
+                    onSaveAlbum = {
+                        val album = CatalogAlbum(
+                            id = catalogCollection.selectionKey.orEmpty(),
+                            title = selectedCollectionTitle,
+                            artist = activeCandidates.firstOrNull()?.artist.orEmpty(),
+                            coverUrl = catalogCollection.coverUrl,
+                            trackCount = activeCandidates.size
+                        )
+                        viewModel.saveAlbumToLibrary(album, activeCandidates)
+                    },
+                    onDownloadAll = {
+                        viewModel.downloadSelectedCandidatesBatch()
+                    },
+                    onPlayCandidate = { candidate ->
+                        viewModel.playCatalogCandidate(candidate)
+                    },
+                    onDownloadCandidate = { candidate ->
+                        viewModel.downloadCatalogCandidate(candidate)
+                    },
+                    getTrackStatus = viewModel::getTrackLibraryStatus,
+                    onAlreadyInLibrary = { viewModel.toast(it) }
+                )
+            }
+
             // Collection Drill-down view (Album / Playlist / Genre)
             DiscoverCollectionDetailView(
                 title = selectedCollectionTitle,
@@ -81,35 +158,39 @@ fun DiscoverScreen(
                 coverUrl = catalogCollection.coverUrl,
                 candidates = activeCandidates,
                 isLoading = isLoadingCollection,
-                onBack = { viewModel.clearSelectedCollection() },
-                onPlayAll = {
-                    viewModel.playCatalogCandidates(activeCandidates, startIndex = 0, startShuffled = false)
-                },
-                onShuffle = {
-                    viewModel.playCatalogCandidates(activeCandidates, startIndex = 0, startShuffled = true)
-                },
-                onSaveAlbum = {
-                    val album = CatalogAlbum(
-                        id = catalogCollection.selectionKey.orEmpty(),
-                        title = selectedCollectionTitle,
-                        artist = activeCandidates.firstOrNull()?.artist.orEmpty(),
-                        coverUrl = catalogCollection.coverUrl,
-                        trackCount = activeCandidates.size
-                    )
-                    viewModel.saveAlbumToLibrary(album, activeCandidates)
-                },
-                onDownloadAll = {
-                    viewModel.downloadSelectedCandidatesBatch()
-                },
-                onPlayCandidate = { candidate ->
-                    viewModel.playCatalogCandidate(candidate)
-                },
-                onDownloadCandidate = { candidate ->
-                    viewModel.downloadCatalogCandidate(candidate)
-                },
                 albumStatus = albumStatus,
-                getTrackStatus = viewModel::getTrackLibraryStatus,
-                onAlreadyInLibrary = { viewModel.toast(it) }
+                currentItem = currentItem,
+                actions = collectionActions
+            )
+        } else if (selectedLbPlaylistMbid != null || cfDetailOpen) {
+            DiscoverPlaylistDetailHost(
+                selectedLbPlaylistMbid = selectedLbPlaylistMbid,
+                cfDetailOpen = cfDetailOpen,
+                lbPlaylistDetail = lbPlaylistDetail,
+                cfRecommendationsState = cfRecommendationsState,
+                currentItem = currentItem,
+                activeDownloads = activeDownloads,
+                songActions = songActions,
+                onEditLyrics = songDialogs.onEditLyrics,
+                onBack = { viewModel.closePlaylistDetail() },
+                onDownloadRemote = { viewModel.downloadRemoteItem(it) },
+                onRetryDownload = viewModel::retryActiveDownload,
+                onCancelDownload = viewModel::dismissActiveDownload,
+                onPlayMatched = { items, origin, startIndex ->
+                    viewModel.playMatchedTracks(items, origin, startIndex = startIndex)
+                },
+                onShuffleMatched = { items, origin ->
+                    viewModel.shuffleMatchedTracks(items, origin)
+                },
+                onSaveLbAsLocal = { onComplete ->
+                    viewModel.saveListenBrainzPlaylistAsLocal(onComplete)
+                },
+                onOpenLocalPlaylist = { newId ->
+                    viewModel.openLocalPlaylist(newId)
+                },
+                onImportLbWithDownloads = {
+                    viewModel.importListenBrainzPlaylistWithDownloads()
+                }
             )
         } else {
             val isSearchActive = searchInput.isNotBlank() || catalogSearch.hasActiveFilters || catalogSearch.isSearching
@@ -156,12 +237,8 @@ fun DiscoverScreen(
                 // Advanced Search Filters Panel
                 AnimatedVisibility(visible = catalogSearch.showSearchFilters) {
                     DiscoverAdvancedFiltersPanel(
-                        artist = catalogSearch.searchFilterArtist,
-                        onArtistChange = viewModel::setCatalogSearchFilterArtist,
-                        album = catalogSearch.searchFilterAlbum,
-                        onAlbumChange = viewModel::setCatalogSearchFilterAlbum,
-                        year = catalogSearch.searchFilterYear,
-                        onYearChange = viewModel::setCatalogSearchFilterYear,
+                        filters = catalogSearch.searchFilters,
+                        onFiltersChange = viewModel::setCatalogSearchFilters,
                         onApply = { viewModel.searchCatalog(query = searchInput) },
                         onClear = {
                             viewModel.clearCatalogSearchFilters()
@@ -215,6 +292,36 @@ fun DiscoverScreen(
                             feed = discoverFeed,
                             isLoading = isLoadingFeed,
                             onRefresh = { viewModel.refreshDiscoverFeed() },
+                            source = discoverSource,
+                            onSourceChange = { viewModel.setDiscoverSource(it) },
+                            topRelatedFeed = topRelatedFeed,
+                            isLoadingTopRelated = isLoadingTopRelated,
+                            topRelatedActions = DiscoverTopRelatedActions(
+                                onSelectArtist = { artistName ->
+                                    searchInput = artistName
+                                    viewModel.setCatalogSearchDraft(artistName)
+                                    viewModel.searchCatalog(artistName)
+                                },
+                                onStartRadioForArtist = { viewModel.startRadio() },
+                                onSelectAlbum = viewModel::selectAlbumForInspection,
+                                onPlayTrack = { item ->
+                                    if (item.localSong != null) {
+                                        viewModel.playSong(item.localSong)
+                                    } else {
+                                        searchInput = item.title
+                                        viewModel.setCatalogSearchDraft(item.title)
+                                        viewModel.searchCatalog(item.title)
+                                    }
+                                },
+                                onRefresh = { viewModel.refreshTopRelatedFeed() }
+                            ),
+                            lbDiscoverPlaylists = lbDiscover.data ?: emptyList(),
+                            cfRecommendations = cfRecommendations,
+                            lbActions = DiscoverListenBrainzActions(
+                                onOpenPlaylist = { viewModel.openListenBrainzPlaylistDetail(it) },
+                                onOpenCfRecommendations = { viewModel.openCfRecommendationsDetail() }
+                            ),
+                            showLbSections = discoverSource != DiscoverSourcePreference.DEEZER && lbSettings.enabled,
                             actions = catalogActions
                         )
                     }
@@ -403,6 +510,34 @@ fun DiscoverRecentSearchesView(
     }
 }
 
+/** Level 1: Reusable icon representation of an item's library status. */
+@Composable
+fun ItemLibraryStatusIcon(
+    status: ItemLibraryStatus,
+    modifier: Modifier = Modifier,
+    size: Dp = 18.dp
+) {
+    when (status) {
+        ItemLibraryStatus.DOWNLOADED -> {
+            Icon(
+                imageVector = Icons.Default.CheckCircle,
+                contentDescription = "En la biblioteca",
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = modifier.size(size)
+            )
+        }
+        ItemLibraryStatus.SAVED_REMOTE -> {
+            Icon(
+                imageVector = Icons.Default.BookmarkAdded,
+                contentDescription = "Guardada en biblioteca",
+                tint = MaterialTheme.colorScheme.secondary,
+                modifier = modifier.size(size)
+            )
+        }
+        ItemLibraryStatus.NOT_IN_LIBRARY -> Unit
+    }
+}
+
 /** Level 2: Track library action buttons (Downloaded, Saved Remote, Download). */
 @Composable
 fun TrackLibraryActionButtons(
@@ -415,22 +550,13 @@ fun TrackLibraryActionButtons(
     when (status) {
         ItemLibraryStatus.DOWNLOADED -> {
             IconButton(onClick = onAlreadyInLibrary, modifier = modifier) {
-                Icon(
-                    imageVector = Icons.Default.CheckCircle,
-                    contentDescription = "En la biblioteca",
-                    tint = MaterialTheme.colorScheme.primary
-                )
+                ItemLibraryStatusIcon(status = status, size = 20.dp)
             }
         }
         ItemLibraryStatus.SAVED_REMOTE -> {
             Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = onAlreadyInLibrary) {
-                    Icon(
-                        imageVector = Icons.Default.BookmarkAdded,
-                        contentDescription = "Guardada en biblioteca",
-                        tint = MaterialTheme.colorScheme.secondary,
-                        modifier = Modifier.size(20.dp)
-                    )
+                    ItemLibraryStatusIcon(status = status, size = 20.dp)
                 }
                 IconButton(onClick = onDownload) {
                     Icon(
@@ -463,24 +589,9 @@ fun AlbumLibraryActionButton(
     modifier: Modifier = Modifier
 ) {
     when (status) {
-        ItemLibraryStatus.DOWNLOADED -> {
+        ItemLibraryStatus.DOWNLOADED, ItemLibraryStatus.SAVED_REMOTE -> {
             IconButton(onClick = onAlreadySaved, modifier = modifier) {
-                Icon(
-                    imageVector = Icons.Default.CheckCircle,
-                    contentDescription = "Álbum descargado en tu biblioteca",
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(18.dp)
-                )
-            }
-        }
-        ItemLibraryStatus.SAVED_REMOTE -> {
-            IconButton(onClick = onAlreadySaved, modifier = modifier) {
-                Icon(
-                    imageVector = Icons.Default.BookmarkAdded,
-                    contentDescription = "Álbum guardado en tu biblioteca",
-                    tint = MaterialTheme.colorScheme.secondary,
-                    modifier = Modifier.size(18.dp)
-                )
+                ItemLibraryStatusIcon(status = status, size = 18.dp)
             }
         }
         ItemLibraryStatus.NOT_IN_LIBRARY -> {
@@ -671,26 +782,12 @@ fun DiscoverTrackCard(
         onClick = onPlay,
         modifier = modifier,
         topEndBadge = {
-            when (status) {
-                ItemLibraryStatus.DOWNLOADED -> MediaCardBadge {
+            if (status.isPresent) {
+                MediaCardBadge {
                     IconButton(onClick = onAlreadyInLibrary, modifier = Modifier.size(26.dp)) {
-                        Icon(
-                            imageVector = Icons.Default.CheckCircle,
-                            contentDescription = "En la biblioteca",
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(18.dp)
-                        )
+                        ItemLibraryStatusIcon(status = status, size = 18.dp)
                     }
                 }
-                ItemLibraryStatus.SAVED_REMOTE -> MediaCardBadge {
-                    Icon(
-                        imageVector = Icons.Default.BookmarkAdded,
-                        contentDescription = "Guardado (remoto)",
-                        tint = MaterialTheme.colorScheme.secondary,
-                        modifier = Modifier.size(16.dp)
-                    )
-                }
-                ItemLibraryStatus.NOT_IN_LIBRARY -> Unit
             }
         },
         bottomEndAction = {
@@ -700,6 +797,32 @@ fun DiscoverTrackCard(
                 contentDescription = "Reproducir"
             )
         }
+    )
+}
+
+/** Level 1: Low-level primitive album card with customizable badges and actions. */
+@Composable
+fun DiscoverAlbumCard(
+    title: String,
+    artist: String,
+    coverUrl: String?,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    cardWidth: Dp = 150.dp,
+    imageSize: Dp = 134.dp,
+    topEndBadge: @Composable (BoxScope.() -> Unit)? = null,
+    bottomEndAction: @Composable (BoxScope.() -> Unit)? = null
+) {
+    DiscoverMediaCard(
+        title = title,
+        subtitle = artist,
+        artworkUri = coverUrl,
+        cardWidth = cardWidth,
+        imageSize = imageSize,
+        onClick = onClick,
+        modifier = modifier,
+        topEndBadge = topEndBadge,
+        bottomEndAction = bottomEndAction
     )
 }
 
@@ -714,12 +837,10 @@ fun DiscoverAlbumCard(
     onAlreadySaved: () -> Unit = { onNotifyStatus?.invoke(status.albumMessage) },
     modifier: Modifier = Modifier
 ) {
-    DiscoverMediaCard(
+    DiscoverAlbumCard(
         title = album.title,
-        subtitle = album.artist,
-        artworkUri = album.coverUrl,
-        cardWidth = 150.dp,
-        imageSize = 134.dp,
+        artist = album.artist,
+        coverUrl = album.coverUrl,
         onClick = onClick,
         modifier = modifier,
         bottomEndAction = {
@@ -737,13 +858,17 @@ fun DiscoverAlbumCard(
     )
 }
 
-/** Level 2: Reusable Discover track list item using [TrackMetaRow]. */
+/** Level 2: Reusable Discover track list item using [TrackMetaRow], with continuous granularity slots. */
 @Composable
 fun DiscoverTrackListItem(
-    track: OnlineCatalogTrack,
+    track: TrackMeta,
     onPlay: () -> Unit,
-    onDownload: () -> Unit,
+    onDownload: () -> Unit = {},
     status: ItemLibraryStatus = ItemLibraryStatus.NOT_IN_LIBRARY,
+    highlighted: Boolean = false,
+    subtitle: String? = null,
+    leading: (@Composable RowScope.() -> Unit)? = null,
+    trailing: (@Composable RowScope.() -> Unit)? = null,
     onNotifyStatus: ((String) -> Unit)? = null,
     onAlreadyInLibrary: () -> Unit = { onNotifyStatus?.invoke(status.trackMessage) },
     modifier: Modifier = Modifier
@@ -751,7 +876,9 @@ fun DiscoverTrackListItem(
     TrackMetaRow(
         artworkUri = track.artworkUri,
         title = track.title,
-        subtitle = track.artist,
+        subtitle = subtitle ?: track.artist,
+        highlighted = highlighted,
+        leading = leading,
         onClick = onPlay,
         modifier = modifier
             .background(
@@ -759,7 +886,7 @@ fun DiscoverTrackListItem(
                 shape = RoundedCornerShape(12.dp)
             )
             .padding(horizontal = 4.dp, vertical = 2.dp),
-        trailing = {
+        trailing = trailing ?: {
             TrackLibraryActionButtons(
                 status = status,
                 onDownload = onDownload,
@@ -784,12 +911,97 @@ data class DiscoverCatalogActions(
     val onAlreadyInLibrary: (String) -> Unit = {}
 )
 
-/** Level 2: Home feed view using bundled [DiscoverCatalogActions]. */
+/**
+ * Level 2: Actions for the top related section (artists, albums, tracks).
+ */
+data class DiscoverTopRelatedActions(
+    val onSelectArtist: (String) -> Unit = {},
+    val onStartRadioForArtist: (String) -> Unit = {},
+    val onSelectAlbum: (RelatedAlbumItem) -> Unit = {},
+    val onPlayTrack: (RelatedTrackItem) -> Unit = {},
+    val onRefresh: () -> Unit = {}
+)
+
+/**
+ * Level 2: Actions for ListenBrainz discover playlists and CF recommendations.
+ */
+data class DiscoverListenBrainzActions(
+    val onOpenPlaylist: (String) -> Unit = {},
+    val onOpenCfRecommendations: () -> Unit = {}
+)
+
+/** Level 1: Low-level section header with title and optional badge / action trailing. */
+@Composable
+fun DiscoverSectionHeader(
+    title: String,
+    modifier: Modifier = Modifier,
+    badgeText: String? = null,
+    badgeColor: Color = MaterialTheme.colorScheme.primary,
+    trailing: (@Composable () -> Unit)? = null
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
+        )
+        if (badgeText != null) {
+            Text(
+                text = badgeText,
+                style = MaterialTheme.typography.labelSmall,
+                color = badgeColor
+            )
+        } else if (trailing != null) {
+            trailing()
+        }
+    }
+}
+
+/** Level 2: Shared horizontal section (header + spaced LazyRow) for Discover feed carousels. */
+@Composable
+fun DiscoverFeedHorizontalSection(
+    title: String,
+    modifier: Modifier = Modifier,
+    badgeText: String? = null,
+    badgeColor: Color = MaterialTheme.colorScheme.primary,
+    trailing: (@Composable () -> Unit)? = null,
+    content: LazyListScope.() -> Unit
+) {
+    Column(modifier = modifier.fillMaxWidth()) {
+        DiscoverSectionHeader(
+            title = title,
+            badgeText = badgeText,
+            badgeColor = badgeColor,
+            trailing = trailing
+        )
+        LazyRow(
+            contentPadding = PaddingValues(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            content = content
+        )
+    }
+}
+
+/** Level 2: Home feed view using bundled actions. */
 @Composable
 fun DiscoverHomeFeedView(
     feed: DiscoverFeed,
     isLoading: Boolean,
     onRefresh: () -> Unit,
+    source: DiscoverSourcePreference = DiscoverSourcePreference.BOTH,
+    onSourceChange: (DiscoverSourcePreference) -> Unit = {},
+    topRelatedFeed: TopRelatedFeed = TopRelatedFeed(),
+    isLoadingTopRelated: Boolean = false,
+    topRelatedActions: DiscoverTopRelatedActions = DiscoverTopRelatedActions(),
+    lbDiscoverPlaylists: List<LbPlaylistSummary> = emptyList(),
+    cfRecommendations: MatchedCfRecommendations? = null,
+    lbActions: DiscoverListenBrainzActions = DiscoverListenBrainzActions(),
+    showLbSections: Boolean = false,
     actions: DiscoverCatalogActions,
     modifier: Modifier = Modifier
 ) {
@@ -797,6 +1009,15 @@ fun DiscoverHomeFeedView(
         feed = feed,
         isLoading = isLoading,
         onRefresh = onRefresh,
+        source = source,
+        onSourceChange = onSourceChange,
+        topRelatedFeed = topRelatedFeed,
+        isLoadingTopRelated = isLoadingTopRelated,
+        topRelatedActions = topRelatedActions,
+        lbDiscoverPlaylists = lbDiscoverPlaylists,
+        cfRecommendations = cfRecommendations,
+        lbActions = lbActions,
+        showLbSections = showLbSections,
         onPlayTrack = actions.onPlayTrack,
         onDownloadTrack = actions.onDownloadTrack,
         onSelectAlbum = actions.onSelectAlbum,
@@ -814,6 +1035,15 @@ fun DiscoverHomeFeedView(
     feed: DiscoverFeed,
     isLoading: Boolean,
     onRefresh: () -> Unit,
+    source: DiscoverSourcePreference = DiscoverSourcePreference.BOTH,
+    onSourceChange: (DiscoverSourcePreference) -> Unit = {},
+    topRelatedFeed: TopRelatedFeed = TopRelatedFeed(),
+    isLoadingTopRelated: Boolean = false,
+    topRelatedActions: DiscoverTopRelatedActions = DiscoverTopRelatedActions(),
+    lbDiscoverPlaylists: List<LbPlaylistSummary> = emptyList(),
+    cfRecommendations: MatchedCfRecommendations? = null,
+    lbActions: DiscoverListenBrainzActions = DiscoverListenBrainzActions(),
+    showLbSections: Boolean = false,
     onPlayTrack: (OnlineCatalogTrack) -> Unit,
     onDownloadTrack: (OnlineCatalogTrack) -> Unit,
     onSelectAlbum: (CatalogAlbum) -> Unit,
@@ -839,42 +1069,110 @@ fun DiscoverHomeFeedView(
         contentPadding = PaddingValues(bottom = 80.dp),
         verticalArrangement = Arrangement.spacedBy(20.dp)
     ) {
+        // Section: Source Selector
+        item(key = "feed-source-selector") {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = "Fuente:",
+                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                FilterChip(
+                    selected = source == DiscoverSourcePreference.BOTH,
+                    onClick = { onSourceChange(DiscoverSourcePreference.BOTH) },
+                    label = { Text("Ambos") },
+                    modifier = Modifier.height(ListDensity.filterChipHeight)
+                )
+                FilterChip(
+                    selected = source == DiscoverSourcePreference.DEEZER,
+                    onClick = { onSourceChange(DiscoverSourcePreference.DEEZER) },
+                    label = { Text("Deezer") },
+                    modifier = Modifier.height(ListDensity.filterChipHeight)
+                )
+                FilterChip(
+                    selected = source == DiscoverSourcePreference.LISTENBRAINZ,
+                    onClick = { onSourceChange(DiscoverSourcePreference.LISTENBRAINZ) },
+                    label = { Text("ListenBrainz") },
+                    modifier = Modifier.height(ListDensity.filterChipHeight)
+                )
+            }
+        }
+
+        // Section: Buscar más relacionados (Local + ListenBrainz)
+        item(key = "feed-top-related") {
+            DiscoverTopRelatedSection(
+                feed = topRelatedFeed,
+                isLoading = isLoadingTopRelated,
+                actions = topRelatedActions
+            )
+        }
+
+        // Section: Recomendados para vos (CF)
+        if (showLbSections && cfRecommendations != null && cfRecommendations.matches.isNotEmpty()) {
+            item(key = "feed-recomendados-cf") {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp)
+                ) {
+                    DiscoverSectionHeader(
+                        title = "Recomendados",
+                        badgeText = "ListenBrainz CF",
+                        badgeColor = MaterialTheme.colorScheme.tertiary,
+                        modifier = Modifier.padding(horizontal = 0.dp)
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    CfRecommendationsCardItem(
+                        matched = cfRecommendations,
+                        onClick = lbActions.onOpenCfRecommendations
+                    )
+                }
+            }
+        }
+
+        // Section: Playlists Para Ti (ListenBrainz Discover playlists)
+        if (showLbSections && lbDiscoverPlaylists.isNotEmpty()) {
+            item(key = "feed-para-ti-playlists") {
+                DiscoverFeedHorizontalSection(
+                    title = "Playlists Para Ti",
+                    badgeText = "ListenBrainz",
+                    badgeColor = MaterialTheme.colorScheme.tertiary
+                ) {
+                    items(lbDiscoverPlaylists, key = { "feed-lb-${it.mbid}" }) { playlist ->
+                        Box(modifier = Modifier.width(280.dp)) {
+                            LbPlaylistCardItem(
+                                playlist = playlist,
+                                onClick = { lbActions.onOpenPlaylist(playlist.mbid) }
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
         // Section: Recommended Songs
         if (feed.recommendedTracks.isNotEmpty()) {
             item {
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 4.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "Canciones para ti",
-                            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
+                DiscoverFeedHorizontalSection(
+                    title = "Canciones para ti",
+                    badgeText = "Fuente: ${feed.recommendationSource}",
+                    badgeColor = MaterialTheme.colorScheme.primary
+                ) {
+                    items(feed.recommendedTracks.take(12)) { track ->
+                        val trackStatus = getTrackStatus(track.identity)
+                        DiscoverTrackCard(
+                            track = track,
+                            onPlay = { onPlayTrack(track) },
+                            onDownload = { onDownloadTrack(track) },
+                            status = trackStatus,
+                            onNotifyStatus = onAlreadyInLibrary
                         )
-                        Text(
-                            text = "Fuente: ${feed.recommendationSource}",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
-
-                    LazyRow(
-                        contentPadding = PaddingValues(horizontal = 16.dp),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        items(feed.recommendedTracks.take(12)) { track ->
-                            val trackStatus = getTrackStatus(track.identity)
-                            DiscoverTrackCard(
-                                track = track,
-                                onPlay = { onPlayTrack(track) },
-                                onDownload = { onDownloadTrack(track) },
-                                status = trackStatus,
-                                onNotifyStatus = onAlreadyInLibrary
-                            )
-                        }
                     }
                 }
             }
@@ -883,27 +1181,18 @@ fun DiscoverHomeFeedView(
         // Section: Recommended Albums
         if (feed.recommendedAlbums.isNotEmpty()) {
             item {
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    Text(
-                        text = "Álbumes recomendados",
-                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
-                    )
-
-                    LazyRow(
-                        contentPadding = PaddingValues(horizontal = 16.dp),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        items(feed.recommendedAlbums) { album ->
-                            val albumStatus = getAlbumStatus(album.title, album.artist)
-                            DiscoverAlbumCard(
-                                album = album,
-                                onClick = { onSelectAlbum(album) },
-                                onSave = { onSaveAlbum(album) },
-                                status = albumStatus,
-                                onNotifyStatus = onAlreadyInLibrary
-                            )
-                        }
+                DiscoverFeedHorizontalSection(
+                    title = "Álbumes recomendados"
+                ) {
+                    items(feed.recommendedAlbums) { album ->
+                        val albumStatus = getAlbumStatus(album.title, album.artist)
+                        DiscoverAlbumCard(
+                            album = album,
+                            onClick = { onSelectAlbum(album) },
+                            onSave = { onSaveAlbum(album) },
+                            status = albumStatus,
+                            onNotifyStatus = onAlreadyInLibrary
+                        )
                     }
                 }
             }
@@ -933,6 +1222,341 @@ fun DiscoverHomeFeedView(
             }
         }
     }
+}
+
+/** Level 2: Top related section using bundled [DiscoverTopRelatedActions]. */
+@Composable
+fun DiscoverTopRelatedSection(
+    feed: TopRelatedFeed,
+    isLoading: Boolean,
+    actions: DiscoverTopRelatedActions,
+    modifier: Modifier = Modifier
+) {
+    DiscoverTopRelatedSection(
+        feed = feed,
+        isLoading = isLoading,
+        onRefresh = actions.onRefresh,
+        onSelectArtist = actions.onSelectArtist,
+        onStartRadioForArtist = actions.onStartRadioForArtist,
+        onSelectAlbum = actions.onSelectAlbum,
+        onPlayTrack = actions.onPlayTrack,
+        modifier = modifier
+    )
+}
+
+/** Level 1: Primitive top related section with individual callbacks. */
+@Composable
+fun DiscoverTopRelatedSection(
+    feed: TopRelatedFeed,
+    isLoading: Boolean,
+    onRefresh: () -> Unit,
+    onSelectArtist: (String) -> Unit,
+    onStartRadioForArtist: (String) -> Unit,
+    onSelectAlbum: (RelatedAlbumItem) -> Unit,
+    onPlayTrack: (RelatedTrackItem) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var selectedTabIndex by remember { mutableIntStateOf(0) }
+
+    Card(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+        )
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.AutoAwesome,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(22.dp)
+                    )
+                    Column {
+                        Text(
+                            text = "Buscar más relacionados",
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = "Lo más escuchado localmente y en ListenBrainz",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                if (isLoading) {
+                    CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                } else {
+                    IconButton(onClick = onRefresh, modifier = Modifier.size(28.dp)) {
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = "Actualizar relacionados",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // Tabs
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                FilterChip(
+                    selected = selectedTabIndex == 0,
+                    onClick = { selectedTabIndex = 0 },
+                    label = { Text("Artistas (${feed.topArtists.size})") }
+                )
+                FilterChip(
+                    selected = selectedTabIndex == 1,
+                    onClick = { selectedTabIndex = 1 },
+                    label = { Text("Álbumes (${feed.topAlbums.size})") }
+                )
+                FilterChip(
+                    selected = selectedTabIndex == 2,
+                    onClick = { selectedTabIndex = 2 },
+                    label = { Text("Canciones (${feed.topTracks.size})") }
+                )
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            when (selectedTabIndex) {
+                0 -> {
+                    if (feed.topArtists.isEmpty()) {
+                        EmptyListHint(
+                            text = if (isLoading) "Cargando artistas más escuchados..." else "Sin estadísticas de artistas aún.",
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp)
+                        )
+                    } else {
+                        LazyRow(
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            items(feed.topArtists) { artist ->
+                                RelatedArtistCard(
+                                    artist = artist,
+                                    onSelect = { onSelectArtist(artist.name) },
+                                    onRadio = { onStartRadioForArtist(artist.name) }
+                                )
+                            }
+                        }
+                    }
+                }
+                1 -> {
+                    if (feed.topAlbums.isEmpty()) {
+                        EmptyListHint(
+                            text = if (isLoading) "Cargando álbumes más escuchados..." else "Sin estadísticas de álbumes aún.",
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp)
+                        )
+                    } else {
+                        LazyRow(
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            items(feed.topAlbums) { album ->
+                                RelatedAlbumCard(
+                                    album = album,
+                                    onSelect = { onSelectAlbum(album) }
+                                )
+                            }
+                        }
+                    }
+                }
+                2 -> {
+                    if (feed.topTracks.isEmpty()) {
+                        EmptyListHint(
+                            text = if (isLoading) "Cargando canciones más escuchadas..." else "Sin estadísticas de canciones aún.",
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp)
+                        )
+                    } else {
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            feed.topTracks.take(8).forEach { track ->
+                                RelatedTrackRow(
+                                    track = track,
+                                    onPlay = { onPlayTrack(track) }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+internal fun SourceBadge(source: String, modifier: Modifier = Modifier) {
+    val (bgColor, textColor) = when {
+        source.contains("+") -> MaterialTheme.colorScheme.primaryContainer to MaterialTheme.colorScheme.onPrimaryContainer
+        source.contains("ListenBrainz", ignoreCase = true) -> MaterialTheme.colorScheme.tertiaryContainer to MaterialTheme.colorScheme.onTertiaryContainer
+        else -> MaterialTheme.colorScheme.secondaryContainer to MaterialTheme.colorScheme.onSecondaryContainer
+    }
+    Surface(
+        color = bgColor,
+        shape = RoundedCornerShape(4.dp),
+        modifier = modifier
+    ) {
+        Text(
+            text = source,
+            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
+            color = textColor,
+            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
+            maxLines = 1
+        )
+    }
+}
+
+/** Level 2: Related artist card for discovery sections. */
+@Composable
+internal fun RelatedArtistCard(
+    artist: RelatedArtistItem,
+    onSelect: () -> Unit,
+    onRadio: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surface,
+        tonalElevation = 2.dp,
+        modifier = modifier
+            .width(136.dp)
+            .clickable(onClick = onSelect)
+    ) {
+        Column(
+            modifier = Modifier.padding(10.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(56.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primaryContainer),
+                contentAlignment = Alignment.Center
+            ) {
+                if (!artist.artworkUri.isNullOrBlank()) {
+                    ArtworkThumbnail(
+                        artworkUri = artist.artworkUri,
+                        contentDescription = artist.name,
+                        size = 56.dp,
+                        cornerRadius = 28.dp,
+                        modifier = Modifier.clip(CircleShape)
+                    )
+                } else {
+                    Text(
+                        text = artist.name.firstOrNull()?.uppercase().orEmpty(),
+                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = artist.name,
+                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            SourceBadge(source = artist.source)
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                FilledTonalButton(
+                    onClick = onSelect,
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                    modifier = Modifier.height(26.dp)
+                ) {
+                    Text("Buscar", style = MaterialTheme.typography.labelSmall)
+                }
+                IconButton(
+                    onClick = onRadio,
+                    modifier = Modifier.size(26.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Radio,
+                        contentDescription = "Radio",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** Level 2: Related album card composing Level 1 [DiscoverAlbumCard]. */
+@Composable
+internal fun RelatedAlbumCard(
+    album: RelatedAlbumItem,
+    onSelect: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    DiscoverAlbumCard(
+        title = album.title,
+        artist = album.artist,
+        coverUrl = album.artworkUri,
+        cardWidth = 136.dp,
+        imageSize = 116.dp,
+        onClick = onSelect,
+        modifier = modifier,
+        topEndBadge = {
+            SourceBadge(
+                source = album.source,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(4.dp)
+            )
+        }
+    )
+}
+
+/** Level 2: Related track row composing [DiscoverTrackListItem]. */
+@Composable
+internal fun RelatedTrackRow(
+    track: RelatedTrackItem,
+    onPlay: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    DiscoverTrackListItem(
+        track = track,
+        onPlay = onPlay,
+        subtitle = track.artistAlbumLabel(" · "),
+        trailing = {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                SourceBadge(source = track.source)
+                PlayIconButton(
+                    onClick = onPlay,
+                    contentDescription = "Reproducir",
+                    modifier = Modifier.size(32.dp)
+                )
+            }
+        },
+        modifier = modifier
+    )
 }
 
 /** Level 2: Search results view using bundled [DiscoverCatalogActions]. */
@@ -1109,6 +1733,56 @@ fun DiscoverSearchResultsView(
     }
 }
 
+/**
+ * Level 2: Shared stack frame bundling user interaction callbacks for collection detail views.
+ */
+data class DiscoverCollectionActions(
+    val onBack: () -> Unit,
+    val onPlayAll: () -> Unit,
+    val onShuffle: () -> Unit,
+    val onSaveAlbum: () -> Unit,
+    val onDownloadAll: () -> Unit,
+    val onPlayCandidate: (CatalogTrackCandidate) -> Unit,
+    val onDownloadCandidate: (CatalogTrackCandidate) -> Unit,
+    val getTrackStatus: (TrackMeta) -> ItemLibraryStatus = { ItemLibraryStatus.NOT_IN_LIBRARY },
+    val onAlreadyInLibrary: (String) -> Unit = {}
+)
+
+/** Level 2: Collection drill-down view using bundled [DiscoverCollectionActions]. */
+@Composable
+fun DiscoverCollectionDetailView(
+    title: String,
+    kind: CatalogCollectionKind,
+    coverUrl: String?,
+    candidates: List<CatalogTrackCandidate>,
+    isLoading: Boolean,
+    albumStatus: ItemLibraryStatus = ItemLibraryStatus.NOT_IN_LIBRARY,
+    currentItem: PlayableItem? = null,
+    actions: DiscoverCollectionActions,
+    modifier: Modifier = Modifier
+) {
+    DiscoverCollectionDetailView(
+        title = title,
+        kind = kind,
+        coverUrl = coverUrl,
+        candidates = candidates,
+        isLoading = isLoading,
+        albumStatus = albumStatus,
+        currentItem = currentItem,
+        onBack = actions.onBack,
+        onPlayAll = actions.onPlayAll,
+        onShuffle = actions.onShuffle,
+        onSaveAlbum = actions.onSaveAlbum,
+        onDownloadAll = actions.onDownloadAll,
+        onPlayCandidate = actions.onPlayCandidate,
+        onDownloadCandidate = actions.onDownloadCandidate,
+        getTrackStatus = actions.getTrackStatus,
+        onAlreadyInLibrary = actions.onAlreadyInLibrary,
+        modifier = modifier
+    )
+}
+
+/** Level 1: Collection drill-down view with individual callbacks (continuous granularity). */
 @Composable
 fun DiscoverCollectionDetailView(
     title: String,
@@ -1124,6 +1798,7 @@ fun DiscoverCollectionDetailView(
     onPlayCandidate: (CatalogTrackCandidate) -> Unit,
     onDownloadCandidate: (CatalogTrackCandidate) -> Unit,
     albumStatus: ItemLibraryStatus = ItemLibraryStatus.NOT_IN_LIBRARY,
+    currentItem: PlayableItem? = null,
     getTrackStatus: (TrackMeta) -> ItemLibraryStatus = { ItemLibraryStatus.NOT_IN_LIBRARY },
     onAlreadyInLibrary: (String) -> Unit = {},
     modifier: Modifier = Modifier
@@ -1221,43 +1896,56 @@ fun DiscoverCollectionDetailView(
 
             items(candidates) { candidate ->
                 val trackStatus = getTrackStatus(candidate.identity)
-                TrackMetaRow(
-                    artworkUri = null,
-                    title = candidate.title,
-                    subtitle = candidate.artist,
-                    onClick = { onPlayCandidate(candidate) },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 2.dp)
-                        .background(
-                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
-                            shape = RoundedCornerShape(12.dp)
-                        )
-                        .padding(horizontal = 8.dp, vertical = 4.dp),
-                    leading = {
-                        val num = candidate.trackNumber.takeIf { it > 0 }
-                        if (num != null) {
-                            Text(
-                                text = "$num",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.width(28.dp)
-                            )
-                        }
-                    },
-                    trailing = {
-                        TrackLibraryActionButtons(
-                            status = trackStatus,
-                            onDownload = { onDownloadCandidate(candidate) },
-                            onNotifyStatus = onAlreadyInLibrary
-                        )
-                    }
-                )
+                val isPlaying = isCurrentPlaying(currentItem, candidate.identity.artist, candidate.identity.title)
+                Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp)) {
+                    DiscoverTrackListItem(
+                        track = candidate,
+                        onPlay = { onPlayCandidate(candidate) },
+                        onDownload = { onDownloadCandidate(candidate) },
+                        status = trackStatus,
+                        highlighted = isPlaying,
+                        leading = {
+                            val num = candidate.trackNumber.takeIf { it > 0 }
+                            if (num != null) {
+                                Text(
+                                    text = "$num",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.width(28.dp)
+                                )
+                            }
+                        },
+                        onNotifyStatus = onAlreadyInLibrary
+                    )
+                }
             }
         }
     }
 }
 
+/** Level 2: Advanced filters panel accepting bundled [IdentifySearchFilters]. */
+@Composable
+fun DiscoverAdvancedFiltersPanel(
+    filters: IdentifySearchFilters,
+    onFiltersChange: (IdentifySearchFilters) -> Unit,
+    onApply: () -> Unit,
+    onClear: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    DiscoverAdvancedFiltersPanel(
+        artist = filters.artist,
+        onArtistChange = { onFiltersChange(filters.copy(artist = it)) },
+        album = filters.album,
+        onAlbumChange = { onFiltersChange(filters.copy(album = it)) },
+        year = if (filters.year > 0) filters.year.toString() else "",
+        onYearChange = { onFiltersChange(filters.copy(year = it.toIntOrNull() ?: 0)) },
+        onApply = onApply,
+        onClear = onClear,
+        modifier = modifier
+    )
+}
+
+/** Level 1: Advanced filters panel with individual primitive fields and callbacks. */
 @Composable
 fun DiscoverAdvancedFiltersPanel(
     artist: String,

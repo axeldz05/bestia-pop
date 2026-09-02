@@ -42,6 +42,11 @@ import com.bestiapop.android.data.preferences.NAV_SETTINGS
 import com.bestiapop.android.data.preferences.SearchHistoryPreferencesRepository
 import com.bestiapop.android.domain.usecase.GetDiscoverRecommendationsUseCase
 import com.bestiapop.android.domain.usecase.DiscoverFeed
+import com.bestiapop.android.domain.usecase.RelatedAlbumItem
+import com.bestiapop.android.domain.usecase.TopRelatedFeed
+import com.bestiapop.android.data.model.toListenBrainzCatalogTrack
+import com.bestiapop.android.domain.usecase.GetTopRelatedItemsUseCase
+import com.bestiapop.android.data.preferences.DiscoverSourcePreference
 import com.bestiapop.android.data.preferences.UiNavSnapshot
 import com.bestiapop.android.data.preferences.ListenBrainzPreferencesRepository
 import com.bestiapop.android.data.preferences.ListenBrainzSettings
@@ -134,6 +139,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.distinctUntilChangedBy
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -527,11 +534,22 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     val recentSearches: StateFlow<List<String>> = searchHistoryPreferences.recentSearchesFlow
         .stateInUi(viewModelScope, emptyList())
 
+    val discoverSource: StateFlow<DiscoverSourcePreference> =
+        libraryPreferences.discoverSourceFlow
+            .stateInUi(viewModelScope, DiscoverSourcePreference.BOTH)
+
     private val _discoverFeed = MutableStateFlow(DiscoverFeed())
     val discoverFeed = _discoverFeed.asStateFlow()
 
     private val _isLoadingDiscoverFeed = MutableStateFlow(false)
     val isLoadingDiscoverFeed = _isLoadingDiscoverFeed.asStateFlow()
+
+    private val getTopRelatedItemsUseCase = GetTopRelatedItemsUseCase()
+    private val _topRelatedFeed = MutableStateFlow(TopRelatedFeed())
+    val topRelatedFeed: StateFlow<TopRelatedFeed> = _topRelatedFeed.asStateFlow()
+
+    private val _isLoadingTopRelatedFeed = MutableStateFlow(false)
+    val isLoadingTopRelatedFeed: StateFlow<Boolean> = _isLoadingTopRelatedFeed.asStateFlow()
 
     private val _catalogSearch = MutableStateFlow(CatalogSearchUiState())
     val catalogSearch = _catalogSearch.asStateFlow()
@@ -858,6 +876,17 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         }
         viewModelScope.launch {
             playbackRuntime.events.collect { toast(it) }
+        }
+        viewModelScope.launch {
+            listenBrainzPreferences.settingsFlow
+                .distinctUntilChangedBy { Triple(it.userToken, it.username, it.enabled) }
+                .drop(1)
+                .collect { settings ->
+                    if (settings.enabled && !settings.username.isNullOrBlank()) {
+                        refreshDiscoverFeed()
+                        refreshTopRelatedFeed()
+                    }
+                }
         }
         viewModelScope.launch {
             hydrateUiPreferences()
@@ -2633,6 +2662,11 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         _catalogSearch.update { it.copy(searchFilterYear = year) }
     }
 
+    /** Level 2: Update all catalog search filters at once using [IdentifySearchFilters]. */
+    fun setCatalogSearchFilters(filters: IdentifySearchFilters) {
+        _catalogSearch.update { it.withSearchFilters(filters) }
+    }
+
     fun toggleCatalogSearchFilters(show: Boolean? = null) {
         _catalogSearch.update { state ->
             val next = show ?: !state.showSearchFilters
@@ -2650,6 +2684,13 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
+    fun setDiscoverSource(source: DiscoverSourcePreference) {
+        viewModelScope.launch {
+            libraryPreferences.setDiscoverSourcePreference(source)
+            refreshDiscoverFeed()
+        }
+    }
+
     fun refreshDiscoverFeed() {
         viewModelScope.launch {
             _isLoadingDiscoverFeed.value = true
@@ -2657,16 +2698,46 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 val songs = repository.allSongsFlow.first()
                 val stats = repository.songPlayStatsFlow.first()
                 val lbSettings = listenBrainzSettings.value
+                val currentSource = discoverSource.value
+                val preloadedLbTracks = _cfRecommendations.value.data?.matches?.mapNotNull { match ->
+                    match.recordingMbid?.let { mbid -> match.identity.toListenBrainzCatalogTrack(mbid) }
+                }.orEmpty()
                 val feed = getDiscoverRecommendationsUseCase.execute(
                     librarySongs = songs,
                     playStats = stats,
                     userToken = lbSettings.userToken,
-                    username = lbSettings.username
+                    username = lbSettings.username,
+                    sourcePreference = currentSource,
+                    preloadedLbTracks = preloadedLbTracks
                 )
                 _discoverFeed.value = feed
             } catch (_: Exception) {
             } finally {
                 _isLoadingDiscoverFeed.value = false
+            }
+            if (discoverSource.value != DiscoverSourcePreference.DEEZER) {
+                refreshListenBrainzDiscoverPlaylists()
+            }
+        }
+    }
+
+    fun refreshTopRelatedFeed() {
+        viewModelScope.launch {
+            _isLoadingTopRelatedFeed.value = true
+            try {
+                val songs = repository.allSongsFlow.first()
+                val stats = repository.songPlayStatsFlow.first()
+                val lbSettings = listenBrainzSettings.value
+                val feed = getTopRelatedItemsUseCase.execute(
+                    librarySongs = songs,
+                    playStats = stats,
+                    username = lbSettings.username,
+                    token = lbSettings.userToken
+                )
+                _topRelatedFeed.value = feed
+            } catch (_: Exception) {
+            } finally {
+                _isLoadingTopRelatedFeed.value = false
             }
         }
     }
@@ -2802,15 +2873,42 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         searchCatalog(query)
     }
 
-    fun selectAlbumForInspection(album: CatalogAlbum) {
+    /** Level 1: Low-level primitive album inspection with explicit title, artist and cover. */
+    fun selectAlbumForInspection(
+        title: String,
+        artist: String,
+        coverUrl: String? = null,
+        albumId: String = ""
+    ) {
+        val key = if (albumId.isNotBlank()) "album:$albumId" else "album:$artist:$title"
         selectCollectionForInspection(
-            selectionKey = "album:${album.id}",
-            title = album.title,
+            selectionKey = key,
+            title = title,
             kind = CatalogCollectionKind.ALBUM,
-            coverUrl = album.coverUrl
+            coverUrl = coverUrl
         ) {
-            MetadataFetcher.fetchAlbumTrackCandidates(album.id, album.title, album.artist, album.coverUrl)
+            MetadataFetcher.fetchAlbumTrackCandidates(albumId, title, artist, coverUrl)
         }
+    }
+
+    /** Level 2: Inspect a [CatalogAlbum]. */
+    fun selectAlbumForInspection(album: CatalogAlbum) {
+        selectAlbumForInspection(
+            title = album.title,
+            artist = album.artist,
+            coverUrl = album.coverUrl,
+            albumId = album.id
+        )
+    }
+
+    /** Level 2: Inspect a [RelatedAlbumItem] without converting to a dummy [CatalogAlbum]. */
+    fun selectAlbumForInspection(album: RelatedAlbumItem) {
+        selectAlbumForInspection(
+            title = album.title,
+            artist = album.artist,
+            coverUrl = album.artworkUri,
+            albumId = ""
+        )
     }
 
     fun selectPlaylistForInspection(playlist: CatalogPlaylist) {

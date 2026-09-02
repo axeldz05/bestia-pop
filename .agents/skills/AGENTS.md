@@ -1,4 +1,4 @@
-# BestiaPop (sofoapps) — Cursor rules
+# BestiaPop (sofoapps) — Agents rules
 
 App Android Kotlin/Compose de música: biblioteca local, playlists, descarga online (YouTube), temas y WiFi sync.
 
@@ -8,11 +8,11 @@ Leer y seguir estos skills del repo **antes** de diseñar o implementar cambios 
 
 | Skill | Path | Usar cuando |
 |-------|------|-------------|
-| **Arquitectura** | `.cursor/skills/bestiapop-architecture/SKILL.md` | Capas, stack, flujos, dónde colocar código |
-| **Features** | `.cursor/skills/bestiapop-features/SKILL.md` | Comportamiento esencial e invariantes + entry points |
-| **Implementation map** | `.cursor/skills/bestiapop-implementation-map/SKILL.md` | Localizar archivos/clases/funciones concretas |
-| **Living docs** | `.cursor/skills/bestiapop-living-docs/SKILL.md` | Protocolo para actualizar los skills anteriores |
-| **Release changelog** | `.cursor/skills/bestiapop-release-changelog/SKILL.md` | Anotar cambios user-facing y armar notas del APK |
+| **Arquitectura** | `.agents/skills/bestiapop-architecture/SKILL.md` | Capas, stack, flujos, dónde colocar código |
+| **Features** | `.agents/skills/bestiapop-features/SKILL.md` | Comportamiento esencial e invariantes + entry points |
+| **Implementation map** | `.agents/skills/bestiapop-implementation-map/SKILL.md` | Localizar archivos/clases/funciones concretas |
+| **Living docs** | `.agents/skills/bestiapop-living-docs/SKILL.md` | Protocolo para actualizar los skills anteriores |
+| **Release changelog** | `.agents/skills/bestiapop-release-changelog/SKILL.md` | Anotar cambios user-facing y armar notas del APK |
 
 Resumen histórico de principios (mantener alineado con features): `.agents/AGENTS.md`
 
@@ -51,8 +51,8 @@ Si solo hay un bugfix local sin cambio de diseño, no hace falta tocar skills.
 
 ## Al terminar la implementación y haberlo verificado mediante Build - deploy
 Leer las skills de refactorizacion y aplicalos en los cambios que hiciste.
-- Compresión semántica .cursor/skills/semantic-compression/SKILL.md
-- Granularidad continua .cursor/skills/continuous-granularity/SKILL.md
+- Compresión semántica .agents/skills/semantic-compression/SKILL.md
+- Granularidad continua .agents/skills/continuous-granularity/SKILL.md
 Busca principalmente comportamiento repetido que creaste ya sea en tus cambios o con el resto del codigo que podria estar teniendo comportamientos similares (ejemplo, si cambiaste como se descarga algo, busca en todas las partes de descargas si tienen comportamiento repetido).
 Una regla de oro para saber si tenes comportamiento repetido es pensar en cuantos sitios tendrías que tocar código para cambiar algo de lo que implementaste, si son más de 2 veces es que tenés código repetido. Ejemplos: cambiar un algoritmo específico para las recomendaciones, cambiar texto de "descarga completada", botones como reproducir cancion o agregar a playlist.
 

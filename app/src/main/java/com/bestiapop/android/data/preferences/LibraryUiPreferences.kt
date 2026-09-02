@@ -35,6 +35,20 @@ private val VALID_PLAYLIST_DETAIL_KINDS = setOf(
     PLAYLIST_DETAIL_CF
 )
 
+enum class DiscoverSourcePreference {
+    BOTH,
+    DEEZER,
+    LISTENBRAINZ
+}
+
+const val DEFAULT_DISCOVER_SOURCE_NAME = "BOTH"
+
+fun parseDiscoverSourcePreference(name: String?): DiscoverSourcePreference = when (name?.uppercase()) {
+    "DEEZER" -> DiscoverSourcePreference.DEEZER
+    "LISTENBRAINZ" -> DiscoverSourcePreference.LISTENBRAINZ
+    else -> DiscoverSourcePreference.BOTH
+}
+
 data class LibraryDisplaySettings(
     val sortOptionName: String = DEFAULT_SORT_OPTION_NAME,
     val sortDirectionName: String = DEFAULT_SORT_DIRECTION_NAME,

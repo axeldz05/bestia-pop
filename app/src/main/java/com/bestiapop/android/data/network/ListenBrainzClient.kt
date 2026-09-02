@@ -9,6 +9,9 @@ import com.bestiapop.android.data.listenbrainz.LbPlaylistSummary
 import com.bestiapop.android.data.listenbrainz.LbPlaylistTrack
 import com.bestiapop.android.data.listenbrainz.LbRadioRecording
 import com.bestiapop.android.data.listenbrainz.LbRecordingMetadata
+import com.bestiapop.android.data.listenbrainz.LbUserStatArtist
+import com.bestiapop.android.data.listenbrainz.LbUserStatRecording
+import com.bestiapop.android.data.listenbrainz.LbUserStatRelease
 import com.bestiapop.android.data.model.TrackIdentity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -353,6 +356,76 @@ object ListenBrainzClient {
         }
     }
 
+    private suspend fun <T> fetchUserStats(
+        username: String,
+        entity: String,
+        range: String,
+        count: Int,
+        token: String?,
+        parser: (JSONObject) -> List<T>
+    ): LbApiResult<List<T>> = withContext(Dispatchers.IO) {
+        if (username.isBlank()) return@withContext LbApiResult.Failure("Usuario vacío")
+        val encodedUser = URLEncoder.encode(username.trim(), Charsets.UTF_8.name())
+        val url = endpoint("stats/user/$encodedUser/$entity?range=$range&count=$count")
+        lbGet(url, token) { body -> parser(JSONObject(body)) }
+    }
+
+    suspend fun fetchUserTopArtists(
+        username: String,
+        range: String = "all_time",
+        count: Int = 20,
+        token: String? = null
+    ): LbApiResult<List<LbUserStatArtist>> =
+        fetchUserStats(username, "artists", range, count, token, ::parseUserTopArtists)
+
+    suspend fun fetchUserTopReleases(
+        username: String,
+        range: String = "all_time",
+        count: Int = 20,
+        token: String? = null
+    ): LbApiResult<List<LbUserStatRelease>> =
+        fetchUserStats(username, "releases", range, count, token, ::parseUserTopReleases)
+
+    suspend fun fetchUserTopRecordings(
+        username: String,
+        range: String = "all_time",
+        count: Int = 20,
+        token: String? = null
+    ): LbApiResult<List<LbUserStatRecording>> =
+        fetchUserStats(username, "recordings", range, count, token, ::parseUserTopRecordings)
+
+    suspend fun fetchUserRecentListens(
+        username: String,
+        count: Int = 30,
+        token: String? = null
+    ): LbApiResult<List<ListenPayload>> = withContext(Dispatchers.IO) {
+        if (username.isBlank()) return@withContext LbApiResult.Failure("Usuario vacío")
+        val encodedUser = URLEncoder.encode(username.trim(), Charsets.UTF_8.name())
+        val url = endpoint("user/$encodedUser/listens?count=$count")
+        lbGet(url, token) { body -> parseUserRecentListens(JSONObject(body)) }
+    }
+
+    /**
+     * Level 2: Fetches top artist names for user; if empty or failed, falls back to distinct artists
+     * from recent listens.
+     */
+    suspend fun fetchUserTopArtistsWithRecentFallback(
+        username: String,
+        count: Int = 20,
+        token: String? = null
+    ): List<String> {
+        if (username.isBlank()) return emptyList()
+        val topResult = fetchUserTopArtists(username, count = count, token = token)
+        if (topResult is LbApiResult.Success && topResult.data.isNotEmpty()) {
+            return topResult.data.map { it.artistName }
+        }
+        val recentResult = fetchUserRecentListens(username, count = maxOf(count * 2, 25), token = token)
+        if (recentResult is LbApiResult.Success) {
+            return recentResult.data.map { it.artistName }.distinct()
+        }
+        return emptyList()
+    }
+
 
     private inline fun <T> lbCall(
         request: Request,
@@ -612,4 +685,69 @@ object ListenBrainzClient {
         }
         return result
     }
+
+    private inline fun <T> parsePayloadArray(
+        root: JSONObject,
+        arrayKey: String,
+        transform: (JSONObject) -> T?
+    ): List<T> {
+        val arr = root.optJSONObject("payload")?.optJSONArray(arrayKey) ?: return emptyList()
+        val result = ArrayList<T>(arr.length())
+        for (i in 0 until arr.length()) {
+            val obj = arr.optJSONObject(i) ?: continue
+            val item = transform(obj) ?: continue
+            result.add(item)
+        }
+        return result
+    }
+
+    internal fun parseUserTopArtists(root: JSONObject): List<LbUserStatArtist> =
+        parsePayloadArray(root, "artists") { obj ->
+            val artistName = obj.optString("artist_name").trim().takeIf { it.isNotBlank() } ?: return@parsePayloadArray null
+            LbUserStatArtist(
+                artistName = artistName,
+                listenCount = obj.optLong("listen_count", 0L),
+                artistMbid = obj.optString("artist_mbid").takeIf { it.isNotBlank() }
+            )
+        }
+
+    internal fun parseUserTopReleases(root: JSONObject): List<LbUserStatRelease> =
+        parsePayloadArray(root, "releases") { obj ->
+            val releaseName = obj.optString("release_name").trim().takeIf { it.isNotBlank() } ?: return@parsePayloadArray null
+            LbUserStatRelease(
+                releaseName = releaseName,
+                artistName = obj.optString("artist_name").trim(),
+                listenCount = obj.optLong("listen_count", 0L),
+                releaseMbid = obj.optString("release_mbid").takeIf { it.isNotBlank() }
+            )
+        }
+
+    internal fun parseUserTopRecordings(root: JSONObject): List<LbUserStatRecording> =
+        parsePayloadArray(root, "recordings") { obj ->
+            val trackName = obj.optString("track_name").trim().takeIf { it.isNotBlank() } ?: return@parsePayloadArray null
+            LbUserStatRecording(
+                trackName = trackName,
+                artistName = obj.optString("artist_name").trim(),
+                releaseName = obj.optString("release_name").takeIf { it.isNotBlank() },
+                listenCount = obj.optLong("listen_count", 0L),
+                recordingMbid = obj.optString("recording_mbid").takeIf { it.isNotBlank() }
+            )
+        }
+
+    internal fun parseUserRecentListens(root: JSONObject): List<ListenPayload> =
+        parsePayloadArray(root, "listens") { obj ->
+            val meta = obj.optJSONObject("track_metadata") ?: return@parsePayloadArray null
+            val trackName = meta.optString("track_name").trim()
+            val artistName = meta.optString("artist_name").trim()
+            if (trackName.isBlank() || artistName.isBlank()) return@parsePayloadArray null
+            val durationMs = meta.optJSONObject("additional_info")?.optLong("duration_ms", 0L)?.takeIf { it > 0 }
+            ListenPayload(
+                listenedAt = obj.optLong("listened_at", 0L),
+                trackName = trackName,
+                artistName = artistName,
+                releaseName = meta.optString("release_name").takeIf { it.isNotBlank() },
+                durationMs = durationMs
+            )
+        }
 }
+

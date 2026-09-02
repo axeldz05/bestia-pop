@@ -174,7 +174,7 @@ fun ListenBrainzSettingsScreen(viewModel: MusicPlayerViewModel) {
         val canEnableDiscover = !settings.username.isNullOrBlank() && settings.userToken.isNotBlank()
         SettingsSwitchRow(
             title = "Mostrar Para Ti",
-            subtitle = "Daily/Weekly Jams y otras playlists Discover de tu cuenta en la pestaña Playlists.",
+            subtitle = "Daily/Weekly Jams y otras playlists Discover de tu cuenta en la pestaña Descubrir.",
             checked = settings.discoverEnabled,
             onCheckedChange = { viewModel.setListenBrainzDiscoverEnabled(it) },
             enabled = canEnableDiscover

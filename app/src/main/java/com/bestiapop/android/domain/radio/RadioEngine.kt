@@ -421,29 +421,6 @@ class RadioEngine(
             online: List<PlayableItem>,
             offline: List<PlayableItem>,
             limit: Int
-        ): List<PlayableItem> {
-            if (limit <= 0) return emptyList()
-            val result = ArrayList<PlayableItem>(minOf(limit, online.size + offline.size))
-            var i = 0
-            var j = 0
-            var takeOnline = true
-            while (result.size < limit && (i < online.size || j < offline.size)) {
-                if (takeOnline) {
-                    if (i < online.size) {
-                        result.add(online[i++])
-                    } else if (j < offline.size) {
-                        result.add(offline[j++])
-                    }
-                } else {
-                    if (j < offline.size) {
-                        result.add(offline[j++])
-                    } else if (i < online.size) {
-                        result.add(online[i++])
-                    }
-                }
-                takeOnline = !takeOnline
-            }
-            return result
-        }
+        ): List<PlayableItem> = com.bestiapop.android.domain.util.CollectionUtils.interleaveEquitable(online, offline, limit)
     }
 }

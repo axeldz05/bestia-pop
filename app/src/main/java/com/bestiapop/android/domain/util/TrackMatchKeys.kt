@@ -120,3 +120,18 @@ object TrackMatchKeys {
 }
 
 fun TrackMeta.matchKey(): String = TrackMatchKeys.matchKey(artist, title)
+
+/** Level 1: Deduplicate any collection using an explicit track/album matching key. */
+inline fun <T> List<T>.distinctByTrackKey(limit: Int = size, crossinline keyOf: (T) -> String): List<T> =
+    distinctBy { keyOf(it).ifEmpty { it.hashCode().toString() } }.take(limit)
+
+/** Level 2: Deduplicate tracks that implement [TrackMeta] by artist + title match key. */
+fun <T : TrackMeta> List<T>.distinctCatalogTracks(limit: Int = size): List<T> =
+    distinctByTrackKey(limit) { it.matchKey() }
+
+/** Level 2: Deduplicate albums by artist + title match key. */
+inline fun <T> List<T>.distinctCatalogAlbums(
+    limit: Int = size,
+    crossinline artistOf: (T) -> String,
+    crossinline titleOf: (T) -> String
+): List<T> = distinctByTrackKey(limit) { TrackMatchKeys.matchKey(artistOf(it), titleOf(it)) }

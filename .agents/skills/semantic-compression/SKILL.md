@@ -56,6 +56,13 @@ When the same stack frame appears 3+ times:
 
 Indicator: changing one identity field should edit **one** hub type (+ Room columns if persisted).
 
+### Shared Stack Frames in Compose UI
+
+When passing identical callback clusters (e.g., playback, download, retry, lyrics, queue actions) across multiple parent/child screens:
+* Bundle them into a single action struct/data class (`DiscoverMatchedTrackActions`, `SongQueueActions`, `DiscoverCollectionActions`).
+* Construct the bundle once at the host level (optionally with `remember`), eliminating repetitive 10-parameter plumbing between conditional branches.
+* Use slot composables (`headerContent`, `trailing`, `leading`) rather than boolean branching inside compressed layout bodies.
+
 ## What to Avoid
 * No class hierarchies based on domain nouns (Employee, Manager) before writing code.
 * No deep inheritance, templates, or patterns introduced before duplication exists.

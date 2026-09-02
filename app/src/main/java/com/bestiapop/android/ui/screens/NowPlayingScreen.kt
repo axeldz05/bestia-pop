@@ -104,6 +104,7 @@ import com.bestiapop.android.data.model.Playlist
 import com.bestiapop.android.data.model.RepeatMode
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.data.util.SyncedLyrics
+import com.bestiapop.android.data.preferences.NAV_DISCOVER
 import com.bestiapop.android.data.preferences.NAV_LIBRARY
 import com.bestiapop.android.data.preferences.NAV_PLAYLISTS
 import com.bestiapop.android.ui.MusicPlayerViewModel
@@ -199,6 +200,12 @@ fun NowPlayingScreen(
 
     fun goToPlaylists(open: () -> Unit) {
         viewModel.setSelectedNavIndex(NAV_PLAYLISTS)
+        open()
+        onDismiss()
+    }
+
+    fun goToDiscover(open: () -> Unit) {
+        viewModel.setSelectedNavIndex(NAV_DISCOVER)
         open()
         onDismiss()
     }
@@ -550,10 +557,10 @@ fun NowPlayingScreen(
                             goToPlaylists { viewModel.openLocalPlaylist(id) }
                         },
                         onGoToListenBrainz = { mbid ->
-                            goToPlaylists { viewModel.openListenBrainzPlaylistDetail(mbid) }
+                            goToDiscover { viewModel.openListenBrainzPlaylistDetail(mbid) }
                         },
                         onGoToCfRecommendations = {
-                            goToPlaylists { viewModel.openCfRecommendationsDetail() }
+                            goToDiscover { viewModel.openCfRecommendationsDetail() }
                         },
                         onAddToPlaylist = { localSong?.let(songDialogs.onAddToPlaylist) },
                         onIdentify = { localSong?.let { viewModel.identifySongForReview(it) } },

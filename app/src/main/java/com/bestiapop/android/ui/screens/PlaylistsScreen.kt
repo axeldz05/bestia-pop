@@ -68,31 +68,18 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
-import com.bestiapop.android.data.listenbrainz.LbPlaylistSummary
-import com.bestiapop.android.data.listenbrainz.MatchedCfRecommendations
-import com.bestiapop.android.data.listenbrainz.MatchedLbPlaylist
-import com.bestiapop.android.data.listenbrainz.toPlayableItems
-import com.bestiapop.android.data.model.ActiveDownload
-import com.bestiapop.android.data.model.DiscoverPlaybackOrigin
 import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.data.model.Playlist
 import com.bestiapop.android.data.model.PlaylistPendingTrack
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.data.model.toPlayable
-import com.bestiapop.android.data.model.toDiscoverOrigin
 import com.bestiapop.android.ui.MusicPlayerViewModel
-import com.bestiapop.android.ui.state.LoadPhase
-import com.bestiapop.android.ui.state.LoadableUiState
 import com.bestiapop.android.ui.state.PlaylistDetailNav
 import com.bestiapop.android.ui.components.ArtworkHero
 import com.bestiapop.android.ui.components.ArtworkPickerBlock
 import com.bestiapop.android.ui.components.ArtworkThumbnail
 import com.bestiapop.android.ui.components.EmptyListHint
-import com.bestiapop.android.ui.components.LabeledPlayShuffleButtons
 import com.bestiapop.android.ui.components.PlayShuffleIconPair
-import com.bestiapop.android.ui.components.MatchedTrackLazyColumn
-import com.bestiapop.android.ui.components.toListItem
-import com.bestiapop.android.ui.components.RemoteTrackPlaceholderRow
 import com.bestiapop.android.ui.components.ScreenBackHeader
 import com.bestiapop.android.ui.components.SongListItem
 import com.bestiapop.android.ui.components.SongQueueActions
@@ -100,15 +87,8 @@ import com.bestiapop.android.ui.components.isCurrentPlaying
 import com.bestiapop.android.ui.components.rememberImagePicker
 import com.bestiapop.android.ui.components.rememberSongQueueActions
 import com.bestiapop.android.ui.screens.library.rememberSongActionDialogs
-
-import androidx.compose.material.icons.filled.Recommend
+import com.bestiapop.android.ui.components.RemoteTrackPlaceholderRow
 import androidx.compose.runtime.LaunchedEffect
-import java.text.DateFormat
-import java.util.Date
-import java.util.Locale
-
-fun matchedStreamCountLabel(matched: Int, stream: Int): String =
-    "$matched en biblioteca · $stream en stream"
 
 @Composable
 fun PlaylistsScreen(
@@ -138,20 +118,9 @@ fun PlaylistsScreen(
     val songActions = rememberSongQueueActions(viewModel)
     val songDialogs = rememberSongActionDialogs(viewModel = viewModel, playlists = playlists)
 
-    val showDiscover = lbSettings.showDiscoverPlaylists
     val selectedPlaylistId = (playlistDetail as? PlaylistDetailNav.Local)?.id
-    val selectedLbPlaylistMbid = (playlistDetail as? PlaylistDetailNav.ListenBrainz)?.mbid
-    val cfDetailOpen = playlistDetail is PlaylistDetailNav.CfRecommendations
 
-    LaunchedEffect(showDiscover) {
-        if (showDiscover) {
-            viewModel.refreshListenBrainzDiscoverPlaylists()
-        } else {
-            viewModel.dismissDiscoverDetails()
-        }
-    }
-
-    val hasNestedBack = playlistDetail !is PlaylistDetailNav.None
+    val hasNestedBack = selectedPlaylistId != null
     BackHandler(enabled = hasNestedBack) {
         viewModel.closePlaylistDetail()
     }
@@ -168,177 +137,13 @@ fun PlaylistsScreen(
                 modifier = Modifier.fillMaxSize(),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                    if (showDiscover) {
-                        item(key = "para-ti-header") {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = "Para Ti",
-                                    style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
-                                    color = MaterialTheme.colorScheme.onBackground,
-                                    modifier = Modifier.weight(1f)
-                                )
-                                IconButton(onClick = { viewModel.refreshListenBrainzDiscoverPlaylists() }) {
-                                    Icon(
-                                        imageVector = Icons.Default.Refresh,
-                                        contentDescription = "Actualizar Para Ti",
-                                        tint = MaterialTheme.colorScheme.primary
-                                    )
-                                }
-                            }
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = "Playlists Discover de ListenBrainz",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                        }
-
-                        when (val phase = lbDiscover.phase) {
-                            LoadPhase.Loading -> {
-                                item(key = "para-ti-loading") {
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(vertical = 24.dp),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        CircularProgressIndicator()
-                                    }
-                                }
-                            }
-                            is LoadPhase.Error -> {
-                                item(key = "para-ti-error") {
-                                    Text(
-                                        text = phase.message,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.error,
-                                        modifier = Modifier.padding(vertical = 8.dp)
-                                    )
-                                }
-                            }
-                            LoadPhase.Loaded, LoadPhase.Idle -> {
-                                if (lbDiscoverPlaylists.isEmpty() && phase is LoadPhase.Loaded) {
-                                    item(key = "para-ti-empty") {
-                                        Text(
-                                            text = "Aún no hay playlists Discover en tu cuenta.",
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                                            modifier = Modifier.padding(vertical = 8.dp)
-                                        )
-                                    }
-                                } else {
-                                    items(lbDiscoverPlaylists, key = { "lb-${it.mbid}" }) { playlist ->
-                                        LbPlaylistCardItem(
-                                            playlist = playlist,
-                                            onClick = {
-                                                viewModel.openListenBrainzPlaylistDetail(playlist.mbid)
-                                            }
-                                        )
-                                    }
-                                }
-                            }
-                        }
-
-                        item(key = "recomendados-header") {
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = "Recomendados",
-                                    style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
-                                    color = MaterialTheme.colorScheme.onBackground,
-                                    modifier = Modifier.weight(1f)
-                                )
-                                IconButton(onClick = { viewModel.refreshCfRecommendations() }) {
-                                    Icon(
-                                        imageVector = Icons.Default.Refresh,
-                                        contentDescription = "Actualizar Recomendados",
-                                        tint = MaterialTheme.colorScheme.primary
-                                    )
-                                }
-                            }
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = "Basado en tu historial ListenBrainz",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                        }
-
-                        when (val phase = cfRecommendationsState.phase) {
-                            LoadPhase.Loading -> {
-                                item(key = "recomendados-loading") {
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(vertical = 24.dp),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        CircularProgressIndicator()
-                                    }
-                                }
-                            }
-                            is LoadPhase.Error -> {
-                                item(key = "recomendados-error") {
-                                    Text(
-                                        text = phase.message,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.error,
-                                        modifier = Modifier.padding(vertical = 8.dp)
-                                    )
-                                }
-                            }
-                            LoadPhase.Loaded, LoadPhase.Idle -> {
-                                val matched = cfRecommendations
-                                if (matched == null || matched.matches.isEmpty()) {
-                                    if (phase is LoadPhase.Loaded) {
-                                        item(key = "recomendados-empty") {
-                                            Text(
-                                                text = "Aún no hay recomendaciones CF para tu cuenta.",
-                                                style = MaterialTheme.typography.bodyMedium,
-                                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                                                modifier = Modifier.padding(vertical = 8.dp)
-                                            )
-                                        }
-                                    }
-                                } else {
-                                    item(key = "recomendados-card") {
-                                        CfRecommendationsCardItem(
-                                            matched = matched,
-                                            onClick = {
-                                                viewModel.openCfRecommendationsDetail()
-                                            }
-                                        )
-                                    }
-                                }
-                            }
-                        }
-
-                        item(key = "mis-playlists-header") {
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Text(
-                                text = "Mis Playlists",
-                                style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
-                                color = MaterialTheme.colorScheme.onBackground
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                        }
-                    } else {
-                        item(key = "mis-playlists-header-only") {
-                            Text(
-                                text = "Mis Playlists",
-                                style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
-                                color = MaterialTheme.colorScheme.onBackground
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                        }
+                    item(key = "mis-playlists-header") {
+                        Text(
+                            text = "Mis Playlists",
+                            style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.onBackground
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
                     }
 
                     if (visiblePlaylists.isEmpty()) {
@@ -369,7 +174,7 @@ fun PlaylistsScreen(
                 }
             }
 
-        if (selectedPlaylistId == null && selectedLbPlaylistMbid == null && !cfDetailOpen) {
+        if (selectedPlaylistId == null) {
             FloatingActionButton(
                 onClick = { showCreateDialog = true },
                 modifier = Modifier
@@ -405,86 +210,6 @@ fun PlaylistsScreen(
                     onEditLyrics = songDialogs.onEditLyrics
                 )
             }
-        }
-
-        // ListenBrainz Discover playlist detail
-        if (selectedLbPlaylistMbid != null) {
-            val currentItem by viewModel.currentItem.collectAsStateWithLifecycle()
-            val activeDownloads by viewModel.activeDownloads.collectAsStateWithLifecycle()
-            LbPlaylistDetailScreen(
-                state = lbPlaylistDetail,
-                onBack = { viewModel.closePlaylistDetail() },
-                onPlay = {
-                    val matched = selectedLbPlaylist ?: return@LbPlaylistDetailScreen
-                    viewModel.playMatchedTracks(matched.toPlayableItems(), matched.toDiscoverOrigin())
-                },
-                onShuffle = {
-                    val matched = selectedLbPlaylist ?: return@LbPlaylistDetailScreen
-                    viewModel.shuffleMatchedTracks(matched.toPlayableItems(), matched.toDiscoverOrigin())
-                },
-                onPlayAt = { index ->
-                    val matched = selectedLbPlaylist ?: return@LbPlaylistDetailScreen
-                    viewModel.playMatchedTracks(
-                        matched.toPlayableItems(),
-                        matched.toDiscoverOrigin(),
-                        startIndex = index
-                    )
-                },
-                onSaveAsLocal = {
-                    viewModel.saveListenBrainzPlaylistAsLocal { newId ->
-                        viewModel.openLocalPlaylist(newId)
-                    }
-                },
-                onImportWithDownloads = {
-                    viewModel.importListenBrainzPlaylistWithDownloads()
-                },
-                currentItem = currentItem,
-                activeDownloads = activeDownloads,
-                onDownloadRemote = { viewModel.downloadRemoteItem(it) },
-                onRetryDownload = viewModel::retryActiveDownload,
-                onCancelDownload = viewModel::dismissActiveDownload,
-                queueActions = songActions,
-                onEditLyrics = songDialogs.onEditLyrics
-            )
-        }
-
-        // CF Recommendations detail
-        if (cfDetailOpen) {
-            val currentItem by viewModel.currentItem.collectAsStateWithLifecycle()
-            val activeDownloads by viewModel.activeDownloads.collectAsStateWithLifecycle()
-            CfRecommendationsDetailScreen(
-                state = cfRecommendationsState,
-                onBack = { viewModel.closePlaylistDetail() },
-                onPlay = {
-                    val matched = cfRecommendations ?: return@CfRecommendationsDetailScreen
-                    viewModel.playMatchedTracks(
-                        matched.toPlayableItems(),
-                        DiscoverPlaybackOrigin.CfRecommendations
-                    )
-                },
-                onShuffle = {
-                    val matched = cfRecommendations ?: return@CfRecommendationsDetailScreen
-                    viewModel.shuffleMatchedTracks(
-                        matched.toPlayableItems(),
-                        DiscoverPlaybackOrigin.CfRecommendations
-                    )
-                },
-                onPlayAt = { index ->
-                    val matched = cfRecommendations ?: return@CfRecommendationsDetailScreen
-                    viewModel.playMatchedTracks(
-                        matched.toPlayableItems(),
-                        DiscoverPlaybackOrigin.CfRecommendations,
-                        startIndex = index
-                    )
-                },
-                currentItem = currentItem,
-                activeDownloads = activeDownloads,
-                onDownloadRemote = { viewModel.downloadRemoteItem(it) },
-                onRetryDownload = viewModel::retryActiveDownload,
-                onCancelDownload = viewModel::dismissActiveDownload,
-                queueActions = songActions,
-                onEditLyrics = songDialogs.onEditLyrics
-            )
         }
 
         // Create Playlist Dialog
@@ -569,334 +294,7 @@ fun PlaylistSurfaceCard(
     }
 }
 
-@Composable
-private fun MatchedPlaylistDetailScaffold(
-    title: String,
-    onBack: () -> Unit,
-    loading: Boolean,
-    errorMessage: String?,
-    content: @Composable ColumnScope.() -> Unit
-) {
-    Surface(
-        modifier = Modifier.fillMaxSize(),
-        color = MaterialTheme.colorScheme.background
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(top = 16.dp, start = 16.dp, end = 16.dp)
-        ) {
-            ScreenBackHeader(title = title, onBack = onBack)
-            Spacer(modifier = Modifier.height(12.dp))
-            when {
-                loading -> Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    CircularProgressIndicator()
-                }
-                errorMessage != null -> Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = errorMessage,
-                        color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                }
-                else -> content()
-            }
-        }
-    }
-}
 
-@Composable
-private fun CfRecommendationsCardItem(
-    matched: MatchedCfRecommendations,
-    onClick: () -> Unit
-) {
-    val lastUpdatedLabel = matched.payload.lastUpdatedEpochSec?.let { epochSec ->
-        val formatter = DateFormat.getDateInstance(DateFormat.MEDIUM, Locale.getDefault())
-        " · actualizado ${formatter.format(Date(epochSec * 1000L))}"
-    }.orEmpty()
-
-    PlaylistSurfaceCard(
-        title = "Recomendados para vos",
-        onClick = onClick,
-        leading = {
-            Box(
-                modifier = Modifier
-                    .size(60.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(MaterialTheme.colorScheme.secondaryContainer),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Recommend,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSecondaryContainer,
-                    modifier = Modifier.size(28.dp)
-                )
-            }
-        },
-        lines = {
-            Text(
-                text = matchedStreamCountLabel(matched.matchedCount, matched.streamCount),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Text(
-                text = "${matched.totalCount} tracks · CF$lastUpdatedLabel",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.9f),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-    )
-}
-
-@Composable
-private fun CfRecommendationsDetailScreen(
-    state: LoadableUiState<MatchedCfRecommendations?>,
-    onBack: () -> Unit,
-    onPlay: () -> Unit,
-    onShuffle: () -> Unit,
-    onPlayAt: (Int) -> Unit,
-    currentItem: PlayableItem?,
-    activeDownloads: List<ActiveDownload>,
-    onDownloadRemote: (PlayableItem.Remote) -> Unit,
-    onRetryDownload: (String) -> Unit,
-    onCancelDownload: (String) -> Unit,
-    queueActions: SongQueueActions,
-    onEditLyrics: (Song) -> Unit
-) {
-    val matched = state.data
-    MatchedPlaylistDetailScaffold(
-        title = "Recomendados",
-        onBack = onBack,
-        loading = matched == null && (state.phase is LoadPhase.Loading || state.phase is LoadPhase.Idle),
-        errorMessage = state.errorMessage
-    ) {
-        if (matched == null || matched.matches.isEmpty()) {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = "Aún no hay recomendaciones CF para tu cuenta.",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.bodyMedium
-                )
-            }
-        } else {
-            Text(
-                text = matchedStreamCountLabel(matched.matchedCount, matched.streamCount),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-            )
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            LabeledPlayShuffleButtons(onPlay = onPlay, onShuffle = onShuffle)
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            MatchedTrackLazyColumn(
-                matches = matched.matches.mapIndexed { index, match -> match.toListItem(index) },
-                remoteBadge = "Stream",
-                currentItem = currentItem,
-                activeDownloads = activeDownloads,
-                onPlayAt = onPlayAt,
-                onDownloadRemote = onDownloadRemote,
-                onRetryDownload = onRetryDownload,
-                onCancelDownload = onCancelDownload,
-                queueActions = queueActions,
-                onEditLyrics = onEditLyrics
-            )
-        }
-    }
-}
-
-@Composable
-private fun LbPlaylistCardItem(
-    playlist: LbPlaylistSummary,
-    onClick: () -> Unit
-) {
-    PlaylistSurfaceCard(
-        title = playlist.title,
-        onClick = onClick,
-        leading = {
-            Box(
-                modifier = Modifier
-                    .size(60.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(MaterialTheme.colorScheme.tertiaryContainer),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.QueueMusic,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onTertiaryContainer,
-                    modifier = Modifier.size(28.dp)
-                )
-            }
-        },
-        lines = {
-            if (!playlist.description.isNullOrBlank()) {
-                Text(
-                    text = playlist.description,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-            Text(
-                text = if (playlist.trackCount > 0) {
-                    "${playlist.trackCount} tracks · ListenBrainz"
-                } else {
-                    "ListenBrainz"
-                },
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.9f)
-            )
-        }
-    )
-}
-
-@Composable
-private fun LbPlaylistDetailScreen(
-    state: LoadableUiState<MatchedLbPlaylist?>,
-    onBack: () -> Unit,
-    onPlay: () -> Unit,
-    onShuffle: () -> Unit,
-    onPlayAt: (Int) -> Unit,
-    onSaveAsLocal: () -> Unit,
-    onImportWithDownloads: () -> Unit,
-    currentItem: PlayableItem?,
-    activeDownloads: List<ActiveDownload>,
-    onDownloadRemote: (PlayableItem.Remote) -> Unit,
-    onRetryDownload: (String) -> Unit,
-    onCancelDownload: (String) -> Unit,
-    queueActions: SongQueueActions,
-    onEditLyrics: (Song) -> Unit
-) {
-    val matchedPlaylist = state.data
-    MatchedPlaylistDetailScaffold(
-        title = matchedPlaylist?.detail?.summary?.title ?: "Para Ti",
-        onBack = onBack,
-        loading = state.phase is LoadPhase.Loading || state.phase is LoadPhase.Idle,
-        errorMessage = state.errorMessage
-    ) {
-        val matched = matchedPlaylist
-        if (matched == null) {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = "No se pudo cargar la playlist",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            return@MatchedPlaylistDetailScaffold
-        }
-
-        val description = matched.detail.summary.description
-        val hasTracks = matched.matches.isNotEmpty()
-        val hasMatched = matched.matchedCount > 0
-        val hasUnmatched = matched.streamCount > 0
-
-        if (!description.isNullOrBlank()) {
-            Text(
-                text = description,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
-                maxLines = 3,
-                overflow = TextOverflow.Ellipsis
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-        }
-
-        Text(
-            text = matchedStreamCountLabel(matched.matchedCount, matched.streamCount),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-        )
-
-        Spacer(modifier = Modifier.height(12.dp))
-        LabeledPlayShuffleButtons(
-            onPlay = onPlay,
-            onShuffle = onShuffle,
-            enabled = hasTracks
-        )
-
-        if (hasMatched || hasUnmatched) {
-            Spacer(modifier = Modifier.height(8.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                OutlinedButton(
-                    onClick = onSaveAsLocal,
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Icon(imageVector = Icons.AutoMirrored.Filled.PlaylistAdd, contentDescription = null)
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Guardar", maxLines = 1, overflow = TextOverflow.Ellipsis)
-                }
-                if (hasUnmatched) {
-                    OutlinedButton(
-                        onClick = onImportWithDownloads,
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Icon(imageVector = Icons.Default.Download, contentDescription = null)
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            "Descargar faltantes",
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        if (matched.matches.isEmpty()) {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = "Esta playlist no tiene tracks",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                )
-            }
-        } else {
-            MatchedTrackLazyColumn(
-                matches = matched.matches.mapIndexed { index, match -> match.toListItem(index) },
-                remoteBadge = "No en biblioteca · stream",
-                currentItem = currentItem,
-                activeDownloads = activeDownloads,
-                onPlayAt = onPlayAt,
-                onDownloadRemote = onDownloadRemote,
-                onRetryDownload = onRetryDownload,
-                onCancelDownload = onCancelDownload,
-                queueActions = queueActions,
-                onEditLyrics = onEditLyrics
-            )
-        }
-    }
-}
 
 @Composable
 private fun PlaylistCardItem(

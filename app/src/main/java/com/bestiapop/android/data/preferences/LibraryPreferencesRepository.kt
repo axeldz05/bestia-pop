@@ -138,6 +138,14 @@ class LibraryPreferencesRepository(private val context: Context) {
         )
     }
 
+    val discoverSourceFlow: Flow<DiscoverSourcePreference> = context.libraryDataStore.data.map { prefs ->
+        parseDiscoverSourcePreference(prefs[Keys.DISCOVER_SOURCE])
+    }
+
+    suspend fun setDiscoverSourcePreference(preference: DiscoverSourcePreference) {
+        context.libraryDataStore.put(Keys.DISCOVER_SOURCE, preference.name)
+    }
+
     suspend fun setNavSnapshot(snapshot: UiNavSnapshot) {
         val clean = LibraryUiPreferencesCodec.sanitizeNavSnapshot(
             navIndex = snapshot.navIndex,
@@ -188,5 +196,6 @@ class LibraryPreferencesRepository(private val context: Context) {
         val PLAYLIST_DETAIL_KIND = stringPreferencesKey("playlist_detail_kind")
         val PLAYLIST_LOCAL_ID = longPreferencesKey("playlist_local_id")
         val PLAYLIST_LB_MBID = stringPreferencesKey("playlist_lb_mbid")
+        val DISCOVER_SOURCE = stringPreferencesKey("discover_source_preference")
     }
 }

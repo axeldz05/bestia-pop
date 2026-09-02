@@ -54,6 +54,12 @@ fun isCurrentPlaying(
     return isMatchedTrackPlaying(localSong, artist, title, current)
 }
 
+fun isCurrentPlaying(
+    current: PlayableItem?,
+    artist: String,
+    title: String
+): Boolean = isCurrentPlaying(current, null, artist, title)
+
 /**
  * L2: local → [SongListItem], remote → [RemoteTrackPlaceholderRow].
  * Keep [RemoteTrackPlaceholderRow] / [SongListItem] public for one-off layouts.

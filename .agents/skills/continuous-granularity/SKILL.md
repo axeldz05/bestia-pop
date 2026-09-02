@@ -1,3 +1,8 @@
+---
+name: continuous-granularity
+description: Maintain multiple levels of API control (L1 primitives, L2 compressed wrappers, L3 utilities). Ensure high-level wrappers never eliminate access to lower-level components.
+---
+
 # Continuous Granularity
 
 **Objective:** To build and modify APIs, abstractions, and user interfaces using a compression-oriented approach. The goal is to maximize code compaction while maintaining continuous granularity—ensuring high-level wrappers never eliminate or obscure lower-level control, avoiding API "holes" or artificial restrictions.
@@ -46,3 +51,19 @@ Always maintain access to three distinct levels of API granularity:
 
 ### Track identity (BestiaPop)
 High-level wrappers (`OnlineCatalogTrack.withIdentity`, `OnlineCatalogTrack.preferMetaFrom`, `PlayableItem.remoteFrom(artist, title, …)`, `fromLibraryOrRemote(artist, title, …)`, `OnlineCatalogTrack` / `LbPlaylistTrack` / `LbRecordingMetadata` invoke, `TrackIdentity.toCatalogTrack` / `toListenBrainzCatalogTrack`, `TrackMeta.youtubeSearchQuery`) must not delete Level 1: `identity.copy`, `remoteFrom(identity)`, `fromLibraryOrRemote(identity)`, and primary constructors that take `TrackIdentity` stay public. Step down when a call site needs a one-off field tweak.
+
+### Jetpack Compose UI (BestiaPop)
+
+When applying continuous granularity to Compose screens, components, and lists:
+
+1. **Action Bundles & Dual Overloads (Level 2 & Level 1)**:
+   - When a screen, detail view, or host receives 6+ callbacks or related states (e.g., `DiscoverMatchedTrackActions`, `DiscoverCollectionActions`, `LibrarySongListActions`), bundle them into a Level 2 `data class`.
+   - **Mandatory**: Always retain the Level 1 overload with individual primitive parameters delegating to the bundled version (or vice versa). Never eliminate Level 1 access, as previews, isolated tests, and custom call sites depend on passing explicit callbacks without constructing wrapper instances.
+
+2. **Shared Layout Compression with Slot Escape Hatches**:
+   - When sibling screens share 80%+ structural layout (e.g., `MatchedPlaylistContent` shared between `CfRecommendationsDetailScreen` and `LbPlaylistDetailScreen`), compress the shared scaffold/body into a Level 2 composable.
+   - Do **not** inject flags (`isCf: Boolean`, `isLb: Boolean`) to toggle screen-specific buttons. Instead, accept a composable slot (e.g., `headerContent: (@Composable ColumnScope.() -> Unit)? = null`) to allow screen-specific actions ("Guardar", "Descargar faltantes") while keeping the shared layout clean.
+
+3. **Interface-typed Rows over Concrete DTOs**:
+   - Reusable row items (e.g., `DiscoverTrackListItem`) should accept common interfaces (e.g., `track: TrackMeta`) rather than specific remote catalog classes (`OnlineCatalogTrack`). This permits passing candidates, local songs, or online tracks indiscriminately.
+   - Expose open customization slots with sensible defaults (e.g., `leading: (@Composable RowScope.() -> Unit)? = null`, `highlighted: Boolean = false`) so callers can decorate rows (track numbers, active playback styling) without duplicating the underlying row structure.

@@ -32,6 +32,12 @@ data class CatalogSearchUiState(
     val hasActiveFilters: Boolean
         get() = searchFilters.hasAny
 
+    fun withSearchFilters(filters: IdentifySearchFilters): CatalogSearchUiState = copy(
+        searchFilterArtist = filters.artist,
+        searchFilterAlbum = filters.album,
+        searchFilterYear = if (filters.year > 0) filters.year.toString() else ""
+    )
+
     fun currentResultsAreEmpty(): Boolean = when (category) {
         CatalogCategory.SONGS, CatalogCategory.CHARTS -> tracks.isEmpty()
         CatalogCategory.ALBUMS -> albums.isEmpty()

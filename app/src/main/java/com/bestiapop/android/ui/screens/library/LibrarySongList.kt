@@ -149,7 +149,9 @@ fun LibrarySongList(
         withFrameNanos { }
         artworkReady = true
     }
-    val allowArtworkDecode = artworkReady && !listState.isScrollInProgress
+    val allowArtworkDecode by remember {
+        derivedStateOf { artworkReady && !listState.isScrollInProgress }
+    }
 
     CompositionLocalProvider(LocalAllowArtworkDecode provides allowArtworkDecode) {
     LazyColumn(state = listState, modifier = modifier.fillMaxSize()) {
@@ -160,55 +162,20 @@ fun LibrarySongList(
         ) { index ->
             when (val item = visible.itemAt(index)) {
                 is LibraryListItem.AlbumHeader -> {
-                    val albumIds = item.songIds
-                    val selectionState = remember(albumIds, selectedSongIds, isSelectionMode) {
-                        albumHeaderSelectionState(albumIds, selectedSongIds, isSelectionMode)
-                    }
-                    val playAlbum = remember(item.albumName, albumIds) {
-                        { onPlayAlbumState.value(item.albumName, albumIds) }
-                    }
-                    val shuffleAlbum = remember(item.albumName, albumIds) {
-                        { onShuffleAlbumState.value(item.albumName, albumIds) }
-                    }
-                    val toggleSelectAlbum = remember(albumIds) {
-                        { onToggleSelectAlbumState.value(albumIds) }
-                    }
-                    val albumLongClick = remember(albumIds) {
-                        { onAlbumLongClickState.value(albumIds) }
-                    }
-                    val toggleCollapse = remember(item.albumName) {
-                        { onToggleCollapseAlbumState.value(item.albumName) }
-                    }
-                    val editAlbum = remember(item.albumName) {
-                        { onEditAlbumState.value(item.albumName) }
-                    }
-                    val changeAlbumCover = remember(item.albumName) {
-                        { onChangeAlbumCoverState.value(item.albumName) }
-                    }
-                    val identifyAlbum = remember(item.albumName) {
-                        { onIdentifyAlbumState.value(item.albumName) }
-                    }
-                    val openAlbum = remember(item.albumName) {
-                        { onOpenAlbumState.value(item.albumName) }
-                    }
-                    TauonAlbumHeader(
-                        title = item.displayName,
-                        artistName = item.artistName,
-                        artworkUri = item.artworkUri,
-                        songCount = item.songCount,
-                        sortHint = item.sortHint,
-                        isCollapsed = item.matchesCollapsed(collapsedAlbumNames),
+                    LibraryAlbumHeaderRow(
+                        item = item,
+                        selectedSongIds = selectedSongIds,
                         isSelectionMode = isSelectionMode,
-                        selectionState = selectionState,
-                        onPlayAlbum = playAlbum,
-                        onShuffleAlbum = shuffleAlbum,
-                        onToggleSelect = toggleSelectAlbum,
-                        onLongClick = albumLongClick,
-                        onToggleCollapse = toggleCollapse,
-                        onEditAlbum = editAlbum,
-                        onChangeAlbumCover = changeAlbumCover,
-                        onIdentifyAlbum = identifyAlbum,
-                        onOpenAlbum = openAlbum
+                        collapsedAlbumNames = collapsedAlbumNames,
+                        onPlayAlbumState = onPlayAlbumState,
+                        onShuffleAlbumState = onShuffleAlbumState,
+                        onToggleSelectAlbumState = onToggleSelectAlbumState,
+                        onAlbumLongClickState = onAlbumLongClickState,
+                        onToggleCollapseAlbumState = onToggleCollapseAlbumState,
+                        onEditAlbumState = onEditAlbumState,
+                        onChangeAlbumCoverState = onChangeAlbumCoverState,
+                        onIdentifyAlbumState = onIdentifyAlbumState,
+                        onOpenAlbumState = onOpenAlbumState
                     )
                 }
 
@@ -238,6 +205,74 @@ fun LibrarySongList(
         }
     }
     }
+}
+
+@Composable
+private fun LibraryAlbumHeaderRow(
+    item: LibraryListItem.AlbumHeader,
+    selectedSongIds: Set<Long>,
+    isSelectionMode: Boolean,
+    collapsedAlbumNames: Set<String>,
+    onPlayAlbumState: State<(String, List<Long>) -> Unit>,
+    onShuffleAlbumState: State<(String, List<Long>) -> Unit>,
+    onToggleSelectAlbumState: State<(List<Long>) -> Unit>,
+    onAlbumLongClickState: State<(List<Long>) -> Unit>,
+    onToggleCollapseAlbumState: State<(String) -> Unit>,
+    onEditAlbumState: State<(String) -> Unit>,
+    onChangeAlbumCoverState: State<(String) -> Unit>,
+    onIdentifyAlbumState: State<(String) -> Unit>,
+    onOpenAlbumState: State<(String) -> Unit>
+) {
+    val albumIds = item.songIds
+    val selectionState = remember(albumIds, selectedSongIds, isSelectionMode) {
+        albumHeaderSelectionState(albumIds, selectedSongIds, isSelectionMode)
+    }
+    val playAlbum = remember(item.albumName, albumIds) {
+        { onPlayAlbumState.value(item.albumName, albumIds) }
+    }
+    val shuffleAlbum = remember(item.albumName, albumIds) {
+        { onShuffleAlbumState.value(item.albumName, albumIds) }
+    }
+    val toggleSelectAlbum = remember(albumIds) {
+        { onToggleSelectAlbumState.value(albumIds) }
+    }
+    val albumLongClick = remember(albumIds) {
+        { onAlbumLongClickState.value(albumIds) }
+    }
+    val toggleCollapse = remember(item.albumName) {
+        { onToggleCollapseAlbumState.value(item.albumName) }
+    }
+    val editAlbum = remember(item.albumName) {
+        { onEditAlbumState.value(item.albumName) }
+    }
+    val changeAlbumCover = remember(item.albumName) {
+        { onChangeAlbumCoverState.value(item.albumName) }
+    }
+    val identifyAlbum = remember(item.albumName) {
+        { onIdentifyAlbumState.value(item.albumName) }
+    }
+    val openAlbum = remember(item.albumName) {
+        { onOpenAlbumState.value(item.albumName) }
+    }
+    TauonAlbumHeader(
+        title = item.displayName,
+        artistName = item.artistName,
+        artworkUri = item.artworkUri,
+        songCount = item.songCount,
+        sortHint = item.sortHint,
+        isCollapsed = item.matchesCollapsed(collapsedAlbumNames),
+        isSelectionMode = isSelectionMode,
+        selectionState = selectionState,
+        onPlayAlbum = playAlbum,
+        onShuffleAlbum = shuffleAlbum,
+        onToggleSelect = toggleSelectAlbum,
+        onLongClick = albumLongClick,
+        onToggleCollapse = toggleCollapse,
+        onEditAlbum = editAlbum,
+        onChangeAlbumCover = changeAlbumCover,
+        onIdentifyAlbum = identifyAlbum,
+        onOpenAlbum = openAlbum
+    )
 }
 
 internal fun filterCollapsedAlbumSongs(

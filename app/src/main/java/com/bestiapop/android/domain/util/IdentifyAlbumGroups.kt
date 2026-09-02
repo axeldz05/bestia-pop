@@ -36,5 +36,4 @@ fun clusterIdentifyAlbumGroups(proposals: List<IdentifyProposal>): List<Identify
     }
 }
 
-fun albumGroupKey(artist: String, album: String): String =
-    "${TrackMatchKeys.normalize(artist)}|${albumIdentityKey(album)}"
+fun albumGroupKey(artist: String, album: String): String = albumArtistKey(artist, album)

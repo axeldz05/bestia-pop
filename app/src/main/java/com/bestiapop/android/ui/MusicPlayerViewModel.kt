@@ -66,6 +66,7 @@ import com.bestiapop.android.domain.util.IdentifyAlbumGroup
 import com.bestiapop.android.domain.util.IdentifyCatalogQuery
 import com.bestiapop.android.domain.util.IdentifyRanking
 import com.bestiapop.android.domain.util.TrackMatchKeys
+import com.bestiapop.android.domain.util.albumArtistKey
 import com.bestiapop.android.domain.util.albumGroupKey
 import com.bestiapop.android.domain.util.albumIdentityKey
 import com.bestiapop.android.domain.util.albumNamesMatch
@@ -301,6 +302,20 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             started = SharingStarted.Eagerly,
             initialValue = emptyMap()
         )
+    val allSongsById: StateFlow<Map<Long, Song>> = rawSongs
+        .map { songs -> songs.associateBy(Song::id) }
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.Eagerly,
+            initialValue = emptyMap()
+        )
+
+    /** Level 2: Resolves an iterable of song IDs into the corresponding Songs in O(1) per song. */
+    fun songsForIds(ids: Iterable<Long>): List<Song> {
+        val index = allSongsById.value
+        return ids.mapNotNull { index[it] }
+    }
+
     private data class SavedAlbumIndices(
         val byArtistAndAlbum: Map<String, List<Song>> = emptyMap(),
         val byAlbumTitle: Map<String, List<Song>> = emptyMap()
@@ -312,8 +327,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             val byTitle = HashMap<String, MutableList<Song>>()
             for (song in songs) {
                 val albumKey = albumIdentityKey(song.album)
-                val artistKey = TrackMatchKeys.normalize(song.artist)
-                byArtist.getOrPut("$albumKey|$artistKey") { ArrayList() }.add(song)
+                byArtist.getOrPut(albumArtistKey(song.artist, song.album)) { ArrayList() }.add(song)
                 byTitle.getOrPut(albumKey) { ArrayList() }.add(song)
             }
             SavedAlbumIndices(byArtist, byTitle)
@@ -1169,6 +1183,14 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         playCatalogOrLocalTrack(candidate.effectiveTrack)
     }
 
+    /** Downloads a single catalog candidate using YouTube extraction and tracking. */
+    fun downloadCatalogCandidate(
+        candidate: CatalogTrackCandidate,
+        source: ActiveDownloadSource = ActiveDownloadSource.CATALOG
+    ) {
+        downloadOnlineTrack(candidate.effectiveTrack, source = source)
+    }
+
     /** Returns status of track in library (DOWNLOADED, SAVED_REMOTE, or NOT_IN_LIBRARY) in O(1). */
     fun getTrackLibraryStatus(meta: TrackMeta): ItemLibraryStatus {
         val song = TrackMatchKeys.lookupLocalSong(allLibrarySongsIndex.value, meta)
@@ -1180,7 +1202,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     fun getAlbumLibraryStatus(albumTitle: String, artistName: String): ItemLibraryStatus {
         val indices = savedAlbumsIndices.value
         val albumKey = albumIdentityKey(albumTitle)
-        val key = "$albumKey|${TrackMatchKeys.normalize(artistName)}"
+        val key = albumArtistKey(artistName, albumTitle)
         val songs = indices.byArtistAndAlbum[key] ?: indices.byAlbumTitle[albumKey]
         if (songs.isNullOrEmpty()) return ItemLibraryStatus.NOT_IN_LIBRARY
         return if (songs.any { !it.isRemote }) ItemLibraryStatus.DOWNLOADED else ItemLibraryStatus.SAVED_REMOTE
@@ -1570,13 +1592,8 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         playbackRuntime.playNextBatch(songs.toPlayableItems())
     }
 
-    fun addSongsToPlaylist(playlistId: Long, songs: List<Song>) {
-        viewModelScope.launch {
-            songs.forEach { song ->
-                repository.addSongToPlaylist(playlistId, song.id)
-            }
-        }
-    }
+    fun addSongsToPlaylist(playlistId: Long, songs: List<Song>) =
+        addSongsToPlaylist(playlistId, songs.map { it.id })
 
     @JvmName("addSongsToPlaylistByIds")
     fun addSongsToPlaylist(playlistId: Long, songIds: List<Long>) {
@@ -3674,7 +3691,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
-    fun saveAlbumToLibrary(album: CatalogAlbum, candidates: List<CatalogTrackCandidate>) {
+    fun saveAlbumToLibrary(album: CatalogAlbum, candidates: List<CatalogTrackCandidate> = emptyList()) {
         viewModelScope.launch {
             try {
                 val effectiveCandidates = if (candidates.isNotEmpty()) {

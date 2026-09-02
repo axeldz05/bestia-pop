@@ -77,7 +77,7 @@ class LocalMetadataRadio(
                 }
                 .shuffled(random)
                 .take(limit)
-                .map { PlayableItem.Local(it) }
+                .map { it.toPlayable() }
                 .toList()
         }
 

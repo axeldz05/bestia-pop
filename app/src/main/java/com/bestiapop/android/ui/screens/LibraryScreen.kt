@@ -135,7 +135,6 @@ fun LibraryScreen(
 
     // Multi-selection state
     var selectedSongIds by remember { mutableStateOf(setOf<Long>()) }
-    var selectedSongsById by remember { mutableStateOf(mapOf<Long, Song>()) }
     val isMultiSelectMode = selectedSongIds.isNotEmpty()
 
 
@@ -150,11 +149,9 @@ fun LibraryScreen(
         playlists = playlists,
         onAfterPlaylistAdd = {
             selectedSongIds = emptySet()
-            selectedSongsById = emptyMap()
         },
         onAfterDelete = {
             selectedSongIds = emptySet()
-            selectedSongsById = emptyMap()
         },
         playlistSongIds = { song ->
             if (selectedSongIds.isNotEmpty()) selectedSongIds.toList() else listOf(song.id)
@@ -197,34 +194,21 @@ fun LibraryScreen(
 
     val toggleSelectSong = remember<(Song) -> Unit> {
         { song ->
-            if (selectedSongIds.contains(song.id)) {
-                selectedSongIds = selectedSongIds - song.id
-                selectedSongsById = selectedSongsById - song.id
-            } else {
-                selectedSongIds = selectedSongIds + song.id
-                selectedSongsById = selectedSongsById + (song.id to song)
-            }
+            selectedSongIds = if (song.id in selectedSongIds) selectedSongIds - song.id else selectedSongIds + song.id
         }
     }
 
-    val toggleSelectAlbum = remember(songList) {
+    val toggleSelectAlbum = remember {
         { albumIds: List<Long> ->
             val ids = albumIds.toSet()
-            val removing = ids.isNotEmpty() && ids.all { selectedSongIds.contains(it) }
-            if (removing) {
-                selectedSongIds = selectedSongIds - ids
-                selectedSongsById = selectedSongsById - ids
-            } else {
-                selectedSongIds = selectedSongIds + ids
-                selectedSongsById = selectedSongsById + songList.associateSongsForIds(ids)
-            }
+            val removing = ids.isNotEmpty() && ids.all { it in selectedSongIds }
+            selectedSongIds = if (removing) selectedSongIds - ids else selectedSongIds + ids
         }
     }
 
-    val onAlbumLongClick = remember(songList) {
+    val onAlbumLongClick = remember {
         { albumIds: List<Long> ->
             selectedSongIds = selectedSongIds + albumIds
-            selectedSongsById = selectedSongsById + songList.associateSongsForIds(albumIds)
         }
     }
 
@@ -256,13 +240,11 @@ fun LibraryScreen(
             songsViewMode = songsViewMode
         )
         selectedSongIds = pool.map { it.id }.toSet()
-        selectedSongsById = selectedSongsById + pool.associateBy { it.id }
     }
 
     val clearSelection = remember {
         {
             selectedSongIds = emptySet()
-            selectedSongsById = emptyMap()
         }
     }
 
@@ -575,7 +557,7 @@ fun LibraryScreen(
         if (isMultiSelectMode && !isPlaylistAdditionMode) {
             // Resolved against the *unfiltered* library, so searching narrows what you can tick
             // without losing what you already ticked, and the actions still cover all of it.
-            val selectedSongs = selectedSongIds.mapNotNull { selectedSongsById[it] }
+            val selectedSongs = viewModel.songsForIds(selectedSongIds)
             MultiSelectActionBar(
                 selectedCount = selectedSongs.size,
                 onPlaySelected = {

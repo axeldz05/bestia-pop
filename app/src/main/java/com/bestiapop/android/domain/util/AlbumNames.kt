@@ -30,6 +30,9 @@ fun albumIdentityKey(name: String): String =
         TrackMatchKeys.normalize(stripAlbumEditionDecor(normalizeAlbumName(it)))
     }
 
+fun albumArtistKey(artist: String, album: String): String =
+    "${TrackMatchKeys.normalize(artist)}|${albumIdentityKey(album)}"
+
 fun albumNamesMatch(a: String, b: String): Boolean {
     val ka = albumIdentityKey(a)
     val kb = albumIdentityKey(b)

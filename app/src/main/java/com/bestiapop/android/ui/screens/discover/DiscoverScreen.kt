@@ -48,7 +48,6 @@ fun DiscoverScreen(
     val recentSearches by viewModel.recentSearches.collectAsState()
     val discoverFeed by viewModel.discoverFeed.collectAsState()
     val isLoadingFeed by viewModel.isLoadingDiscoverFeed.collectAsState()
-    val activeDownloads by viewModel.activeDownloads.collectAsState()
 
     var searchInput by remember { mutableStateOf(catalogSearch.searchQueryDraft) }
     var isSearchFocused by remember { mutableStateOf(false) }
@@ -105,9 +104,8 @@ fun DiscoverScreen(
                     viewModel.playCatalogCandidate(candidate)
                 },
                 onDownloadCandidate = { candidate ->
-                    viewModel.downloadOnlineTrack(candidate.effectiveTrack)
+                    viewModel.downloadCatalogCandidate(candidate)
                 },
-                catalogDownloads = activeDownloads,
                 albumStatus = albumStatus,
                 getTrackStatus = viewModel::getTrackLibraryStatus,
                 onAlreadyInLibrary = { viewModel.toast(it) }
@@ -184,60 +182,41 @@ fun DiscoverScreen(
                         onRemoveQuery = { viewModel.removeRecentSearch(it) },
                         onClearAll = { viewModel.clearRecentSearches() }
                     )
-                } else if (isSearchActive) {
-                    // Search Results View
-                    DiscoverSearchResultsView(
-                        category = catalogSearch.category,
-                        isSearching = catalogSearch.isSearching,
-                        tracks = catalogSearch.tracks,
-                        albums = catalogSearch.albums,
-                        playlists = catalogSearch.playlists,
-                        genres = catalogSearch.genres,
-                        onPlayTrack = { track ->
-                            viewModel.playCatalogOrLocalTrack(track)
-                        },
-                        onDownloadTrack = { track ->
-                            viewModel.downloadOnlineTrack(track)
-                        },
-                        onSelectAlbum = { album ->
-                            viewModel.selectAlbumForInspection(album)
-                        },
-                        onSaveAlbum = { album ->
-                            viewModel.saveAlbumToLibrary(album, emptyList())
-                        },
-                        onSelectPlaylist = { playlist ->
-                            viewModel.selectPlaylistForInspection(playlist)
-                        },
-                        onSelectGenre = { genre ->
-                            viewModel.selectGenreForInspection(genre)
-                        },
-                        activeDownloads = activeDownloads,
-                        getTrackStatus = viewModel::getTrackLibraryStatus,
-                        getAlbumStatus = viewModel::getAlbumLibraryStatus,
-                        onAlreadyInLibrary = { viewModel.toast(it) }
-                    )
                 } else {
-                    // Home Discover Feed View
-                    DiscoverHomeFeedView(
-                        feed = discoverFeed,
-                        isLoading = isLoadingFeed,
-                        onRefresh = { viewModel.refreshDiscoverFeed() },
-                        onPlayTrack = { track ->
-                            viewModel.playCatalogOrLocalTrack(track)
-                        },
-                        onDownloadTrack = { track ->
-                            viewModel.downloadOnlineTrack(track)
-                        },
-                        onSelectAlbum = { album ->
-                            viewModel.selectAlbumForInspection(album)
-                        },
-                        onSaveAlbum = { album ->
-                            viewModel.saveAlbumToLibrary(album, emptyList())
-                        },
-                        getTrackStatus = viewModel::getTrackLibraryStatus,
-                        getAlbumStatus = viewModel::getAlbumLibraryStatus,
-                        onAlreadyInLibrary = { viewModel.toast(it) }
-                    )
+                    val catalogActions = remember(viewModel) {
+                        DiscoverCatalogActions(
+                            onPlayTrack = viewModel::playCatalogOrLocalTrack,
+                            onDownloadTrack = viewModel::downloadOnlineTrack,
+                            onSelectAlbum = viewModel::selectAlbumForInspection,
+                            onSaveAlbum = { album -> viewModel.saveAlbumToLibrary(album) },
+                            onSelectPlaylist = viewModel::selectPlaylistForInspection,
+                            onSelectGenre = viewModel::selectGenreForInspection,
+                            getTrackStatus = viewModel::getTrackLibraryStatus,
+                            getAlbumStatus = viewModel::getAlbumLibraryStatus,
+                            onAlreadyInLibrary = { viewModel.toast(it) }
+                        )
+                    }
+
+                    if (isSearchActive) {
+                        // Search Results View
+                        DiscoverSearchResultsView(
+                            category = catalogSearch.category,
+                            isSearching = catalogSearch.isSearching,
+                            tracks = catalogSearch.tracks,
+                            albums = catalogSearch.albums,
+                            playlists = catalogSearch.playlists,
+                            genres = catalogSearch.genres,
+                            actions = catalogActions
+                        )
+                    } else {
+                        // Home Discover Feed View
+                        DiscoverHomeFeedView(
+                            feed = discoverFeed,
+                            isLoading = isLoadingFeed,
+                            onRefresh = { viewModel.refreshDiscoverFeed() },
+                            actions = catalogActions
+                        )
+                    }
                 }
             }
         }
@@ -789,6 +768,46 @@ fun DiscoverTrackListItem(
     )
 }
 
+/**
+ * Level 2: Shared stack frame bundling user interaction callbacks across Discover feed and search.
+ */
+data class DiscoverCatalogActions(
+    val onPlayTrack: (OnlineCatalogTrack) -> Unit,
+    val onDownloadTrack: (OnlineCatalogTrack) -> Unit,
+    val onSelectAlbum: (CatalogAlbum) -> Unit,
+    val onSaveAlbum: (CatalogAlbum) -> Unit,
+    val onSelectPlaylist: (CatalogPlaylist) -> Unit = {},
+    val onSelectGenre: (CatalogGenre) -> Unit = {},
+    val getTrackStatus: (TrackMeta) -> ItemLibraryStatus = { ItemLibraryStatus.NOT_IN_LIBRARY },
+    val getAlbumStatus: (String, String) -> ItemLibraryStatus = { _, _ -> ItemLibraryStatus.NOT_IN_LIBRARY },
+    val onAlreadyInLibrary: (String) -> Unit = {}
+)
+
+/** Level 2: Home feed view using bundled [DiscoverCatalogActions]. */
+@Composable
+fun DiscoverHomeFeedView(
+    feed: DiscoverFeed,
+    isLoading: Boolean,
+    onRefresh: () -> Unit,
+    actions: DiscoverCatalogActions,
+    modifier: Modifier = Modifier
+) {
+    DiscoverHomeFeedView(
+        feed = feed,
+        isLoading = isLoading,
+        onRefresh = onRefresh,
+        onPlayTrack = actions.onPlayTrack,
+        onDownloadTrack = actions.onDownloadTrack,
+        onSelectAlbum = actions.onSelectAlbum,
+        onSaveAlbum = actions.onSaveAlbum,
+        getTrackStatus = actions.getTrackStatus,
+        getAlbumStatus = actions.getAlbumStatus,
+        onAlreadyInLibrary = actions.onAlreadyInLibrary,
+        modifier = modifier
+    )
+}
+
+/** Level 1: Low-level primitive home feed view with individual callbacks. */
 @Composable
 fun DiscoverHomeFeedView(
     feed: DiscoverFeed,
@@ -914,6 +933,39 @@ fun DiscoverHomeFeedView(
     }
 }
 
+/** Level 2: Search results view using bundled [DiscoverCatalogActions]. */
+@Composable
+fun DiscoverSearchResultsView(
+    category: CatalogCategory,
+    isSearching: Boolean,
+    tracks: List<OnlineCatalogTrack>,
+    albums: List<CatalogAlbum>,
+    playlists: List<CatalogPlaylist>,
+    genres: List<CatalogGenre>,
+    actions: DiscoverCatalogActions,
+    modifier: Modifier = Modifier
+) {
+    DiscoverSearchResultsView(
+        category = category,
+        isSearching = isSearching,
+        tracks = tracks,
+        albums = albums,
+        playlists = playlists,
+        genres = genres,
+        onPlayTrack = actions.onPlayTrack,
+        onDownloadTrack = actions.onDownloadTrack,
+        onSelectAlbum = actions.onSelectAlbum,
+        onSaveAlbum = actions.onSaveAlbum,
+        onSelectPlaylist = actions.onSelectPlaylist,
+        onSelectGenre = actions.onSelectGenre,
+        getTrackStatus = actions.getTrackStatus,
+        getAlbumStatus = actions.getAlbumStatus,
+        onAlreadyInLibrary = actions.onAlreadyInLibrary,
+        modifier = modifier
+    )
+}
+
+/** Level 1: Low-level primitive search results view with individual callbacks. */
 @Composable
 fun DiscoverSearchResultsView(
     category: CatalogCategory,
@@ -926,9 +978,8 @@ fun DiscoverSearchResultsView(
     onDownloadTrack: (OnlineCatalogTrack) -> Unit,
     onSelectAlbum: (CatalogAlbum) -> Unit,
     onSaveAlbum: (CatalogAlbum) -> Unit,
-    onSelectPlaylist: (CatalogPlaylist) -> Unit,
-    onSelectGenre: (CatalogGenre) -> Unit,
-    activeDownloads: List<ActiveDownload>,
+    onSelectPlaylist: (CatalogPlaylist) -> Unit = {},
+    onSelectGenre: (CatalogGenre) -> Unit = {},
     getTrackStatus: (TrackMeta) -> ItemLibraryStatus = { ItemLibraryStatus.NOT_IN_LIBRARY },
     getAlbumStatus: (String, String) -> ItemLibraryStatus = { _, _ -> ItemLibraryStatus.NOT_IN_LIBRARY },
     onAlreadyInLibrary: (String) -> Unit = {},
@@ -1070,7 +1121,6 @@ fun DiscoverCollectionDetailView(
     onDownloadAll: () -> Unit,
     onPlayCandidate: (CatalogTrackCandidate) -> Unit,
     onDownloadCandidate: (CatalogTrackCandidate) -> Unit,
-    catalogDownloads: List<ActiveDownload>,
     albumStatus: ItemLibraryStatus = ItemLibraryStatus.NOT_IN_LIBRARY,
     getTrackStatus: (TrackMeta) -> ItemLibraryStatus = { ItemLibraryStatus.NOT_IN_LIBRARY },
     onAlreadyInLibrary: (String) -> Unit = {},

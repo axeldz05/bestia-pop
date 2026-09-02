@@ -354,6 +354,9 @@ data class CatalogTrackCandidate(
 ) : TrackMeta by identity {
     val currentTrack: OnlineCatalogTrack?
         get() = candidates.getOrNull(currentCandidateIndex)
+
+    val effectiveTrack: OnlineCatalogTrack
+        get() = currentTrack ?: identity.toCatalogTrack(provider = "YouTube")
 }
 
 enum class ActiveDownloadSource {

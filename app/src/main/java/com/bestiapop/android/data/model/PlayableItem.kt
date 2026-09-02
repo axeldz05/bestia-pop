@@ -96,7 +96,7 @@ sealed class PlayableItem : TrackMeta {
             identity: TrackIdentity,
             recordingMbid: String? = null
         ): PlayableItem = if (local != null) {
-            local.toPlayable()
+            local.toPlayableItem()
         } else {
             remoteFrom(identity = identity, recordingMbid = recordingMbid)
         }

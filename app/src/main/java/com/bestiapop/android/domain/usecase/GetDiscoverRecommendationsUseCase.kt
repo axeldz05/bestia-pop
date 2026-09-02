@@ -172,9 +172,12 @@ class GetDiscoverRecommendationsUseCase {
     }
 }
 
+private inline fun <T> List<T>.distinctByTrackKey(limit: Int, crossinline keyOf: (T) -> String): List<T> =
+    distinctBy { keyOf(it).ifEmpty { it.hashCode().toString() } }.take(limit)
+
 private fun List<OnlineCatalogTrack>.distinctCatalogTracks(limit: Int): List<OnlineCatalogTrack> =
-    distinctBy { it.matchKey().ifEmpty { "${it.artist}|${it.title}".lowercase() } }.take(limit)
+    distinctByTrackKey(limit) { it.matchKey() }
 
 private fun List<CatalogAlbum>.distinctCatalogAlbums(limit: Int): List<CatalogAlbum> =
-    distinctBy { TrackMatchKeys.matchKey(it.artist, it.title).ifEmpty { "${it.artist}|${it.title}".lowercase() } }.take(limit)
+    distinctByTrackKey(limit) { TrackMatchKeys.matchKey(it.artist, it.title) }
 

@@ -26,9 +26,9 @@ class LocalMetadataRadio(
 
         val seedArtist = TrackMatchKeys.normalize(seed.artist)
         val seedKey = TrackMatchKeys.matchKey(seed.artist, seed.title)
-        val seedGenre = meaningfulGenre(seedLocalGenre(seed))
-        val seedYear = seedLocalYear(seed)
-        val seedAlbum = TrackMatchKeys.normalize(seedLocalAlbum(seed))
+        val seedGenre = meaningfulGenre((seed as? PlayableItem.Local)?.song?.genre)
+        val seedYear = (seed as? PlayableItem.Local)?.song?.year ?: 0
+        val seedAlbum = TrackMatchKeys.normalize(seed.album)
 
         val scored = ArrayList<ScoredSong>(library.size)
         for (song in library) {
@@ -100,20 +100,8 @@ class LocalMetadataRadio(
             if (picked.size >= limit) break
         }
 
-        return picked.map { PlayableItem.Local(it) }
+        return picked.map { it.toPlayable() }
     }
-
-    private fun seedLocalGenre(seed: PlayableItem): String =
-        (seed as? PlayableItem.Local)?.song?.genre.orEmpty()
-
-    private fun seedLocalYear(seed: PlayableItem): Int =
-        (seed as? PlayableItem.Local)?.song?.year ?: 0
-
-    private fun seedLocalAlbum(seed: PlayableItem): String =
-        when (seed) {
-            is PlayableItem.Local -> seed.song.album
-            is PlayableItem.Remote -> seed.album.orEmpty()
-        }
 
     private fun meaningfulGenre(genre: String?): String? {
         val norm = TrackMatchKeys.normalize(genre.orEmpty())

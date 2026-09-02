@@ -105,7 +105,7 @@ fun DiscoverScreen(
                     viewModel.playCatalogCandidate(candidate)
                 },
                 onDownloadCandidate = { candidate ->
-                    viewModel.downloadOnlineTrack(candidate.identity.toCatalogTrack(provider = "YouTube"))
+                    viewModel.downloadOnlineTrack(candidate.effectiveTrack)
                 },
                 catalogDownloads = activeDownloads,
                 albumStatus = albumStatus,
@@ -428,7 +428,8 @@ fun DiscoverRecentSearchesView(
 fun TrackLibraryActionButtons(
     status: ItemLibraryStatus,
     onDownload: () -> Unit,
-    onAlreadyInLibrary: () -> Unit,
+    onNotifyStatus: ((String) -> Unit)? = null,
+    onAlreadyInLibrary: () -> Unit = { onNotifyStatus?.invoke(status.trackMessage) },
     modifier: Modifier = Modifier
 ) {
     when (status) {
@@ -477,7 +478,8 @@ fun TrackLibraryActionButtons(
 fun AlbumLibraryActionButton(
     status: ItemLibraryStatus,
     onSave: () -> Unit,
-    onAlreadySaved: () -> Unit,
+    onNotifyStatus: ((String) -> Unit)? = null,
+    onAlreadySaved: () -> Unit = { onNotifyStatus?.invoke(status.albumMessage) },
     modifier: Modifier = Modifier
 ) {
     when (status) {
@@ -674,9 +676,10 @@ fun BoxScope.MediaCardAction(
 fun DiscoverTrackCard(
     track: OnlineCatalogTrack,
     onPlay: () -> Unit,
-    onDownload: () -> Unit,
+    onDownload: () -> Unit = {},
     status: ItemLibraryStatus = ItemLibraryStatus.NOT_IN_LIBRARY,
-    onAlreadyInLibrary: () -> Unit = {},
+    onNotifyStatus: ((String) -> Unit)? = null,
+    onAlreadyInLibrary: () -> Unit = { onNotifyStatus?.invoke(status.trackMessage) },
     modifier: Modifier = Modifier
 ) {
     DiscoverMediaCard(
@@ -727,7 +730,8 @@ fun DiscoverAlbumCard(
     onClick: () -> Unit,
     onSave: () -> Unit,
     status: ItemLibraryStatus = ItemLibraryStatus.NOT_IN_LIBRARY,
-    onAlreadySaved: () -> Unit = {},
+    onNotifyStatus: ((String) -> Unit)? = null,
+    onAlreadySaved: () -> Unit = { onNotifyStatus?.invoke(status.albumMessage) },
     modifier: Modifier = Modifier
 ) {
     DiscoverMediaCard(
@@ -760,7 +764,8 @@ fun DiscoverTrackListItem(
     onPlay: () -> Unit,
     onDownload: () -> Unit,
     status: ItemLibraryStatus = ItemLibraryStatus.NOT_IN_LIBRARY,
-    onAlreadyInLibrary: () -> Unit = {},
+    onNotifyStatus: ((String) -> Unit)? = null,
+    onAlreadyInLibrary: () -> Unit = { onNotifyStatus?.invoke(status.trackMessage) },
     modifier: Modifier = Modifier
 ) {
     TrackMetaRow(
@@ -846,7 +851,7 @@ fun DiscoverHomeFeedView(
                                 onPlay = { onPlayTrack(track) },
                                 onDownload = { onDownloadTrack(track) },
                                 status = trackStatus,
-                                onAlreadyInLibrary = { onAlreadyInLibrary("Canción ya descargada en la biblioteca") }
+                                onNotifyStatus = onAlreadyInLibrary
                             )
                         }
                     }
@@ -875,9 +880,7 @@ fun DiscoverHomeFeedView(
                                 onClick = { onSelectAlbum(album) },
                                 onSave = { onSaveAlbum(album) },
                                 status = albumStatus,
-                                onAlreadySaved = {
-                                    onAlreadyInLibrary(albumStatus.albumMessage)
-                                }
+                                onNotifyStatus = onAlreadyInLibrary
                             )
                         }
                     }
@@ -903,7 +906,7 @@ fun DiscoverHomeFeedView(
                         onPlay = { onPlayTrack(track) },
                         onDownload = { onDownloadTrack(track) },
                         status = trackStatus,
-                        onAlreadyInLibrary = { onAlreadyInLibrary("Canción ya descargada en la biblioteca") }
+                        onNotifyStatus = onAlreadyInLibrary
                     )
                 }
             }
@@ -958,7 +961,7 @@ fun DiscoverSearchResultsView(
                             onPlay = { onPlayTrack(track) },
                             onDownload = { onDownloadTrack(track) },
                             status = trackStatus,
-                            onAlreadyInLibrary = { onAlreadyInLibrary("Canción ya descargada en la biblioteca") }
+                            onNotifyStatus = onAlreadyInLibrary
                         )
                     }
                 }
@@ -982,9 +985,7 @@ fun DiscoverSearchResultsView(
                             onClick = { onSelectAlbum(album) },
                             onSave = { onSaveAlbum(album) },
                             status = albumStatus,
-                            onAlreadySaved = {
-                                onAlreadyInLibrary(albumStatus.albumMessage)
-                            }
+                            onNotifyStatus = onAlreadyInLibrary
                         )
                     }
                 }
@@ -1196,7 +1197,7 @@ fun DiscoverCollectionDetailView(
                         TrackLibraryActionButtons(
                             status = trackStatus,
                             onDownload = { onDownloadCandidate(candidate) },
-                            onAlreadyInLibrary = { onAlreadyInLibrary("Canción ya descargada en la biblioteca") }
+                            onNotifyStatus = onAlreadyInLibrary
                         )
                     }
                 )

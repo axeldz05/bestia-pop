@@ -24,34 +24,14 @@ class ImportListenBrainzPlaylistUseCase(
         matched: MatchedLbPlaylist,
         allowEmpty: Boolean = false
     ): Long? {
-        val hasMatched = matched.matchedCount > 0
-        val hasUnmatched = matched.streamCount > 0
-        if (!hasMatched && !hasUnmatched && !allowEmpty) return null
-
         val summary = matched.detail.summary
         val name = summary.title.ifBlank { "Para Ti" }
-        val playlistId = repository.createPlaylist(
+        return repository.createPlaylistWithPlayables(
             name = name,
+            items = matched.toPlayableItems(),
             description = summary.description,
-            coverUri = null
+            allowEmpty = allowEmpty
         )
-
-        matched.matches.forEach { row ->
-            val local = row.localSong ?: return@forEach
-            repository.addSongToPlaylist(playlistId, local.id)
-        }
-
-        val pending = matched.matches.mapIndexedNotNull { index, row ->
-            if (row.localSong != null) return@mapIndexedNotNull null
-            PlaylistPendingTrack(
-                identity = row.identity,
-                playlistId = playlistId,
-                recordingMbid = row.recordingMbid,
-                position = index
-            )
-        }
-        repository.addPlaylistPendingTracks(pending)
-        return playlistId
     }
 
     fun unmatchedCatalogTracks(matched: MatchedLbPlaylist): List<OnlineCatalogTrack> =

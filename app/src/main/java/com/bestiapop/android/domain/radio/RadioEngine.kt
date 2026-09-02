@@ -291,13 +291,20 @@ class RadioEngine(
             return added
         }
 
+        suspend fun trySupplyRemotes(supply: suspend () -> List<PlayableItem>) {
+            val items = runCatching { supply() }.getOrDefault(emptyList())
+            if (addRemotes(items) > 0) {
+                usedOnlineDiscovery = true
+            }
+        }
+
         val canUseLb = lbAvailable && !lbToken.isNullOrBlank()
         val lbRadio = listenBrainzRadio
         // canUseLb already implies lbToken is non-null and non-blank
         val token = lbToken.takeIf { canUseLb }
 
         if (token != null && lbRadio != null) {
-            val lbOutcome = runCatching {
+            trySupplyRemotes {
                 lbRadio.suggest(
                     seed = seed,
                     library = library,
@@ -305,12 +312,6 @@ class RadioEngine(
                     limit = limit,
                     token = token
                 )
-            }
-            if (lbOutcome.isSuccess) {
-                val lbItems = lbOutcome.getOrDefault(emptyList())
-                if (addRemotes(lbItems) > 0) {
-                    usedOnlineDiscovery = true
-                }
             }
         }
 
@@ -320,7 +321,7 @@ class RadioEngine(
             cfRadio != null &&
             remotes.size < limit
         ) {
-            val cfOutcome = runCatching {
+            trySupplyRemotes {
                 cfRadio.suggest(
                     library = library,
                     excludeKeys = seen,
@@ -329,26 +330,18 @@ class RadioEngine(
                     token = token
                 )
             }
-            val cfItems = cfOutcome.getOrDefault(emptyList())
-            if (addRemotes(cfItems) > 0) {
-                usedOnlineDiscovery = true
-            }
         }
 
         if (networkAvailable && remotes.size < limit) {
             for (provider in similarProviders) {
                 if (remotes.size >= limit) break
-                val outcome = runCatching {
+                trySupplyRemotes {
                     provider.suggest(
                         seed = seed,
                         library = library,
                         excludeKeys = seen,
                         limit = limit - remotes.size
                     )
-                }
-                val items = outcome.getOrDefault(emptyList())
-                if (addRemotes(items) > 0) {
-                    usedOnlineDiscovery = true
                 }
             }
         }

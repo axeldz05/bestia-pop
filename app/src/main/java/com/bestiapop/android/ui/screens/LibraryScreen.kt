@@ -216,9 +216,7 @@ fun LibraryScreen(
                 selectedSongsById = selectedSongsById - ids
             } else {
                 selectedSongIds = selectedSongIds + ids
-                selectedSongsById = selectedSongsById + ids.mapNotNull { id ->
-                    songList.songsById[id]?.let { id to it }
-                }
+                selectedSongsById = selectedSongsById + songList.associateSongsForIds(ids)
             }
         }
     }
@@ -226,9 +224,7 @@ fun LibraryScreen(
     val onAlbumLongClick = remember(songList) {
         { albumIds: List<Long> ->
             selectedSongIds = selectedSongIds + albumIds
-            selectedSongsById = selectedSongsById + albumIds.mapNotNull { id ->
-                songList.songsById[id]?.let { id to it }
-            }
+            selectedSongsById = selectedSongsById + songList.associateSongsForIds(albumIds)
         }
     }
 
@@ -301,22 +297,19 @@ fun LibraryScreen(
     val playOrShuffleAlbum: (Album, Boolean) -> Unit = remember(viewModel) {
         { album, shuffle ->
             val albumSongs = viewModel.songsForAlbum(viewModel.libraryProjection.songs.value, album.name)
-            if (shuffle) viewModel.shuffleCollection(albumSongs)
-            else viewModel.playCollection(albumSongs)
+            viewModel.playCollection(albumSongs, startShuffled = shuffle)
         }
     }
     val playOrShuffleArtist: (String, Boolean) -> Unit = remember(viewModel) {
         { artistName, shuffle ->
             val artistSongs = viewModel.songsForArtist(viewModel.libraryProjection.songs.value, artistName)
-            if (shuffle) viewModel.shuffleCollection(artistSongs)
-            else viewModel.playCollection(artistSongs)
+            viewModel.playCollection(artistSongs, startShuffled = shuffle)
         }
     }
     val playOrShuffleGenre: (String, Boolean) -> Unit = remember(viewModel) {
         { genreName, shuffle ->
             val genreSongs = viewModel.songsForGenre(viewModel.libraryProjection.songs.value, genreName)
-            if (shuffle) viewModel.shuffleCollection(genreSongs)
-            else viewModel.playCollection(genreSongs)
+            viewModel.playCollection(genreSongs, startShuffled = shuffle)
         }
     }
     val onShuffleAlbumBrowse = remember(playOrShuffleAlbum) {
@@ -372,12 +365,12 @@ fun LibraryScreen(
     val onDeleteSong = songDialogs.onDelete
     val onPlayAlbum = remember<(String, List<Long>) -> Unit>(songList) {
         { _, albumIds ->
-            viewModel.playCollection(albumIds.mapNotNull { songList.songsById[it] })
+            viewModel.playCollection(songList.songsForIds(albumIds))
         }
     }
     val onShuffleAlbum = remember<(String, List<Long>) -> Unit>(songList) {
         { _, albumIds ->
-            viewModel.shuffleCollection(albumIds.mapNotNull { songList.songsById[it] })
+            viewModel.shuffleCollection(songList.songsForIds(albumIds))
         }
     }
     val songListActions = remember(

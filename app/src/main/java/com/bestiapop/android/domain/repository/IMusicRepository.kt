@@ -9,6 +9,7 @@ import com.bestiapop.android.data.model.IdentifyProposal
 import com.bestiapop.android.data.model.IdentifyResult
 import com.bestiapop.android.data.model.IdentifySearchFilters
 import com.bestiapop.android.data.model.OnlineCatalogTrack
+import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.data.model.Playlist
 import com.bestiapop.android.data.model.PlaylistPendingTrack
 import com.bestiapop.android.data.model.Song
@@ -148,6 +149,45 @@ interface IMusicRepository {
     suspend fun deletePlaylist(id: Long)
     suspend fun addSongToPlaylist(playlistId: Long, songId: Long)
     suspend fun removeSongFromPlaylist(playlistId: Long, songId: Long)
+
+    /**
+     * Level 2: Creates a playlist and populates it with mixed local and remote playables.
+     * Local items are linked as song references; remote items are saved as pending tracks.
+     *
+     * @return new playlist id, or null if [items] is empty and [allowEmpty] is false
+     */
+    suspend fun createPlaylistWithPlayables(
+        name: String,
+        items: List<PlayableItem>,
+        description: String? = null,
+        coverUri: String? = null,
+        allowEmpty: Boolean = false
+    ): Long? {
+        if (items.isEmpty() && !allowEmpty) return null
+        val playlistId = createPlaylist(
+            name = name,
+            description = description,
+            coverUri = coverUri
+        )
+        val pending = ArrayList<PlaylistPendingTrack>()
+        items.forEachIndexed { index, item ->
+            when (item) {
+                is PlayableItem.Local -> addSongToPlaylist(playlistId, item.song.id)
+                is PlayableItem.Remote -> pending.add(
+                    PlaylistPendingTrack(
+                        identity = item.identity,
+                        playlistId = playlistId,
+                        recordingMbid = item.recordingMbid,
+                        position = index
+                    )
+                )
+            }
+        }
+        if (pending.isNotEmpty()) {
+            addPlaylistPendingTracks(pending)
+        }
+        return playlistId
+    }
 
     /** Playlist ids that currently contain [songId]. */
     suspend fun getPlaylistIdsForSong(songId: Long): List<Long>

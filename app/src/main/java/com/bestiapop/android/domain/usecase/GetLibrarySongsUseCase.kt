@@ -435,6 +435,7 @@ class GetLibrarySongsUseCase {
                 )
             }
             val photoArt = artistPhotoMap[artistName]
+                ?: artistSongs.firstNotNullOfOrNull { it.artworkUri?.takeIf(String::isNotBlank) }
             Artist(
                 name = artistName,
                 songCount = artistSongs.size,

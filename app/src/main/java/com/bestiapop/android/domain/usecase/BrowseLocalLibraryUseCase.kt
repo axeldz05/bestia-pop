@@ -30,13 +30,6 @@ class BrowseLocalLibraryUseCase(
             sortDirection = SortDirection.ASC
         )
         val overrideMap = overrides.associateBy(AlbumOverride::albumKey)
-        val artistArtwork = orderedSongs
-            .groupBy(Song::artist)
-            .mapValues { (_, artistSongs) ->
-                artistSongs.firstNotNullOfOrNull { it.artworkUri?.takeIf(String::isNotBlank) }
-                    .orEmpty()
-            }
-            .filterValues(String::isNotBlank)
         return BrowseLocalLibrarySnapshot(
             songs = orderedSongs,
             albums = library.extractAlbums(
@@ -47,7 +40,6 @@ class BrowseLocalLibraryUseCase(
             ),
             artists = library.extractArtists(
                 songs = orderedSongs,
-                artistPhotoMap = artistArtwork,
                 sortOption = SortOption.TITLE,
                 sortDirection = SortDirection.ASC
             ),

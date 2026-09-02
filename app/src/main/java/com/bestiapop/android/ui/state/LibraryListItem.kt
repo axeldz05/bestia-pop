@@ -33,6 +33,13 @@ class LibraryListModel internal constructor(
         }
     }
 
+    /** Level 2: Resolves a collection of song IDs into the matched Song instances in O(1) per ID. */
+    fun songsForIds(ids: Iterable<Long>): List<Song> = ids.mapNotNull { songsById[it] }
+
+    /** Level 2: Resolves a collection of song IDs into an ID-to-Song map in O(1) per ID. */
+    fun associateSongsForIds(ids: Iterable<Long>): Map<Long, Song> =
+        ids.mapNotNull { id -> songsById[id]?.let { id to it } }.toMap()
+
     fun keyAt(index: Int): Any {
         val slot = slots[index]
         return if (slot >= 0) {

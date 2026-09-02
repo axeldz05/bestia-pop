@@ -66,32 +66,12 @@ class BuildSimilarPlaylistPreviewUseCase(
         items: List<PlayableItem>,
         description: String? = null,
         allowEmpty: Boolean = false
-    ): Long? {
-        if (items.isEmpty() && !allowEmpty) return null
-        val playlistId = repository.createPlaylist(
-            name = name.ifBlank { defaultPlaylistName(seedCount = 0) },
-            description = description,
-            coverUri = null
-        )
-        val pending = ArrayList<PlaylistPendingTrack>()
-        items.forEachIndexed { index, item ->
-            when (item) {
-                is PlayableItem.Local -> repository.addSongToPlaylist(playlistId, item.song.id)
-                is PlayableItem.Remote -> pending.add(
-                    PlaylistPendingTrack(
-                        identity = item.identity,
-                        playlistId = playlistId,
-                        recordingMbid = item.recordingMbid,
-                        position = index
-                    )
-                )
-            }
-        }
-        if (pending.isNotEmpty()) {
-            repository.addPlaylistPendingTracks(pending)
-        }
-        return playlistId
-    }
+    ): Long? = repository.createPlaylistWithPlayables(
+        name = name.ifBlank { defaultPlaylistName(seedCount = 0) },
+        items = items,
+        description = description,
+        allowEmpty = allowEmpty
+    )
 
     companion object {
         fun defaultPlaylistName(seeds: List<PlayableItem>): String {

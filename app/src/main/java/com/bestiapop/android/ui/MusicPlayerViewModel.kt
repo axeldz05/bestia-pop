@@ -88,6 +88,7 @@ import com.bestiapop.android.ui.state.CatalogCollectionKind
 import com.bestiapop.android.ui.state.ItemLibraryStatus
 import com.bestiapop.android.ui.state.CatalogCollectionUiState
 import com.bestiapop.android.ui.state.CatalogSearchUiState
+import com.bestiapop.android.ui.state.toPlayableItems
 import com.bestiapop.android.ui.state.IdentifyReviewItem
 import com.bestiapop.android.ui.state.IdentifyReviewPhase
 import com.bestiapop.android.ui.state.IdentifyReviewState
@@ -1159,27 +1160,13 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         startIndex: Int = 0,
         startShuffled: Boolean = false
     ) {
-        val index = localLibraryIndex.value
-        val playables = candidates.map { candidate ->
-            val local = TrackMatchKeys.lookupLocalSong(index, candidate.identity)
-            if (local != null && !local.isRemote) {
-                PlayableItem.Local(local)
-            } else {
-                PlayableItem.remoteFrom(candidate.identity)
-            }
-        }
+        val playables = candidates.toPlayableItems(localLibraryIndex.value)
         playPlayableCollection(playables, startIndex = startIndex, startShuffled = startShuffled)
     }
 
     /** Plays a single catalog candidate using local file if present, or streaming. */
     fun playCatalogCandidate(candidate: CatalogTrackCandidate) {
-        val local = findLocalSongFor(candidate.identity)
-        if (local != null) {
-            playSong(local)
-        } else {
-            candidate.currentTrack?.let { playOnlineCatalogTrackAsStream(it) }
-                ?: playOnlineCatalogTrackAsStream(candidate.identity.toCatalogTrack(provider = "YouTube"))
-        }
+        playCatalogOrLocalTrack(candidate.effectiveTrack)
     }
 
     /** Returns status of track in library (DOWNLOADED, SAVED_REMOTE, or NOT_IN_LIBRARY) in O(1). */
@@ -1219,10 +1206,18 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     // Unified Collection / Group Pipeline ("Everything is a Playlist")
-    fun playCollection(songs: List<Song>, startIndex: Int = 0) {
+    fun playCollection(songs: List<Song>, startIndex: Int = 0, startShuffled: Boolean = false) {
         if (songs.isEmpty()) return
-        val validIndex = startIndex.coerceIn(0, songs.size - 1)
-        playSong(songs[validIndex], songs)
+        if (startShuffled) {
+            shuffleCollection(songs)
+        } else {
+            val validIndex = startIndex.coerceIn(0, songs.size - 1)
+            playSong(songs[validIndex], songs)
+        }
+    }
+
+    fun playCollection(songs: List<Song>, startShuffled: Boolean) {
+        playCollection(songs, startIndex = 0, startShuffled = startShuffled)
     }
 
     fun playCollection(songs: List<Song>, startSong: Song) {
@@ -1482,7 +1477,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
-    fun playSimilarPreview() {
+    private inline fun withSelectedSimilarPreviewItems(action: (List<PlayableItem>) -> Unit) {
         val state = _similarPlaylistPreview.value ?: return
         if (state.loading) return
         val selected = state.selectedItems
@@ -1490,21 +1485,21 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             toast("Seleccioná al menos una canción")
             return
         }
+        action(selected)
         dismissSimilarPreview()
-        playPlayableCollection(selected, startIndex = 0, rotate = false)
+    }
+
+    fun playSimilarPreview() {
+        withSelectedSimilarPreviewItems { selected ->
+            playPlayableCollection(selected, startIndex = 0, rotate = false)
+        }
     }
 
     fun enqueueSimilarPreview() {
-        val state = _similarPlaylistPreview.value ?: return
-        if (state.loading) return
-        val selected = state.selectedItems
-        if (selected.isEmpty()) {
-            toast("Seleccioná al menos una canción")
-            return
+        withSelectedSimilarPreviewItems { selected ->
+            addPlayableBatch(selected)
+            toast("Agregadas a la cola (${selected.size})")
         }
-        addPlayableBatch(selected)
-        toast("Agregadas a la cola (${selected.size})")
-        dismissSimilarPreview()
     }
 
     private fun runSimilarPreview(mode: RadioMode) {
@@ -3718,6 +3713,15 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
+    private inline fun updateCatalogSearchIfCurrent(
+        generation: Long,
+        crossinline transform: (CatalogSearchUiState) -> CatalogSearchUiState
+    ) {
+        if (generation == catalogSearchGeneration) {
+            _catalogSearch.update { transform(it) }
+        }
+    }
+
     fun searchCatalog(
         query: String = _catalogSearch.value.searchQueryDraft,
         filters: IdentifySearchFilters = _catalogSearch.value.searchFilters
@@ -3742,23 +3746,17 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                     } else {
                         MetadataFetcher.searchOnlineCatalog(effectiveQuery)
                     }
-                    if (generation == catalogSearchGeneration) {
-                        _catalogSearch.update { it.copy(tracks = results) }
-                    }
+                    updateCatalogSearchIfCurrent(generation) { it.copy(tracks = results) }
                 }
 
                 CatalogCategory.ALBUMS -> {
                     val results = MetadataFetcher.searchAlbums(effectiveQuery.ifEmpty { cleanQ })
-                    if (generation == catalogSearchGeneration) {
-                        _catalogSearch.update { it.copy(albums = results) }
-                    }
+                    updateCatalogSearchIfCurrent(generation) { it.copy(albums = results) }
                 }
 
                 CatalogCategory.PLAYLISTS -> {
                     val results = MetadataFetcher.searchPlaylists(cleanQ.ifEmpty { effectiveQuery })
-                    if (generation == catalogSearchGeneration) {
-                        _catalogSearch.update { it.copy(playlists = results) }
-                    }
+                    updateCatalogSearchIfCurrent(generation) { it.copy(playlists = results) }
                 }
 
                 CatalogCategory.GENRES -> {
@@ -3768,20 +3766,15 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                     } else {
                         genres.filter { TrackMatchKeys.containsNormalized(it.name, cleanQ) }
                     }
-                    if (generation == catalogSearchGeneration) {
-                        _catalogSearch.update { it.copy(genres = results) }
-                    }
+                    updateCatalogSearchIfCurrent(generation) { it.copy(genres = results) }
                 }
 
                 CatalogCategory.CHARTS -> {
                     val results = MetadataFetcher.fetchChartTracks()
-                    if (generation == catalogSearchGeneration) {
-                        _catalogSearch.update { it.copy(tracks = results) }
-                    }
+                    updateCatalogSearchIfCurrent(generation) { it.copy(tracks = results) }
                 }
             }
-            if (generation != catalogSearchGeneration) return@launch
-            _catalogSearch.update { it.copy(isSearching = false) }
+            updateCatalogSearchIfCurrent(generation) { it.copy(isSearching = false) }
             // The fetchers degrade to an empty list on any transport error, so an empty list reads as
             // "this song does not exist". Say it out loud when the reason is simply no connection.
             if (_catalogSearch.value.currentResultsAreEmpty() && !connectivityObserver.isCurrentlyOnline()) {

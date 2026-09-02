@@ -186,7 +186,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     // Theme state
     val currentThemeState: StateFlow<CustomTheme> = themeRepository.selectedThemeFlow
-        .stateIn(viewModelScope, SharingStarted.Lazily, ThemePresets.MidnightDark)
+        .stateIn(viewModelScope, SharingStarted.Lazily, themeRepository.initialTheme)
 
     // ListenBrainz state
     val listenBrainzSettings: StateFlow<ListenBrainzSettings> =
@@ -497,6 +497,10 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     fun onUiAttached() {
         uiAttached.set(true)
+    }
+
+    fun warmupPlayback() {
+        playbackRuntime.warmup()
     }
 
     fun attachPlaybackUi() {

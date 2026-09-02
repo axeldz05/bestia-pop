@@ -386,12 +386,24 @@ class PlaybackRuntime internal constructor(
     private val playedInRadioSession = linkedSetOf<String>()
     private var radioPreferredMode: RadioMode? = null
     private var lastEmptyRadioRefillAtMs = 0L
+    private val warmingUp = AtomicBoolean(false)
 
     init {
         start()
     }
 
+    fun warmup() {
+        if (controller != null || uiAttachments.get() > 0) return
+        PlaybackDiagnostics.log(
+            PlaybackDiagnostics.TAG_RUNTIME,
+            "PlaybackRuntime.warmup() (anticipating MediaController connection)"
+        )
+        warmingUp.set(true)
+        ensureControllerConnection()
+    }
+
     fun attachUi() {
+        warmingUp.set(false)
         val count = uiAttachments.incrementAndGet()
         PlaybackDiagnostics.log(
             PlaybackDiagnostics.TAG_RUNTIME,
@@ -626,7 +638,8 @@ class PlaybackRuntime internal constructor(
     }
 
     private fun shouldRetainController(): Boolean =
-        uiAttachments.get() > 0 ||
+        warmingUp.get() ||
+            uiAttachments.get() > 0 ||
             _queue.value.isNotEmpty() ||
             playWhenReadyIntent ||
             _isPlaying.value

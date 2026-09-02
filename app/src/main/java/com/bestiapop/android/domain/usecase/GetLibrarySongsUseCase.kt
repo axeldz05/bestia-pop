@@ -367,6 +367,11 @@ class GetLibrarySongsUseCase {
                     val albumSongs = songsInGroupedAlbum(grouped, album.groupingKey)
                     val start = visual.size
                     visual.addAll(albumSongs)
+                    val songCount = albumSongs.size
+                    val ids = ArrayList<Long>(songCount)
+                    for (i in 0 until songCount) {
+                        ids.add(albumSongs[i].id)
+                    }
                     segments += LibraryAlbumSegment(
                         albumName = album.name,
                         displayName = album.displayName,
@@ -379,8 +384,8 @@ class GetLibrarySongsUseCase {
                             dateAdded = album.dateAdded
                         ),
                         start = start,
-                        count = albumSongs.size,
-                        songIds = albumSongs.map { it.id }
+                        count = songCount,
+                        songIds = ids
                     )
                 }
                 LibraryListModel.of(

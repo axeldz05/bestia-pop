@@ -24,6 +24,7 @@ import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.ResolvingDataSource
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.audio.AudioSink
@@ -59,6 +60,11 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+
+private const val EXOPLAYER_MIN_BUFFER_MS = 15_000
+private const val EXOPLAYER_MAX_BUFFER_MS = 50_000
+private const val EXOPLAYER_BUFFER_FOR_PLAYBACK_MS = 250
+private const val EXOPLAYER_BUFFER_FOR_PLAYBACK_AFTER_REBUFFER_MS = 500
 
 @OptIn(UnstableApi::class)
 class MusicService : MediaLibraryService() {
@@ -125,8 +131,19 @@ class MusicService : MediaLibraryService() {
             }
         }
 
+        val loadControl = DefaultLoadControl.Builder()
+            .setBufferDurationsMs(
+                EXOPLAYER_MIN_BUFFER_MS,
+                EXOPLAYER_MAX_BUFFER_MS,
+                EXOPLAYER_BUFFER_FOR_PLAYBACK_MS,
+                EXOPLAYER_BUFFER_FOR_PLAYBACK_AFTER_REBUFFER_MS
+            )
+            .setPrioritizeTimeOverSizeThresholds(true)
+            .build()
+
         player = ExoPlayer.Builder(this)
             .setRenderersFactory(renderersFactory)
+            .setLoadControl(loadControl)
             .setAudioAttributes(audioAttributes, true)
             .setHandleAudioBecomingNoisy(true)
             .setWakeMode(C.WAKE_MODE_NONE)

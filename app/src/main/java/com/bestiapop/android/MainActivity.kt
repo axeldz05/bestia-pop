@@ -80,11 +80,12 @@ class MainActivity : ComponentActivity() {
         PlaybackDiagnostics.log(PlaybackDiagnostics.TAG_LIFECYCLE, "MainActivity.onCreate(savedInstanceState=${savedInstanceState != null})")
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
+        viewModel.warmupPlayback()
         requestRequiredPermissions()
         handleOpenTabIntent(intent)
 
         setContent {
-            val currentTheme by viewModel.currentThemeState.collectAsState(initial = ThemePresets.MidnightDark)
+            val currentTheme by viewModel.currentThemeState.collectAsState()
 
             BestiaPopTheme(customTheme = currentTheme) {
                 MainScreen(

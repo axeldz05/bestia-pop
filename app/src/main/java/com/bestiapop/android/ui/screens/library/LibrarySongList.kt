@@ -143,14 +143,8 @@ fun LibrarySongList(
     val onOpenAlbumState = rememberUpdatedState(onOpenAlbum)
 
     val listState = rememberLazyListState()
-    var artworkReady by remember { mutableStateOf(false) }
-    LaunchedEffect(visible.size) {
-        artworkReady = false
-        withFrameNanos { }
-        artworkReady = true
-    }
     val allowArtworkDecode by remember {
-        derivedStateOf { artworkReady && !listState.isScrollInProgress }
+        derivedStateOf { !listState.isScrollInProgress }
     }
 
     CompositionLocalProvider(LocalAllowArtworkDecode provides allowArtworkDecode) {

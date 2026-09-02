@@ -19,11 +19,19 @@ class LibraryListModel internal constructor(
     val sortOption: SortOption,
     val emphasizeLastPlayed: Boolean,
     val albumNames: Set<String>,
-    val songsById: Map<Long, Song>,
-    private val slots: IntArray
+    private val slots: IntArray,
+    lazySongsById: Map<Long, Song>? = null
 ) {
     val size: Int get() = slots.size
     val isEmpty: Boolean get() = slots.isEmpty()
+
+    val songsById: Map<Long, Song> by lazy(LazyThreadSafetyMode.NONE) {
+        lazySongsById ?: run {
+            val byId = HashMap<Long, Song>(songsVisual.size * 2)
+            for (song in songsVisual) byId[song.id] = song
+            byId
+        }
+    }
 
     fun keyAt(index: Int): Any {
         val slot = slots[index]
@@ -74,8 +82,8 @@ class LibraryListModel internal constructor(
             sortOption = sortOption,
             emphasizeLastPlayed = emphasizeLastPlayed,
             albumNames = albumNames,
-            songsById = songsById,
-            slots = buildSlots(segments, collapsedAlbumNames)
+            slots = buildSlots(segments, collapsedAlbumNames),
+            lazySongsById = null
         )
     }
 
@@ -96,8 +104,8 @@ class LibraryListModel internal constructor(
             sortOption = SortOption.TITLE,
             emphasizeLastPlayed = false,
             albumNames = emptySet(),
-            songsById = emptyMap(),
-            slots = IntArray(0)
+            slots = IntArray(0),
+            lazySongsById = emptyMap()
         )
 
         fun of(
@@ -112,8 +120,6 @@ class LibraryListModel internal constructor(
             for (segment in segments) {
                 if (segment.albumName.isNotBlank()) names.add(segment.albumName)
             }
-            val byId = HashMap<Long, Song>(songsVisual.size * 2)
-            for (song in songsVisual) byId[song.id] = song
             return LibraryListModel(
                 songsVisual = songsVisual,
                 segments = segments,
@@ -121,8 +127,8 @@ class LibraryListModel internal constructor(
                 sortOption = sortOption,
                 emphasizeLastPlayed = emphasizeLastPlayed,
                 albumNames = names,
-                songsById = byId,
-                slots = buildSlots(segments, emptySet(), songsVisual.size)
+                slots = buildSlots(segments, emptySet(), songsVisual.size),
+                lazySongsById = null
             )
         }
 

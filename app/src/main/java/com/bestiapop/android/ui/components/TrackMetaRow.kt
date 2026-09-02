@@ -24,8 +24,46 @@ import androidx.compose.ui.unit.dp
 import com.bestiapop.android.data.model.TrackMeta
 import com.bestiapop.android.ui.theme.ListDensity
 
-fun joinMeta(vararg parts: String?, sep: String = " • "): String =
-    parts.mapNotNull { it?.trim()?.takeIf { part -> part.isNotEmpty() } }.joinToString(sep)
+fun joinMeta(first: String?, second: String?, sep: String = " • "): String {
+    val f = first?.trim()?.takeIf { it.isNotEmpty() }
+    val s = second?.trim()?.takeIf { it.isNotEmpty() }
+    return when {
+        f == null -> s ?: ""
+        s == null -> f
+        else -> "$f$sep$s"
+    }
+}
+
+fun joinMeta(first: String?, second: String?, third: String?, sep: String = " • "): String {
+    val f = first?.trim()?.takeIf { it.isNotEmpty() }
+    val s = second?.trim()?.takeIf { it.isNotEmpty() }
+    val t = third?.trim()?.takeIf { it.isNotEmpty() }
+    if (f == null && s == null && t == null) return ""
+    val sb = java.lang.StringBuilder()
+    if (f != null) sb.append(f)
+    if (s != null) {
+        if (sb.isNotEmpty()) sb.append(sep)
+        sb.append(s)
+    }
+    if (t != null) {
+        if (sb.isNotEmpty()) sb.append(sep)
+        sb.append(t)
+    }
+    return sb.toString()
+}
+
+fun joinMeta(vararg parts: String?, sep: String = " • "): String {
+    if (parts.isEmpty()) return ""
+    val sb = java.lang.StringBuilder()
+    for (part in parts) {
+        val trimmed = part?.trim()
+        if (!trimmed.isNullOrEmpty()) {
+            if (sb.isNotEmpty()) sb.append(sep)
+            sb.append(trimmed)
+        }
+    }
+    return sb.toString()
+}
 
 fun TrackMeta.artistAlbumLabel(sep: String = " • "): String = joinMeta(artist, album, sep = sep)
 

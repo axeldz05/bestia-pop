@@ -53,6 +53,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.bestiapop.android.data.model.IdentifyApplyField
@@ -77,6 +78,7 @@ import com.bestiapop.android.ui.components.TrackTextColumn
 import com.bestiapop.android.ui.components.formatDuration
 import com.bestiapop.android.ui.components.joinMeta
 import com.bestiapop.android.ui.components.previewFlags
+import com.bestiapop.android.ui.state.IdentifyReviewItem
 import com.bestiapop.android.ui.state.IdentifyReviewPhase
 import com.bestiapop.android.ui.state.IdentifyReviewState
 
@@ -154,51 +156,14 @@ fun IdentifyReviewScreen(
                     val all = item.proposal.candidates
                     all.take(state.visibleCandidateCount.coerceIn(0, all.size))
                 }
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp)
-                        .padding(top = 16.dp)
-                ) {
-                    Text(
-                        text = "Tu archivo",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    IdentifySourcePlaying(
-                        viewModel = viewModel,
-                        song = item.song,
-                        sourceHints = item.proposal.sourceHints,
-                        confidence = item.proposal.confidence
-                    )
-                    if (showSearch) {
-                        Spacer(Modifier.height(12.dp))
-                        IdentifySearchBlock(
-                            query = state.searchQueryDraft,
-                            filterArtist = state.searchFilterArtist,
-                            filterAlbum = state.searchFilterAlbum,
-                            filterYear = state.searchFilterYear,
-                            showFilters = state.showSearchFilters,
-                            placeholder = searchPlaceholder,
-                            isSearching = state.isSearching,
-                            onQueryChange = viewModel::setIdentifySearchDraft,
-                            onFilterArtistChange = viewModel::setIdentifySearchFilterArtist,
-                            onFilterAlbumChange = viewModel::setIdentifySearchFilterAlbum,
-                            onFilterYearChange = viewModel::setIdentifySearchFilterYear,
-                            onSearch = viewModel::searchIdentifyCandidates
-                        )
-                    }
-                }
+
                 IdentifyCandidateList(
                     viewModel = viewModel,
-                    song = item.song,
+                    item = item,
                     candidates = candidates,
-                    selectedIndex = state.selectedCandidateIndex,
-                    applyFields = state.applyFields,
-                    canShowMore = state.canShowMoreCandidates,
-                    isLoadingMore = state.isLoadingMore,
-                    isSearching = state.isSearching,
+                    showSearch = showSearch,
+                    searchPlaceholder = searchPlaceholder,
+                    state = state,
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxWidth()
@@ -485,13 +450,11 @@ private fun IdentifySourcePlaying(
 @Composable
 private fun IdentifyCandidateList(
     viewModel: MusicPlayerViewModel,
-    song: Song,
+    item: IdentifyReviewItem,
     candidates: List<IdentifyCandidate>,
-    selectedIndex: Int,
-    applyFields: IdentifyApplyFields,
-    canShowMore: Boolean,
-    isLoadingMore: Boolean,
-    isSearching: Boolean,
+    showSearch: Boolean,
+    searchPlaceholder: String,
+    state: IdentifyReviewState,
     modifier: Modifier = Modifier
 ) {
     val isPlaying by viewModel.isPlaying.collectAsState()
@@ -500,9 +463,42 @@ private fun IdentifyCandidateList(
     LazyColumn(
         modifier = modifier,
         contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+        verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        item {
+        item(key = "source_header") {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    text = "Tu archivo",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                IdentifySourcePlaying(
+                    viewModel = viewModel,
+                    song = item.song,
+                    sourceHints = item.proposal.sourceHints,
+                    confidence = item.proposal.confidence
+                )
+            }
+        }
+        if (showSearch) {
+            item(key = "search_block") {
+                IdentifySearchBlock(
+                    query = state.searchQueryDraft,
+                    filterArtist = state.searchFilterArtist,
+                    filterAlbum = state.searchFilterAlbum,
+                    filterYear = state.searchFilterYear,
+                    showFilters = state.showSearchFilters,
+                    placeholder = searchPlaceholder,
+                    isSearching = state.isSearching,
+                    onQueryChange = viewModel::setIdentifySearchDraft,
+                    onFilterArtistChange = viewModel::setIdentifySearchFilterArtist,
+                    onFilterAlbumChange = viewModel::setIdentifySearchFilterAlbum,
+                    onFilterYearChange = viewModel::setIdentifySearchFilterYear,
+                    onSearch = viewModel::searchIdentifyCandidates
+                )
+            }
+        }
+        item(key = "candidates_header") {
             Text(
                 text = if (candidates.isEmpty()) {
                     "Sin candidatos — buscá otro"
@@ -510,7 +506,8 @@ private fun IdentifyCandidateList(
                     "Candidatos"
                 },
                 style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.primary
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(top = 4.dp)
             )
         }
         itemsIndexed(
@@ -528,21 +525,21 @@ private fun IdentifyCandidateList(
             )
             IdentifyCandidateRow(
                 candidate = candidate,
-                fileDurationMs = song.durationMs,
-                song = song,
-                applyFields = applyFields,
-                selected = index == selectedIndex,
+                fileDurationMs = item.song.durationMs,
+                song = item.song,
+                applyFields = state.applyFields,
+                selected = index == state.selectedCandidateIndex,
                 isPlaying = flags.isPlaying,
                 isResolving = flags.isResolving,
                 onClick = { viewModel.selectIdentifyCandidate(index) },
                 onPreview = { viewModel.previewIdentifyCandidate(candidate) }
             )
         }
-        if (canShowMore) {
+        if (state.canShowMoreCandidates) {
             item(key = "load_more") {
                 IdentifyLoadMoreButton(
-                    isLoading = isLoadingMore,
-                    enabled = !isSearching,
+                    isLoading = state.isLoadingMore,
+                    enabled = !state.isSearching,
                     onClick = viewModel::loadMoreIdentifyCandidates
                 )
             }
@@ -747,7 +744,7 @@ private fun IdentifySearchBlock(
         onDone = { onSearch() },
         onGo = { onSearch() }
     )
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         OutlinedTextField(
             value = query,
             onValueChange = onQueryChange,
@@ -781,32 +778,40 @@ private fun IdentifySearchBlock(
             enabled = !isSearching
         )
         if (showFilters) {
-            OutlinedTextField(
-                value = filterArtist,
-                onValueChange = onFilterArtistChange,
+            Row(
                 modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                label = { Text("Artista") },
-                enabled = !isSearching,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                keyboardActions = searchActions
-            )
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                OutlinedTextField(
+                    value = filterArtist,
+                    onValueChange = onFilterArtistChange,
+                    modifier = Modifier.weight(1.35f),
+                    singleLine = true,
+                    label = { Text("Artista") },
+                    enabled = !isSearching,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    keyboardActions = searchActions
+                )
+                OutlinedTextField(
+                    value = filterYear,
+                    onValueChange = onFilterYearChange,
+                    modifier = Modifier.weight(0.65f),
+                    singleLine = true,
+                    label = { Text("Año") },
+                    enabled = !isSearching,
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Number,
+                        imeAction = ImeAction.Search
+                    ),
+                    keyboardActions = searchActions
+                )
+            }
             OutlinedTextField(
                 value = filterAlbum,
                 onValueChange = onFilterAlbumChange,
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
                 label = { Text("Álbum") },
-                enabled = !isSearching,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                keyboardActions = searchActions
-            )
-            OutlinedTextField(
-                value = filterYear,
-                onValueChange = onFilterYearChange,
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                label = { Text("Año") },
                 enabled = !isSearching,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                 keyboardActions = searchActions

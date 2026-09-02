@@ -301,7 +301,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     /** Tab to come back to after a transient jump into Settings. */
     private var navIndexBeforeTransient: Int? = null
 
-    private val _libraryPrefsReady = MutableStateFlow(false)
+    private val _libraryPrefsReady = MutableStateFlow(true)
     private val getLibrarySongsUseCase = com.bestiapop.android.domain.usecase.GetLibrarySongsUseCase()
     private val _artistPhotos = MutableStateFlow<Map<String, String>>(emptyMap())
     val libraryProjection = LibraryProjectionState(

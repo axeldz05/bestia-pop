@@ -105,7 +105,7 @@ class MainActivity : ComponentActivity() {
         super.onStart()
         PlaybackDiagnostics.log(PlaybackDiagnostics.TAG_LIFECYCLE, "MainActivity.onStart (app moved to foreground)")
         viewModel.onAppForeground()
-        window.decorView.post { viewModel.attachPlaybackUi() }
+        viewModel.attachPlaybackUi()
     }
 
     override fun onResume() {

@@ -170,4 +170,15 @@ interface IMusicRepository {
      * Skips content:// and unsupported formats. [onProgress] is (done, total, fileLabel).
      */
     suspend fun syncTagsToFiles(onProgress: LibraryScanProgress? = null): TagSyncSummary
+
+    suspend fun saveAlbumTracksToLibrary(
+        albumTitle: String,
+        artistName: String,
+        coverUrl: String?,
+        year: Int,
+        genre: String,
+        tracks: List<com.bestiapop.android.data.model.CatalogTrackCandidate>
+    ): List<Song>
+
+    suspend fun removeSavedAlbumFromLibrary(albumName: String, artistName: String): Int
 }

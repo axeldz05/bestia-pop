@@ -45,5 +45,6 @@ fun LibraryBrowseFilter.chipLabel(): String = when (this) {
     LibraryBrowseFilter.ALBUMS -> "Álbumes"
     LibraryBrowseFilter.ARTISTS -> "Artistas"
     LibraryBrowseFilter.GENRES -> "Géneros"
+    LibraryBrowseFilter.PLAYLISTS -> "Playlists"
     LibraryBrowseFilter.RECENT -> "Recientes"
 }

@@ -103,7 +103,7 @@ fun SettingsScreen(viewModel: MusicPlayerViewModel, appUpdateViewModel: AppUpdat
         SettingsSection.Themes -> SettingsSectionPage("Temas", onBack = closeSection) {
             ThemeSettingsScreen(viewModel = viewModel, showTitle = false)
         }
-        SettingsSection.ListenBrainz -> SettingsSectionPage("ListenBrainz", onBack = closeSection) {
+        SettingsSection.ListenBrainz -> SettingsSectionPage("ListenBrainz y recomendaciones", onBack = closeSection) {
             ListenBrainzSettingsScreen(viewModel = viewModel)
         }
         SettingsSection.Playback -> SettingsSectionPage("Reproducción", onBack = closeSection) {
@@ -209,8 +209,8 @@ private fun SettingsHome(
         val entries = listOf(
             SettingsHomeEntry("Temas", "Colores y estilo visual", Icons.Default.Palette, onOpenThemes),
             SettingsHomeEntry(
-                "ListenBrainz",
-                "Registrar canciones escuchadas",
+                "ListenBrainz y recomendaciones",
+                "Scrobbling y motor de recomendaciones para Discover",
                 Icons.Default.Headset,
                 onOpenListenBrainz
             ),

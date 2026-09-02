@@ -893,6 +893,17 @@ private fun LibraryBrowsePane(
                 onShuffleGenre = onShuffleGenre
             )
         }
+
+        activeFilter == LibraryBrowseFilter.PLAYLISTS -> {
+            PlaylistsScreen(
+                viewModel = viewModel,
+                searchQuery = searchQuery,
+                onAddSongsRequest = { playlist ->
+                    viewModel.openLocalPlaylist(playlist.id)
+                    viewModel.setLibraryBrowseFilter(LibraryBrowseFilter.SONGS)
+                }
+            )
+        }
     }
 }
 

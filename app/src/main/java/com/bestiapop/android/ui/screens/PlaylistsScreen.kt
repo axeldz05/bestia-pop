@@ -113,9 +113,14 @@ fun matchedStreamCountLabel(matched: Int, stream: Int): String =
 @Composable
 fun PlaylistsScreen(
     viewModel: MusicPlayerViewModel,
+    searchQuery: String = "",
     onAddSongsRequest: (Playlist) -> Unit = {}
 ) {
     val playlists by viewModel.playlists.collectAsState(initial = emptyList())
+    val visiblePlaylists = remember(playlists, searchQuery) {
+        if (searchQuery.isBlank()) playlists
+        else playlists.filter { it.name.contains(searchQuery.trim(), ignoreCase = true) }
+    }
     val allSongs by viewModel.libraryProjection.songs.collectAsState()
     val lbSettings by viewModel.listenBrainzSettings.collectAsState()
     val lbDiscover by viewModel.lbDiscover.collectAsState()
@@ -336,14 +341,14 @@ fun PlaylistsScreen(
                         }
                     }
 
-                    if (playlists.isEmpty()) {
+                    if (visiblePlaylists.isEmpty()) {
                         item(key = "local-empty") {
                             EmptyListHint(
-                                text = "No tenés playlists creadas",
-                                subtitle = "Creá tu primera lista personalizada.",
+                                text = if (searchQuery.isBlank()) "No tenés playlists creadas" else "No se encontraron playlists",
+                                subtitle = if (searchQuery.isBlank()) "Creá tu primera lista personalizada." else "Probá con otro término de búsqueda.",
                                 icon = Icons.AutoMirrored.Filled.QueueMusic,
                                 iconSize = 64.dp,
-                                actionLabel = "Crear playlist",
+                                actionLabel = if (searchQuery.isBlank()) "Crear playlist" else null,
                                 onAction = { showCreateDialog = true },
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -351,7 +356,7 @@ fun PlaylistsScreen(
                             )
                         }
                     } else {
-                        items(playlists, key = { it.id }) { playlist ->
+                        items(visiblePlaylists, key = { it.id }) { playlist ->
                             PlaylistCardItem(
                                 playlist = playlist,
                                 onClick = {

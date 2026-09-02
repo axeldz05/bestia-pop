@@ -37,3 +37,7 @@ data class Song(
         const val UNKNOWN_GENRE = "Unknown Genre"
     }
 }
+
+val Song.isRemote: Boolean
+    get() = uriString.startsWith("remote://")
+

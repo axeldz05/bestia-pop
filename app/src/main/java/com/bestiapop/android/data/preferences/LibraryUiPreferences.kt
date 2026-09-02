@@ -8,6 +8,7 @@ const val DEFAULT_VIEW_MODE_NAME = "ALBUM_GROUPS"
 const val DEFAULT_BROWSE_FILTER_NAME = "SONGS"
 
 const val NAV_LIBRARY = 0
+const val NAV_DISCOVER = 1
 const val NAV_PLAYLISTS = 1
 const val NAV_DOWNLOADS = 2
 const val NAV_WIFI = 3
@@ -26,7 +27,7 @@ const val PLAYLIST_DETAIL_CF = "cf"
 private val VALID_SORT_OPTION_NAMES = setOf("TITLE", "ARTIST", "ALBUM", "GENRE", "DATE_ADDED")
 private val VALID_SORT_DIRECTION_NAMES = setOf("ASC", "DESC")
 private val VALID_VIEW_MODE_NAMES = setOf("FLAT", "ALBUM_GROUPS")
-private val VALID_BROWSE_FILTER_NAMES = setOf("SONGS", "ALBUMS", "ARTISTS", "GENRES", "RECENT")
+private val VALID_BROWSE_FILTER_NAMES = setOf("SONGS", "ALBUMS", "ARTISTS", "GENRES", "PLAYLISTS", "RECENT")
 private val VALID_PLAYLIST_DETAIL_KINDS = setOf(
     PLAYLIST_DETAIL_NONE,
     PLAYLIST_DETAIL_LOCAL,
@@ -164,6 +165,7 @@ object LibraryUiPreferencesCodec {
             } else {
                 snapshot.copy(playlistLbMbid = null)
             }
+
             PLAYLIST_DETAIL_LB -> if (snapshot.playlistLbMbid == null) {
                 snapshot.copy(
                     playlistDetailKind = PLAYLIST_DETAIL_NONE,
@@ -172,10 +174,12 @@ object LibraryUiPreferencesCodec {
             } else {
                 snapshot.copy(playlistLocalId = null)
             }
+
             PLAYLIST_DETAIL_CF -> snapshot.copy(
                 playlistLocalId = null,
                 playlistLbMbid = null
             )
+
             else -> snapshot.copy(
                 playlistDetailKind = PLAYLIST_DETAIL_NONE,
                 playlistLocalId = null,

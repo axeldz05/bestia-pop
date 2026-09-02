@@ -187,6 +187,7 @@ internal interface RepositoryMetadataSource {
         limit: Int = 25,
         index: Int = 0
     ): List<OnlineCatalogTrack>
+
     /** iTunes + YouTube when Deezer already returned unrelated hits. */
     suspend fun searchIdentifyFallbacks(
         query: String,
@@ -813,7 +814,10 @@ class MusicRepository private constructor(
         } catch (e: Exception) {
             // ignore
         } finally {
-            try { retriever.release() } catch (ignored: Exception) {}
+            try {
+                retriever.release()
+            } catch (ignored: Exception) {
+            }
         }
         return null
     }
@@ -865,8 +869,8 @@ class MusicRepository private constructor(
     private fun isAudioFile(fileName: String): Boolean {
         val lower = fileName.lowercase()
         return lower.endsWith(".mp3") || lower.endsWith(".flac") || lower.endsWith(".m4a") ||
-            lower.endsWith(".ogg") || lower.endsWith(".wav") || lower.endsWith(".aac") ||
-            lower.endsWith(".webm") || lower.endsWith(".opus")
+                lower.endsWith(".ogg") || lower.endsWith(".wav") || lower.endsWith(".aac") ||
+                lower.endsWith(".webm") || lower.endsWith(".opus")
     }
 
     override suspend fun getAllSongsSync(): List<Song> = withContext(Dispatchers.IO) {
@@ -1195,7 +1199,7 @@ class MusicRepository private constructor(
 
         val trimmedCustom = customQuery?.trim().orEmpty()
         val artistPlaceholder = queryArtist.isBlank() ||
-            IdentifyRanking.isPlaceholderArtist(queryArtist)
+                IdentifyRanking.isPlaceholderArtist(queryArtist)
         val filterArtist = normalizedFilters.artist.takeUnless {
             it.isBlank() || IdentifyRanking.isPlaceholderArtist(it)
         }
@@ -1512,6 +1516,7 @@ class MusicRepository private constructor(
             fields.title -> bilingualTitle.ifBlank { entity.title }
             IdentifyRanking.shouldApplyBilingualTitle(candidateTitle, entity.title) ->
                 bilingualTitle.ifBlank { entity.title }
+
             else -> entity.title
         }
         val finalArtist = if (fields.artist) {
@@ -1644,16 +1649,16 @@ class MusicRepository private constructor(
         val titleJunk = song.title.trimStart().let {
             it.startsWith("-") || it.startsWith("_") || looksLikeStoragePath(it)
         } || isTrackNumberLabel(song.title.trim()) || (
-            artistWeak &&
-                hints.title != null &&
-                stripLeadingTitleJunk(song.title) == hints.title &&
-                song.title != hints.title
-        ) || (
-            artistWeak &&
-                !hints.artist.isNullOrBlank() &&
-                !hints.title.isNullOrBlank() &&
-                song.title != hints.title
-        )
+                artistWeak &&
+                        hints.title != null &&
+                        stripLeadingTitleJunk(song.title) == hints.title &&
+                        song.title != hints.title
+                ) || (
+                artistWeak &&
+                        !hints.artist.isNullOrBlank() &&
+                        !hints.title.isNullOrBlank() &&
+                        song.title != hints.title
+                )
 
         val newArtist = when {
             artistWeak && !hints.artist.isNullOrBlank() -> hints.artist
@@ -1702,7 +1707,8 @@ class MusicRepository private constructor(
             retriever.release()
             val dur = durStr?.toLongOrNull() ?: 0L
             if (dur > 0) return dur
-        } catch (ignored: Exception) {}
+        } catch (ignored: Exception) {
+        }
 
         try {
             val extractor = android.media.MediaExtractor()
@@ -1717,7 +1723,8 @@ class MusicRepository private constructor(
                 }
             }
             extractor.release()
-        } catch (ignored: Exception) {}
+        } catch (ignored: Exception) {
+        }
 
         try {
             val mp = android.media.MediaPlayer()
@@ -1726,7 +1733,8 @@ class MusicRepository private constructor(
             val dur = mp.duration.toLong()
             mp.release()
             if (dur > 0) return dur
-        } catch (ignored: Exception) {}
+        } catch (ignored: Exception) {
+        }
 
         return 0L
     }
@@ -1962,8 +1970,8 @@ class MusicRepository private constructor(
     override fun saveAlbumCoverImage(sourceUriStr: String?): String? =
         persistUserCover(sourceUriStr, "album_covers") { uri ->
             val inAppStorage = uri.contains("album_covers") ||
-                uri.contains("playlist_covers") ||
-                uri.contains("artwork")
+                    uri.contains("playlist_covers") ||
+                    uri.contains("artwork")
             inAppStorage && (uri.startsWith("file://") || uri.startsWith("/"))
         }
 
@@ -1973,31 +1981,33 @@ class MusicRepository private constructor(
             uri.startsWith("file://") && uri.contains("playlist_covers")
         }
 
-    override suspend fun createPlaylist(name: String, description: String?, coverUri: String?): Long = withContext(Dispatchers.IO) {
-        val savedCover = savePlaylistCoverImage(coverUri)
-        musicDao.insertPlaylist(
-            PlaylistEntity(
+    override suspend fun createPlaylist(name: String, description: String?, coverUri: String?): Long =
+        withContext(Dispatchers.IO) {
+            val savedCover = savePlaylistCoverImage(coverUri)
+            musicDao.insertPlaylist(
+                PlaylistEntity(
+                    name = name,
+                    description = description?.ifBlank { null },
+                    coverUri = savedCover
+                )
+            )
+        }
+
+    override suspend fun updatePlaylist(id: Long, name: String, description: String?, coverUri: String?) =
+        withContext(Dispatchers.IO) {
+            val existing = musicDao.getPlaylistById(id) ?: return@withContext
+            val savedCover = if (!coverUri.isNullOrEmpty() && coverUri != existing.coverUri) {
+                savePlaylistCoverImage(coverUri)
+            } else {
+                coverUri
+            }
+            val updated = existing.copy(
                 name = name,
                 description = description?.ifBlank { null },
                 coverUri = savedCover
             )
-        )
-    }
-
-    override suspend fun updatePlaylist(id: Long, name: String, description: String?, coverUri: String?) = withContext(Dispatchers.IO) {
-        val existing = musicDao.getPlaylistById(id) ?: return@withContext
-        val savedCover = if (!coverUri.isNullOrEmpty() && coverUri != existing.coverUri) {
-            savePlaylistCoverImage(coverUri)
-        } else {
-            coverUri
+            musicDao.updatePlaylist(updated)
         }
-        val updated = existing.copy(
-            name = name,
-            description = description?.ifBlank { null },
-            coverUri = savedCover
-        )
-        musicDao.updatePlaylist(updated)
-    }
 
     override suspend fun deletePlaylist(id: Long) = withContext(Dispatchers.IO) {
         musicDao.clearPlaylistSongs(id)
@@ -2065,11 +2075,13 @@ class MusicRepository private constructor(
                     artist = identity.artist.ifBlank { overwriteTarget.artist }
                 )
             }
+
             is DownloadConflictPolicy.SaveAs -> {
                 identity = identity.copy(
                     title = conflictPolicy.newTitle.trim().ifBlank { identity.title }
                 )
             }
+
             null -> {
                 val existing = lookupSongByArtistTitle(identity.artist, identity.title)
                 if (existing != null) {
@@ -2145,7 +2157,8 @@ class MusicRepository private constructor(
                     downloadCallFactory.newCall(reqBuilder.build()).useCancellable { response ->
                         lastResponseCode = response.code
                         if (!response.isSuccessful) {
-                            lastHttpError = "HTTP ${response.code} (${response.message.ifBlank { "Error de servidor" }})"
+                            lastHttpError =
+                                "HTTP ${response.code} (${response.message.ifBlank { "Error de servidor" }})"
                             return@useCancellable
                         }
                         val body = response.body
@@ -2179,10 +2192,10 @@ class MusicRepository private constructor(
                         }
                     }
                     continueChunks = googlevideoClen != null &&
-                        !downloadSuccess &&
-                        lastResponseCode == 206 &&
-                        downloadedBytes > chunkStart &&
-                        downloadedBytes < googlevideoClen
+                            !downloadSuccess &&
+                            lastResponseCode == 206 &&
+                            downloadedBytes > chunkStart &&
+                            downloadedBytes < googlevideoClen
                 }
             } catch (e: CancellationException) {
                 file.delete()
@@ -2484,7 +2497,7 @@ class MusicRepository private constructor(
             if (songs.isEmpty()) return@withContext emptyList()
             val candidates = songs.filter { song ->
                 IdentifyRanking.isPlaceholderArtist(song.artist) ||
-                    IdentifyRanking.isGenericAlbum(song.album)
+                        IdentifyRanking.isGenericAlbum(song.album)
             }
             if (candidates.isEmpty()) return@withContext emptyList()
             val library = identityLibrarySongs()
@@ -2558,6 +2571,7 @@ class MusicRepository private constructor(
                             dateModifiedSec > 0L -> dateModifiedSec * 1000L
                             !dataPath.isNullOrBlank() && File(dataPath).exists() && File(dataPath).lastModified() > 0L ->
                                 File(dataPath).lastModified()
+
                             else -> null
                         }
                     }
@@ -2607,10 +2621,63 @@ class MusicRepository private constructor(
 
     private fun isPlaceholderTitle(title: String): Boolean =
         title.isBlank() ||
-            title == "YouTube Track" ||
-            title == "Canción desde Link" ||
-            title == "Enlace YouTube" ||
-            title == "Descarga"
+                title == "YouTube Track" ||
+                title == "Canción desde Link" ||
+                title == "Enlace YouTube" ||
+                title == "Descarga"
+
+    override suspend fun saveAlbumTracksToLibrary(
+        albumTitle: String,
+        artistName: String,
+        coverUrl: String?,
+        year: Int,
+        genre: String,
+        tracks: List<com.bestiapop.android.data.model.CatalogTrackCandidate>
+    ): List<Song> = withContext(Dispatchers.IO) {
+        if (tracks.isEmpty()) return@withContext emptyList()
+        val albumClean = albumTitle.trim()
+        val artistClean = artistName.trim()
+        val albumHash = albumClean.lowercase().hashCode().toUInt().toString(16)
+        val now = System.currentTimeMillis()
+
+        val songsToInsert = ArrayList<Song>(tracks.size)
+        tracks.forEachIndexed { index, candidate ->
+            val trackNum = candidate.trackNumber.takeIf { it > 0 } ?: (index + 1)
+            val titleClean = candidate.title.trim()
+            val trackArtist = candidate.artist.trim().ifBlank { artistClean }
+            val trackHash = "$trackArtist-$titleClean".lowercase().hashCode().toUInt().toString(16)
+            val uri = "remote://catalog/$albumHash/$trackNum/$trackHash"
+
+            val existing = musicDao.getSongByUri(uri)
+            if (existing == null) {
+                songsToInsert.add(
+                    Song(
+                        uriString = uri,
+                        title = titleClean,
+                        artist = trackArtist,
+                        album = albumClean,
+                        genre = genre.trim().ifBlank { Song.UNKNOWN_GENRE },
+                        durationMs = candidate.durationMs,
+                        year = year,
+                        trackNumber = trackNum,
+                        artworkUri = coverUrl,
+                        dateAdded = now
+                    )
+                )
+            }
+        }
+
+        if (songsToInsert.isNotEmpty()) {
+            musicDao.insertSongs(songsToInsert)
+        }
+
+        musicDao.getSavedRemoteAlbumSongs(albumClean, artistClean)
+    }
+
+    override suspend fun removeSavedAlbumFromLibrary(albumName: String, artistName: String): Int =
+        withContext(Dispatchers.IO) {
+            musicDao.deleteSavedRemoteAlbum(albumName.trim(), artistName.trim())
+        }
 
     private companion object {
         const val MAX_DOWNLOAD_ATTEMPTS = 5

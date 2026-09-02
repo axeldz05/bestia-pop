@@ -33,10 +33,14 @@ import com.bestiapop.android.data.preferences.LibraryTagWriteSettings
 import com.bestiapop.android.data.preferences.LibraryUiPreferencesCodec
 import com.bestiapop.android.data.preferences.LibraryStackLookups
 import com.bestiapop.android.data.preferences.DEFAULT_STREAM_SKIP_GRACE_SECONDS
+import com.bestiapop.android.data.preferences.NAV_DISCOVER
 import com.bestiapop.android.data.preferences.NAV_DOWNLOADS
 import com.bestiapop.android.data.preferences.NAV_LIBRARY
 import com.bestiapop.android.data.preferences.NAV_PLAYLISTS
 import com.bestiapop.android.data.preferences.NAV_SETTINGS
+import com.bestiapop.android.data.preferences.SearchHistoryPreferencesRepository
+import com.bestiapop.android.domain.usecase.GetDiscoverRecommendationsUseCase
+import com.bestiapop.android.domain.usecase.DiscoverFeed
 import com.bestiapop.android.data.preferences.UiNavSnapshot
 import com.bestiapop.android.data.preferences.ListenBrainzPreferencesRepository
 import com.bestiapop.android.data.preferences.ListenBrainzSettings
@@ -63,6 +67,8 @@ import com.bestiapop.android.domain.util.IdentifyCatalogQuery
 import com.bestiapop.android.domain.util.IdentifyRanking
 import com.bestiapop.android.domain.util.TrackMatchKeys
 import com.bestiapop.android.domain.util.albumGroupKey
+import com.bestiapop.android.domain.util.albumIdentityKey
+import com.bestiapop.android.domain.util.albumNamesMatch
 import com.bestiapop.android.domain.util.assignUniqueKnownAlbumMatches
 import com.bestiapop.android.domain.util.clusterIdentifyAlbumGroups
 import com.bestiapop.android.domain.util.findAlbumMergeTarget
@@ -79,6 +85,7 @@ import com.bestiapop.android.service.ProcessDownloadRequest
 import com.bestiapop.android.service.ProcessIdentifyEvent
 import com.bestiapop.android.service.WebServerService
 import com.bestiapop.android.ui.state.CatalogCollectionKind
+import com.bestiapop.android.ui.state.ItemLibraryStatus
 import com.bestiapop.android.ui.state.CatalogCollectionUiState
 import com.bestiapop.android.ui.state.CatalogSearchUiState
 import com.bestiapop.android.ui.state.IdentifyReviewItem
@@ -274,6 +281,47 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             viewModelScope,
             emptyList()
         )
+    val localLibraryIndex: StateFlow<Map<String, Song>> = rawSongs
+        .map { songs ->
+            val localOnly = songs.filter { !it.isRemote }
+            TrackMatchKeys.buildLibraryIndex(localOnly)
+        }
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.Eagerly,
+            initialValue = emptyMap()
+        )
+    val allLibrarySongsIndex: StateFlow<Map<String, Song>> = rawSongs
+        .map { songs ->
+            TrackMatchKeys.buildLibraryIndex(songs)
+        }
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.Eagerly,
+            initialValue = emptyMap()
+        )
+    val savedAlbumsIndex: StateFlow<Map<String, List<Song>>> = rawSongs
+        .map { songs ->
+            songs.groupBy {
+                val albumKey = albumIdentityKey(it.album)
+                val artistKey = TrackMatchKeys.normalize(it.artist)
+                "$albumKey|$artistKey"
+            }
+        }
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.Eagerly,
+            initialValue = emptyMap()
+        )
+    val savedAlbumsByTitleIndex: StateFlow<Map<String, List<Song>>> = rawSongs
+        .map { songs ->
+            songs.groupBy { albumIdentityKey(it.album) }
+        }
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.Eagerly,
+            initialValue = emptyMap()
+        )
     val playlists = repository.playlistsFlow
 
     // Sorting & Searching
@@ -296,8 +344,10 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     private var uiPrefsHydrated = false
+
     /** Tab to persist. Transient jumps move the live index without touching this. */
     private var persistedNavIndex = NAV_LIBRARY
+
     /** Tab to come back to after a transient jump into Settings. */
     private var navIndexBeforeTransient: Int? = null
 
@@ -414,6 +464,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     /** Artists already looked up this session (hit or miss) — a miss must not be retried forever. */
     private val artistPhotoAttempted = mutableSetOf<String>()
+
     /** Song ids already passed to the background metadata/lyrics pass this session. */
     private val metadataEnhanceAttempted = mutableSetOf<Long>()
 
@@ -444,7 +495,18 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private val _volumeLevel = MutableStateFlow(getDeviceVolumeRatio())
     val volumeLevel = _volumeLevel.asStateFlow()
 
-    // Online Catalog & Link Downloader State
+    private val searchHistoryPreferences = SearchHistoryPreferencesRepository(application)
+    private val getDiscoverRecommendationsUseCase = GetDiscoverRecommendationsUseCase()
+
+    val recentSearches: StateFlow<List<String>> = searchHistoryPreferences.recentSearchesFlow
+        .stateInUi(viewModelScope, emptyList())
+
+    private val _discoverFeed = MutableStateFlow(DiscoverFeed())
+    val discoverFeed = _discoverFeed.asStateFlow()
+
+    private val _isLoadingDiscoverFeed = MutableStateFlow(false)
+    val isLoadingDiscoverFeed = _isLoadingDiscoverFeed.asStateFlow()
+
     private val _catalogSearch = MutableStateFlow(CatalogSearchUiState())
     val catalogSearch = _catalogSearch.asStateFlow()
 
@@ -480,6 +542,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private val identifyMutex = Mutex()
     private val identifyDroppedIds = mutableSetOf<Long>()
     private val uiAttached = AtomicBoolean(false)
+
     /** Serializes the first-launch disk import: two callers race the completed-flag check. */
     private val initialImportMutex = Mutex()
     private val identifiedWifiSongIds = mutableSetOf<Long>()
@@ -538,7 +601,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         val current = _backgroundExecutionStatus.value
         val raisingAlarm =
             (snapshot.blocksBackgroundPlayback && !current.blocksBackgroundPlayback) ||
-                (snapshot.oemScreenOffCleanupActive && !current.oemScreenOffCleanupActive)
+                    (snapshot.oemScreenOffCleanupActive && !current.oemScreenOffCleanupActive)
         if (!raisingAlarm) {
             _backgroundExecutionStatus.value = snapshot
             return
@@ -864,6 +927,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                             showIdentifyReview()
                         }
                     }
+
                     is ProcessIdentifyEvent.AlreadyQueued -> {
                         toast(
                             if (event.count == 1) "1 ya está en revisión"
@@ -925,7 +989,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                     rows.asSequence()
                         .filter {
                             it.source.lane == DownloadLane.AUTOSAVE &&
-                                it.state == CandidateDownloadState.SUCCESS
+                                    it.state == CandidateDownloadState.SUCCESS
                         }
                         .mapNotNull { it.resultSongId }
                         .toSet()
@@ -953,7 +1017,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                     val newPhotos = mutableMapOf<String, String>()
                     val unattempted = artists.filter {
                         it.isNotBlank() && !it.equals("Unknown Artist", ignoreCase = true) &&
-                            it !in artistPhotoAttempted
+                                it !in artistPhotoAttempted
                     }
                     for (artist in unattempted) {
                         artistPhotoAttempted.add(artist)
@@ -976,7 +1040,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                     val songs = repository.allSongsFlow.first()
                     val unenhanced = songs.filter {
                         !SongPathNormalizer.hasUsableArtwork(it.artworkUri) &&
-                            it.id !in metadataEnhanceAttempted
+                                it.id !in metadataEnhanceAttempted
                     }
                     val batch = unenhanced.take(METADATA_ENHANCE_BATCH)
                     if (batch.isEmpty()) return@collect
@@ -1072,6 +1136,66 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             youtubeQueryOrId = queryOrId
         )
         playPlayableCollection(listOf(remote), 0)
+    }
+
+    /** Returns matched local (non-remote) Song from library index in O(1) time. */
+    fun findLocalSongFor(meta: TrackMeta): Song? {
+        val song = TrackMatchKeys.lookupLocalSong(localLibraryIndex.value, meta)
+        return if (song != null && !song.isRemote) song else null
+    }
+
+    /** Plays local version if available in library; otherwise falls back to online stream. */
+    fun playCatalogOrLocalTrack(track: OnlineCatalogTrack) {
+        val local = findLocalSongFor(track.identity)
+        if (local != null) {
+            playSong(local)
+        } else {
+            playOnlineCatalogTrackAsStream(track)
+        }
+    }
+
+    /** Plays collection of candidates, resolving any available local tracks to avoid streaming. */
+    fun playCatalogCandidates(
+        candidates: List<CatalogTrackCandidate>,
+        startIndex: Int = 0,
+        startShuffled: Boolean = false
+    ) {
+        val index = localLibraryIndex.value
+        val playables = candidates.map { candidate ->
+            val local = TrackMatchKeys.lookupLocalSong(index, candidate.identity)
+            if (local != null && !local.isRemote) {
+                PlayableItem.Local(local)
+            } else {
+                PlayableItem.remoteFrom(candidate.identity)
+            }
+        }
+        playPlayableCollection(playables, startIndex = startIndex, startShuffled = startShuffled)
+    }
+
+    /** Plays a single catalog candidate using local file if present, or streaming. */
+    fun playCatalogCandidate(candidate: CatalogTrackCandidate) {
+        val local = findLocalSongFor(candidate.identity)
+        if (local != null) {
+            playSong(local)
+        } else {
+            candidate.currentTrack?.let { playOnlineCatalogTrackAsStream(it) }
+                ?: playOnlineCatalogTrackAsStream(candidate.identity.toCatalogTrack(provider = "YouTube"))
+        }
+    }
+
+    /** Returns status of track in library (DOWNLOADED, SAVED_REMOTE, or NOT_IN_LIBRARY) in O(1). */
+    fun getTrackLibraryStatus(meta: TrackMeta): ItemLibraryStatus {
+        val song = TrackMatchKeys.lookupLocalSong(allLibrarySongsIndex.value, meta)
+            ?: return ItemLibraryStatus.NOT_IN_LIBRARY
+        return if (song.isRemote) ItemLibraryStatus.SAVED_REMOTE else ItemLibraryStatus.DOWNLOADED
+    }
+
+    /** Returns status of album in library (DOWNLOADED, SAVED_REMOTE, or NOT_IN_LIBRARY) in O(1). */
+    fun getAlbumLibraryStatus(albumTitle: String, artistName: String): ItemLibraryStatus {
+        val key = "${albumIdentityKey(albumTitle)}|${TrackMatchKeys.normalize(artistName)}"
+        val songs = savedAlbumsIndex.value[key] ?: savedAlbumsByTitleIndex.value[albumIdentityKey(albumTitle)]
+        if (songs.isNullOrEmpty()) return ItemLibraryStatus.NOT_IN_LIBRARY
+        return if (songs.any { !it.isRemote }) ItemLibraryStatus.DOWNLOADED else ItemLibraryStatus.SAVED_REMOTE
     }
 
     /** Preview local file while reviewing identify candidates (toggle if already current). */
@@ -1256,6 +1380,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         mode != null -> mode
         playbackRuntime.preferredRadioModeOrNull() != null ->
             playbackRuntime.preferredRadioModeOrNull()!!
+
         networkOnline -> RadioMode.BOTH
         else -> RadioMode.KNOWN
     }
@@ -1389,8 +1514,8 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             val settings = listenBrainzSettings.value
             val networkOnline = connectivityObserver.isCurrentlyOnline()
             val canUseLb = settings.enabled &&
-                settings.userToken.isNotBlank() &&
-                networkOnline
+                    settings.userToken.isNotBlank() &&
+                    networkOnline
             val library = repository.allSongsFlow.first()
             val preview = buildSimilarPlaylistPreviewUseCase.execute(
                 seeds = seeds,
@@ -1776,10 +1901,12 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         val needsFetch = when (detail) {
             is PlaylistDetailNav.ListenBrainz ->
                 _lbPlaylistDetail.value.data == null &&
-                    !_lbPlaylistDetail.value.isLoading
+                        !_lbPlaylistDetail.value.isLoading
+
             PlaylistDetailNav.CfRecommendations ->
                 _cfRecommendations.value.data == null &&
-                    !_cfRecommendations.value.isLoading
+                        !_cfRecommendations.value.isLoading
+
             else -> false
         }
         if (!needsFetch) return
@@ -1792,10 +1919,12 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 val ok = loadListenBrainzPlaylist(detail.mbid, forRestore = true)
                 if (!ok) fallbackDiscoverRestore(announce = true)
             }
+
             PlaylistDetailNav.CfRecommendations -> {
                 val ok = loadCfRecommendationsForRestore()
                 if (!ok) fallbackDiscoverRestore(announce = true)
             }
+
             else -> Unit
         }
     }
@@ -1871,7 +2000,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         if (seen > AppDatabase.VERSION) {
             toast(
                 "Instalaste una versión más vieja de BestiaPop: se reinició la base " +
-                    "(playlists y datos de álbumes). Tus archivos de música siguen en Music/BestiaPop."
+                        "(playlists y datos de álbumes). Tus archivos de música siguen en Music/BestiaPop."
             )
         }
         if (seen < AppDatabase.VERSION) {
@@ -1930,10 +2059,10 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         val app = getApplication<Application>()
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             ContextCompat.checkSelfPermission(app, Manifest.permission.READ_MEDIA_AUDIO) ==
-                PackageManager.PERMISSION_GRANTED
+                    PackageManager.PERMISSION_GRANTED
         } else {
             ContextCompat.checkSelfPermission(app, Manifest.permission.READ_EXTERNAL_STORAGE) ==
-                PackageManager.PERMISSION_GRANTED
+                    PackageManager.PERMISSION_GRANTED
         }
     }
 
@@ -1976,7 +2105,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 currentIndex = absIndex,
                 phase = IdentifyReviewPhase.Item,
                 openedFromOverview = state.phase == IdentifyReviewPhase.Overview ||
-                    state.openedFromOverview,
+                        state.openedFromOverview,
                 isVisible = true
             ).withItemSearchChrome(item)
             return
@@ -2030,6 +2159,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                     identifyMutex.withLock { applyPersistedIdentifyFields(snap.applyFields) }
                 }
             }
+
             is IdentifyPersistEcho.MergeExtras -> {
                 val extraItems = hydratePersistedIdentifyItems(
                     proposals = snap.proposals.filter { it.songId in echo.songIds.toSet() },
@@ -2044,6 +2174,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                     )
                 }
             }
+
             is IdentifyPersistEcho.Hydrate -> {
                 val queued = songsForIdentifyEcho(echo.songIds)
                 val library = rawSongs.value.ifEmpty { queued }
@@ -2450,7 +2581,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             val groupIds = state.albumGroups.find { it.key == groupKey }?.songIds?.toSet()
                 ?: return
             remaining.filter { it.song.id in groupIds } +
-                remaining.filter { it.song.id !in groupIds }
+                    remaining.filter { it.song.id !in groupIds }
         } else {
             remainingGroupedFirst(remaining, state.albumGroups)
         }
@@ -2619,6 +2750,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 qArtist.isNotEmpty() && !IdentifyRanking.isPlaceholderArtist(qArtist) -> qArtist
                 IdentifyRanking.isPlaceholderArtist(song.artist) || isTrackNumberLabel(song.artist) ->
                     "Unknown Artist"
+
                 else -> song.artist
             },
             lyrics = null
@@ -2661,8 +2793,8 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         val draft = state.searchQueryDraft
         val shouldSeedDraft = draft.isBlank() || looksLikeStoragePath(draft)
         val shouldSeedFilters = state.searchFilterArtist.isBlank() &&
-            state.searchFilterAlbum.isBlank() &&
-            state.searchFilterYear.isBlank()
+                state.searchFilterAlbum.isBlank() &&
+                state.searchFilterYear.isBlank()
         val artist = if (shouldSeedFilters && item != null) {
             identifySearchFilterArtist(item)
         } else {
@@ -2702,9 +2834,9 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         val next = show ?: !latest.showSearchFilters
         val item = latest.current
         val seed = next && item != null &&
-            latest.searchFilterArtist.isBlank() &&
-            latest.searchFilterAlbum.isBlank() &&
-            latest.searchFilterYear.isBlank()
+                latest.searchFilterArtist.isBlank() &&
+                latest.searchFilterAlbum.isBlank() &&
+                latest.searchFilterYear.isBlank()
         _identifyReview.value = latest.copy(
             showSearchFilters = next,
             searchFilterArtist = if (seed) identifySearchFilterArtist(item!!) else latest.searchFilterArtist,
@@ -3132,6 +3264,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 is LbApiResult.Success -> {
                     _lbDiscover.update { it.success(result.data) }
                 }
+
                 is LbApiResult.Failure -> {
                     _lbDiscover.update { it.failure(result.message) }
                 }
@@ -3170,6 +3303,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             is LbApiResult.Success -> {
                 _cfRecommendations.update { it.success(result.data) }
             }
+
             is LbApiResult.Failure -> {
                 _cfRecommendations.update { it.failure(result.message) }
             }
@@ -3252,6 +3386,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 _lbPlaylistDetail.update { it.success(matched) }
                 true
             }
+
             is LbApiResult.Failure -> {
                 if (forRestore) {
                     _lbPlaylistDetail.update { it.idle(data = null) }
@@ -3328,7 +3463,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     private enum class LibraryToastKind { SAVED, ADDED, ALREADY }
 
-    private fun toast(message: String) {
+    fun toast(message: String) {
         Toast.makeText(getApplication(), message, Toast.LENGTH_SHORT).show()
     }
 
@@ -3393,15 +3528,15 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 // completed between this hint and the attach, continue into execute() instead of
                 // dropping the pending destination.
                 val attached = playlistId != null &&
-                    processDownloadRuntime.attachPlaylistDestination(
-                        downloadId = downloadId,
-                        artist = lookup.artist,
-                        title = lookup.title,
-                        destination = DownloadPlaylistDestination(
-                            playlistId = playlistId,
-                            identity = lookup
+                        processDownloadRuntime.attachPlaylistDestination(
+                            downloadId = downloadId,
+                            artist = lookup.artist,
+                            title = lookup.title,
+                            destination = DownloadPlaylistDestination(
+                                playlistId = playlistId,
+                                identity = lookup
+                            )
                         )
-                    )
                 if (playlistId == null || attached) return@mapNotNull null
             }
             val candidates = item.candidates.ifEmpty { listOf(item.track) }
@@ -3504,6 +3639,84 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
+    fun refreshDiscoverFeed() {
+        viewModelScope.launch {
+            _isLoadingDiscoverFeed.value = true
+            try {
+                val songs = repository.allSongsFlow.first()
+                val stats = repository.songPlayStatsFlow.first()
+                val lbSettings = listenBrainzSettings.value
+                val feed = getDiscoverRecommendationsUseCase.execute(
+                    librarySongs = songs,
+                    playStats = stats,
+                    userToken = lbSettings.userToken,
+                    username = lbSettings.username
+                )
+                _discoverFeed.value = feed
+            } catch (_: Exception) {
+            } finally {
+                _isLoadingDiscoverFeed.value = false
+            }
+        }
+    }
+
+    fun addRecentSearch(query: String) {
+        viewModelScope.launch {
+            searchHistoryPreferences.addSearchQuery(query)
+        }
+    }
+
+    fun removeRecentSearch(query: String) {
+        viewModelScope.launch {
+            searchHistoryPreferences.removeSearchQuery(query)
+        }
+    }
+
+    fun clearRecentSearches() {
+        viewModelScope.launch {
+            searchHistoryPreferences.clearSearchHistory()
+        }
+    }
+
+    fun saveAlbumToLibrary(album: CatalogAlbum, candidates: List<CatalogTrackCandidate>) {
+        viewModelScope.launch {
+            try {
+                val effectiveCandidates = if (candidates.isNotEmpty()) {
+                    candidates
+                } else {
+                    MetadataFetcher.fetchAlbumTrackCandidates(
+                        albumId = album.id,
+                        albumTitle = album.title,
+                        artistName = album.artist,
+                        albumCoverUrl = album.coverUrl
+                    )
+                }
+                repository.saveAlbumTracksToLibrary(
+                    albumTitle = album.title,
+                    artistName = album.artist,
+                    coverUrl = album.coverUrl,
+                    year = album.releaseYear.toIntOrNull() ?: 0,
+                    genre = Song.UNKNOWN_GENRE,
+                    tracks = effectiveCandidates
+                )
+                toast("Álbum guardado en la biblioteca")
+            } catch (e: Exception) {
+                toast("Error al guardar álbum: ${e.message}")
+            }
+        }
+    }
+
+    fun removeSavedAlbum(albumName: String, artistName: String) {
+        viewModelScope.launch {
+            try {
+                val removed = repository.removeSavedAlbumFromLibrary(albumName, artistName)
+                toast(if (removed > 0) "Álbum eliminado de la biblioteca" else "No se encontraron pistas para eliminar")
+            } catch (e: Exception) {
+                toast("Error al eliminar álbum: ${e.message}")
+            }
+        }
+    }
+
     fun searchCatalog(
         query: String = _catalogSearch.value.searchQueryDraft,
         filters: IdentifySearchFilters = _catalogSearch.value.searchFilters
@@ -3511,6 +3724,9 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         lastCatalogQuery = query
         lastCatalogFilters = filters
         val cleanQ = query.trim()
+        if (cleanQ.isNotBlank()) {
+            addRecentSearch(cleanQ)
+        }
         val normalizedFilters = filters.normalized()
         val effectiveQuery = IdentifyCatalogQuery.build(cleanQ, normalizedFilters)
         val generation = ++catalogSearchGeneration
@@ -3529,18 +3745,21 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                         _catalogSearch.update { it.copy(tracks = results) }
                     }
                 }
+
                 CatalogCategory.ALBUMS -> {
                     val results = MetadataFetcher.searchAlbums(effectiveQuery.ifEmpty { cleanQ })
                     if (generation == catalogSearchGeneration) {
                         _catalogSearch.update { it.copy(albums = results) }
                     }
                 }
+
                 CatalogCategory.PLAYLISTS -> {
                     val results = MetadataFetcher.searchPlaylists(cleanQ.ifEmpty { effectiveQuery })
                     if (generation == catalogSearchGeneration) {
                         _catalogSearch.update { it.copy(playlists = results) }
                     }
                 }
+
                 CatalogCategory.GENRES -> {
                     val genres = MetadataFetcher.listGenres()
                     val results = if (cleanQ.isEmpty()) {
@@ -3552,6 +3771,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                         _catalogSearch.update { it.copy(genres = results) }
                     }
                 }
+
                 CatalogCategory.CHARTS -> {
                     val results = MetadataFetcher.fetchChartTracks()
                     if (generation == catalogSearchGeneration) {
@@ -3847,6 +4067,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 }
                 return
             }
+
             else -> Unit
         }
 
@@ -3877,7 +4098,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         val download = activeDownloads.value.find { it.id == id } ?: return
         val current = download.currentTrack ?: return
         val wasPreviewing = _catalogPreviewKey.value == catalogPreviewKeyFor(current) ||
-            download.candidates.any { catalogPreviewKeyFor(it) == _catalogPreviewKey.value }
+                download.candidates.any { catalogPreviewKeyFor(it) == _catalogPreviewKey.value }
         val query = download.youtubeSearchQuery()
             .ifBlank { current.title.trim() }
             .ifBlank { current.id.ifBlank { current.audioUrl } }

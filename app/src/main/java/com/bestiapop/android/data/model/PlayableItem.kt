@@ -140,11 +140,20 @@ private inline fun <T, R> List<T>.mapFast(transform: (T) -> R): List<R> {
 
 fun Song.toPlayable(): PlayableItem.Local = PlayableItem.Local(this)
 
-fun List<Song>.toPlayableItems(): List<PlayableItem> = mapFast { it.toPlayable() }
+fun Song.toPlayableItem(queueEntryId: String = newQueueEntryId()): PlayableItem = if (isRemote) {
+    PlayableItem.remoteFrom(
+        identity = toIdentity(),
+        youtubeQueryOrId = if (uriString.startsWith("remote://yt/")) uriString.removePrefix("remote://yt/") else null
+    ).copy(queueEntryId = queueEntryId)
+} else {
+    PlayableItem.Local(this, queueEntryId = queueEntryId)
+}
+
+fun List<Song>.toPlayableItems(): List<PlayableItem> = mapFast { it.toPlayableItem() }
 
 /** Transforms songs into playable items with fresh queue IDs in a single pass. */
 fun List<Song>.toPlayableItemsWithFreshIds(): List<PlayableItem> =
-    mapFast { PlayableItem.Local(it, queueEntryId = newQueueEntryId()) }
+    mapFast { it.toPlayableItem(queueEntryId = newQueueEntryId()) }
 
 /** Every occurrence entering a queue gets its own identity, even if the same object repeats. */
 fun List<PlayableItem>.withFreshQueueEntryIds(): List<PlayableItem> =

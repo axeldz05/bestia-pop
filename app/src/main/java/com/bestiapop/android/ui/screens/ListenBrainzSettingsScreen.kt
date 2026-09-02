@@ -20,6 +20,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -56,8 +57,30 @@ fun ListenBrainzSettingsScreen(viewModel: MusicPlayerViewModel) {
     var showToken by remember { mutableStateOf(false) }
 
     SettingsScrollColumn(
-        intro = "Registrá lo que escuchás en ListenBrainz. Sin conexión se guarda en cola y se envía de a poco al reconectar."
+        intro = "Registrá lo que escuchás en ListenBrainz y configurá las fuentes de recomendación para la pestaña Descubrir."
     ) {
+        Surface(
+            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
+            shape = RoundedCornerShape(14.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(14.dp)) {
+                Text(
+                    text = "Motor de Recomendaciones en Descubrir",
+                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "• Con ListenBrainz conectado: Descubrir usará tus recomendaciones CF (Collaborative Filtering) y pistas similares personalizadas de ListenBrainz.\n• Sin conexión o sin token: Descubrir usará automáticamente el catálogo de Deezer basándose en las canciones y artistas más escuchados en tu biblioteca local.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f)
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
         SettingsSwitchRow(
             title = "Registrar escuchas",
             subtitle = if (settings.enabled) "Activo" else "Desactivado",

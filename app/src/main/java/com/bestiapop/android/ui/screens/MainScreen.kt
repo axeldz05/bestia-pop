@@ -15,10 +15,13 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Wifi
+import com.bestiapop.android.ui.screens.discover.DiscoverScreen
+import com.bestiapop.android.ui.state.LibraryBrowseFilter
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
@@ -169,7 +172,7 @@ fun MainScreen(
 
     val navItems = listOf(
         NavItem("Biblioteca", Icons.Default.LibraryMusic),
-        NavItem("Playlists", Icons.AutoMirrored.Filled.QueueMusic),
+        NavItem("Descubrir", Icons.Default.Explore),
         NavItem("Descargas", Icons.Default.Download),
         NavItem("WiFi Sync", Icons.Default.Wifi),
         NavItem("Ajustes", Icons.Default.Settings)
@@ -222,14 +225,14 @@ fun MainScreen(
                             val playlistId = targetPlaylistForAddition?.id
                             targetPlaylistForAddition = null
                             if (playlistId != null) viewModel.openLocalPlaylist(playlistId)
-                            viewModel.setSelectedNavIndex(1)
+                            viewModel.setLibraryBrowseFilter(LibraryBrowseFilter.PLAYLISTS)
                             clearPendingExit()
                         },
                         onCancelPlaylistAddition = {
                             val playlistId = targetPlaylistForAddition?.id
                             targetPlaylistForAddition = null
                             if (playlistId != null) viewModel.openLocalPlaylist(playlistId)
-                            viewModel.setSelectedNavIndex(1)
+                            viewModel.setLibraryBrowseFilter(LibraryBrowseFilter.PLAYLISTS)
                             clearPendingExit()
                         },
                         onSelectFolderClick = onSelectFolderClick,
@@ -238,15 +241,7 @@ fun MainScreen(
                             clearPendingExit()
                         }
                     )
-                    1 -> PlaylistsScreen(
-                        viewModel = viewModel,
-                        onAddSongsRequest = { playlist ->
-                            viewModel.openLocalPlaylist(playlist.id)
-                            targetPlaylistForAddition = playlist
-                            viewModel.setSelectedNavIndex(0)
-                            clearPendingExit()
-                        }
-                    )
+                    1 -> DiscoverScreen(viewModel = viewModel)
                     2 -> DownloadsScreen(viewModel = viewModel)
                     3 -> WebServerScreen(viewModel = viewModel)
                     4 -> SettingsScreen(

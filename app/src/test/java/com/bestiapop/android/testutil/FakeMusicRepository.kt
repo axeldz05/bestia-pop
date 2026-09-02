@@ -101,4 +101,13 @@ open class FakeMusicRepository : IMusicRepository {
         conflictPolicy: DownloadConflictPolicy?
     ): Song = error("downloadAndSaveOnlineTrack not stubbed")
     override suspend fun syncTagsToFiles(onProgress: LibraryScanProgress?) = TagSyncSummary()
+    override suspend fun saveAlbumTracksToLibrary(
+        albumTitle: String,
+        artistName: String,
+        coverUrl: String?,
+        year: Int,
+        genre: String,
+        tracks: List<com.bestiapop.android.data.model.CatalogTrackCandidate>
+    ): List<Song> = emptyList()
+    override suspend fun removeSavedAlbumFromLibrary(albumName: String, artistName: String): Int = 0
 }

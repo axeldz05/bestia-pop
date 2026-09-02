@@ -77,7 +77,7 @@ class LocalMetadataRadio(
                 }
                 .shuffled(random)
                 .take(limit)
-                .map { it.toPlayable() }
+                .map { PlayableItem.Local(it) }
                 .toList()
         }
 
@@ -100,7 +100,7 @@ class LocalMetadataRadio(
             if (picked.size >= limit) break
         }
 
-        return picked.map { it.toPlayable() }
+        return picked.map { PlayableItem.Local(it) }
     }
 
     private fun seedLocalGenre(seed: PlayableItem): String =

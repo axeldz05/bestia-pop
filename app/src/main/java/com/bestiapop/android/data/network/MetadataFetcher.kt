@@ -328,6 +328,36 @@ object MetadataFetcher {
         fetchDeezerChartTracks(chartId = 0L, limit = limit)
     }
 
+    /** Global Deezer chart albums (`GET /chart/0/albums`). */
+    suspend fun fetchChartAlbums(limit: Int = 20): List<CatalogAlbum> = withContext(Dispatchers.IO) {
+        val list = mutableListOf<CatalogAlbum>()
+        try {
+            val url = endpoint(
+                endpoints.deezerBaseUrl,
+                "chart/0/albums?limit=$limit"
+            )
+            val data = getJson(url, userAgent = "Mozilla/5.0")?.optJSONArray("data")
+            if (data != null) {
+                for (i in 0 until data.length()) {
+                    val obj = data.getJSONObject(i)
+                    val artistObj = obj.optJSONObject("artist")
+                    list.add(
+                        CatalogAlbum(
+                            id = obj.optLong("id").toString(),
+                            title = obj.optString("title", "Álbum"),
+                            artist = artistObj?.optString("name", "Artista") ?: "Artista",
+                            coverUrl = pickCoverUrl(obj.optString("cover_xl"), obj.optString("cover_big")),
+                            trackCount = obj.optInt("nb_tracks", 0)
+                        )
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        list
+    }
+
     /**
      * Tracks for a Deezer genre: chart-by-genre first, then `search?q=genre:"Name"`.
      * Reuses [parseDeezerSearchTracks] — same download path as song search.

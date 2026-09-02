@@ -47,6 +47,12 @@ interface MusicDao {
     @Query("SELECT * FROM songs WHERE id = :id")
     suspend fun getSongById(id: Long): Song?
 
+    @Query("SELECT * FROM songs WHERE album = :albumName COLLATE NOCASE AND artist = :artistName COLLATE NOCASE AND uriString LIKE 'remote://%'")
+    suspend fun getSavedRemoteAlbumSongs(albumName: String, artistName: String): List<Song>
+
+    @Query("DELETE FROM songs WHERE album = :albumName COLLATE NOCASE AND artist = :artistName COLLATE NOCASE AND uriString LIKE 'remote://%'")
+    suspend fun deleteSavedRemoteAlbum(albumName: String, artistName: String): Int
+
     /**
      * IGNORE, not REPLACE: `songs.uriString` is unique, and REPLACE deletes the conflicting row and
      * reinserts it with a fresh id, which orphans `playlist_song_cross_ref` (no FK/cascade) and

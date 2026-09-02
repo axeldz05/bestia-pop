@@ -60,11 +60,11 @@ Políticas puras de reproducción: `data/playback/PlaybackQueueOrder.kt`, `data/
 ## Navegación UI
 
 `MainScreen` bottom nav (índice persistido en `LibraryPreferencesRepository` / `selectedNavIndex`; deep-link descargas = `openDownloadsTabTransient` sin pisar snapshot):
-0. Biblioteca (`LibraryScreen` + chips browse + nested album/artist/genre)
-1. Playlists (`PlaylistsScreen` + `PlaylistDetailNav`)
+0. Biblioteca (`LibraryScreen` + chips browse [Canciones, Álbumes, Artistas, Géneros, Playlists, Recientes] + nested album/artist/genre/playlist)
+1. Descubrir (`DiscoverScreen` + feed recomendaciones [ListenBrainz / Deezer] + buscador con historial y categorías + detalle de colecciones)
 2. Descargas (`DownloadsScreen`)
 3. WiFi Sync (`WebServerScreen`)
-4. Ajustes (`SettingsScreen` / temas / ListenBrainz / Reproducción / Sonido / Descargas / update GitHub)
+4. Ajustes (`SettingsScreen` / temas / ListenBrainz y recomendaciones / Reproducción / Sonido / Descargas / update GitHub)
 
 Overlay: `BottomPlayerBar` → `NowPlayingScreen` (⋮ canción/álbum; merge álbum en `MainScreen`); cola en `QueueScreen`.
 El mini player consume `PlaybackRuntime.currentItem` / `isPlaying` / posición a través del ViewModel. `PlaybackRuntime.syncFromController` decodifica una sesión viva con `PlaybackMediaItemCodec.decode`; si no existe, `PlaybackSessionStore` + `PlaybackHydration.hydrateQueue` restauran cola/last-played (`songsForHydration` por ids si `allSongsFlow` aún no emitió) y `maybeSeedIdlePlayer` publica el estado (ver features §10b). `MusicService`/ExoPlayer arranca al conectar `MediaController` (`attachPlaybackUi` / `attachUi`), no en `PlaybackRuntime.connect()` ni con un `startService` extra en `MainActivity.onStart`. `BottomPlayerBar` no accede al controller.

@@ -559,6 +559,7 @@ class GetLibrarySongsUseCase {
                 val byGenre = songs.caseInsensitiveBuckets(::genreKey)
                 genreList.flatMap { genre -> byGenre[genre.name].orEmpty() }
             }
+            LibraryBrowseFilter.PLAYLISTS -> emptyList()
         }
     }
 

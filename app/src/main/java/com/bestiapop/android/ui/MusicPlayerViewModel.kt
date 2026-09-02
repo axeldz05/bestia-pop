@@ -31,6 +31,7 @@ import com.bestiapop.android.data.preferences.LibraryPreferencesRepository
 import com.bestiapop.android.data.preferences.LibraryTagWritePreferencesRepository
 import com.bestiapop.android.data.preferences.LibraryTagWriteSettings
 import com.bestiapop.android.data.preferences.LibraryUiPreferencesCodec
+import com.bestiapop.android.data.preferences.LibraryStackLookups
 import com.bestiapop.android.data.preferences.DEFAULT_STREAM_SKIP_GRACE_SECONDS
 import com.bestiapop.android.data.preferences.NAV_DOWNLOADS
 import com.bestiapop.android.data.preferences.NAV_LIBRARY
@@ -46,6 +47,7 @@ import com.bestiapop.android.data.system.BACKGROUND_RESTRICTION_CONFIRM_MS
 import com.bestiapop.android.data.system.BackgroundExecutionProbe
 import com.bestiapop.android.data.system.BackgroundExecutionStatus
 import com.bestiapop.android.data.util.CrashReporter
+import com.bestiapop.android.data.util.PlaybackDiagnostics
 import com.bestiapop.android.data.util.SongPathNormalizer
 import com.bestiapop.android.data.util.looksLikeStoragePath
 import com.bestiapop.android.domain.radio.RadioMode
@@ -66,6 +68,7 @@ import com.bestiapop.android.domain.util.clusterIdentifyAlbumGroups
 import com.bestiapop.android.domain.util.findAlbumMergeTarget
 import com.bestiapop.android.domain.util.gapApplyFields
 import com.bestiapop.android.domain.util.isTrackNumberLabel
+import com.bestiapop.android.domain.util.KnownAlbumMatch
 import com.bestiapop.android.domain.util.knownAlbumQueryOf
 import com.bestiapop.android.domain.util.needsGapIdentify
 import com.bestiapop.android.domain.util.normalizeAlbumName
@@ -84,17 +87,21 @@ import com.bestiapop.android.ui.state.IdentifyReviewState
 import com.bestiapop.android.ui.state.IdentifySetupState
 import com.bestiapop.android.ui.state.attachKnownAlbumMatches
 import com.bestiapop.android.ui.state.hasMediumSuggestion
+import com.bestiapop.android.ui.state.IdentifyPersistEcho
+import com.bestiapop.android.ui.state.identifyPersistEcho
 import com.bestiapop.android.ui.state.identifyReviewFromPersisted
 import com.bestiapop.android.ui.state.identifySearchDraft
 import com.bestiapop.android.ui.state.identifySearchFilterAlbum
 import com.bestiapop.android.ui.state.identifySearchFilterArtist
 import com.bestiapop.android.ui.state.identifySearchFilterYear
+import com.bestiapop.android.ui.state.leftoverIdentifyReview
 import com.bestiapop.android.ui.state.mergeIncomingReviewItems
 import com.bestiapop.android.ui.state.seedIdentifySearch
 import com.bestiapop.android.ui.state.withGapApplyFields
 import com.bestiapop.android.ui.state.withItemSearchChrome
 import com.bestiapop.android.ui.state.LibraryBrowseFilter
 import com.bestiapop.android.ui.state.LibraryListItem
+import com.bestiapop.android.ui.state.LibraryListModel
 import com.bestiapop.android.ui.state.LibraryProjectionState
 import com.bestiapop.android.ui.state.LibraryViewMode
 import com.bestiapop.android.ui.state.LoadableUiState
@@ -260,7 +267,14 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     val cfRecommendations = _cfRecommendations.asStateFlow()
 
     // Raw songs & playlists
+    private val _identifyReview = MutableStateFlow(IdentifyReviewState())
+    val identifyReview: StateFlow<IdentifyReviewState> = _identifyReview.asStateFlow()
     val rawSongs = repository.allSongsFlow
+        .stateIn(
+            viewModelScope,
+            SharingStarted.Eagerly,
+            emptyList()
+        )
     val playlists = repository.playlistsFlow
 
     // Sorting & Searching
@@ -288,17 +302,23 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     /** Tab to come back to after a transient jump into Settings. */
     private var navIndexBeforeTransient: Int? = null
 
+    private val _libraryPrefsReady = MutableStateFlow(false)
     private val getLibrarySongsUseCase = com.bestiapop.android.domain.usecase.GetLibrarySongsUseCase()
     private val _artistPhotos = MutableStateFlow<Map<String, String>>(emptyMap())
     val libraryProjection = LibraryProjectionState(
         scope = viewModelScope,
-        rawSongs = rawSongs,
+        rawSongs = repository.allSongsFlow,
         albumOverrides = repository.albumOverridesFlow,
         searchQuery = searchQuery,
         sortOption = sortOption,
         sortDirection = sortDirection,
         artistPhotos = _artistPhotos,
-        useCase = getLibrarySongsUseCase
+        useCase = getLibrarySongsUseCase,
+        overlayOpen = identifyReview.map { it.isOpen }.distinctUntilChanged(),
+        viewMode = _libraryViewMode,
+        browseFilter = navigation.map { it.libraryBrowseFilter }.distinctUntilChanged(),
+        playStats = repository.songPlayStatsFlow,
+        prefsReady = _libraryPrefsReady
     )
 
     data class PendingAlbumMerge(
@@ -308,6 +328,14 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     private val _pendingAlbumMerge = MutableStateFlow<PendingAlbumMerge?>(null)
     val pendingAlbumMerge: StateFlow<PendingAlbumMerge?> = _pendingAlbumMerge.asStateFlow()
+
+    fun buildLibraryListModel(
+        songs: List<Song>,
+        viewMode: LibraryViewMode,
+        sortOption: SortOption = this.sortOption.value,
+        sortDirection: SortDirection = this.sortDirection.value
+    ): LibraryListModel =
+        libraryProjection.buildListModel(songs, viewMode, sortOption, sortDirection)
 
     fun buildLibraryListItems(
         songs: List<Song>,
@@ -332,6 +360,9 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     fun songsFromLibraryListItems(items: List<LibraryListItem>): List<Song> =
         getLibrarySongsUseCase.songsFromListItems(items)
 
+    fun songsInOrder(pool: List<Song>, ids: List<Long>): List<Song> =
+        getLibrarySongsUseCase.songsInOrder(pool, ids)
+
     fun songsForBrowseProjection(
         filter: LibraryBrowseFilter,
         songs: List<Song>,
@@ -350,9 +381,29 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         sortDirection = sortDirection.value
     )
 
+    fun playCurrentLibraryBrowse(shuffle: Boolean) {
+        val filter = _navigation.value.libraryBrowseFilter
+        val songs = libraryProjection.songs.value
+        val queue = when (filter) {
+            LibraryBrowseFilter.SONGS -> libraryProjection.songList.value.songsVisual
+            LibraryBrowseFilter.RECENT -> libraryProjection.recentSongs.value
+            else -> songsForBrowseProjection(
+                filter = filter,
+                songs = songs,
+                viewMode = _libraryViewMode.value,
+                albums = libraryProjection.albums.value,
+                artists = libraryProjection.artists.value,
+                genres = libraryProjection.genres.value
+            )
+        }
+        if (queue.isEmpty()) return
+        if (shuffle) shuffleCollection(queue) else playCollection(queue)
+    }
+
     // Process-owned playback state. ViewModel only exposes/observes it.
     val currentItem = playbackRuntime.currentItem
     val currentSong = playbackRuntime.currentSong
+    val currentSongId: StateFlow<Long?> = currentSong.map { it?.id }.stateInUi(viewModelScope, null)
     val isPlaying = playbackRuntime.isPlaying
     val playbackPositionMs = playbackRuntime.playbackPositionMs
     val repeatMode = playbackRuntime.repeatMode
@@ -425,8 +476,6 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         combine(_localLibraryJobProgress, processIdentifyRuntime.progress) { local, identify ->
             identify ?: local
         }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
-    private val _identifyReview = MutableStateFlow(IdentifyReviewState())
-    val identifyReview: StateFlow<IdentifyReviewState> = _identifyReview.asStateFlow()
     private val _identifySetup = MutableStateFlow<IdentifySetupState?>(null)
     val identifySetup: StateFlow<IdentifySetupState?> = _identifySetup.asStateFlow()
     private val identifyMutex = Mutex()
@@ -449,7 +498,10 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     fun onUiAttached() {
         uiAttached.set(true)
-        playbackRuntime.attachUi()
+    }
+
+    fun attachPlaybackUi() {
+        if (uiAttached.get()) playbackRuntime.attachUi()
     }
 
     fun onUiDetached() {
@@ -463,15 +515,21 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     fun onAppForeground() {
         onUiAttached()
-        publishBackgroundExecutionStatus()
-        if (app.shouldAutoResumeDownloads) {
-            processDownloadRuntime.resumeInterrupted()
+        viewModelScope.launch(Dispatchers.IO) {
+            val snapshot = BackgroundExecutionProbe.current(getApplication())
+            withContext(Dispatchers.Main.immediate) {
+                publishBackgroundExecutionStatus(snapshot)
+            }
             processIdentifyRuntime.resumeInterrupted()
+            if (app.shouldAutoResumeDownloads) {
+                processDownloadRuntime.resumeInterrupted()
+            }
         }
     }
 
-    private fun publishBackgroundExecutionStatus() {
-        val snapshot = BackgroundExecutionProbe.current(getApplication())
+    private fun publishBackgroundExecutionStatus(
+        snapshot: BackgroundExecutionStatus = BackgroundExecutionProbe.current(getApplication())
+    ) {
         backgroundExecutionConfirmJob?.cancel()
         val current = _backgroundExecutionStatus.value
         val raisingAlarm =
@@ -714,6 +772,8 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         }
         viewModelScope.launch {
             hydrateUiPreferences()
+            awaitFirstCatalogLoaded()
+            pruneRestoredLibraryStack()
         }
 
         viewModelScope.launch {
@@ -725,24 +785,39 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         }
 
         viewModelScope.launch(Dispatchers.IO) {
-            repository.migrateCanonicalAudioUris()
+            awaitFirstCatalogLoaded()
+            if (!libraryPreferences.isCanonicalAudioUrisMigrated()) {
+                repository.migrateCanonicalAudioUris()
+                libraryPreferences.setCanonicalAudioUrisMigrated()
+            }
+            if (!libraryPreferences.isDeviceDateAddedMigrated()) {
+                repository.migrateDateAddedFromDevice()
+                libraryPreferences.setDeviceDateAddedMigrated()
+            }
+            if (!libraryPreferences.isEmbeddedFileTagsMigrated()) {
+                val leftover = repository.migrateEmbeddedFileTags()
+                libraryPreferences.setEmbeddedFileTagsMigrated()
+                identifyReviewStore.removeSongIds(leftover.map { it.id }.toSet())
+                identifyImportedGaps(leftover)
+            }
+        }
+
+        viewModelScope.launch(Dispatchers.IO) {
+            awaitFirstLibraryIdle()
             // One-shot: the migration leaves the album untouched below HIGH confidence, so without a
             // flag every cold start re-queried the same 'YouTube Music' rows over the network forever.
             if (!libraryPreferences.isLegacyYouTubeMusicMigrated()) {
                 repository.migrateLegacyYouTubeMusicSongs()
                 libraryPreferences.setLegacyYouTubeMusicMigrated()
             }
-            if (!libraryPreferences.isDeviceDateAddedMigrated()) {
-                repository.migrateDateAddedFromDevice()
-                libraryPreferences.setDeviceDateAddedMigrated()
-            }
         }
 
         viewModelScope.launch {
             identifyReviewStore.queueFlow.collect { snap ->
-                identifyMutex.withLock {
-                    applyPersistedIdentifyQueue(snap)
+                if (snap.proposals.isNotEmpty()) {
+                    awaitFirstCatalogLoaded()
                 }
+                applyPersistedIdentifyQueue(snap)
             }
         }
         viewModelScope.launch {
@@ -867,6 +942,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         // rawSongs, not libraryProjection.songs: the latter also re-emits on every search keystroke and sort
         // change, which restarted these network passes over the whole library each time.
         viewModelScope.launch(Dispatchers.IO) {
+            awaitFirstLibraryIdle()
             rawSongs.map { songs -> songs.map { it.artist }.distinct() }
                 .distinctUntilChanged()
                 .collect { artists ->
@@ -889,6 +965,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         }
 
         viewModelScope.launch(Dispatchers.IO) {
+            awaitFirstLibraryIdle()
             rawSongs.map { songs -> songs.map { it.id }.toSet() }
                 .distinctUntilChanged()
                 .collect {
@@ -897,10 +974,10 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                         !SongPathNormalizer.hasUsableArtwork(it.artworkUri) &&
                             it.id !in metadataEnhanceAttempted
                     }
-                    for (song in unenhanced.take(METADATA_ENHANCE_BATCH)) {
-                        metadataEnhanceAttempted.add(song.id)
-                        repository.enhanceSongMetadataAndLyrics(song)
-                    }
+                    val batch = unenhanced.take(METADATA_ENHANCE_BATCH)
+                    if (batch.isEmpty()) return@collect
+                    batch.forEach { metadataEnhanceAttempted.add(it.id) }
+                    repository.enhanceSongMetadataAndLyricsBatch(batch)
                 }
         }
     }
@@ -921,9 +998,8 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     private fun songNeedsMetadataEnhancement(song: Song): Boolean {
         val artMissing = !SongPathNormalizer.hasUsableArtwork(song.artworkUri)
-        val lyricsMissing = song.lyrics.isNullOrEmpty()
         val durationMissing = song.durationMs <= 0
-        return artMissing || lyricsMissing || durationMissing
+        return artMissing || durationMissing
     }
 
     private fun requestMetadataEnhancement(song: Song, force: Boolean = false) {
@@ -939,7 +1015,12 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         applyManualModes: Boolean = true
     ) {
         _catalogPreviewKey.value = null
-        val baseList = if (playlistOrQueue.isNotEmpty()) playlistOrQueue else libraryProjection.songs.value
+        val baseList = when {
+            playlistOrQueue.isNotEmpty() -> playlistOrQueue
+            else -> libraryProjection.songList.value.songsVisual.ifEmpty {
+                libraryProjection.songs.value
+            }
+        }
         val indexInBase = baseList.indexOfFirst { it.id == song.id || it.uriString == song.uriString }
 
         val targetQueue = if (indexInBase != -1) baseList else listOf(song)
@@ -1306,7 +1387,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             val canUseLb = settings.enabled &&
                 settings.userToken.isNotBlank() &&
                 networkOnline
-            val library = rawSongs.first()
+            val library = repository.allSongsFlow.first()
             val preview = buildSimilarPlaylistPreviewUseCase.execute(
                 seeds = seeds,
                 library = library,
@@ -1413,6 +1494,8 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             repository.updateSongLyrics(songId, lyrics)
         }
     }
+
+    suspend fun songById(id: Long): Song? = repository.getSongById(id)
 
     fun fetchSongLyrics(song: Song, onResult: (String?) -> Unit) {
         viewModelScope.launch {
@@ -1621,6 +1704,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     private suspend fun hydrateUiPreferences() {
+        val startedAt = System.nanoTime()
         val display = libraryPreferences.displaySettingsFlow.first()
         _sortOption.value = parseSortOption(display.sortOptionName)
         _sortDirection.value = parseSortDirection(display.sortDirectionName)
@@ -1629,8 +1713,10 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         val nav = libraryPreferences.navSnapshotFlow.first()
         applyNavSnapshot(nav)
         uiPrefsHydrated = true
+        _libraryPrefsReady.value = true
+        val ms = (System.nanoTime() - startedAt) / 1_000_000L
+        PlaybackDiagnostics.log(PlaybackDiagnostics.TAG_LIFECYCLE, "prefsReady in ${ms}ms")
 
-        pruneRestoredLibraryStack()
         pruneRestoredLocalPlaylist()
         if (_navigation.value.selectedNavIndex == NAV_PLAYLISTS) {
             restoreDiscoverDetailOrFallback()
@@ -1651,20 +1737,18 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     private suspend fun pruneRestoredLibraryStack() {
-        val songs = rawSongs.first()
+        val songs = libraryProjection.songs.value.ifEmpty {
+            repository.allSongsFlow.first()
+        }
+        val lookups = LibraryStackLookups.fromSongs(songs)
         val stack = _navigation.value.libraryStack
         val pruned = LibraryUiPreferencesCodec.pruneLibraryStack(
             albumName = stack.albumName,
             artistName = stack.artistName,
             genreName = stack.genreName,
-            albumExists = { name -> songs.any { it.album.equals(name, ignoreCase = true) } },
-            artistExists = { name -> songs.any { it.artist.equals(name, ignoreCase = true) } },
-            genreExists = { name ->
-                songs.any {
-                    com.bestiapop.android.domain.usecase.GetLibrarySongsUseCase.genreKey(it)
-                        .equals(name, ignoreCase = true)
-                }
-            }
+            albumExists = lookups.albumExists,
+            artistExists = lookups.artistExists,
+            genreExists = lookups.genreExists
         )
         if (updateNavigation { it.copy(libraryStack = it.libraryStack.applyPruned(pruned)) }) {
             persistNavSnapshot()
@@ -1929,19 +2013,94 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     private suspend fun applyPersistedIdentifyQueue(snap: PersistedIdentifyReviewQueue) {
-        val songs = withContext(Dispatchers.IO) { repository.getAllSongsSync() }
-        val hydrated = identifyReviewFromPersisted(
-            snap.proposals,
-            snap.phase,
-            songs,
-            snap.applyFields
+        val current = _identifyReview.value
+        val echo = identifyPersistEcho(
+            overlayOpen = current.isOpen,
+            itemIds = current.items.map { it.song.id }.toSet(),
+            snapSongIds = snap.proposals.map { it.songId },
+            droppedIds = identifyDroppedIds.toSet()
         )
+        when (echo) {
+            IdentifyPersistEcho.Skip -> {
+                if (snap.applyFields != current.applyFields) {
+                    identifyMutex.withLock { applyPersistedIdentifyFields(snap.applyFields) }
+                }
+            }
+            is IdentifyPersistEcho.MergeExtras -> {
+                val extraItems = hydratePersistedIdentifyItems(
+                    proposals = snap.proposals.filter { it.songId in echo.songIds.toSet() },
+                    phaseName = snap.phase,
+                    songIds = echo.songIds,
+                    applyFields = snap.applyFields
+                )
+                identifyMutex.withLock {
+                    _identifyReview.value = _identifyReview.value.mergeIncomingReviewItems(
+                        extraItems,
+                        identifyDroppedIds
+                    )
+                }
+            }
+            is IdentifyPersistEcho.Hydrate -> {
+                val queued = songsForIdentifyEcho(echo.songIds)
+                val library = rawSongs.value.ifEmpty { queued }
+                val hydrated = identifyReviewFromPersisted(
+                    snap.proposals,
+                    snap.phase,
+                    library,
+                    snap.applyFields
+                )
+                val items = hydrated.items.map { item ->
+                    IdentifyReviewItem(songForIdentifyReview(item.song, item.proposal), item.proposal)
+                }
+                identifyMutex.withLock {
+                    publishHydratedIdentifyQueue(snap, hydrated.copy(items = items))
+                }
+            }
+        }
+    }
+
+    private suspend fun hydratePersistedIdentifyItems(
+        proposals: List<IdentifyProposal>,
+        phaseName: String,
+        songIds: List<Long>,
+        applyFields: IdentifyApplyFields
+    ): List<IdentifyReviewItem> {
+        if (songIds.isEmpty() || proposals.isEmpty()) return emptyList()
+        val queued = songsForIdentifyEcho(songIds)
+        val library = rawSongs.value.ifEmpty { queued }
+        return identifyReviewFromPersisted(
+            proposals,
+            phaseName,
+            library,
+            applyFields
+        ).items.map { item ->
+            IdentifyReviewItem(songForIdentifyReview(item.song, item.proposal), item.proposal)
+        }
+    }
+
+    private suspend fun songsForIdentifyEcho(ids: List<Long>): List<Song> {
+        if (ids.isEmpty()) return emptyList()
+        val cached = rawSongs.value.associateBy { it.id }
+        val fromCache = ids.mapNotNull { cached[it] }
+        if (fromCache.size == ids.size) return fromCache
+        return withContext(Dispatchers.IO) { repository.getSongsByIds(ids) }
+    }
+
+    private fun applyPersistedIdentifyFields(applyFields: IdentifyApplyFields) {
+        val current = _identifyReview.value
+        if (applyFields != current.applyFields) {
+            _identifyReview.value = current.copy(applyFields = applyFields)
+        }
+    }
+
+    private fun publishHydratedIdentifyQueue(
+        snap: PersistedIdentifyReviewQueue,
+        hydrated: IdentifyReviewState
+    ) {
         val current = _identifyReview.value
         if (hydrated.items.isEmpty()) {
             if (current.items.isEmpty()) {
-                if (snap.applyFields != current.applyFields) {
-                    _identifyReview.value = current.copy(applyFields = snap.applyFields)
-                }
+                applyPersistedIdentifyFields(snap.applyFields)
                 return
             }
             _identifyReview.value = current.copy(
@@ -1954,9 +2113,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             clearCatalogPreview()
             return
         }
-        val items = hydrated.items.map { item ->
-            IdentifyReviewItem(songForIdentifyReview(item.song, item.proposal), item.proposal)
-        }
+        val items = hydrated.items
         if (current.isVisible && current.items.isNotEmpty()) {
             _identifyReview.value = current.mergeIncomingReviewItems(items, identifyDroppedIds)
             return
@@ -2001,7 +2158,9 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             clearCatalogPreview()
             return
         }
-        val library = withContext(Dispatchers.IO) { repository.getAllSongsSync() }
+        val library = rawSongs.value.ifEmpty {
+            withContext(Dispatchers.IO) { repository.getAllSongsSync() }
+        }
         val attached = attachKnownAlbumMatches(items, library)
         val phase = reviewPhaseFor(attached)
         val first = attached.first()
@@ -2033,15 +2192,41 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         if (IdentifyRanking.isGenericAlbum(album) || IdentifyRanking.isPlaceholderArtist(artist)) {
             return emptySet()
         }
-        val known = withContext(Dispatchers.IO) {
-            repository.loadKnownAlbumTracks(artist, album, fetchCatalog = true)
-        } ?: return emptySet()
         val queries = remaining.map { knownAlbumQueryOf(it.song, queryTitle = it.proposal.queryTitle) }
-        val matches = assignUniqueKnownAlbumMatches(
-            queries = queries,
-            albums = listOf(known),
-            scoped = true
-        )
+        val libraryKnown = withContext(Dispatchers.IO) {
+            repository.loadKnownAlbumTracks(artist, album, fetchCatalog = false)
+        }
+        val libraryMatches = if (libraryKnown != null) {
+            assignUniqueKnownAlbumMatches(
+                queries = queries,
+                albums = listOf(libraryKnown),
+                scoped = true
+            )
+        } else {
+            emptyMap()
+        }
+        val unmatched = remaining.filter { it.song.id !in libraryMatches }
+        val catalogMatches = if (unmatched.isEmpty()) {
+            emptyMap()
+        } else {
+            val catalogKnown = withContext(Dispatchers.IO) {
+                repository.loadKnownAlbumTracks(artist, album, fetchCatalog = true)
+            } ?: return applyKnownAlbumMatches(remaining, libraryMatches)
+            assignUniqueKnownAlbumMatches(
+                queries = unmatched.map {
+                    knownAlbumQueryOf(it.song, queryTitle = it.proposal.queryTitle)
+                },
+                albums = listOf(catalogKnown),
+                scoped = true
+            )
+        }
+        return applyKnownAlbumMatches(remaining, libraryMatches + catalogMatches)
+    }
+
+    private suspend fun applyKnownAlbumMatches(
+        remaining: List<IdentifyReviewItem>,
+        matches: Map<Long, KnownAlbumMatch>
+    ): Set<Long> {
         if (matches.isEmpty()) return emptySet()
         val targets = remaining.filter { it.song.id in matches }
         return applyIdentifyCandidates(targets) { item ->
@@ -2058,25 +2243,183 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private fun appliedInReviewLabel(count: Int): String =
         if (count == 1) "1 aplicada en revisión" else "$count aplicadas en revisión"
 
-    private suspend fun presentIdentifyApplyResult(
+    private fun publishIdentifyLeftover(
         leftover: List<IdentifyReviewItem>,
         sessionApplied: Int,
         sessionSkipped: Int,
-        emptyMessage: String,
-        leftoverMessage: String? = null
+        persist: Boolean
     ) {
+        val next = leftoverIdentifyReview(
+            leftover = leftover,
+            sessionApplied = sessionApplied,
+            sessionSkipped = sessionSkipped,
+            applyFields = _identifyReview.value.applyFields,
+            isVisible = leftover.isNotEmpty(),
+            isApplying = false
+        )
         if (leftover.isEmpty()) {
-            presentIdentifyQueue(emptyList(), showReview = false)
-            toast(emptyMessage)
-            return
+            clearCatalogPreview()
         }
-        presentIdentifyQueue(
-            leftover,
-            showReview = true,
+        _identifyReview.value = next
+        if (persist) persistIdentifyReviewNow(next)
+    }
+
+    private fun identifyApplyRequests(
+        targets: List<IdentifyReviewItem>,
+        fieldsOverride: IdentifyApplyFields? = null,
+        pick: (IdentifyReviewItem) -> IdentifyCandidate?
+    ): List<IdentifyApplyRequest> {
+        val defaultFields = fieldsOverride ?: _identifyReview.value.applyFields
+        return targets.mapNotNull { item ->
+            val candidate = pick(item) ?: return@mapNotNull null
+            IdentifyApplyRequest(
+                songId = item.song.id,
+                candidate = candidate,
+                fields = fieldsOverride ?: if (item.proposal.fillGapsOnly) {
+                    gapApplyFields(item.song)
+                } else {
+                    defaultFields
+                }
+            )
+        }
+    }
+
+    private data class IdentifyApplyCommit(
+        val remainingBefore: List<IdentifyReviewItem>,
+        val leftover: List<IdentifyReviewItem>,
+        val requests: List<IdentifyApplyRequest>,
+        val targetIds: Set<Long>,
+        val sessionApplied: Int,
+        val sessionSkipped: Int
+    )
+
+    /** Publish leftover on the calling thread. Caller must not hold work after this. */
+    private fun beginOptimisticIdentifyApply(
+        remaining: List<IdentifyReviewItem>,
+        targets: List<IdentifyReviewItem>,
+        sessionApplied: Int,
+        sessionSkipped: Int,
+        fieldsOverride: IdentifyApplyFields? = null,
+        pick: (IdentifyReviewItem) -> IdentifyCandidate?
+    ): IdentifyApplyCommit? {
+        val requests = identifyApplyRequests(targets, fieldsOverride, pick)
+        if (requests.isEmpty()) return null
+        val targetIds = requests.map { it.songId }.toSet()
+        identifyDroppedIds += targetIds
+        val leftover = remaining.filter { it.song.id !in targetIds }
+        publishIdentifyLeftover(
+            leftover = leftover,
+            sessionApplied = sessionApplied + targetIds.size,
+            sessionSkipped = sessionSkipped,
+            persist = false
+        )
+        return IdentifyApplyCommit(
+            remainingBefore = remaining,
+            leftover = leftover,
+            requests = requests,
+            targetIds = targetIds,
             sessionApplied = sessionApplied,
             sessionSkipped = sessionSkipped
         )
-        leftoverMessage?.let { toast(it) }
+    }
+
+    /** Room + DataStore after leftover is already visible. Null if the queue was restored. */
+    private suspend fun confirmOptimisticIdentifyApply(
+        commit: IdentifyApplyCommit
+    ): List<IdentifyReviewItem>? {
+        val applied = try {
+            withContext(Dispatchers.IO) {
+                repository.applySongIdentities(commit.requests)
+            }
+        } catch (cancelled: CancellationException) {
+            restoreOptimisticIdentifyApply(commit)
+            throw cancelled
+        } catch (_: Exception) {
+            restoreOptimisticIdentifyApply(commit)
+            toast("No se pudo aplicar la identidad")
+            return null
+        }
+        if (applied.isEmpty()) {
+            restoreOptimisticIdentifyApply(commit)
+            toast("No se pudo aplicar la identidad")
+            return null
+        }
+        val leftover = commit.leftover
+        val committed = if (applied.size == commit.targetIds.size) {
+            leftover
+        } else {
+            identifyDroppedIds -= (commit.targetIds - applied)
+            commit.remainingBefore.filter { it.song.id !in applied }
+        }
+        if (committed !== leftover) {
+            publishIdentifyLeftover(
+                leftover = committed,
+                sessionApplied = commit.sessionApplied + applied.size,
+                sessionSkipped = commit.sessionSkipped,
+                persist = committed.isEmpty()
+            )
+        } else if (committed.isEmpty()) {
+            persistIdentifyReviewNow(_identifyReview.value)
+        }
+        return committed
+    }
+
+    private fun restoreOptimisticIdentifyApply(commit: IdentifyApplyCommit) {
+        identifyDroppedIds -= commit.targetIds
+        publishIdentifyLeftover(
+            leftover = commit.remainingBefore,
+            sessionApplied = commit.sessionApplied,
+            sessionSkipped = commit.sessionSkipped,
+            persist = true
+        )
+    }
+
+    private fun launchKnownAlbumFanOut(
+        albums: List<Pair<String, String>>,
+        sessionSkipped: Int,
+        extrasMessage: (extras: Int, leftover: List<IdentifyReviewItem>) -> String?
+    ) {
+        if (albums.isEmpty()) return
+        viewModelScope.launch {
+            val extraIds = LinkedHashSet<Long>()
+            for ((artist, album) in albums) {
+                val remaining = _identifyReview.value.remaining
+                if (remaining.isEmpty()) break
+                extraIds += applyKnownAlbumFanOut(artist, album, remaining)
+            }
+            if (extraIds.isEmpty()) return@launch
+            identifyMutex.withLock {
+                val state = _identifyReview.value
+                val leftover = state.remaining.filter { it.song.id !in extraIds }
+                identifyDroppedIds += extraIds
+                publishIdentifyLeftover(
+                    leftover = leftover,
+                    sessionApplied = state.sessionApplied + extraIds.size,
+                    sessionSkipped = sessionSkipped,
+                    persist = leftover.isEmpty()
+                )
+                extrasMessage(extraIds.size, leftover)?.let { toast(it) }
+            }
+        }
+    }
+
+    private fun persistIdentifyReviewNow(state: IdentifyReviewState) {
+        val remaining = state.items.drop(state.currentIndex).map { it.proposal }
+        val knownIds = state.items.map { it.song.id }.toSet()
+        val dropped = identifyDroppedIds.toSet()
+        val phase = state.phase.name
+        val fields = state.applyFields
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) {
+                identifyReviewStore.mergeUiRemaining(
+                    remaining = remaining,
+                    knownSongIds = knownIds,
+                    droppedIds = dropped,
+                    phase = phase,
+                    applyFields = fields
+                )
+            }
+        }
     }
 
     fun showIdentifyReview() {
@@ -2151,39 +2494,38 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     fun applyIdentifyAlbumGroup(key: String) {
         viewModelScope.launch {
-            identifyMutex.withLock {
+            val pending = identifyMutex.withLock {
                 val state = _identifyReview.value
-                if (!state.applyFields.hasAny) return@withLock
-                val group = state.albumGroups.find { it.key == key } ?: return@withLock
+                if (state.isApplying || !state.applyFields.hasAny) return@withLock null
+                val group = state.albumGroups.find { it.key == key } ?: return@withLock null
                 val groupIds = group.songIds.toSet()
                 val remaining = state.remaining
                 val targets = remaining.filter { it.song.id in groupIds }
-                if (targets.isEmpty()) return@withLock
-                val appliedIds = applyIdentifyCandidates(targets) { it.proposal.suggested }
-                var leftover = remaining.filter { it.song.id !in appliedIds }
-                val extras = applyKnownAlbumFanOut(group.artist, group.album, leftover)
-                leftover = leftover.filter { it.song.id !in extras }
-                presentIdentifyApplyResult(
-                    leftover = leftover,
-                    sessionApplied = state.sessionApplied + appliedIds.size + extras.size,
-                    sessionSkipped = state.sessionSkipped,
-                    emptyMessage = buildString {
-                        append(appliedInReviewLabel(appliedIds.size + extras.size))
-                        knownAlbumFanOutLabel(group.album, extras.size)?.let {
-                            append(" ($it)")
-                        }
-                    },
-                    leftoverMessage = buildString {
-                        append(
-                            if (appliedIds.size == 1) "1 aplicada al álbum"
-                            else "${appliedIds.size} aplicadas al álbum"
-                        )
-                        knownAlbumFanOutLabel(group.album, extras.size)?.let {
-                            append(", $it")
-                        }
-                    }
+                if (targets.isEmpty()) return@withLock null
+                val commit = beginOptimisticIdentifyApply(
+                    remaining = remaining,
+                    targets = targets,
+                    sessionApplied = state.sessionApplied,
+                    sessionSkipped = state.sessionSkipped
+                ) { it.proposal.suggested } ?: return@withLock null
+                toast(
+                    if (targets.size == 1) "1 aplicada al álbum"
+                    else "${targets.size} aplicadas al álbum"
                 )
-            }
+                val fanOut = if (commit.leftover.isEmpty()) {
+                    null
+                } else {
+                    Triple(group.artist, group.album, state.sessionSkipped)
+                }
+                commit to fanOut
+            } ?: return@launch
+            val leftover = confirmOptimisticIdentifyApply(pending.first) ?: return@launch
+            val fanOut = pending.second ?: return@launch
+            if (leftover.isEmpty()) return@launch
+            launchKnownAlbumFanOut(
+                albums = listOf(fanOut.first to fanOut.second),
+                sessionSkipped = fanOut.third
+            ) { extras, _ -> knownAlbumFanOutLabel(fanOut.second, extras) }
         }
     }
 
@@ -2237,36 +2579,30 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     private suspend fun applyIdentifyCandidates(
         targets: List<IdentifyReviewItem>,
+        fieldsOverride: IdentifyApplyFields? = null,
         pick: (IdentifyReviewItem) -> IdentifyCandidate?
     ): Set<Long> {
-        val appliedIds = LinkedHashSet<Long>()
-        targets.forEachIndexed { index, item ->
-            val candidate = pick(item) ?: return@forEachIndexed
-            reportLibraryProgress(
-                LibraryJobKind.IDENTIFY,
-                index,
-                targets.size,
-                item.song.title
-            )
-            when (
-                withContext(Dispatchers.IO) {
-                    val fields = if (item.proposal.fillGapsOnly) {
-                        gapApplyFields(item.song)
-                    } else {
-                        _identifyReview.value.applyFields
-                    }
-                    repository.applySongIdentity(item.song.id, candidate, fields)
+        if (targets.isEmpty()) return emptySet()
+        val defaultFields = fieldsOverride ?: _identifyReview.value.applyFields
+        val requests = targets.mapNotNull { item ->
+            val candidate = pick(item) ?: return@mapNotNull null
+            IdentifyApplyRequest(
+                songId = item.song.id,
+                candidate = candidate,
+                fields = fieldsOverride ?: if (item.proposal.fillGapsOnly) {
+                    gapApplyFields(item.song)
+                } else {
+                    defaultFields
                 }
-            ) {
-                is IdentifyResult.Updated -> appliedIds += item.song.id
-                else -> Unit
-            }
+            )
+        }
+        if (requests.isEmpty()) return emptySet()
+        val appliedIds = withContext(Dispatchers.IO) {
+            repository.applySongIdentities(requests)
         }
         if (appliedIds.isNotEmpty()) {
             identifyDroppedIds += appliedIds
-            identifyReviewStore.removeSongIds(appliedIds)
         }
-        clearLibraryProgress()
         return appliedIds
     }
 
@@ -2280,7 +2616,8 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 IdentifyRanking.isPlaceholderArtist(song.artist) || isTrackNumberLabel(song.artist) ->
                     "Unknown Artist"
                 else -> song.artist
-            }
+            },
+            lyrics = null
         )
     }
 
@@ -2468,7 +2805,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     fun applySelectedIdentifyCandidate() {
         val state = _identifyReview.value
-        if (!state.applyFields.hasAny) return
+        if (state.isApplying || !state.applyFields.hasAny) return
         val item = state.current ?: return
         val candidate = state.visibleCandidates.getOrNull(state.selectedCandidateIndex)
             ?: item.proposal.suggested
@@ -2477,50 +2814,38 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             return
         }
         viewModelScope.launch {
-            identifyMutex.withLock {
+            val pending = identifyMutex.withLock {
                 val latest = _identifyReview.value
-                val current = latest.current ?: return@withLock
-                if (current.song.id != item.song.id) return@withLock
-                when (
-                    withContext(Dispatchers.IO) {
-                        repository.applySongIdentity(current.song.id, candidate, latest.applyFields)
-                    }
-                ) {
-                    is IdentifyResult.Updated -> {
-                        identifyDroppedIds += current.song.id
-                        withContext(Dispatchers.IO) {
-                            identifyReviewStore.removeSongIds(setOf(current.song.id))
-                        }
-                        val remaining = latest.remaining.filter { it.song.id != current.song.id }
-                        val extras = applyKnownAlbumFanOut(
-                            candidate.artist,
-                            candidate.album,
-                            remaining
-                        )
-                        val leftover = remaining.filter { it.song.id !in extras }
-                        val appliedThisRound = 1 + extras.size
-                        presentIdentifyApplyResult(
-                            leftover = leftover,
-                            sessionApplied = latest.sessionApplied + appliedThisRound,
-                            sessionSkipped = latest.sessionSkipped,
-                            emptyMessage = buildString {
-                                append(appliedInReviewLabel(appliedThisRound))
-                                knownAlbumFanOutLabel(candidate.album, extras.size)?.let {
-                                    append(" ($it)")
-                                }
-                                if (latest.sessionSkipped > 0) {
-                                    append(
-                                        if (latest.sessionSkipped == 1) ", 1 omitida"
-                                        else ", ${latest.sessionSkipped} omitidas"
-                                    )
-                                }
-                            },
-                            leftoverMessage = knownAlbumFanOutLabel(candidate.album, extras.size)
-                        )
-                    }
-                    else -> toast("No se pudo aplicar la identidad")
+                if (latest.isApplying) return@withLock null
+                val current = latest.current ?: return@withLock null
+                if (current.song.id != item.song.id) return@withLock null
+                val commit = beginOptimisticIdentifyApply(
+                    remaining = latest.remaining,
+                    targets = listOf(current),
+                    sessionApplied = latest.sessionApplied,
+                    sessionSkipped = latest.sessionSkipped,
+                    fieldsOverride = latest.applyFields
+                ) { _ -> candidate } ?: return@withLock null
+                val skippedSuffix = when {
+                    latest.sessionSkipped <= 0 -> ""
+                    latest.sessionSkipped == 1 -> ", 1 omitida"
+                    else -> ", ${latest.sessionSkipped} omitidas"
                 }
-            }
+                toast(appliedInReviewLabel(1) + skippedSuffix)
+                val fanOut = if (commit.leftover.isEmpty()) {
+                    null
+                } else {
+                    Triple(candidate.artist, candidate.album, latest.sessionSkipped)
+                }
+                commit to fanOut
+            } ?: return@launch
+            val leftover = confirmOptimisticIdentifyApply(pending.first) ?: return@launch
+            val fanOut = pending.second ?: return@launch
+            if (leftover.isEmpty()) return@launch
+            launchKnownAlbumFanOut(
+                albums = listOf(fanOut.first to fanOut.second),
+                sessionSkipped = fanOut.third
+            ) { extras, _ -> knownAlbumFanOutLabel(fanOut.second, extras) }
         }
     }
 
@@ -2539,11 +2864,10 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         val remainingIds = _identifyReview.value.remaining.map { it.song.id }.toSet()
         identifyDroppedIds += remainingIds
         val pending = remainingIds.size
-        _identifyReview.value = IdentifyReviewState()
+        val next = IdentifyReviewState()
+        _identifyReview.value = next
         clearCatalogPreview()
-        viewModelScope.launch {
-            withContext(Dispatchers.IO) { identifyReviewStore.removeSongIds(remainingIds) }
-        }
+        persistIdentifyReviewNow(next)
         if (pending > 0) {
             toast(if (pending == 1) "1 omitida" else "$pending omitidas")
         }
@@ -2551,45 +2875,58 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     fun applyRemainingIdentifySuggestions() {
         viewModelScope.launch {
-            identifyMutex.withLock {
+            val pending = identifyMutex.withLock {
                 val state = _identifyReview.value
-                if (!state.applyFields.hasAny) return@withLock
+                if (state.isApplying || !state.applyFields.hasAny) return@withLock null
                 val remaining = state.remaining
-                if (remaining.isEmpty()) return@withLock
+                if (remaining.isEmpty()) return@withLock null
                 val applyable = remaining.filter { it.proposal.hasMediumSuggestion }
                 if (applyable.isEmpty()) {
                     toast("No hay sugerencias automáticas")
-                    return@withLock
+                    return@withLock null
                 }
-                val appliedIds = applyIdentifyCandidates(applyable) { it.proposal.suggested }
-                var leftover = remaining.filter { it.song.id !in appliedIds }
-                val albums = applyable.mapNotNull { it.proposal.suggested }
-                    .distinctBy { albumGroupKey(it.artist, it.album) }
-                val extraIds = LinkedHashSet<Long>()
-                for (track in albums) {
-                    val extras = applyKnownAlbumFanOut(track.artist, track.album, leftover)
-                    extraIds += extras
-                    leftover = leftover.filter { it.song.id !in extras }
-                }
-                val appliedThisRound = appliedIds.size + extraIds.size
-                presentIdentifyApplyResult(
-                    leftover = leftover,
-                    sessionApplied = state.sessionApplied + appliedThisRound,
-                    sessionSkipped = state.sessionSkipped,
-                    emptyMessage = appliedInReviewLabel(appliedThisRound),
-                    leftoverMessage = leftover.takeIf { it.isNotEmpty() }?.let {
+                val commit = beginOptimisticIdentifyApply(
+                    remaining = remaining,
+                    targets = applyable,
+                    sessionApplied = state.sessionApplied,
+                    sessionSkipped = state.sessionSkipped
+                ) { it.proposal.suggested } ?: return@withLock null
+                val appliedCount = applyable.size
+                val leftover = commit.leftover
+                if (leftover.isEmpty()) {
+                    toast(appliedInReviewLabel(appliedCount))
+                } else {
+                    toast(
                         buildString {
+                            append(if (appliedCount == 1) "1 aplicada" else "$appliedCount aplicadas")
                             append(
-                                if (appliedThisRound == 1) "1 aplicada"
-                                else "$appliedThisRound aplicadas"
-                            )
-                            append(
-                                if (it.size == 1) ", 1 sin sugerencia"
-                                else ", ${it.size} sin sugerencia"
+                                if (leftover.size == 1) ", 1 sin sugerencia"
+                                else ", ${leftover.size} sin sugerencia"
                             )
                         }
-                    }
-                )
+                    )
+                }
+                val albums = if (leftover.isEmpty()) {
+                    emptyList()
+                } else {
+                    applyable.mapNotNull { it.proposal.suggested }
+                        .distinctBy { albumGroupKey(it.artist, it.album) }
+                        .map { it.artist to it.album }
+                }
+                commit to (albums to state.sessionSkipped)
+            } ?: return@launch
+            val leftover = confirmOptimisticIdentifyApply(pending.first) ?: return@launch
+            val albums = pending.second.first
+            if (leftover.isEmpty() || albums.isEmpty()) return@launch
+            launchKnownAlbumFanOut(
+                albums = albums,
+                sessionSkipped = pending.second.second
+            ) { extras, _ ->
+                when {
+                    extras <= 0 -> null
+                    extras == 1 -> "1 más aplicada"
+                    else -> "$extras más aplicadas"
+                }
             }
         }
     }
@@ -2599,15 +2936,14 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         val droppedId = state.current?.song?.id
         if (droppedId != null) {
             identifyDroppedIds += droppedId
-            viewModelScope.launch {
-                withContext(Dispatchers.IO) { identifyReviewStore.removeSongIds(setOf(droppedId)) }
-            }
         }
         val nextApplied = state.sessionApplied + if (applied) 1 else 0
         val nextSkipped = state.sessionSkipped + if (applied) 0 else 1
         val nextIndex = state.currentIndex + 1
         if (nextIndex >= state.items.size) {
-            _identifyReview.value = IdentifyReviewState()
+            val next = IdentifyReviewState()
+            _identifyReview.value = next
+            persistIdentifyReviewNow(next)
             toast(
                 buildString {
                     append(appliedInReviewLabel(nextApplied))
@@ -2619,11 +2955,13 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             return
         }
         val nextItem = state.items[nextIndex]
-        _identifyReview.value = state.copy(
+        val next = state.copy(
             currentIndex = nextIndex,
             sessionApplied = nextApplied,
             sessionSkipped = nextSkipped
         ).withItemSearchChrome(nextItem)
+        _identifyReview.value = next
+        persistIdentifyReviewNow(next)
     }
 
     // Playlists
@@ -2816,7 +3154,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             return
         }
         _cfRecommendations.update { it.loading() }
-        val library = rawSongs.first()
+        val library = repository.allSongsFlow.first()
         when (
             val result = fetchAndMatchCfRecommendationsUseCase.execute(
                 username = username,
@@ -2903,7 +3241,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             )
         ) {
             is LbApiResult.Success -> {
-                val library = rawSongs.first()
+                val library = repository.allSongsFlow.first()
                 val matched = matchListenBrainzTracksUseCase.execute(result.data, library)
                 // Only publish if this mbid is still the one on screen.
                 if (!forRestore && !isListenBrainzDetailCurrent(mbid)) return false
@@ -3473,7 +3811,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     private suspend fun libraryWithExtra(extraSong: Song?): List<Song> =
-        rawSongs.first().let { list ->
+        repository.allSongsFlow.first().let { list ->
             if (extraSong == null || list.any { it.id == extraSong.id }) list
             else list + extraSong
         }
@@ -3561,7 +3899,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         val download = activeDownloads.value.find { it.id == id } ?: return
         val songId = download.resultSongId ?: return
         viewModelScope.launch {
-            val song = rawSongs.first().find { it.id == songId } ?: return@launch
+            val song = repository.allSongsFlow.first().find { it.id == songId } ?: return@launch
             playSong(song)
         }
     }
@@ -3692,9 +4030,19 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         super.onCleared()
     }
 
+    private suspend fun awaitFirstCatalogLoaded() {
+        libraryProjection.catalogLoaded.first { it }
+    }
+
+    private suspend fun awaitFirstLibraryIdle() {
+        libraryProjection.songList.first { !it.isEmpty }
+        delay(FIRST_LIBRARY_IDLE_MS)
+    }
+
     companion object {
         const val RADIO_LOADING_LABEL = "Armando radio…"
         private const val METADATA_ENHANCE_BATCH = 20
+        private const val FIRST_LIBRARY_IDLE_MS = 1_500L
     }
 }
 

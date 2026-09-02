@@ -97,6 +97,24 @@ class LibraryPreferencesRepository(private val context: Context) {
         context.libraryDataStore.put(Keys.DEVICE_DATE_ADDED_MIGRATED, true)
     }
 
+    suspend fun isCanonicalAudioUrisMigrated(): Boolean =
+        context.libraryDataStore.data.map { prefs ->
+            prefs[Keys.CANONICAL_AUDIO_URIS_MIGRATED] ?: false
+        }.first()
+
+    suspend fun setCanonicalAudioUrisMigrated() {
+        context.libraryDataStore.put(Keys.CANONICAL_AUDIO_URIS_MIGRATED, true)
+    }
+
+    suspend fun isEmbeddedFileTagsMigrated(): Boolean =
+        context.libraryDataStore.data.map { prefs ->
+            prefs[Keys.EMBEDDED_FILE_TAGS_MIGRATED] ?: false
+        }.first()
+
+    suspend fun setEmbeddedFileTagsMigrated() {
+        context.libraryDataStore.put(Keys.EMBEDDED_FILE_TAGS_MIGRATED, true)
+    }
+
     suspend fun setSortOptionName(name: String) {
         val clean = LibraryUiPreferencesCodec.sanitizeSortOptionName(name)
         context.libraryDataStore.edit { prefs ->
@@ -155,6 +173,8 @@ class LibraryPreferencesRepository(private val context: Context) {
         val INITIAL_SCAN_COMPLETED = booleanPreferencesKey("initial_library_scan_completed")
         val LEGACY_YTM_MIGRATED = booleanPreferencesKey("legacy_ytm_album_migrated")
         val DEVICE_DATE_ADDED_MIGRATED = booleanPreferencesKey("device_date_added_migrated")
+        val CANONICAL_AUDIO_URIS_MIGRATED = booleanPreferencesKey("canonical_audio_uris_migrated")
+        val EMBEDDED_FILE_TAGS_MIGRATED = booleanPreferencesKey("embedded_file_tags_migrated_v4")
         val HIGHEST_DB_VERSION = intPreferencesKey("highest_db_version_seen")
         val SORT_OPTION = stringPreferencesKey("library_sort_option")
         val SORT_DIRECTION = stringPreferencesKey("library_sort_direction")

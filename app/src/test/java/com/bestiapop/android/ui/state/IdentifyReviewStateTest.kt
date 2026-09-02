@@ -8,6 +8,7 @@ import com.bestiapop.android.data.model.OnlineCatalogTrack
 import com.bestiapop.android.data.model.Song
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -131,6 +132,18 @@ class IdentifyReviewStateTest {
     }
 
     @Test
+    fun canApplySelected_isFalseWhileApplying() {
+        val reviewItem = item(hasCandidates = true)
+        val applying = IdentifyReviewState(
+            items = listOf(reviewItem),
+            applyFields = IdentifyApplyFields.ALL,
+            isApplying = true
+        )
+        assertFalse(applying.canApplySelected)
+        assertFalse(applying.canApplyRemaining)
+    }
+
+    @Test
     fun mergeIncomingReviewItems_appendsNewSongsWithoutResettingChrome() {
         val currentItem = item(song = song(id = 1L, title = "Creep"))
         val incomingNew = item(song = song(id = 2L, title = "Karma Police"))
@@ -210,5 +223,229 @@ class IdentifyReviewStateTest {
         assertEquals(IdentifyConfidence.MEDIUM, attached.single().proposal.confidence)
         assertEquals("Espejos", attached.single().proposal.suggested?.album)
         assertEquals("Ciro y Los Persas", attached.single().proposal.suggested?.artist)
+    }
+
+    @Test
+    fun identifyReviewFromPersisted_dropsLyricsBlobs() {
+        val candidate = IdentifyCandidate(
+            track = OnlineCatalogTrack(
+                id = "1",
+                title = "Creep",
+                artist = "Radiohead",
+                album = "Pablo Honey",
+                durationMs = 238_000L,
+                audioUrl = "",
+                provider = "Deezer"
+            ),
+            score = 0.7f
+        )
+        val hydrated = identifyReviewFromPersisted(
+            proposals = listOf(
+                IdentifyProposal(
+                    songId = 7L,
+                    queryArtist = "Radiohead",
+                    queryTitle = "Creep",
+                    candidates = listOf(candidate),
+                    confidence = IdentifyConfidence.MEDIUM,
+                    suggested = candidate
+                )
+            ),
+            phaseName = IdentifyReviewPhase.Item.name,
+            songs = listOf(song().copy(lyrics = "[00:01.00]blob"))
+        )
+        assertNull(hydrated.items.single().song.lyrics)
+        assertEquals("Creep", hydrated.items.single().song.title)
+    }
+
+    @Test
+    fun identifyHydrationSongIds_emptyQueueSkipsRoom() {
+        assertEquals(null, identifyHydrationSongIds(emptyList()))
+        val proposal = IdentifyProposal(
+            songId = 7L,
+            queryArtist = "Radiohead",
+            queryTitle = "Creep"
+        )
+        assertEquals(listOf(7L), identifyHydrationSongIds(listOf(proposal)))
+    }
+
+    @Test
+    fun leftoverIdentifyReview_keepsOverviewWhenAnotherGroupRemains() {
+        val groupA = listOf(
+            mediumItem(1L, "Antes y Después", "Ciro y Los Persas", "Espejos"),
+            mediumItem(2L, "Míralo", "Ciro y Los Persas", "Espejos")
+        )
+        val groupB = listOf(
+            mediumItem(3L, "Hysteria", "Muse", "Absolution"),
+            mediumItem(4L, "Time Is Running Out", "Muse", "Absolution")
+        )
+        val leftover = leftoverIdentifyReview(
+            leftover = groupA + groupB.drop(1),
+            sessionApplied = 1,
+            sessionSkipped = 0,
+            applyFields = IdentifyApplyFields.ALL
+        )
+        assertEquals(IdentifyReviewPhase.Overview, leftover.phase)
+        assertEquals(1, leftover.albumGroups.size)
+        assertEquals("Espejos", leftover.albumGroups.single().album)
+        assertEquals(3, leftover.pendingCount)
+        assertEquals(1, leftover.sessionApplied)
+        assertTrue(leftover.isVisible)
+        assertFalse(leftover.isApplying)
+    }
+
+    @Test
+    fun leftoverIdentifyReview_applyLeavesQueueClickable() {
+        val leftover = leftoverIdentifyReview(
+            leftover = listOf(
+                mediumItem(1L, "Antes y Después", "Ciro y Los Persas", "Espejos"),
+                mediumItem(2L, "Míralo", "Ciro y Los Persas", "Espejos")
+            ),
+            sessionApplied = 3,
+            sessionSkipped = 0,
+            applyFields = IdentifyApplyFields.ALL
+        )
+        assertFalse(leftover.isApplying)
+        assertTrue(leftover.canApplyRemaining)
+        assertEquals(IdentifyReviewPhase.Overview, leftover.phase)
+    }
+
+    @Test
+    fun leftoverIdentifyReview_itemPhaseKeepsSessionApplyFields() {
+        val tagged = song(id = 9L, artist = "Unknown Artist", album = "Unknown Album")
+        val reviewItem = item(song = tagged).let { current ->
+            current.copy(proposal = current.proposal.copy(fillGapsOnly = true))
+        }
+        val leftover = leftoverIdentifyReview(
+            leftover = listOf(reviewItem),
+            sessionApplied = 1,
+            sessionSkipped = 0,
+            applyFields = IdentifyApplyFields.ALL
+        )
+        assertEquals(IdentifyReviewPhase.Item, leftover.phase)
+        assertEquals(IdentifyApplyFields.ALL, leftover.applyFields)
+        assertTrue(leftover.canApplySelected)
+    }
+
+    @Test
+    fun identifyPersistEcho_skipsHydrateWhenOverlayRemainingMatches() {
+        assertEquals(
+            IdentifyPersistEcho.Skip,
+            identifyPersistEcho(
+                overlayOpen = true,
+                itemIds = setOf(2L, 3L),
+                snapSongIds = listOf(2L, 3L),
+                droppedIds = setOf(1L)
+            )
+        )
+    }
+
+    @Test
+    fun identifyPersistEcho_mergesRuntimeExtrasOnly() {
+        assertEquals(
+            IdentifyPersistEcho.MergeExtras(listOf(4L)),
+            identifyPersistEcho(
+                overlayOpen = true,
+                itemIds = setOf(2L, 3L),
+                snapSongIds = listOf(2L, 3L, 4L),
+                droppedIds = setOf(1L)
+            )
+        )
+    }
+
+    @Test
+    fun identifyPersistEcho_hydratesWhenOverlayClosed() {
+        assertEquals(
+            IdentifyPersistEcho.Hydrate(listOf(1L, 2L)),
+            identifyPersistEcho(
+                overlayOpen = false,
+                itemIds = emptySet(),
+                snapSongIds = listOf(1L, 2L),
+                droppedIds = emptySet()
+            )
+        )
+        assertEquals(
+            IdentifyPersistEcho.Hydrate(emptyList()),
+            identifyPersistEcho(
+                overlayOpen = false,
+                itemIds = emptySet(),
+                snapSongIds = emptyList(),
+                droppedIds = setOf(1L)
+            )
+        )
+    }
+
+    @Test
+    fun leftoverIdentifyReview_secondPassPrunesFanOutExtras() {
+        val groupA = listOf(
+            mediumItem(1L, "Antes y Después", "Ciro y Los Persas", "Espejos"),
+            mediumItem(2L, "Míralo", "Ciro y Los Persas", "Espejos")
+        )
+        val extras = listOf(
+            mediumItem(3L, "Hysteria", "Muse", "Absolution"),
+            mediumItem(4L, "Time Is Running Out", "Muse", "Absolution")
+        )
+        val afterExplicit = leftoverIdentifyReview(
+            leftover = groupA + extras,
+            sessionApplied = 2,
+            sessionSkipped = 0,
+            applyFields = IdentifyApplyFields.ALL
+        )
+        assertFalse(afterExplicit.isApplying)
+        assertEquals(4, afterExplicit.pendingCount)
+        val afterFanOut = leftoverIdentifyReview(
+            leftover = afterExplicit.items.filter { it.song.id !in setOf(3L, 4L) },
+            sessionApplied = afterExplicit.sessionApplied + 2,
+            sessionSkipped = 0,
+            applyFields = IdentifyApplyFields.ALL
+        )
+        assertEquals(2, afterFanOut.pendingCount)
+        assertEquals(4, afterFanOut.sessionApplied)
+        assertEquals("Espejos", afterFanOut.albumGroups.single().album)
+        assertFalse(afterFanOut.isApplying)
+    }
+
+    @Test
+    fun leftoverIdentifyReview_goesToItemWhenNoGroupsRemain() {
+        val leftover = leftoverIdentifyReview(
+            leftover = listOf(item(song = song(id = 9L, title = "Creep"))),
+            sessionApplied = 2,
+            sessionSkipped = 1,
+            applyFields = IdentifyApplyFields.ALL
+        )
+        assertEquals(IdentifyReviewPhase.Item, leftover.phase)
+        assertTrue(leftover.albumGroups.isEmpty())
+        assertEquals(9L, leftover.current?.song?.id)
+    }
+
+    private fun mediumItem(
+        id: Long,
+        title: String,
+        artist: String,
+        album: String
+    ): IdentifyReviewItem {
+        val tagged = song(id = id, title = title, artist = artist, album = album)
+        val candidate = IdentifyCandidate(
+            track = OnlineCatalogTrack(
+                id = "dz-$id",
+                title = title,
+                artist = artist,
+                album = album,
+                durationMs = tagged.durationMs,
+                audioUrl = "",
+                provider = "Deezer"
+            ),
+            score = 0.7f
+        )
+        return IdentifyReviewItem(
+            song = tagged,
+            proposal = IdentifyProposal(
+                songId = id,
+                queryArtist = artist,
+                queryTitle = title,
+                candidates = listOf(candidate),
+                confidence = IdentifyConfidence.MEDIUM,
+                suggested = candidate
+            )
+        )
     }
 }

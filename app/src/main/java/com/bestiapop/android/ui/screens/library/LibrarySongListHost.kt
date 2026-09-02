@@ -1,6 +1,8 @@
 package com.bestiapop.android.ui.screens.library
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -13,9 +15,11 @@ import com.bestiapop.android.data.model.Playlist
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.ui.MusicPlayerViewModel
 import com.bestiapop.android.ui.SortOption
-import com.bestiapop.android.ui.state.LibraryListItem
+import com.bestiapop.android.ui.state.LibraryListModel
+import kotlinx.coroutines.flow.StateFlow
 
 /** Shared song/album action callbacks for [LibrarySongList]. */
+@Immutable
 data class LibrarySongListActions(
     val onPlayNext: (Song) -> Unit,
     val onAddToQueue: (Song) -> Unit,
@@ -25,11 +29,11 @@ data class LibrarySongListActions(
     val onEditLyrics: (Song) -> Unit,
     val onIdentify: (Song) -> Unit = {},
     val onDeleteSong: (Song) -> Unit,
-    val onPlayAlbum: (String, List<Song>) -> Unit,
-    val onShuffleAlbum: (String, List<Song>) -> Unit,
+    val onPlayAlbum: (String, List<Long>) -> Unit,
+    val onShuffleAlbum: (String, List<Long>) -> Unit,
     val onToggleSelect: (Song) -> Unit,
-    val onToggleSelectAlbum: (List<Song>) -> Unit,
-    val onAlbumLongClick: (List<Song>) -> Unit,
+    val onToggleSelectAlbum: (List<Long>) -> Unit,
+    val onAlbumLongClick: (List<Long>) -> Unit,
     val onToggleCollapseAlbum: (String) -> Unit,
     val onEditAlbum: (String) -> Unit = {},
     val onChangeAlbumCover: (String) -> Unit = {},
@@ -43,7 +47,7 @@ data class LibrarySongListActions(
  */
 @Composable
 fun LibrarySongListHost(
-    items: List<LibraryListItem>,
+    list: LibraryListModel,
     currentSongId: Long?,
     isSelectionMode: Boolean,
     selectedSongIds: Set<Long>,
@@ -55,11 +59,14 @@ fun LibrarySongListHost(
     emphasizeLastPlayed: Boolean = false,
     emptySubtitle: String? = null,
     emptyText: String = "No se encontraron canciones",
+    loading: Boolean = false,
+    currentSongIdFlow: StateFlow<Long?>? = null,
     modifier: Modifier = Modifier
 ) {
     LibrarySongList(
-        items = items,
+        list = list,
         currentSongId = currentSongId,
+        currentSongIdFlow = currentSongIdFlow,
         isSelectionMode = isSelectionMode,
         selectedSongIds = selectedSongIds,
         collapsedAlbumNames = collapsedAlbumNames,
@@ -67,6 +74,7 @@ fun LibrarySongListHost(
         emphasizeLastPlayed = emphasizeLastPlayed,
         emptySubtitle = emptySubtitle,
         emptyText = emptyText,
+        loading = loading,
         onSongClick = onSongClick,
         onSongLongClick = onSongLongClick,
         onToggleSelect = actions.onToggleSelect,
@@ -179,12 +187,16 @@ fun SongActionDialogsHost(
     }
 
     editingLyricsSong?.let { song ->
+        var lyricsSong by remember(song.id) { mutableStateOf(song) }
+        LaunchedEffect(song.id) {
+            viewModel.songById(song.id)?.let { lyricsSong = it }
+        }
         val isCurrent = (currentItem as? PlayableItem.Local)?.song?.id == song.id
         EditLyricsDialog(
-            song = song,
+            song = lyricsSong,
             isCurrent = isCurrent,
             isPlaying = isPlaying,
-            durationMs = if (isCurrent) currentItem?.durationMs ?: song.durationMs else song.durationMs,
+            durationMs = if (isCurrent) currentItem?.durationMs ?: lyricsSong.durationMs else lyricsSong.durationMs,
             positionMsFlow = viewModel.playbackPositionMs,
             onDismiss = onDismissLyrics,
             onSave = { lyrics ->
@@ -192,10 +204,10 @@ fun SongActionDialogsHost(
                 onDismissLyrics()
             },
             onPlayPause = {
-                if (isCurrent) viewModel.togglePlayPause() else viewModel.playSong(song)
+                if (isCurrent) viewModel.togglePlayPause() else viewModel.playSong(lyricsSong)
             },
             onSeek = viewModel::seekTo,
-            onFetchOnline = { onResult -> viewModel.fetchSongLyrics(song, onResult) }
+            onFetchOnline = { onResult -> viewModel.fetchSongLyrics(lyricsSong, onResult) }
         )
     }
 

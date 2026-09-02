@@ -103,6 +103,16 @@ class MusicFileStore(private val context: Context) {
     fun writableFile(uriString: String, folderPath: String = ""): File? =
         writableFile(canonicalize(uriString, folderPath))
 
+    /** Filesystem [File] safe for tag reads. Null for MediaStore content:// or missing files. */
+    fun readableFile(ref: AudioPersistRef): File? {
+        val abs = directFilePath(ref) ?: return null
+        val file = File(abs)
+        return file.takeIf { it.isFile && it.canRead() }
+    }
+
+    fun readableFile(uriString: String, folderPath: String = ""): File? =
+        readableFile(canonicalize(uriString, folderPath))
+
     /**
      * Filesystem path safe for direct File I/O. Never returns MediaStore DATA for
      * content://media (Android 15 scoped storage).

@@ -3,7 +3,6 @@ package com.bestiapop.android
 import android.app.Application
 import android.app.ActivityManager
 import android.app.ApplicationExitInfo
-import android.content.ComponentCallbacks2
 import android.os.Build
 import coil.ImageLoader
 import coil.ImageLoaderFactory
@@ -143,16 +142,9 @@ class BestiaPopApplication : Application(), ImageLoaderFactory {
                     .build()
             }
             .allowHardware(true)
+            .allowRgb565(true)
+            .decoderDispatcher(Dispatchers.IO.limitedParallelism(2))
             .respectCacheHeaders(false)
             .build()
-    }
-
-    override fun onTrimMemory(level: Int) {
-        super.onTrimMemory(level)
-        if (level >= ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN) {
-            try {
-                coil.Coil.imageLoader(this).memoryCache?.clear()
-            } catch (_: Throwable) {}
-        }
     }
 }

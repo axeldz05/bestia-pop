@@ -33,6 +33,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -45,6 +46,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.bestiapop.android.data.model.Album
+import com.bestiapop.android.data.model.Artist
+import com.bestiapop.android.data.model.GenreGroup
 import com.bestiapop.android.data.model.Playlist
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.domain.util.albumNamesMatch
@@ -71,8 +74,11 @@ import com.bestiapop.android.ui.screens.library.libraryOrderSummary
 import com.bestiapop.android.ui.screens.library.libraryTuneContentDescription
 import com.bestiapop.android.ui.screens.library.rememberSongActionDialogs
 import com.bestiapop.android.ui.state.LibraryBrowseFilter
-import com.bestiapop.android.ui.state.LibraryListItem
+import com.bestiapop.android.ui.state.LibraryListModel
 import com.bestiapop.android.ui.state.LibraryViewMode
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.withContext
 
 @Composable
 fun LibraryScreen(
@@ -83,14 +89,10 @@ fun LibraryScreen(
     onSelectFolderClick: () -> Unit,
     onOpenDownloads: () -> Unit = {}
 ) {
-    val songs by viewModel.libraryProjection.songs.collectAsState()
-    /** Unfiltered: multi-select keeps ids picked before a search narrowed the visible list. */
-    val allSongs by viewModel.rawSongs.collectAsState(initial = emptyList())
-    val albums by viewModel.libraryProjection.albums.collectAsState()
-    val artists by viewModel.libraryProjection.artists.collectAsState()
-    val genres by viewModel.libraryProjection.genres.collectAsState()
+    val identifyReview by viewModel.identifyReview.collectAsState()
+    val catalogLoaded by viewModel.libraryProjection.catalogLoaded.collectAsState()
+    val songList by viewModel.libraryProjection.songList.collectAsState()
     val playlists by viewModel.playlists.collectAsState(initial = emptyList())
-    val currentSong by viewModel.currentSong.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
     val sortOption by viewModel.sortOption.collectAsState()
     val sortDirection by viewModel.sortDirection.collectAsState()
@@ -101,7 +103,6 @@ fun LibraryScreen(
     val selectedArtistName = navigation.libraryStack.artistName
     val selectedGenreName = navigation.libraryStack.genreName
     val libraryJobProgress by viewModel.libraryJobProgress.collectAsState()
-    val identifyReview by viewModel.identifyReview.collectAsState()
     val similarPlaylistPreview by viewModel.similarPlaylistPreview.collectAsState()
 
     var showBrowseSortSheet by remember { mutableStateOf(false) }
@@ -126,32 +127,6 @@ fun LibraryScreen(
     } else {
         LibraryViewMode.FLAT
     }
-    // `albums` is keyed in because headers now read album overrides: a rename has to refresh them.
-    val songListItems = remember(songs, songsViewMode, albums, sortOption, sortDirection) {
-        viewModel.buildLibraryListItems(songs, songsViewMode, sortOption, sortDirection)
-    }
-    val recentSongs = remember(songs) {
-        songs.filter { it.lastPlayedAt > 0 }.sortedByDescending { it.lastPlayedAt }
-    }
-    val recentListItems = remember(recentSongs) {
-        viewModel.buildLibraryListItems(recentSongs, LibraryViewMode.FLAT)
-    }
-    val songsForPlayAll = remember(
-        activeFilter, songs, songsViewMode, albums, artists, genres, songListItems, recentSongs
-    ) {
-        when (activeFilter) {
-            LibraryBrowseFilter.SONGS -> viewModel.songsFromLibraryListItems(songListItems)
-            LibraryBrowseFilter.RECENT -> recentSongs
-            else -> viewModel.songsForBrowseProjection(
-                filter = activeFilter,
-                songs = songs,
-                viewMode = songsViewMode,
-                albums = albums,
-                artists = artists,
-                genres = genres
-            )
-        }
-    }
     val orderSummary = remember(activeFilter, sortOption, sortDirection, showAlbumHeaders) {
         libraryOrderSummary(activeFilter, sortOption, sortDirection, showAlbumHeaders)
     }
@@ -160,6 +135,7 @@ fun LibraryScreen(
 
     // Multi-selection state
     var selectedSongIds by remember { mutableStateOf(setOf<Long>()) }
+    var selectedSongsById by remember { mutableStateOf(mapOf<Long, Song>()) }
     val isMultiSelectMode = selectedSongIds.isNotEmpty()
 
 
@@ -172,16 +148,24 @@ fun LibraryScreen(
     val songDialogs = rememberSongActionDialogs(
         viewModel = viewModel,
         playlists = playlists,
-        onAfterPlaylistAdd = { selectedSongIds = emptySet() },
-        onAfterDelete = { selectedSongIds = emptySet() },
+        onAfterPlaylistAdd = {
+            selectedSongIds = emptySet()
+            selectedSongsById = emptyMap()
+        },
+        onAfterDelete = {
+            selectedSongIds = emptySet()
+            selectedSongsById = emptyMap()
+        },
         playlistSongIds = { song ->
             if (selectedSongIds.isNotEmpty()) selectedSongIds.toList() else listOf(song.id)
         }
     )
 
-    val resolveAlbumByKey = remember(albums) {
+    val resolveAlbumByKey: (String) -> Album? = remember(viewModel) {
         { albumKey: String ->
-            albums.firstOrNull { albumNamesMatch(it.name, albumKey) || albumNamesMatch(it.displayName, albumKey) }
+            viewModel.libraryProjection.albums.value.firstOrNull {
+                albumNamesMatch(it.name, albumKey) || albumNamesMatch(it.displayName, albumKey)
+            }
         }
     }
 
@@ -197,10 +181,10 @@ fun LibraryScreen(
             Unit
         }
     }
-    val onIdentifyAlbumByKey = remember(resolveAlbumByKey, songs) {
+    val onIdentifyAlbumByKey = remember(resolveAlbumByKey, viewModel) {
         { albumKey: String ->
             resolveAlbumByKey(albumKey)?.let { album ->
-                val albumSongs = viewModel.songsForAlbum(songs, album.name)
+                val albumSongs = viewModel.songsForAlbum(viewModel.libraryProjection.songs.value, album.name)
                 if (albumSongs.isNotEmpty()) {
                     viewModel.openIdentifySetup(albumSongs, contextTitle = "Álbum: ${album.displayName}")
                 }
@@ -209,32 +193,42 @@ fun LibraryScreen(
         }
     }
 
-    val currentSongId = currentSong?.id
+    val currentSongId = viewModel.currentSongId
 
     val toggleSelectSong = remember<(Song) -> Unit> {
         { song ->
-            selectedSongIds = if (selectedSongIds.contains(song.id)) {
-                selectedSongIds - song.id
+            if (selectedSongIds.contains(song.id)) {
+                selectedSongIds = selectedSongIds - song.id
+                selectedSongsById = selectedSongsById - song.id
             } else {
-                selectedSongIds + song.id
+                selectedSongIds = selectedSongIds + song.id
+                selectedSongsById = selectedSongsById + (song.id to song)
             }
         }
     }
 
-    val toggleSelectAlbum = remember<(List<Song>) -> Unit> {
-        { albumSongs ->
-            val ids = albumSongs.map { it.id }.toSet()
-            selectedSongIds = if (ids.isNotEmpty() && ids.all { selectedSongIds.contains(it) }) {
-                selectedSongIds - ids
+    val toggleSelectAlbum = remember(songList) {
+        { albumIds: List<Long> ->
+            val ids = albumIds.toSet()
+            val removing = ids.isNotEmpty() && ids.all { selectedSongIds.contains(it) }
+            if (removing) {
+                selectedSongIds = selectedSongIds - ids
+                selectedSongsById = selectedSongsById - ids
             } else {
-                selectedSongIds + ids
+                selectedSongIds = selectedSongIds + ids
+                selectedSongsById = selectedSongsById + ids.mapNotNull { id ->
+                    songList.songsById[id]?.let { id to it }
+                }
             }
         }
     }
 
-    val onAlbumLongClick = remember<(List<Song>) -> Unit> {
-        { albumSongs ->
-            selectedSongIds = selectedSongIds + albumSongs.map { it.id }
+    val onAlbumLongClick = remember(songList) {
+        { albumIds: List<Long> ->
+            selectedSongIds = selectedSongIds + albumIds
+            selectedSongsById = selectedSongsById + albumIds.mapNotNull { id ->
+                songList.songsById[id]?.let { id to it }
+            }
         }
     }
 
@@ -248,37 +242,32 @@ fun LibraryScreen(
         }
     }
 
-    val libraryAlbumNames = remember(songListItems) {
-        songListItems.filterIsInstance<LibraryListItem.AlbumHeader>()
-            .map { it.albumName }
-            .filter { it.isNotBlank() }
-            .toSet()
-    }
+    val libraryAlbumNames = songList.albumNames
     val allAlbumsCollapsed = libraryAlbumNames.isNotEmpty() &&
         libraryAlbumNames.all { collapsedAlbumNames.contains(it) }
     val toggleCollapseAllAlbums = {
         collapsedAlbumNames = if (allAlbumsCollapsed) emptySet() else libraryAlbumNames
     }
 
-    val songsForSelection = remember(
-        selectedAlbumName, selectedArtistName, selectedGenreName,
-        activeFilter, songs, recentSongs, songsForPlayAll
-    ) {
-        when {
-            selectedAlbumName != null -> viewModel.songsForAlbum(songs, selectedAlbumName!!)
-            selectedArtistName != null -> viewModel.songsForArtist(songs, selectedArtistName!!)
-            selectedGenreName != null -> viewModel.songsForGenre(songs, selectedGenreName!!)
-            activeFilter == LibraryBrowseFilter.RECENT -> recentSongs
-            else -> songsForPlayAll
-        }
-    }
-
     val selectAllSongs = {
-        selectedSongIds = songsForSelection.map { it.id }.toSet()
+        val pool = songsForCurrentLibrarySelection(
+            viewModel = viewModel,
+            songList = songList,
+            selectedAlbumName = selectedAlbumName,
+            selectedArtistName = selectedArtistName,
+            selectedGenreName = selectedGenreName,
+            activeFilter = activeFilter,
+            songsViewMode = songsViewMode
+        )
+        selectedSongIds = pool.map { it.id }.toSet()
+        selectedSongsById = selectedSongsById + pool.associateBy { it.id }
     }
 
     val clearSelection = remember {
-        { selectedSongIds = emptySet() }
+        {
+            selectedSongIds = emptySet()
+            selectedSongsById = emptyMap()
+        }
     }
 
     val hasNestedDetail = selectedAlbumName != null ||
@@ -309,26 +298,67 @@ fun LibraryScreen(
         if (searchQuery.isNotEmpty()) searchExpanded = true
     }
 
-    val playOrShuffleAlbum: (Album, Boolean) -> Unit = remember(songs) {
+    val playOrShuffleAlbum: (Album, Boolean) -> Unit = remember(viewModel) {
         { album, shuffle ->
-            val albumSongs = viewModel.songsForAlbum(songs, album.name)
+            val albumSongs = viewModel.songsForAlbum(viewModel.libraryProjection.songs.value, album.name)
             if (shuffle) viewModel.shuffleCollection(albumSongs)
             else viewModel.playCollection(albumSongs)
         }
     }
-    val playOrShuffleArtist: (String, Boolean) -> Unit = remember(songs) {
+    val playOrShuffleArtist: (String, Boolean) -> Unit = remember(viewModel) {
         { artistName, shuffle ->
-            val artistSongs = viewModel.songsForArtist(songs, artistName)
+            val artistSongs = viewModel.songsForArtist(viewModel.libraryProjection.songs.value, artistName)
             if (shuffle) viewModel.shuffleCollection(artistSongs)
             else viewModel.playCollection(artistSongs)
         }
     }
-    val playOrShuffleGenre: (String, Boolean) -> Unit = remember(songs) {
+    val playOrShuffleGenre: (String, Boolean) -> Unit = remember(viewModel) {
         { genreName, shuffle ->
-            val genreSongs = viewModel.songsForGenre(songs, genreName)
+            val genreSongs = viewModel.songsForGenre(viewModel.libraryProjection.songs.value, genreName)
             if (shuffle) viewModel.shuffleCollection(genreSongs)
             else viewModel.playCollection(genreSongs)
         }
+    }
+    val onShuffleAlbumBrowse = remember(playOrShuffleAlbum) {
+        { album: Album -> playOrShuffleAlbum(album, true) }
+    }
+    val onOpenAlbumBrowse = remember {
+        { album: Album -> viewModel.openLibraryAlbum(album.name, fromNestedParent = false) }
+    }
+    val onEditAlbumBrowse = remember {
+        { album: Album -> albumForEdit = album }
+    }
+    val onChangeAlbumCoverBrowse = remember {
+        { album: Album -> albumForCoverChange = album }
+    }
+    val onIdentifyAlbumBrowse = remember(viewModel) {
+        { album: Album ->
+            val albumSongs = viewModel.songsForAlbum(viewModel.libraryProjection.songs.value, album.name)
+            if (albumSongs.isNotEmpty()) {
+                viewModel.openIdentifySetup(
+                    albumSongs,
+                    contextTitle = "Álbum: ${album.displayName}"
+                )
+            }
+        }
+    }
+    val onArtistClickBrowse = remember {
+        { artist: Artist -> viewModel.openLibraryArtist(artist.name) }
+    }
+    val onPlayArtistBrowse = remember(playOrShuffleArtist) {
+        { artist: Artist -> playOrShuffleArtist(artist.name, false) }
+    }
+    val onShuffleArtistBrowse = remember(playOrShuffleArtist) {
+        { artist: Artist -> playOrShuffleArtist(artist.name, true) }
+    }
+    val onGenreClickBrowse = remember {
+        { genre: GenreGroup -> viewModel.openLibraryGenre(genre.name) }
+    }
+    val onPlayGenreBrowse = remember(playOrShuffleGenre) {
+        { genre: GenreGroup -> playOrShuffleGenre(genre.name, false) }
+    }
+    val onShuffleGenreBrowse = remember(playOrShuffleGenre) {
+        { genre: GenreGroup -> playOrShuffleGenre(genre.name, true) }
     }
 
     val songActions = rememberSongQueueActions(viewModel)
@@ -340,11 +370,15 @@ fun LibraryScreen(
     val onEditLyrics = songDialogs.onEditLyrics
     val onIdentify = remember<(Song) -> Unit> { { viewModel.identifySongForReview(it) } }
     val onDeleteSong = songDialogs.onDelete
-    val onPlayAlbum = remember<(String, List<Song>) -> Unit> {
-        { _, albumSongs -> viewModel.playCollection(albumSongs) }
+    val onPlayAlbum = remember<(String, List<Long>) -> Unit>(songList) {
+        { _, albumIds ->
+            viewModel.playCollection(albumIds.mapNotNull { songList.songsById[it] })
+        }
     }
-    val onShuffleAlbum = remember<(String, List<Song>) -> Unit> {
-        { _, albumSongs -> viewModel.shuffleCollection(albumSongs) }
+    val onShuffleAlbum = remember<(String, List<Long>) -> Unit>(songList) {
+        { _, albumIds ->
+            viewModel.shuffleCollection(albumIds.mapNotNull { songList.songsById[it] })
+        }
     }
     val songListActions = remember(
         onPlayNext, onAddToQueue, onStartRadio, onAddToPlaylist, onEditMetadata, onEditLyrics, onIdentify, onDeleteSong,
@@ -411,9 +445,13 @@ fun LibraryScreen(
 
             // Nested album detail renders a FLAT list with no group header, so without this the user
             // saw a bare song list with nothing naming the album they opened.
-            val nestedTitle = selectedAlbumName?.let { key ->
-                resolveAlbumByKey(key)?.displayName ?: key
-            } ?: selectedArtistName ?: selectedGenreName
+            val nestedTitle = when {
+                selectedAlbumName != null -> NestedAlbumDisplayName(
+                    viewModel = viewModel,
+                    albumKey = selectedAlbumName!!
+                )
+                else -> selectedArtistName ?: selectedGenreName
+            }
 
             if (searchExpanded) {
                 OutlinedTextField(
@@ -473,12 +511,8 @@ fun LibraryScreen(
 
             if (!searchExpanded && !isMultiSelectMode && !isPlaylistAdditionMode && !hasNestedDetail) {
                 PlayShuffleIconPair(
-                    onPlay = {
-                        if (songsForPlayAll.isNotEmpty()) viewModel.playCollection(songsForPlayAll)
-                    },
-                    onShuffle = {
-                        if (songsForPlayAll.isNotEmpty()) viewModel.shuffleCollection(songsForPlayAll)
-                    },
+                    onPlay = { viewModel.playCurrentLibraryBrowse(shuffle = false) },
+                    onShuffle = { viewModel.playCurrentLibraryBrowse(shuffle = true) },
                     playDescription = "Reproducir todo",
                     shuffleDescription = "Mezclar"
                 )
@@ -548,7 +582,7 @@ fun LibraryScreen(
         if (isMultiSelectMode && !isPlaylistAdditionMode) {
             // Resolved against the *unfiltered* library, so searching narrows what you can tick
             // without losing what you already ticked, and the actions still cover all of it.
-            val selectedSongs = allSongs.filter { selectedSongIds.contains(it.id) }
+            val selectedSongs = selectedSongIds.mapNotNull { selectedSongsById[it] }
             MultiSelectActionBar(
                 selectedCount = selectedSongs.size,
                 onPlaySelected = {
@@ -597,157 +631,37 @@ fun LibraryScreen(
         }
 
         Box(modifier = Modifier.weight(1f)) {
-            when {
-                selectedAlbumName != null -> {
-                    val albumName = selectedAlbumName!!
-                    val albumSongs = remember(songs, albumName) {
-                        viewModel.songsForAlbum(songs, albumName)
-                    }
-                    NestedLibraryBrowse(
-                        browseSongs = albumSongs,
-                        viewMode = LibraryViewMode.FLAT,
-                        viewModel = viewModel,
-                        currentSongId = currentSongId,
-                        isSelectionMode = isMultiSelectMode,
-                        selectedSongIds = selectedSongIds,
-                        collapsedAlbumNames = collapsedAlbumNames,
-                        sortOption = sortOption,
-                        sortDirection = sortDirection,
-                        actions = songListActions,
-                        onToggleSelect = toggleSelectSong
-                    )
-                }
-
-                selectedArtistName != null -> {
-                    val artistSongs = remember(songs, selectedArtistName) {
-                        viewModel.songsForArtist(songs, selectedArtistName!!)
-                    }
-                    NestedLibraryBrowse(
-                        browseSongs = artistSongs,
-                        viewMode = LibraryViewMode.ALBUM_GROUPS,
-                        viewModel = viewModel,
-                        currentSongId = currentSongId,
-                        isSelectionMode = isMultiSelectMode,
-                        selectedSongIds = selectedSongIds,
-                        collapsedAlbumNames = collapsedAlbumNames,
-                        sortOption = sortOption,
-                        sortDirection = sortDirection,
-                        actions = songListActions,
-                        onToggleSelect = toggleSelectSong
-                    )
-                }
-
-                selectedGenreName != null -> {
-                    val genreName = selectedGenreName!!
-                    val genreSongs = remember(songs, genreName) {
-                        viewModel.songsForGenre(songs, genreName)
-                    }
-                    NestedLibraryBrowse(
-                        browseSongs = genreSongs,
-                        viewMode = LibraryViewMode.ALBUM_GROUPS,
-                        viewModel = viewModel,
-                        currentSongId = currentSongId,
-                        isSelectionMode = isMultiSelectMode,
-                        selectedSongIds = selectedSongIds,
-                        collapsedAlbumNames = collapsedAlbumNames,
-                        sortOption = sortOption,
-                        sortDirection = sortDirection,
-                        actions = songListActions,
-                        onToggleSelect = toggleSelectSong
-                    )
-                }
-
-                activeFilter == LibraryBrowseFilter.SONGS || isPlaylistAdditionMode -> {
-                    LibrarySongListHost(
-                        items = songListItems,
-                        currentSongId = currentSongId,
-                        isSelectionMode = isMultiSelectMode || isPlaylistAdditionMode,
-                        selectedSongIds = selectedSongIds,
-                        collapsedAlbumNames = collapsedAlbumNames,
-                        sortOption = sortOption,
-                        actions = songListActions,
-                        onSongClick = { song, index ->
-                            if (isPlaylistAdditionMode || isMultiSelectMode) {
-                                toggleSelectSong(song)
-                            } else {
-                                viewModel.playCollection(songsForPlayAll, index)
-                            }
-                        }
-                    )
-                }
-
-                activeFilter == LibraryBrowseFilter.RECENT -> {
-                    val recentEmptyFromSearch = searchQuery.isNotBlank()
-                    LibrarySongListHost(
-                        items = recentListItems,
-                        currentSongId = currentSongId,
-                        isSelectionMode = isMultiSelectMode,
-                        selectedSongIds = selectedSongIds,
-                        collapsedAlbumNames = emptySet(),
-                        sortOption = SortOption.DATE_ADDED,
-                        emphasizeLastPlayed = true,
-                        emptyText = if (recentEmptyFromSearch) {
-                            "No se encontraron canciones"
-                        } else {
-                            "Todavía no hay recientes"
-                        },
-                        emptySubtitle = if (recentEmptyFromSearch) {
-                            "Ningún resultado para esta búsqueda"
-                        } else {
-                            "Reproducí canciones para verlas acá"
-                        },
-                        actions = songListActions,
-                        onSongClick = { song, index ->
-                            if (isMultiSelectMode) {
-                                toggleSelectSong(song)
-                            } else {
-                                viewModel.playCollection(recentSongs, index)
-                            }
-                        }
-                    )
-                }
-
-                activeFilter == LibraryBrowseFilter.ALBUMS -> {
-                    LibraryAlbumBrowseList(
-                        albums = albums,
-                        sortOption = sortOption,
-                        onAlbumClick = { viewModel.openLibraryAlbum(it.name, fromNestedParent = false) },
-                        onPlayAlbum = { playOrShuffleAlbum(it, false) },
-                        onShuffleAlbum = { playOrShuffleAlbum(it, true) },
-                        onEditAlbum = { albumForEdit = it },
-                        onChangeAlbumCover = { albumForCoverChange = it },
-                        onIdentifyAlbum = { album ->
-                            val albumSongs = viewModel.songsForAlbum(songs, album.name)
-                            if (albumSongs.isNotEmpty()) {
-                                viewModel.openIdentifySetup(
-                                    albumSongs,
-                                    contextTitle = "Álbum: ${album.displayName}"
-                                )
-                            }
-                        }
-                    )
-                }
-
-                activeFilter == LibraryBrowseFilter.ARTISTS -> {
-                    LibraryArtistList(
-                        artists = artists,
-                        sortOption = sortOption,
-                        onArtistClick = { viewModel.openLibraryArtist(it.name) },
-                        onPlayArtist = { playOrShuffleArtist(it.name, false) },
-                        onShuffleArtist = { playOrShuffleArtist(it.name, true) }
-                    )
-                }
-
-                activeFilter == LibraryBrowseFilter.GENRES -> {
-                    LibraryGenreList(
-                        genres = genres,
-                        sortOption = sortOption,
-                        onGenreClick = { viewModel.openLibraryGenre(it.name) },
-                        onPlayGenre = { playOrShuffleGenre(it.name, false) },
-                        onShuffleGenre = { playOrShuffleGenre(it.name, true) }
-                    )
-                }
-            }
+            LibraryBrowsePane(
+                selectedAlbumName = selectedAlbumName,
+                selectedArtistName = selectedArtistName,
+                selectedGenreName = selectedGenreName,
+                activeFilter = activeFilter,
+                isPlaylistAdditionMode = isPlaylistAdditionMode,
+                isMultiSelectMode = isMultiSelectMode,
+                songList = songList,
+                catalogLoaded = catalogLoaded,
+                viewModel = viewModel,
+                currentSongIdFlow = currentSongId,
+                selectedSongIds = selectedSongIds,
+                collapsedAlbumNames = collapsedAlbumNames,
+                sortOption = sortOption,
+                sortDirection = sortDirection,
+                actions = songListActions,
+                onToggleSelect = toggleSelectSong,
+                searchQuery = searchQuery,
+                onPlayAlbum = playOrShuffleAlbum,
+                onShuffleAlbum = onShuffleAlbumBrowse,
+                onOpenAlbum = onOpenAlbumBrowse,
+                onEditAlbum = onEditAlbumBrowse,
+                onChangeAlbumCover = onChangeAlbumCoverBrowse,
+                onIdentifyAlbum = onIdentifyAlbumBrowse,
+                onArtistClick = onArtistClickBrowse,
+                onPlayArtist = onPlayArtistBrowse,
+                onShuffleArtist = onShuffleArtistBrowse,
+                onGenreClick = onGenreClickBrowse,
+                onPlayGenre = onPlayGenreBrowse,
+                onShuffleGenre = onShuffleGenreBrowse
+            )
 
             if (!isPlaylistAdditionMode) {
                 FloatingActionButton(
@@ -818,13 +732,229 @@ fun LibraryScreen(
     }
 }
 
+@Composable
+private fun LibraryBrowsePane(
+    selectedAlbumName: String?,
+    selectedArtistName: String?,
+    selectedGenreName: String?,
+    activeFilter: LibraryBrowseFilter,
+    isPlaylistAdditionMode: Boolean,
+    isMultiSelectMode: Boolean,
+    songList: LibraryListModel,
+    catalogLoaded: Boolean,
+    viewModel: MusicPlayerViewModel,
+    currentSongIdFlow: StateFlow<Long?>,
+    selectedSongIds: Set<Long>,
+    collapsedAlbumNames: Set<String>,
+    sortOption: SortOption,
+    sortDirection: SortDirection,
+    actions: LibrarySongListActions,
+    onToggleSelect: (Song) -> Unit,
+    searchQuery: String,
+    onPlayAlbum: (Album, Boolean) -> Unit,
+    onShuffleAlbum: (Album) -> Unit,
+    onOpenAlbum: (Album) -> Unit,
+    onEditAlbum: (Album) -> Unit,
+    onChangeAlbumCover: (Album) -> Unit,
+    onIdentifyAlbum: (Album) -> Unit,
+    onArtistClick: (Artist) -> Unit,
+    onPlayArtist: (Artist) -> Unit,
+    onShuffleArtist: (Artist) -> Unit,
+    onGenreClick: (GenreGroup) -> Unit,
+    onPlayGenre: (GenreGroup) -> Unit,
+    onShuffleGenre: (GenreGroup) -> Unit
+) {
+    when {
+        selectedAlbumName != null -> {
+            NestedLibraryBrowse(
+                selectedAlbumName = selectedAlbumName,
+                selectedArtistName = null,
+                selectedGenreName = null,
+                viewMode = LibraryViewMode.FLAT,
+                viewModel = viewModel,
+                currentSongIdFlow = currentSongIdFlow,
+                isSelectionMode = isMultiSelectMode,
+                selectedSongIds = selectedSongIds,
+                collapsedAlbumNames = collapsedAlbumNames,
+                sortOption = sortOption,
+                sortDirection = sortDirection,
+                actions = actions,
+                onToggleSelect = onToggleSelect
+            )
+        }
+
+        selectedArtistName != null -> {
+            NestedLibraryBrowse(
+                selectedAlbumName = null,
+                selectedArtistName = selectedArtistName,
+                selectedGenreName = null,
+                viewMode = LibraryViewMode.ALBUM_GROUPS,
+                viewModel = viewModel,
+                currentSongIdFlow = currentSongIdFlow,
+                isSelectionMode = isMultiSelectMode,
+                selectedSongIds = selectedSongIds,
+                collapsedAlbumNames = collapsedAlbumNames,
+                sortOption = sortOption,
+                sortDirection = sortDirection,
+                actions = actions,
+                onToggleSelect = onToggleSelect
+            )
+        }
+
+        selectedGenreName != null -> {
+            NestedLibraryBrowse(
+                selectedAlbumName = null,
+                selectedArtistName = null,
+                selectedGenreName = selectedGenreName,
+                viewMode = LibraryViewMode.ALBUM_GROUPS,
+                viewModel = viewModel,
+                currentSongIdFlow = currentSongIdFlow,
+                isSelectionMode = isMultiSelectMode,
+                selectedSongIds = selectedSongIds,
+                collapsedAlbumNames = collapsedAlbumNames,
+                sortOption = sortOption,
+                sortDirection = sortDirection,
+                actions = actions,
+                onToggleSelect = onToggleSelect
+            )
+        }
+
+        activeFilter == LibraryBrowseFilter.SONGS || isPlaylistAdditionMode -> {
+            val onLibrarySongsClick = remember(
+                isPlaylistAdditionMode,
+                isMultiSelectMode,
+                songList,
+                onToggleSelect
+            ) {
+                { song: Song, index: Int ->
+                    if (isPlaylistAdditionMode || isMultiSelectMode) {
+                        onToggleSelect(song)
+                    } else {
+                        viewModel.playCollection(songList.songsVisual, index)
+                    }
+                }
+            }
+            LibrarySongListHost(
+                list = songList,
+                currentSongId = null,
+                currentSongIdFlow = currentSongIdFlow,
+                isSelectionMode = isMultiSelectMode || isPlaylistAdditionMode,
+                selectedSongIds = selectedSongIds,
+                collapsedAlbumNames = collapsedAlbumNames,
+                sortOption = sortOption,
+                actions = actions,
+                onSongClick = onLibrarySongsClick,
+                loading = !catalogLoaded
+            )
+        }
+
+        activeFilter == LibraryBrowseFilter.RECENT -> {
+            LibraryRecentTab(
+                viewModel = viewModel,
+                currentSongIdFlow = currentSongIdFlow,
+                isSelectionMode = isMultiSelectMode,
+                selectedSongIds = selectedSongIds,
+                sortOption = SortOption.DATE_ADDED,
+                actions = actions,
+                searchQuery = searchQuery,
+                onToggleSelect = onToggleSelect
+            )
+        }
+
+        activeFilter == LibraryBrowseFilter.ALBUMS -> {
+            LibraryAlbumsTab(
+                viewModel = viewModel,
+                sortOption = sortOption,
+                onAlbumClick = onOpenAlbum,
+                onPlayAlbum = { onPlayAlbum(it, false) },
+                onShuffleAlbum = onShuffleAlbum,
+                onEditAlbum = onEditAlbum,
+                onChangeAlbumCover = onChangeAlbumCover,
+                onIdentifyAlbum = onIdentifyAlbum
+            )
+        }
+
+        activeFilter == LibraryBrowseFilter.ARTISTS -> {
+            LibraryArtistsTab(
+                viewModel = viewModel,
+                sortOption = sortOption,
+                onArtistClick = onArtistClick,
+                onPlayArtist = onPlayArtist,
+                onShuffleArtist = onShuffleArtist
+            )
+        }
+
+        activeFilter == LibraryBrowseFilter.GENRES -> {
+            LibraryGenresTab(
+                viewModel = viewModel,
+                sortOption = sortOption,
+                onGenreClick = onGenreClick,
+                onPlayGenre = onPlayGenre,
+                onShuffleGenre = onShuffleGenre
+            )
+        }
+    }
+}
+
+@Composable
+private fun NestedAlbumDisplayName(
+    viewModel: MusicPlayerViewModel,
+    albumKey: String
+): String {
+    val albums by viewModel.libraryProjection.albums.collectAsState()
+    return albums.firstOrNull {
+        albumNamesMatch(it.name, albumKey) || albumNamesMatch(it.displayName, albumKey)
+    }?.displayName ?: albumKey
+}
+
+private fun songsForCurrentLibrarySelection(
+    viewModel: MusicPlayerViewModel,
+    songList: LibraryListModel,
+    selectedAlbumName: String?,
+    selectedArtistName: String?,
+    selectedGenreName: String?,
+    activeFilter: LibraryBrowseFilter,
+    songsViewMode: LibraryViewMode
+): List<Song> {
+    val songs = viewModel.libraryProjection.songs.value
+    return when {
+        selectedAlbumName != null || selectedArtistName != null || selectedGenreName != null ->
+            libraryNestedSongs(viewModel, songs, selectedAlbumName, selectedArtistName, selectedGenreName)
+        activeFilter == LibraryBrowseFilter.RECENT -> viewModel.libraryProjection.recentSongs.value
+        activeFilter == LibraryBrowseFilter.SONGS -> songList.songsVisual
+        else -> viewModel.songsForBrowseProjection(
+            filter = activeFilter,
+            songs = songs,
+            viewMode = songsViewMode,
+            albums = viewModel.libraryProjection.albums.value,
+            artists = viewModel.libraryProjection.artists.value,
+            genres = viewModel.libraryProjection.genres.value
+        )
+    }
+}
+
+private fun libraryNestedSongs(
+    viewModel: MusicPlayerViewModel,
+    songs: List<Song>,
+    selectedAlbumName: String?,
+    selectedArtistName: String?,
+    selectedGenreName: String?
+): List<Song> = when {
+    selectedAlbumName != null -> viewModel.songsForAlbum(songs, selectedAlbumName)
+    selectedArtistName != null -> viewModel.songsForArtist(songs, selectedArtistName)
+    selectedGenreName != null -> viewModel.songsForGenre(songs, selectedGenreName)
+    else -> emptyList()
+}
+
 /** Nested album/artist/genre detail: build list items + play in view order. */
 @Composable
 private fun NestedLibraryBrowse(
-    browseSongs: List<Song>,
+    selectedAlbumName: String?,
+    selectedArtistName: String?,
+    selectedGenreName: String?,
     viewMode: LibraryViewMode,
     viewModel: MusicPlayerViewModel,
-    currentSongId: Long?,
+    currentSongIdFlow: StateFlow<Long?>,
     isSelectionMode: Boolean,
     selectedSongIds: Set<Long>,
     collapsedAlbumNames: Set<String>,
@@ -833,29 +963,151 @@ private fun NestedLibraryBrowse(
     actions: LibrarySongListActions,
     onToggleSelect: (Song) -> Unit
 ) {
+    val songs by viewModel.libraryProjection.songs.collectAsState()
+    val browseSongs = remember(songs, selectedAlbumName, selectedArtistName, selectedGenreName) {
+        libraryNestedSongs(viewModel, songs, selectedAlbumName, selectedArtistName, selectedGenreName)
+    }
     // Keyed on albums so an album rename refreshes the group headers, which read the override name.
     val albums by viewModel.libraryProjection.albums.collectAsState()
-    val listItems = remember(browseSongs, viewMode, albums, sortOption, sortDirection) {
-        viewModel.buildLibraryListItems(browseSongs, viewMode, sortOption, sortDirection)
+    val list by produceState(
+        initialValue = LibraryListModel.EMPTY,
+        browseSongs,
+        viewMode,
+        albums,
+        sortOption,
+        sortDirection
+    ) {
+        value = withContext(Dispatchers.Default) {
+            viewModel.buildLibraryListModel(browseSongs, viewMode, sortOption, sortDirection)
+        }
     }
-    val playQueue = remember(listItems, viewMode, browseSongs) {
+    val playQueue = remember(list, viewMode, browseSongs) {
         if (viewMode == LibraryViewMode.ALBUM_GROUPS) {
-            viewModel.songsFromLibraryListItems(listItems)
+            list.songsVisual
         } else {
             browseSongs
         }
     }
+    val onSongClick = remember(isSelectionMode, playQueue, onToggleSelect) {
+        { song: Song, index: Int ->
+            if (isSelectionMode) onToggleSelect(song)
+            else viewModel.playCollection(playQueue, index)
+        }
+    }
     LibrarySongListHost(
-        items = listItems,
-        currentSongId = currentSongId,
+        list = list,
+        currentSongId = null,
+        currentSongIdFlow = currentSongIdFlow,
         isSelectionMode = isSelectionMode,
         selectedSongIds = selectedSongIds,
         collapsedAlbumNames = collapsedAlbumNames,
         sortOption = sortOption,
         actions = actions,
-        onSongClick = { song, index ->
-            if (isSelectionMode) onToggleSelect(song)
-            else viewModel.playCollection(playQueue, index)
-        }
+        onSongClick = onSongClick
     )
 }
+
+@Composable
+private fun LibraryAlbumsTab(
+    viewModel: MusicPlayerViewModel,
+    sortOption: SortOption,
+    onAlbumClick: (Album) -> Unit,
+    onPlayAlbum: (Album) -> Unit,
+    onShuffleAlbum: (Album) -> Unit,
+    onEditAlbum: (Album) -> Unit,
+    onChangeAlbumCover: (Album) -> Unit,
+    onIdentifyAlbum: (Album) -> Unit
+) {
+    val albums by viewModel.libraryProjection.albums.collectAsState()
+    LibraryAlbumBrowseList(
+        albums = albums,
+        sortOption = sortOption,
+        onAlbumClick = onAlbumClick,
+        onPlayAlbum = onPlayAlbum,
+        onShuffleAlbum = onShuffleAlbum,
+        onEditAlbum = onEditAlbum,
+        onChangeAlbumCover = onChangeAlbumCover,
+        onIdentifyAlbum = onIdentifyAlbum
+    )
+}
+
+@Composable
+private fun LibraryRecentTab(
+    viewModel: MusicPlayerViewModel,
+    currentSongIdFlow: StateFlow<Long?>,
+    isSelectionMode: Boolean,
+    selectedSongIds: Set<Long>,
+    sortOption: SortOption,
+    actions: LibrarySongListActions,
+    searchQuery: String,
+    onToggleSelect: (Song) -> Unit
+) {
+    val recentSongs by viewModel.libraryProjection.recentSongs.collectAsState()
+    val recentList by viewModel.libraryProjection.recentList.collectAsState()
+    val recentEmptyFromSearch = searchQuery.isNotBlank()
+    val onSongClick = remember(isSelectionMode, recentSongs, onToggleSelect) {
+        { song: Song, index: Int ->
+            if (isSelectionMode) onToggleSelect(song)
+            else viewModel.playCollection(recentSongs, index)
+        }
+    }
+    LibrarySongListHost(
+        list = recentList,
+        currentSongId = null,
+        currentSongIdFlow = currentSongIdFlow,
+        isSelectionMode = isSelectionMode,
+        selectedSongIds = selectedSongIds,
+        collapsedAlbumNames = emptySet(),
+        sortOption = sortOption,
+        emphasizeLastPlayed = true,
+        emptyText = if (recentEmptyFromSearch) {
+            "No se encontraron canciones"
+        } else {
+            "Todavía no hay recientes"
+        },
+        emptySubtitle = if (recentEmptyFromSearch) {
+            "Ningún resultado para esta búsqueda"
+        } else {
+            "Reproducí canciones para verlas acá"
+        },
+        actions = actions,
+        onSongClick = onSongClick
+    )
+}
+
+@Composable
+private fun LibraryArtistsTab(
+    viewModel: MusicPlayerViewModel,
+    sortOption: SortOption,
+    onArtistClick: (Artist) -> Unit,
+    onPlayArtist: (Artist) -> Unit,
+    onShuffleArtist: (Artist) -> Unit
+) {
+    val artists by viewModel.libraryProjection.artists.collectAsState()
+    LibraryArtistList(
+        artists = artists,
+        sortOption = sortOption,
+        onArtistClick = onArtistClick,
+        onPlayArtist = onPlayArtist,
+        onShuffleArtist = onShuffleArtist
+    )
+}
+
+@Composable
+private fun LibraryGenresTab(
+    viewModel: MusicPlayerViewModel,
+    sortOption: SortOption,
+    onGenreClick: (GenreGroup) -> Unit,
+    onPlayGenre: (GenreGroup) -> Unit,
+    onShuffleGenre: (GenreGroup) -> Unit
+) {
+    val genres by viewModel.libraryProjection.genres.collectAsState()
+    LibraryGenreList(
+        genres = genres,
+        sortOption = sortOption,
+        onGenreClick = onGenreClick,
+        onPlayGenre = onPlayGenre,
+        onShuffleGenre = onShuffleGenre
+    )
+}
+

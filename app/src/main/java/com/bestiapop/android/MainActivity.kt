@@ -104,10 +104,8 @@ class MainActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         PlaybackDiagnostics.log(PlaybackDiagnostics.TAG_LIFECYCLE, "MainActivity.onStart (app moved to foreground)")
-        runCatching {
-            startService(Intent(this, com.bestiapop.android.service.MusicService::class.java))
-        }
         viewModel.onAppForeground()
+        window.decorView.post { viewModel.attachPlaybackUi() }
     }
 
     override fun onResume() {

@@ -152,6 +152,62 @@ class MetadataFetcherIntegrationTest {
     }
 
     @Test
+    fun searchIdentifyFallbacks_queriesItunesJpAndMusicBrainz() = runBlocking {
+        val local = server.url("/").toString().trimEnd('/')
+        val http = OkHttpClient.Builder()
+            .callTimeout(1, TimeUnit.SECONDS)
+            .build()
+        MusicBrainzClient.configureForTest(
+            http = http,
+            endpoints = MusicBrainzEndpoints(
+                apiBaseUrl = "$local/ws/2",
+                coverArtBaseUrl = local
+            ),
+            minIntervalMs = 0L
+        )
+        YouTubeExtractor.configureForTest(
+            http,
+            YouTubeEndpoints(webBaseUrl = "$local/", googleApiBaseUrl = "$local/")
+        )
+        try {
+            enqueueJson("""{"results":[]}""")
+            enqueueJson(
+                """
+                {"results":[{
+                  "trackName":"Yodaka",
+                  "artistName":"Kinoko Teikoku",
+                  "collectionName":"eureka",
+                  "trackTimeMillis":313827,
+                  "trackId":"99"
+                }]}
+                """
+            )
+            enqueueJson("""{"recordings":[]}""")
+            enqueueJson("""{}""")
+            server.enqueue(
+                MockResponse()
+                    .setResponseCode(200)
+                    .setHeader("Content-Type", "text/html")
+                    .setBody("<html></html>")
+            )
+
+            val tracks = MetadataFetcher.searchIdentifyFallbacks("Yodaka", durationMs = 313_861L)
+            assertTrue(tracks.any { it.title.contains("Yodaka") && it.artist.contains("Kinoko") })
+
+            val requests = List(5) { server.takeRequest() }
+            assertTrue(
+                requests.any { it.requestUrl?.queryParameter("country") == "JP" }
+            )
+            val mb = requests.first { it.requestUrl?.encodedPath?.contains("recording") == true }
+            assertTrue(mb.getHeader("User-Agent").orEmpty().contains("BestiaPop"))
+            assertTrue(mb.requestUrl?.queryParameter("query").orEmpty().contains("Yodaka"))
+        } finally {
+            MusicBrainzClient.resetTestOverrides()
+            YouTubeExtractor.resetTestOverrides()
+        }
+    }
+
+    @Test
     fun albumAndPlaylistHttpErrors_returnEmpty() = runBlocking {
         server.enqueue(MockResponse().setResponseCode(500))
         server.enqueue(MockResponse().setResponseCode(500))

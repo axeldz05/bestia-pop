@@ -58,7 +58,7 @@ class YouTubeExtractorFixtureTest {
         with(server.takeRequest()) {
             assertEquals("POST", method)
             assertEquals("/youtubei/v1/search", requestUrl?.encodedPath)
-            assertEquals("28", getHeader("X-YouTube-Client-Name"))
+            assertEquals("3", getHeader("X-YouTube-Client-Name"))
             assertEquals(
                 "anonymous fixture",
                 JSONObject(body.readUtf8()).getString("query")

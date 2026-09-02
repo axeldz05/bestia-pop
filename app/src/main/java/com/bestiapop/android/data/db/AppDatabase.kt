@@ -8,6 +8,7 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.bestiapop.android.data.model.AlbumOverride
 import com.bestiapop.android.data.model.Song
+import com.bestiapop.android.data.model.SongPlayStat
 
 @Database(
     entities = [
@@ -16,9 +17,10 @@ import com.bestiapop.android.data.model.Song
         PlaylistSongCrossRef::class,
         PlaylistPendingTrackEntity::class,
         PendingListenEntity::class,
-        AlbumOverride::class
+        AlbumOverride::class,
+        SongPlayStat::class
     ],
-    version = 9,
+    version = 10,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -132,8 +134,28 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `song_play_stats` (
+                        `songId` INTEGER NOT NULL,
+                        `lastPlayedAt` INTEGER NOT NULL,
+                        PRIMARY KEY(`songId`)
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    INSERT INTO `song_play_stats` (`songId`, `lastPlayedAt`)
+                    SELECT `id`, `lastPlayedAt` FROM `songs` WHERE `lastPlayedAt` > 0
+                    """.trimIndent()
+                )
+            }
+        }
+
         /** Kept in sync with the `@Database` version so a downgrade can be detected and reported. */
-        const val VERSION = 9
+        const val VERSION = 10
 
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
@@ -150,7 +172,8 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_5_6,
                     MIGRATION_6_7,
                     MIGRATION_7_8,
-                    MIGRATION_8_9
+                    MIGRATION_8_9,
+                    MIGRATION_9_10
                 )
                 // Sideloading an older APK is plausible here (GitHub Releases), and Room would refuse
                 // to open a newer schema, so the app has to stay usable. The wipe is not silent:

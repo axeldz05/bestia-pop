@@ -13,12 +13,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.Icon
@@ -28,12 +29,16 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TriStateCheckbox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.state.ToggleableState
@@ -43,17 +48,19 @@ import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.ui.SortOption
 import com.bestiapop.android.ui.components.ArtworkThumbnail
 import com.bestiapop.android.ui.components.EmptyListHint
+import com.bestiapop.android.ui.components.LocalAllowArtworkDecode
 import com.bestiapop.android.ui.components.PlayShuffleIconPair
 import com.bestiapop.android.ui.components.SongListItem
-import com.bestiapop.android.ui.components.formatSortRelevantInfo
-import com.bestiapop.android.ui.components.sortEmphasisFor
-import com.bestiapop.android.ui.components.sortEmphasisForLastPlayed
+import com.bestiapop.android.ui.components.SortEmphasizedTexts
 import com.bestiapop.android.ui.state.LibraryListItem
+import com.bestiapop.android.ui.state.LibraryListModel
 import com.bestiapop.android.ui.theme.ListDensity
+import kotlinx.coroutines.flow.StateFlow
 
 @Composable
+@Suppress("UNUSED_PARAMETER")
 fun LibrarySongList(
-    items: List<LibraryListItem>,
+    list: LibraryListModel,
     currentSongId: Long?,
     isSelectionMode: Boolean,
     selectedSongIds: Set<Long>,
@@ -62,6 +69,7 @@ fun LibrarySongList(
     emphasizeLastPlayed: Boolean = false,
     emptySubtitle: String? = null,
     emptyText: String = "No se encontraron canciones",
+    loading: Boolean = false,
     onSongClick: (Song, Int) -> Unit,
     onSongLongClick: (Song) -> Unit,
     onToggleSelect: (Song) -> Unit,
@@ -73,28 +81,44 @@ fun LibrarySongList(
     onEditLyrics: (Song) -> Unit = {},
     onIdentify: (Song) -> Unit = {},
     onDeleteSong: (Song) -> Unit,
-    onPlayAlbum: (String, List<Song>) -> Unit,
-    onShuffleAlbum: (String, List<Song>) -> Unit,
-    onToggleSelectAlbum: (List<Song>) -> Unit = {},
-    onAlbumLongClick: (List<Song>) -> Unit = {},
+    onPlayAlbum: (String, List<Long>) -> Unit,
+    onShuffleAlbum: (String, List<Long>) -> Unit,
+    onToggleSelectAlbum: (List<Long>) -> Unit = {},
+    onAlbumLongClick: (List<Long>) -> Unit = {},
     onToggleCollapseAlbum: (String) -> Unit = {},
     onEditAlbum: (String) -> Unit = {},
     onChangeAlbumCover: (String) -> Unit = {},
     onIdentifyAlbum: (String) -> Unit = {},
     onOpenAlbum: (String) -> Unit = {},
+    currentSongIdFlow: StateFlow<Long?>? = null,
     modifier: Modifier = Modifier
 ) {
-    if (items.isEmpty()) {
-        EmptyListHint(
-            text = emptyText,
-            subtitle = emptySubtitle,
-            modifier = modifier.fillMaxSize()
-        )
+    val visible = remember(list, collapsedAlbumNames) {
+        list.collapsed(collapsedAlbumNames)
+    }
+    if (visible.isEmpty) {
+        if (loading) {
+            Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator()
+            }
+        } else {
+            EmptyListHint(
+                text = emptyText,
+                subtitle = emptySubtitle,
+                modifier = modifier.fillMaxSize()
+            )
+        }
         return
     }
 
-    val visibleItems = remember(items, collapsedAlbumNames) {
-        filterCollapsedAlbumSongs(items, collapsedAlbumNames)
+    val playingIdState = remember { mutableStateOf(currentSongId) }
+    LaunchedEffect(currentSongIdFlow, currentSongId) {
+        val flow = currentSongIdFlow
+        if (flow != null) {
+            flow.collect { playingIdState.value = it }
+        } else {
+            playingIdState.value = currentSongId
+        }
     }
 
     val onSongClickState = rememberUpdatedState(onSongClick)
@@ -118,34 +142,39 @@ fun LibrarySongList(
     val onIdentifyAlbumState = rememberUpdatedState(onIdentifyAlbum)
     val onOpenAlbumState = rememberUpdatedState(onOpenAlbum)
 
-    LazyColumn(modifier = modifier.fillMaxSize()) {
+    val listState = rememberLazyListState()
+    var artworkReady by remember { mutableStateOf(false) }
+    LaunchedEffect(visible.size) {
+        artworkReady = false
+        withFrameNanos { }
+        artworkReady = true
+    }
+    val allowArtworkDecode = artworkReady && !listState.isScrollInProgress
+
+    CompositionLocalProvider(LocalAllowArtworkDecode provides allowArtworkDecode) {
+    LazyColumn(state = listState, modifier = modifier.fillMaxSize()) {
         items(
-            items = visibleItems,
-            key = { it.key },
-            contentType = { it.contentType }
-        ) { item ->
-            when (item) {
+            count = visible.size,
+            key = { visible.keyAt(it) },
+            contentType = { visible.contentTypeAt(it) }
+        ) { index ->
+            when (val item = visible.itemAt(index)) {
                 is LibraryListItem.AlbumHeader -> {
-                    val albumIds = remember(item.albumSongs) {
-                        item.albumSongs.map { it.id }.toSet()
+                    val albumIds = item.songIds
+                    val selectionState = remember(albumIds, selectedSongIds, isSelectionMode) {
+                        albumHeaderSelectionState(albumIds, selectedSongIds, isSelectionMode)
                     }
-                    val selectedCount = albumIds.count { selectedSongIds.contains(it) }
-                    val selectionState = when {
-                        selectedCount == 0 -> AlbumHeaderSelectionState.NONE
-                        selectedCount == albumIds.size -> AlbumHeaderSelectionState.ALL
-                        else -> AlbumHeaderSelectionState.PARTIAL
+                    val playAlbum = remember(item.albumName, albumIds) {
+                        { onPlayAlbumState.value(item.albumName, albumIds) }
                     }
-                    val playAlbum = remember(item.albumName, item.albumSongs) {
-                        { onPlayAlbumState.value(item.albumName, item.albumSongs) }
+                    val shuffleAlbum = remember(item.albumName, albumIds) {
+                        { onShuffleAlbumState.value(item.albumName, albumIds) }
                     }
-                    val shuffleAlbum = remember(item.albumName, item.albumSongs) {
-                        { onShuffleAlbumState.value(item.albumName, item.albumSongs) }
+                    val toggleSelectAlbum = remember(albumIds) {
+                        { onToggleSelectAlbumState.value(albumIds) }
                     }
-                    val toggleSelectAlbum = remember(item.albumSongs) {
-                        { onToggleSelectAlbumState.value(item.albumSongs) }
-                    }
-                    val albumLongClick = remember(item.albumSongs) {
-                        { onAlbumLongClickState.value(item.albumSongs) }
+                    val albumLongClick = remember(albumIds) {
+                        { onAlbumLongClickState.value(albumIds) }
                     }
                     val toggleCollapse = remember(item.albumName) {
                         { onToggleCollapseAlbumState.value(item.albumName) }
@@ -167,15 +196,7 @@ fun LibrarySongList(
                         artistName = item.artistName,
                         artworkUri = item.artworkUri,
                         songCount = item.songCount,
-                        sortHint = remember(item.albumSongs, sortOption) {
-                            formatSortRelevantInfo(
-                                sortOption = sortOption,
-                                genre = item.albumSongs.map { it.genre }.firstOrNull { genre ->
-                                    genre.isNotBlank() && !genre.equals(Song.UNKNOWN_GENRE, ignoreCase = true)
-                                },
-                                dateAdded = item.albumSongs.maxOfOrNull { it.dateAdded }
-                            )
-                        },
+                        sortHint = item.sortHint,
                         isCollapsed = item.matchesCollapsed(collapsedAlbumNames),
                         isSelectionMode = isSelectionMode,
                         selectionState = selectionState,
@@ -195,11 +216,11 @@ fun LibrarySongList(
                     LibrarySongRow(
                         song = item.song,
                         index = item.index,
-                        currentSongId = currentSongId,
+                        artworkUri = item.artworkUri,
+                        playingIdState = playingIdState,
                         isSelectionMode = isSelectionMode,
                         isSelected = selectedSongIds.contains(item.song.id),
-                        sortOption = sortOption,
-                        emphasizeLastPlayed = emphasizeLastPlayed,
+                        emphasis = item.emphasis,
                         onSongClickState = onSongClickState,
                         onSongLongClickState = onSongLongClickState,
                         onToggleSelectState = onToggleSelectState,
@@ -215,6 +236,7 @@ fun LibrarySongList(
                 }
             }
         }
+    }
     }
 }
 
@@ -242,6 +264,21 @@ internal fun filterCollapsedAlbumSongs(
 internal fun LibraryListItem.AlbumHeader.matchesCollapsed(collapsed: Set<String>): Boolean =
     collapsed.contains(albumName) || (groupingKey.isNotBlank() && collapsed.contains(groupingKey))
 
+internal fun albumHeaderSelectionState(
+    albumIds: List<Long>,
+    selectedSongIds: Set<Long>,
+    isSelectionMode: Boolean
+): AlbumHeaderSelectionState {
+    if (!isSelectionMode || albumIds.isEmpty()) return AlbumHeaderSelectionState.NONE
+    var any = false
+    var all = true
+    for (id in albumIds) {
+        if (selectedSongIds.contains(id)) any = true else all = false
+        if (any && !all) return AlbumHeaderSelectionState.PARTIAL
+    }
+    return if (all) AlbumHeaderSelectionState.ALL else AlbumHeaderSelectionState.NONE
+}
+
 enum class AlbumHeaderSelectionState {
     NONE,
     PARTIAL,
@@ -252,11 +289,11 @@ enum class AlbumHeaderSelectionState {
 private fun LibrarySongRow(
     song: Song,
     index: Int,
-    currentSongId: Long?,
+    artworkUri: String?,
+    playingIdState: State<Long?>,
     isSelectionMode: Boolean,
     isSelected: Boolean,
-    sortOption: SortOption,
-    emphasizeLastPlayed: Boolean,
+    emphasis: SortEmphasizedTexts,
     onSongClickState: State<(Song, Int) -> Unit>,
     onSongLongClickState: State<(Song) -> Unit>,
     onToggleSelectState: State<(Song) -> Unit>,
@@ -303,16 +340,16 @@ private fun LibrarySongRow(
     val onDelete = remember(song.id) {
         { onDeleteSongState.value(songState.value) }
     }
-    val emphasis = remember(song, sortOption, emphasizeLastPlayed) {
-        if (emphasizeLastPlayed) sortEmphasisForLastPlayed(song)
-        else sortEmphasisFor(song, sortOption)
+    val isPlaying by remember(song.id) {
+        derivedStateOf { playingIdState.value == song.id }
     }
 
     SongListItem(
         song = song,
-        isCurrentPlaying = currentSongId == song.id,
+        isCurrentPlaying = isPlaying,
         isSelectionMode = isSelectionMode,
         isSelected = isSelected,
+        artworkUri = artworkUri,
         title = emphasis.title,
         subtitle = emphasis.subtitle,
         trailing = emphasis.trailing,

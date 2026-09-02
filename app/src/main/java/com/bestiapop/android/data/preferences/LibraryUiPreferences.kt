@@ -1,5 +1,7 @@
 package com.bestiapop.android.data.preferences
 
+import com.bestiapop.android.data.model.Song
+
 const val DEFAULT_SORT_OPTION_NAME = "TITLE"
 const val DEFAULT_SORT_DIRECTION_NAME = "ASC"
 const val DEFAULT_VIEW_MODE_NAME = "ALBUM_GROUPS"
@@ -54,6 +56,32 @@ data class PrunedLibraryStack(
     val artistName: String?,
     val genreName: String? = null
 )
+
+/** O(1) existence checks for restored nested browse after a single pass over the catalog. */
+data class LibraryStackLookups(
+    val albumExists: (String) -> Boolean,
+    val artistExists: (String) -> Boolean,
+    val genreExists: (String) -> Boolean
+) {
+    companion object {
+        fun fromSongs(songs: List<Song>): LibraryStackLookups {
+            val albums = HashSet<String>(songs.size)
+            val artists = HashSet<String>(songs.size)
+            val genres = HashSet<String>(songs.size)
+            for (song in songs) {
+                albums.add(song.album.lowercase())
+                artists.add(song.artist.lowercase())
+                val genre = song.genre.trim().ifBlank { Song.UNKNOWN_GENRE }
+                genres.add(genre.lowercase())
+            }
+            return LibraryStackLookups(
+                albumExists = { it.lowercase() in albums },
+                artistExists = { it.lowercase() in artists },
+                genreExists = { it.lowercase() in genres }
+            )
+        }
+    }
+}
 
 object LibraryUiPreferencesCodec {
     fun sanitizeSortOptionName(name: String?): String =

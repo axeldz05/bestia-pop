@@ -20,11 +20,13 @@ enum class IdentifyReviewPhase {
     Item
 }
 
-/** One song awaiting manual identify review. */
+/** One song awaiting manual identify review. Lyrics stay out of this overlay snapshot. */
 data class IdentifyReviewItem(
     val song: Song,
     val proposal: IdentifyProposal
 )
+
+fun Song.forIdentifyReview(): Song = if (lyrics == null) this else copy(lyrics = null)
 
 /**
  * Identify review queue. [items] can stay while [isVisible] is false
@@ -50,7 +52,8 @@ data class IdentifyReviewState(
     val isVisible: Boolean = false,
     val phase: IdentifyReviewPhase = IdentifyReviewPhase.Item,
     val openedFromOverview: Boolean = false,
-    val applyFields: IdentifyApplyFields = IdentifyApplyFields.ALL
+    val applyFields: IdentifyApplyFields = IdentifyApplyFields.ALL,
+    val isApplying: Boolean = false
 ) {
     val current: IdentifyReviewItem?
         get() = items.getOrNull(currentIndex)
@@ -70,14 +73,14 @@ data class IdentifyReviewState(
     val reviewTotal: Int
         get() = items.size
 
-    val albumGroups: List<IdentifyAlbumGroup>
-        get() = clusterIdentifyAlbumGroups(remaining.map { it.proposal })
+    val albumGroups: List<IdentifyAlbumGroup> by lazy {
+        clusterIdentifyAlbumGroups(remaining.map { it.proposal })
+    }
 
-    val ungroupedCount: Int
-        get() {
-            val groupedIds = albumGroups.flatMap { it.songIds }.toSet()
-            return remaining.count { it.song.id !in groupedIds }
-        }
+    val ungroupedCount: Int by lazy {
+        val groupedIds = albumGroups.flatMap { it.songIds }.toSet()
+        remaining.count { it.song.id !in groupedIds }
+    }
 
     val headerSubtitle: String
         get() = when (phase) {
@@ -88,10 +91,10 @@ data class IdentifyReviewState(
         }
 
     val canApplyRemaining: Boolean
-        get() = applyFields.hasAny && remaining.any { it.proposal.hasMediumSuggestion }
+        get() = !isApplying && applyFields.hasAny && remaining.any { it.proposal.hasMediumSuggestion }
 
     val canApplySelected: Boolean
-        get() = applyFields.hasAny && visibleCandidates.isNotEmpty()
+        get() = !isApplying && applyFields.hasAny && visibleCandidates.isNotEmpty()
 
     val pendingSongIds: Set<Long>
         get() = remaining.map { it.song.id }.toSet()
@@ -196,8 +199,74 @@ fun IdentifyReviewState.mergeIncomingReviewItems(
     return copy(items = items + extras)
 }
 
+fun leftoverIdentifyReview(
+    leftover: List<IdentifyReviewItem>,
+    sessionApplied: Int,
+    sessionSkipped: Int,
+    applyFields: IdentifyApplyFields,
+    isVisible: Boolean = true,
+    isApplying: Boolean = false
+): IdentifyReviewState {
+    if (leftover.isEmpty()) {
+        return IdentifyReviewState(applyFields = applyFields)
+    }
+    val phase = if (clusterIdentifyAlbumGroups(leftover.map { it.proposal }).isNotEmpty()) {
+        IdentifyReviewPhase.Overview
+    } else {
+        IdentifyReviewPhase.Item
+    }
+    val first = leftover.first()
+    val base = IdentifyReviewState(
+        items = leftover,
+        currentIndex = 0,
+        sessionApplied = sessionApplied,
+        sessionSkipped = sessionSkipped,
+        isVisible = isVisible,
+        phase = phase,
+        applyFields = applyFields,
+        isApplying = isApplying
+    )
+    return if (phase == IdentifyReviewPhase.Item) {
+        base.withItemSearchChrome(
+            first,
+            forceShowSearch = first.proposal.candidates.isEmpty()
+        ).copy(applyFields = applyFields)
+    } else {
+        base
+    }
+}
+
+/** How a DataStore snapshot should land on an already-open overlay vs cold hydrate. */
+sealed class IdentifyPersistEcho {
+    data object Skip : IdentifyPersistEcho()
+    data class MergeExtras(val songIds: List<Long>) : IdentifyPersistEcho()
+    data class Hydrate(val songIds: List<Long>) : IdentifyPersistEcho()
+}
+
+/**
+ * Overlay leftover is already in memory: persist echo must not re-scan Room.
+ * Extras (runtime append) load only those ids; closed/empty overlay hydrates the snap.
+ */
+fun identifyPersistEcho(
+    overlayOpen: Boolean,
+    itemIds: Set<Long>,
+    snapSongIds: List<Long>,
+    droppedIds: Set<Long>
+): IdentifyPersistEcho {
+    if (overlayOpen) {
+        val extras = snapSongIds.filter { it !in itemIds && it !in droppedIds }
+        return if (extras.isEmpty()) IdentifyPersistEcho.Skip
+        else IdentifyPersistEcho.MergeExtras(extras)
+    }
+    return IdentifyPersistEcho.Hydrate(snapSongIds)
+}
+
 fun identifyReviewPhaseOrItem(name: String): IdentifyReviewPhase =
     runCatching { IdentifyReviewPhase.valueOf(name) }.getOrDefault(IdentifyReviewPhase.Item)
+
+/** Null = skip Room; otherwise load these ids instead of the full catalog. */
+fun identifyHydrationSongIds(proposals: List<IdentifyProposal>): List<Long>? =
+    if (proposals.isEmpty()) null else proposals.map { it.songId }
 
 fun identifyReviewFromPersisted(
     proposals: List<IdentifyProposal>,
@@ -208,7 +277,7 @@ fun identifyReviewFromPersisted(
     if (proposals.isEmpty()) return IdentifyReviewState(applyFields = applyFields)
     val byId = songs.associateBy { it.id }
     val items = proposals.mapNotNull { proposal ->
-        byId[proposal.songId]?.let { IdentifyReviewItem(it, proposal) }
+        byId[proposal.songId]?.let { IdentifyReviewItem(it.forIdentifyReview(), proposal) }
     }
     if (items.isEmpty()) return IdentifyReviewState(applyFields = applyFields)
     val attached = attachKnownAlbumMatches(items, songs)

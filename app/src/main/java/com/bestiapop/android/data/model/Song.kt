@@ -1,5 +1,6 @@
 package com.bestiapop.android.data.model
 
+import androidx.compose.runtime.Immutable
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
@@ -8,6 +9,7 @@ import androidx.room.PrimaryKey
     tableName = "songs",
     indices = [Index(value = ["uriString"], unique = true)]
 )
+@Immutable
 data class Song(
     @PrimaryKey(autoGenerate = true)
     val id: Long = 0,

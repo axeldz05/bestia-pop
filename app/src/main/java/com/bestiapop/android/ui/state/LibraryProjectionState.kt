@@ -5,20 +5,30 @@ import com.bestiapop.android.data.model.AlbumOverride
 import com.bestiapop.android.data.model.Artist
 import com.bestiapop.android.data.model.GenreGroup
 import com.bestiapop.android.data.model.Song
+import com.bestiapop.android.data.util.PlaybackDiagnostics
 import com.bestiapop.android.domain.usecase.GetLibrarySongsUseCase
 import com.bestiapop.android.ui.SortDirection
 import com.bestiapop.android.ui.SortOption
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.transformLatest
 
+internal const val LIBRARY_SEARCH_DEBOUNCE_MS = 75L
+
+@OptIn(ExperimentalCoroutinesApi::class)
 class LibraryProjectionState internal constructor(
     scope: CoroutineScope,
     rawSongs: Flow<List<Song>>,
@@ -28,33 +38,123 @@ class LibraryProjectionState internal constructor(
     sortDirection: StateFlow<SortDirection>,
     artistPhotos: StateFlow<Map<String, String>>,
     private val useCase: GetLibrarySongsUseCase,
+    overlayOpen: Flow<Boolean> = flowOf(false),
+    viewMode: Flow<LibraryViewMode> = flowOf(LibraryViewMode.FLAT),
+    browseFilter: Flow<LibraryBrowseFilter> = flowOf(LibraryBrowseFilter.SONGS),
+    playStats: Flow<Map<Long, Long>> = flowOf(emptyMap()),
+    prefsReady: Flow<Boolean> = flowOf(true),
     projectionDispatcher: CoroutineDispatcher = Dispatchers.Default
 ) {
+    private data class SongListSpec(
+        val viewMode: LibraryViewMode,
+        val browseFilter: LibraryBrowseFilter,
+        val sortOption: SortOption,
+        val sortDirection: SortDirection,
+        val overrides: Map<String, AlbumOverride>
+    )
+
     private val overridesByAlbum: StateFlow<Map<String, AlbumOverride>> = albumOverrides
         .map { overrides -> overrides.associateBy { it.albumKey } }
         .stateIn(scope, SharingStarted.Eagerly, emptyMap())
 
-    val songs: StateFlow<List<Song>> = combine(
-        rawSongs,
-        searchQuery,
-        sortOption,
-        sortDirection
-    ) { list, query, sort, direction ->
-        useCase.execute(list, query, sort, direction)
-    }
-        .flowOn(projectionDispatcher)
-        .stateInUi(scope, emptyList())
+    private val catalogSongs: Flow<List<Song>> = rawSongs
+        .distinctUntilChanged(::sameLibraryCatalog)
 
-    val albums: StateFlow<List<Album>> = combine(
-        songs,
-        overridesByAlbum,
-        sortOption,
-        sortDirection
-    ) { projectedSongs, overrides, sort, direction ->
-        useCase.extractAlbums(projectedSongs, overrides, sort, direction)
+    private val catalogQuery: Flow<String> = searchQuery
+        .transformLatest { query ->
+            if (query.isBlank()) {
+                emit(query)
+            } else {
+                delay(LIBRARY_SEARCH_DEBOUNCE_MS)
+                emit(query)
+            }
+        }
+        .distinctUntilChanged()
+
+    private data class CatalogFilter(
+        val songs: List<Song>,
+        val query: String,
+        val sortOption: SortOption,
+        val sortDirection: SortDirection,
+        val paused: Boolean
+    )
+
+    private data class CatalogSnapshot(
+        val loaded: Boolean,
+        val projection: GetLibrarySongsUseCase.CatalogProjection
+    )
+
+    private val catalog: StateFlow<CatalogSnapshot> = combine(
+        combine(catalogSongs, catalogQuery, sortOption, sortDirection, overlayOpen) {
+                songs, query, sort, direction, paused ->
+            CatalogFilter(songs, query, sort, direction, paused)
+        },
+        prefsReady,
+        combine(viewMode, browseFilter, sortOption, sortDirection, overridesByAlbum, ::SongListSpec)
+    ) { filter, ready, spec ->
+        if (filter.paused || !ready) {
+            null
+        } else {
+            val listMode = if (spec.viewMode == LibraryViewMode.ALBUM_GROUPS &&
+                spec.browseFilter != LibraryBrowseFilter.RECENT
+            ) {
+                LibraryViewMode.ALBUM_GROUPS
+            } else {
+                LibraryViewMode.FLAT
+            }
+            val haystack = if (filter.query.isBlank()) {
+                null
+            } else {
+                val map = HashMap<Long, String>(filter.songs.size * 2)
+                for (song in filter.songs) {
+                    map[song.id] = useCase.searchHaystack(song)
+                }
+                map
+            }
+            val startedAt = System.nanoTime()
+            val projection = useCase.projectCatalog(
+                songs = filter.songs,
+                query = filter.query,
+                sortOption = filter.sortOption,
+                sortDirection = filter.sortDirection,
+                overrides = spec.overrides,
+                listMode = listMode,
+                haystackById = haystack
+            )
+            val ms = (System.nanoTime() - startedAt) / 1_000_000L
+            PlaybackDiagnostics.log(
+                PlaybackDiagnostics.TAG_LIFECYCLE,
+                "projectCatalog n=${filter.songs.size} mode=$listMode ${ms}ms"
+            )
+            CatalogSnapshot(
+                loaded = true,
+                projection = projection
+            )
+        }
     }
+        .filterNotNull()
         .flowOn(projectionDispatcher)
-        .stateInUi(scope, emptyList())
+        .stateIn(
+            scope,
+            SharingStarted.Eagerly,
+            CatalogSnapshot(
+                loaded = false,
+                projection = GetLibrarySongsUseCase.CatalogProjection.EMPTY
+            )
+        )
+
+    val catalogLoaded: StateFlow<Boolean> = catalog
+        .map { it.loaded }
+        .distinctUntilChanged()
+        .stateIn(scope, SharingStarted.Eagerly, false)
+
+    val songs: StateFlow<List<Song>> = catalog
+        .map { it.projection.songs }
+        .stateIn(scope, SharingStarted.Eagerly, emptyList())
+
+    val albums: StateFlow<List<Album>> = catalog
+        .map { it.projection.albums }
+        .stateIn(scope, SharingStarted.Eagerly, emptyList())
 
     val artists: StateFlow<List<Artist>> = combine(
         songs,
@@ -77,17 +177,69 @@ class LibraryProjectionState internal constructor(
         .flowOn(projectionDispatcher)
         .stateInUi(scope, emptyList())
 
-    fun buildListItems(
+    val songList: StateFlow<LibraryListModel> = catalog
+        .map { it.projection.list }
+        .stateIn(scope, SharingStarted.Eagerly, LibraryListModel.EMPTY)
+
+    val recentSongs: StateFlow<List<Song>> = combine(
+        rawSongs,
+        playStats,
+        searchQuery,
+        overlayOpen
+    ) { list, stats, query, paused ->
+        if (paused) null else useCase.recentSongs(list, query, stats)
+    }
+        .filterNotNull()
+        .flowOn(projectionDispatcher)
+        .stateInUi(scope, emptyList())
+
+    val recentList: StateFlow<LibraryListModel> = recentSongs
+        .map { useCase.buildListModel(it, LibraryViewMode.FLAT, emphasizeLastPlayed = true) }
+        .flowOn(projectionDispatcher)
+        .stateInUi(scope, LibraryListModel.EMPTY)
+
+    fun buildListModel(
         songs: List<Song>,
         viewMode: LibraryViewMode,
         sortOption: SortOption = SortOption.TITLE,
         sortDirection: SortDirection = SortDirection.ASC
-    ): List<LibraryListItem> =
-        useCase.buildListItems(
+    ): LibraryListModel =
+        useCase.buildListModel(
             songs,
             viewMode,
             overridesByAlbum.value,
             sortOption,
             sortDirection
         )
+
+    fun buildListItems(
+        songs: List<Song>,
+        viewMode: LibraryViewMode,
+        sortOption: SortOption = SortOption.TITLE,
+        sortDirection: SortDirection = SortDirection.ASC
+    ): List<LibraryListItem> =
+        buildListModel(songs, viewMode, sortOption, sortDirection).toListItems()
 }
+
+internal fun sameLibraryCatalog(old: List<Song>, new: List<Song>): Boolean {
+    if (old === new) return true
+    if (old.size != new.size) return false
+    for (i in old.indices) {
+        if (!old[i].sameCatalogIdentity(new[i])) return false
+    }
+    return true
+}
+
+internal fun Song.sameCatalogIdentity(other: Song): Boolean =
+    id == other.id &&
+        uriString == other.uriString &&
+        title == other.title &&
+        artist == other.artist &&
+        album == other.album &&
+        genre == other.genre &&
+        durationMs == other.durationMs &&
+        year == other.year &&
+        trackNumber == other.trackNumber &&
+        artworkUri == other.artworkUri &&
+        folderPath == other.folderPath &&
+        dateAdded == other.dateAdded

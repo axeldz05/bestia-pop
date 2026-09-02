@@ -149,14 +149,31 @@ class AlbumNamesTest {
             song(1, album = "This Town Needs Guns", artist = "TTNG"),
             song(2, album = "Unknown Album", artist = "TTNG")
         )
+        assertEquals("This Town Needs Guns", pickPersistedAlbumName(
+            library,
+            proposedAlbum = "Audiotree Live",
+            proposedArtist = "TTNG",
+            sourceAlbum = "Unknown Album",
+            isGeneric = IdentifyRanking::isGenericAlbum
+        ))
         assertEquals(
-            "This Town Needs Guns",
             pickPersistedAlbumName(
                 library,
                 proposedAlbum = "Audiotree Live",
                 proposedArtist = "TTNG",
                 sourceAlbum = "Unknown Album",
                 isGeneric = IdentifyRanking::isGenericAlbum
+            ),
+            pickPersistedAlbumName(
+                library,
+                proposedAlbum = "Audiotree Live",
+                proposedArtist = "TTNG",
+                sourceAlbum = "Unknown Album",
+                isGeneric = IdentifyRanking::isGenericAlbum,
+                studioKeysByArtist = studioAlbumKeysByArtist(
+                    library,
+                    IdentifyRanking::isGenericAlbum
+                )
             )
         )
     }

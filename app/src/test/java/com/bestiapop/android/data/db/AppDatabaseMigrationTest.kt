@@ -43,7 +43,7 @@ class AppDatabaseMigrationTest {
     }
 
     @Test
-    fun migration8To9_preservesStateAndDefaultsPendingTrackNumber() = runTest {
+    fun migration8To10_preservesStateAndMovesLastPlayedToPlayStats() = runTest {
         createLegacyDatabase(version = 8, schema = ::createVersion8Schema) { db ->
             db.execSQL(
                 """
@@ -94,6 +94,7 @@ class AppDatabaseMigrationTest {
 
         assertEquals("Before migration", migratedSong?.title)
         assertEquals(555L, migratedSong?.lastPlayedAt)
+        assertEquals(555L, musicDao.getPlayStat(7L))
         assertEquals(listOf(3L), musicDao.getPlaylistIdsForSong(7L))
         assertEquals("Description", musicDao.getPlaylistById(3L)?.description)
         val migratedPending = musicDao.getPlaylistPendingTracksFlow(3L).first().single()
@@ -103,11 +104,13 @@ class AppDatabaseMigrationTest {
         assertEquals("offline", database.pendingListenDao().getOldest(10).single().lastError)
 
         musicDao.updateLastPlayedAt(7L, 9_999L)
-        assertEquals(9_999L, musicDao.getSongById(7L)?.lastPlayedAt)
+        assertEquals(555L, musicDao.getSongById(7L)?.lastPlayedAt)
+        assertEquals(9_999L, musicDao.getPlayStat(7L))
+        assertEquals(0L, musicDao.getAllSongsFlow().first().single { it.id == 7L }.lastPlayedAt)
     }
 
     @Test
-    fun migration1To9_runsWholeChainAndKeepsLegacyLibraryDataUsable() = runTest {
+    fun migration1To10_runsWholeChainAndKeepsLegacyLibraryDataUsable() = runTest {
         createLegacyDatabase(version = 1, schema = ::createVersion1Schema) { db ->
             db.execSQL(
                 legacySongInsert(

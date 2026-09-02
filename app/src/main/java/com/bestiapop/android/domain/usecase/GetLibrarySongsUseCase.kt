@@ -6,6 +6,7 @@ import com.bestiapop.android.data.model.Artist
 import com.bestiapop.android.data.model.GenreGroup
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.data.util.albumTrackSortKey
+import com.bestiapop.android.domain.util.IdentifyQueryVariants
 import com.bestiapop.android.domain.util.IdentifyRanking
 import com.bestiapop.android.domain.util.TrackMatchKeys
 import com.bestiapop.android.domain.util.albumGroupingKey
@@ -17,73 +18,145 @@ import com.bestiapop.android.domain.util.songsMatchingAlbumBucket
 import com.bestiapop.android.domain.util.studioAlbumKeysByArtist
 import com.bestiapop.android.ui.SortDirection
 import com.bestiapop.android.ui.SortOption
+import com.bestiapop.android.ui.components.formatSortRelevantInfo
+import com.bestiapop.android.ui.state.LibraryAlbumSegment
 import com.bestiapop.android.ui.state.LibraryBrowseFilter
 import com.bestiapop.android.ui.state.LibraryListItem
+import com.bestiapop.android.ui.state.LibraryListModel
 import com.bestiapop.android.ui.state.LibraryViewMode
 import java.util.TreeMap
 
 class GetLibrarySongsUseCase {
 
+    data class CatalogProjection(
+        val songs: List<Song>,
+        val albums: List<Album>,
+        val list: LibraryListModel
+    ) {
+        companion object {
+            val EMPTY = CatalogProjection(emptyList(), emptyList(), LibraryListModel.EMPTY)
+        }
+    }
+
     fun execute(
         songs: List<Song>,
         query: String,
         sortOption: SortOption,
-        sortDirection: SortDirection = SortDirection.defaultFor(sortOption)
-    ): List<Song> {
-        // Album artwork fallback, skipping generic albums: "Unknown Album" is the literal stored for
-        // every albumless song, so inheriting inside that bucket showed one cover on unrelated tracks.
-        val studio = studioAlbumKeysByArtist(songs, IdentifyRanking::isGenericAlbum)
-        val albumArtMap = songs.asSequence()
-            .filterNot { IdentifyRanking.isGenericAlbum(it.album) }
-            .groupBy { albumGroupingKey(it.album, it.artist, studio, IdentifyRanking::isGenericAlbum) }
-            .mapValues { (_, albumSongs) -> firstArtwork(albumSongs) }
+        sortDirection: SortDirection = SortDirection.defaultFor(sortOption),
+        haystackById: Map<Long, String>? = null
+    ): List<Song> = filterAndSort(songs, query, sortOption, sortDirection, haystackById)
 
-        val unifiedList = songs.map { song ->
-            val bucket = albumGroupingKey(
-                song.album,
-                song.artist,
-                studio,
-                IdentifyRanking::isGenericAlbum
-            )
-            val albumArt = song.artworkUri ?: albumArtMap[bucket]
-            if (albumArt != song.artworkUri) song.copy(artworkUri = albumArt) else song
+    fun projectCatalog(
+        songs: List<Song>,
+        query: String,
+        sortOption: SortOption,
+        sortDirection: SortDirection,
+        overrides: Map<String, AlbumOverride>,
+        listMode: LibraryViewMode,
+        emphasizeLastPlayed: Boolean = false,
+        haystackById: Map<Long, String>? = null
+    ): CatalogProjection {
+        val filtered = filterSongs(songs, query, haystackById)
+        if (filtered.isEmpty()) {
+            return CatalogProjection.EMPTY
         }
-
-        // Multi-field search (title/artist/album/genre); case + diacritic insensitive
-        val filtered = if (query.isBlank()) {
-            unifiedList
+        // ALBUM_GROUPS visual order is album blocks + track number, not a global title sort.
+        val pool = if (listMode == LibraryViewMode.FLAT) {
+            sortSongs(filtered, sortOption, sortDirection)
         } else {
-            val normalizedQuery = TrackMatchKeys.normalize(query)
-            if (normalizedQuery.isEmpty()) {
-                emptyList()
-            } else {
-                unifiedList.filter { song ->
-                    TrackMatchKeys.normalize("${song.title} ${song.artist} ${song.album} ${song.genre}")
-                        .contains(normalizedQuery)
-                }
-            }
+            filtered
         }
+        val grouped = songsByAlbumBucket(pool, IdentifyRanking::isGenericAlbum)
+        val inherited = inheritedArtworkBySongId(pool, grouped)
+        val albums = albumsFromGrouped(grouped, overrides, sortOption, sortDirection)
+        return CatalogProjection(
+            songs = pool,
+            albums = albums,
+            list = listModelFrom(
+                songs = pool,
+                grouped = grouped,
+                albums = albums,
+                viewMode = listMode,
+                sortOption = sortOption,
+                emphasizeLastPlayed = emphasizeLastPlayed,
+                inheritedArtwork = inherited
+            )
+        )
+    }
 
-        val ascending = sortDirection == SortDirection.ASC
-        return when (sortOption) {
-            SortOption.TITLE -> filtered.sortedByDir(ascending) { it.title.lowercase() }
-            SortOption.ARTIST -> filtered.sortedByDir(ascending) { it.artist.lowercase() }
-            SortOption.ALBUM -> filtered.sortedByDir(ascending) { it.album.lowercase() }
-            SortOption.GENRE -> filtered.sortedByDir(ascending) { it.genre.lowercase() }
-            SortOption.DATE_ADDED -> filtered.sortedByDir(ascending) { it.dateAdded }
+    fun recentSongs(
+        songs: List<Song>,
+        query: String,
+        lastPlayedAtById: Map<Long, Long> = emptyMap()
+    ): List<Song> {
+        val stamped = ArrayList<Song>()
+        for (song in songs) {
+            val ts = lastPlayedAtById[song.id] ?: song.lastPlayedAt
+            if (ts <= 0L) continue
+            stamped += if (song.lastPlayedAt == ts) song else song.copy(lastPlayedAt = ts)
+        }
+        return filterAndSort(stamped, query, SortOption.TITLE, SortDirection.ASC)
+            .sortedByDescending { it.lastPlayedAt }
+    }
+
+    fun songsInOrder(pool: List<Song>, ids: List<Long>): List<Song> {
+        if (ids.isEmpty()) return emptyList()
+        val byId = HashMap<Long, Song>(pool.size * 2)
+        for (song in pool) byId[song.id] = song
+        return ids.mapNotNull { byId[it] }
+    }
+
+    private fun filterAndSort(
+        songs: List<Song>,
+        query: String,
+        sortOption: SortOption,
+        sortDirection: SortDirection,
+        haystackById: Map<Long, String>? = null
+    ): List<Song> = sortSongs(filterSongs(songs, query, haystackById), sortOption, sortDirection)
+
+    private fun filterSongs(
+        songs: List<Song>,
+        query: String,
+        haystackById: Map<Long, String>?
+    ): List<Song> {
+        if (query.isBlank()) return songs
+        val normalizedQuery = TrackMatchKeys.normalize(query)
+        if (normalizedQuery.isEmpty()) return emptyList()
+        return songs.filter { song ->
+            val haystack = haystackById?.get(song.id) ?: searchHaystack(song)
+            haystack.contains(normalizedQuery)
         }
     }
 
-    private fun <T : Comparable<T>> List<Song>.sortedByDir(
+    private fun sortSongs(
+        songs: List<Song>,
+        sortOption: SortOption,
+        sortDirection: SortDirection
+    ): List<Song> {
+        if (songs.size <= 1) return songs
+        val ascending = sortDirection == SortDirection.ASC
+        return when (sortOption) {
+            SortOption.TITLE -> songs.sortedByText(ascending) { it.title }
+            SortOption.ARTIST -> songs.sortedByText(ascending) { it.artist }
+            SortOption.ALBUM -> songs.sortedByText(ascending) { it.album }
+            SortOption.GENRE -> songs.sortedByText(ascending) { it.genre }
+            SortOption.DATE_ADDED ->
+                if (ascending) songs.sortedBy { it.dateAdded } else songs.sortedByDescending { it.dateAdded }
+        }
+    }
+
+    private fun List<Song>.sortedByText(
         ascending: Boolean,
-        selector: (Song) -> T
-    ): List<Song> =
-        if (ascending) sortedBy(selector) else sortedByDescending(selector)
+        selector: (Song) -> String
+    ): List<Song> {
+        val cmp = compareBy(String.CASE_INSENSITIVE_ORDER, selector)
+        return if (ascending) sortedWith(cmp) else sortedWith(cmp.reversed())
+    }
 
     fun compareSongsWithinAlbum(a: Song, b: Song): Int {
         val byTrack = albumTrackSortKey(a.trackNumber).compareTo(albumTrackSortKey(b.trackNumber))
         if (byTrack != 0) return byTrack
-        return a.title.lowercase().compareTo(b.title.lowercase())
+        return a.title.compareTo(b.title, ignoreCase = true)
     }
 
     fun sortSongsWithinAlbum(songs: List<Song>): List<Song> =
@@ -93,46 +166,116 @@ class GetLibrarySongsUseCase {
         items.mapNotNull { (it as? LibraryListItem.SongRow)?.song }
 
     /**
-     * Builds a flat, keyed list for LazyColumn: optional album headers + song rows.
-     * [LibraryListItem.SongRow.index] is the play index into [songsFromListItems].
+     * Compact list index: optional album segments + visual song order.
      * ALBUM_GROUPS orders album blocks with the same keys as [extractAlbums];
      * songs inside each album stay by track number (unknown tracks last).
      */
+    fun buildListModel(
+        songs: List<Song>,
+        viewMode: LibraryViewMode,
+        overrides: Map<String, AlbumOverride> = emptyMap(),
+        sortOption: SortOption = SortOption.TITLE,
+        sortDirection: SortDirection = SortDirection.ASC,
+        emphasizeLastPlayed: Boolean = false
+    ): LibraryListModel {
+        if (songs.isEmpty()) return LibraryListModel.EMPTY
+        val grouped = songsByAlbumBucket(songs, IdentifyRanking::isGenericAlbum)
+        val albums = albumsFromGrouped(grouped, overrides, sortOption, sortDirection)
+        val inherited = inheritedArtworkBySongId(songs, grouped)
+        return listModelFrom(songs, grouped, albums, viewMode, sortOption, emphasizeLastPlayed, inherited)
+    }
+
     fun buildListItems(
         songs: List<Song>,
         viewMode: LibraryViewMode,
         overrides: Map<String, AlbumOverride> = emptyMap(),
         sortOption: SortOption = SortOption.TITLE,
-        sortDirection: SortDirection = SortDirection.ASC
-    ): List<LibraryListItem> {
-        if (songs.isEmpty()) return emptyList()
+        sortDirection: SortDirection = SortDirection.ASC,
+        emphasizeLastPlayed: Boolean = false
+    ): List<LibraryListItem> =
+        buildListModel(songs, viewMode, overrides, sortOption, sortDirection, emphasizeLastPlayed)
+            .toListItems()
 
-        return when (viewMode) {
-            LibraryViewMode.FLAT -> songs.mapIndexed { index, song ->
-                LibraryListItem.SongRow(song = song, index = index)
+    internal fun searchHaystack(song: Song): String {
+        val raw = "${song.title} ${song.artist} ${song.album} ${song.genre}"
+        return TrackMatchKeys.normalize(IdentifyQueryVariants.searchTokens(raw))
+    }
+
+    private fun inheritedArtworkBySongId(
+        songs: List<Song>,
+        grouped: Map<String, List<Song>>
+    ): Map<Long, String> {
+        val needsInherit = songs.any { song ->
+            song.artworkUri.isNullOrEmpty() && !IdentifyRanking.isGenericAlbum(song.album)
+        }
+        if (!needsInherit) return emptyMap()
+        val inherited = HashMap<String, String?>(grouped.size)
+        val bucketById = HashMap<Long, String>(songs.size * 2)
+        for ((key, albumSongs) in grouped) {
+            if (albumSongs.any { !IdentifyRanking.isGenericAlbum(it.album) }) {
+                inherited[key] = firstArtwork(albumSongs)
             }
+            for (song in albumSongs) {
+                bucketById[song.id] = key
+            }
+        }
+        if (inherited.isEmpty()) return emptyMap()
+        val out = HashMap<Long, String>()
+        for (song in songs) {
+            if (IdentifyRanking.isGenericAlbum(song.album) || !song.artworkUri.isNullOrEmpty()) continue
+            val albumArt = inherited[bucketById[song.id]]
+            if (!albumArt.isNullOrEmpty()) out[song.id] = albumArt
+        }
+        return out
+    }
+
+    private fun listModelFrom(
+        songs: List<Song>,
+        grouped: Map<String, List<Song>>,
+        albums: List<Album>,
+        viewMode: LibraryViewMode,
+        sortOption: SortOption,
+        emphasizeLastPlayed: Boolean,
+        inheritedArtwork: Map<Long, String>
+    ): LibraryListModel {
+        return when (viewMode) {
+            LibraryViewMode.FLAT -> LibraryListModel.of(
+                songsVisual = songs,
+                inheritedArtworkBySongId = inheritedArtwork,
+                sortOption = sortOption,
+                emphasizeLastPlayed = emphasizeLastPlayed
+            )
 
             LibraryViewMode.ALBUM_GROUPS -> {
-                val grouped = songsByAlbumBucket(songs, IdentifyRanking::isGenericAlbum)
-                val items = ArrayList<LibraryListItem>(songs.size + songs.size / 4 + 1)
-                var songIndex = 0
-                albumsFromGrouped(grouped, overrides, sortOption, sortDirection).forEach { album ->
+                val visual = ArrayList<Song>(songs.size)
+                val segments = ArrayList<LibraryAlbumSegment>(albums.size)
+                albums.forEach { album ->
                     val albumSongs = songsInGroupedAlbum(grouped, album.groupingKey)
-                    items += LibraryListItem.AlbumHeader(
+                    val start = visual.size
+                    visual.addAll(albumSongs)
+                    segments += LibraryAlbumSegment(
                         albumName = album.name,
                         displayName = album.displayName,
                         artistName = album.artist,
                         artworkUri = album.artworkUri,
-                        songCount = albumSongs.size,
-                        albumSongs = albumSongs,
-                        groupingKey = album.groupingKey
+                        groupingKey = album.groupingKey,
+                        sortHint = formatSortRelevantInfo(
+                            sortOption = sortOption,
+                            genre = album.genre,
+                            dateAdded = album.dateAdded
+                        ),
+                        start = start,
+                        count = albumSongs.size,
+                        songIds = albumSongs.map { it.id }
                     )
-                    albumSongs.forEach { song ->
-                        items += LibraryListItem.SongRow(song = song, index = songIndex)
-                        songIndex++
-                    }
                 }
-                items
+                LibraryListModel.of(
+                    songsVisual = visual,
+                    segments = segments,
+                    inheritedArtworkBySongId = inheritedArtwork,
+                    sortOption = sortOption,
+                    emphasizeLastPlayed = emphasizeLastPlayed
+                )
             }
         }
     }
@@ -223,8 +366,8 @@ class GetLibrarySongsUseCase {
         if (useLong && longKey != null) {
             if (ascending) sortedBy { longKey(it) ?: 0L } else sortedByDescending { longKey(it) ?: 0L }
         } else {
-            if (ascending) sortedBy { stringKey(it).lowercase() }
-            else sortedByDescending { stringKey(it).lowercase() }
+            val cmp = compareBy(String.CASE_INSENSITIVE_ORDER, stringKey)
+            if (ascending) sortedWith(cmp) else sortedWith(cmp.reversed())
         }
 
     fun songsMatchingGenre(songs: List<Song>, genreName: String): List<Song> =
@@ -247,9 +390,7 @@ class GetLibrarySongsUseCase {
         if (songs.isEmpty()) return emptyList()
         return when (filter) {
             LibraryBrowseFilter.SONGS ->
-                songsFromListItems(
-                    buildListItems(songs, viewMode, overrides, sortOption, sortDirection)
-                )
+                buildListModel(songs, viewMode, overrides, sortOption, sortDirection).songsVisual
             LibraryBrowseFilter.RECENT ->
                 songs.filter { it.lastPlayedAt > 0 }.sortedByDescending { it.lastPlayedAt }
             LibraryBrowseFilter.ALBUMS -> {

@@ -93,6 +93,7 @@ class IdentifyReviewStoreIntegrationTest {
             repository.appendProposals(listOf(proposal(songId = 1L)))
             repository.appendProposals(listOf(proposal(songId = 1L), proposal(songId = 2L)))
             assertEquals(listOf(1L, 2L), repository.load().proposals.map { it.songId })
+            assertEquals(setOf(1L, 2L), repository.pendingSongIds())
 
             repository.mergeUiRemaining(
                 remaining = listOf(proposal(songId = 2L)),
@@ -105,6 +106,14 @@ class IdentifyReviewStoreIntegrationTest {
             repository.mergeUiRemaining(
                 remaining = listOf(proposal(songId = 2L)),
                 knownSongIds = setOf(2L),
+                droppedIds = setOf(1L),
+                phase = IdentifyReviewPhase.Item.name,
+                applyFields = com.bestiapop.android.data.model.IdentifyApplyFields.ALL
+            )
+            assertEquals(listOf(2L, 3L), repository.load().proposals.map { it.songId })
+            repository.mergeUiRemaining(
+                remaining = listOf(proposal(songId = 2L), proposal(songId = 3L)),
+                knownSongIds = setOf(2L, 3L),
                 droppedIds = setOf(1L),
                 phase = IdentifyReviewPhase.Item.name,
                 applyFields = com.bestiapop.android.data.model.IdentifyApplyFields.ALL

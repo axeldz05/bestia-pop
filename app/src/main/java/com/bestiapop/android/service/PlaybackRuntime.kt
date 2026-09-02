@@ -2,7 +2,6 @@ package com.bestiapop.android.service
 
 import android.content.ComponentName
 import android.content.Context
-import android.content.Intent
 import android.os.Bundle
 import android.os.SystemClock
 import androidx.annotation.OptIn
@@ -45,6 +44,7 @@ import com.bestiapop.android.data.preferences.PlaybackModeRestore
 import com.bestiapop.android.data.preferences.PlaybackPreferencesRepository
 import com.bestiapop.android.data.preferences.PlaybackSessionStore
 import com.bestiapop.android.data.preferences.PlaybackSettings
+import com.bestiapop.android.data.preferences.PersistedQueueItem
 import com.bestiapop.android.data.preferences.QueueSnapshot
 import com.bestiapop.android.data.preferences.QueueSnapshotCodec
 import com.bestiapop.android.data.repository.MusicRepository
@@ -59,6 +59,7 @@ import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.MoreExecutors
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -79,6 +80,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlin.coroutines.ContinuationInterceptor
+import kotlin.coroutines.EmptyCoroutineContext
 
 private const val STREAM_READY_MAX_AGE_MS = 60_000L
 
@@ -86,6 +89,11 @@ private fun controllerReconnectBackoffMs(attempt: Int): Long {
     val exponent = (attempt - 1).coerceIn(0, 4)
     return 500L * (1L shl exponent)
 }
+
+/** Keep already-hydrated LRC when the library row is identity-slim (`lyrics` null). */
+internal fun Song.keepLyricsIfIncomingSlim(incoming: Song): Song =
+    if (incoming.lyrics.isNullOrEmpty() && !lyrics.isNullOrEmpty()) incoming.copy(lyrics = lyrics)
+    else incoming
 
 internal fun refreshLocalQueueMetadata(
     queue: List<PlayableItem>,
@@ -109,7 +117,9 @@ internal fun refreshLocalQueueMetadata(
             idMatch.index <= uriMatch.index -> idMatch
             else -> uriMatch
         }?.value
-        refreshed?.let { item.copy(song = it) } ?: item
+        refreshed?.let { incoming ->
+            item.copy(song = item.song.keepLyricsIfIncomingSlim(incoming))
+        } ?: item
     }
 }
 
@@ -250,6 +260,9 @@ internal data class PlaybackRuntimeDependencies(
     val touchSongLastPlayed: suspend (Long) -> Unit = {},
     val updateSongDuration: suspend (Long, Long) -> Unit = { _, _ -> },
     val enhanceSong: suspend (Song) -> Unit = {},
+    val loadSongById: suspend (Long) -> Song? = { null },
+    val loadSongsByIds: suspend (List<Long>) -> List<Song> = { emptyList() },
+    val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     val requestListenSync: () -> Unit = {},
     val clockMs: () -> Long = System::currentTimeMillis,
     val elapsedRealtimeMs: () -> Long = SystemClock::elapsedRealtime,
@@ -340,6 +353,7 @@ class PlaybackRuntime internal constructor(
     private var playbackIntentEpoch = 0L
     private var pendingPlayIntentEpoch: Long? = null
     private var lastTouchedSongId = -1L
+    private var lyricsHydrateJob: Job? = null
     private var liveSessionHydrated = false
     private var idleSeedDone = false
     private var persistedSessionRestored = false
@@ -416,7 +430,6 @@ class PlaybackRuntime internal constructor(
 
     internal suspend fun systemResumptionMetadataSnapshot(): PlaybackCollectionSnapshot? {
         dependencies.playbackSettingsReady.first { it }
-        libraryReady.first { it }
         return sessionRestoreMutex.withLock {
             currentRuntimeSnapshot() ?: loadPersistedCollectionProjection()?.snapshot
         }
@@ -424,7 +437,6 @@ class PlaybackRuntime internal constructor(
 
     internal suspend fun restoreSystemPlaybackSnapshot(): PlaybackCollectionSnapshot? {
         dependencies.playbackSettingsReady.first { it }
-        libraryReady.first { it }
         return sessionRestoreMutex.withLock {
             ensurePersistedSessionRestoredLocked()?.also {
                 autoplaySeedApplied = true
@@ -451,6 +463,17 @@ class PlaybackRuntime internal constructor(
         samplePositionAndOwnership()
     }
 
+    private fun libraryUpdateContext() = try {
+        val interceptor = scope.coroutineContext[ContinuationInterceptor]
+        if (interceptor === Dispatchers.Main || interceptor === Dispatchers.Main.immediate) {
+            Dispatchers.Default
+        } else {
+            EmptyCoroutineContext
+        }
+    } catch (_: IllegalStateException) {
+        EmptyCoroutineContext
+    }
+
     private fun start() {
         if (!started.compareAndSet(false, true)) return
         scope.launch {
@@ -464,12 +487,26 @@ class PlaybackRuntime internal constructor(
                 }
             }
         }
-        scope.launch {
+        scope.launch(libraryUpdateContext()) {
             dependencies.libraryUpdates.collectLatest { songs ->
                 library = songs
-                libraryReady.value = true
-                refreshLocalMetadata(songs)
-                maybeSeedIdlePlayer()
+                val oldQueue = _queue.value
+                val updated = refreshLocalQueueMetadata(oldQueue, songs)
+                withContext(scope.coroutineContext) {
+                    libraryReady.value = true
+                    if (updated !== oldQueue) {
+                        _queue.value = updated
+                        val currentSlot = _currentItem.value?.queueEntryId
+                        updated.firstOrNull { it.queueEntryId == currentSlot }?.let {
+                            setCurrentItem(
+                                it,
+                                persistLastPlayed = false,
+                                hint = PlaybackChangeHint.METADATA_UPDATE
+                            )
+                        }
+                    }
+                    maybeSeedIdlePlayer()
+                }
             }
         }
         scope.launch {
@@ -483,9 +520,6 @@ class PlaybackRuntime internal constructor(
     }
 
     internal fun connect(context: Context) {
-        runCatching {
-            context.startService(Intent(context, MusicService::class.java))
-        }
         configureControllerConnector(
             PlaybackControllerConnector {
                 MediaControllerConnection(
@@ -834,21 +868,6 @@ class PlaybackRuntime internal constructor(
         restartAsyncPlaybackWork()
     }
 
-    private fun refreshLocalMetadata(songs: List<Song>) {
-        val oldQueue = _queue.value
-        val updated = refreshLocalQueueMetadata(oldQueue, songs)
-        if (updated === oldQueue) return
-        _queue.value = updated
-        val currentSlot = _currentItem.value?.queueEntryId
-        updated.firstOrNull { it.queueEntryId == currentSlot }?.let {
-            setCurrentItem(
-                it,
-                persistLastPlayed = false,
-                hint = PlaybackChangeHint.METADATA_UPDATE
-            )
-        }
-    }
-
     private fun setCurrentItem(
         item: PlayableItem?,
         persistLastPlayed: Boolean = true,
@@ -860,14 +879,36 @@ class PlaybackRuntime internal constructor(
         _currentItem.value = item
         lastKnownQueueEntryId = item?.queueEntryId
         val local = (item as? PlayableItem.Local)?.song
-        _currentSong.value = local
+        val previous = _currentSong.value
+        val displayed = when {
+            local == null -> null
+            previous?.id == local.id -> previous.keepLyricsIfIncomingSlim(local)
+            else -> local
+        }
+        _currentSong.value = displayed
         dependencies.listenTracker.onTrackChanged(local, hint)
+        if (displayed != null && displayed.lyrics.isNullOrEmpty()) {
+            hydrateCurrentSongLyrics(displayed.id)
+        }
         if (local != null && occurrenceChanged && uiAttachments.get() > 0) {
             scope.launch(Dispatchers.IO) { dependencies.enhanceSong(local) }
         }
         if (persistLastPlayed) {
             persistPlaybackSession(force = true)
             if (occurrenceChanged) touchLastPlayed(local)
+        }
+    }
+
+    private fun hydrateCurrentSongLyrics(songId: Long) {
+        lyricsHydrateJob?.cancel()
+        lyricsHydrateJob = scope.launch(dependencies.ioDispatcher) {
+            val full = dependencies.loadSongById(songId) ?: return@launch
+            if (full.lyrics.isNullOrEmpty()) return@launch
+            withContext(scope.coroutineContext) {
+                val current = _currentSong.value
+                if (current?.id != songId) return@withContext
+                _currentSong.value = current.copy(lyrics = full.lyrics)
+            }
         }
     }
 
@@ -972,7 +1013,7 @@ class PlaybackRuntime internal constructor(
     }
 
     private fun maybeSeedIdlePlayer() {
-        if (!libraryReady.value || !dependencies.playbackSettingsReady.value || controller == null) {
+        if (!dependencies.playbackSettingsReady.value || controller == null) {
             return
         }
         if (liveSessionHydrated) return
@@ -995,10 +1036,27 @@ class PlaybackRuntime internal constructor(
         }
     }
 
+    private suspend fun songsForHydration(
+        queue: QueueSnapshot?,
+        last: LastPlayedSnapshot?
+    ): List<Song> {
+        if (library.isNotEmpty()) return library
+        val ids = LinkedHashSet<Long>()
+        last?.songId?.takeIf { it > 0L }?.let { ids.add(it) }
+        queue?.items?.forEach { item ->
+            if (item is PersistedQueueItem.Local && item.songId > 0L) {
+                ids.add(item.songId)
+            }
+        }
+        if (ids.isEmpty()) return emptyList()
+        return dependencies.loadSongsByIds(ids.toList())
+    }
+
     private suspend fun loadPersistedCollectionProjection(): PersistedCollectionProjection? {
         val last = dependencies.persistence.loadLastPlayed()
         val persistedQueue = dependencies.persistence.loadQueue()
-        val hydrated = PlaybackHydration.hydrateQueue(persistedQueue, library)
+        val hydrationSongs = songsForHydration(persistedQueue, last)
+        val hydrated = PlaybackHydration.hydrateQueue(persistedQueue, hydrationSongs)
         if (hydrated != null && hydrated.items.isNotEmpty()) {
             val restoreShuffle = PlaybackModeRestore
                 .resolve(
@@ -1034,7 +1092,10 @@ class PlaybackRuntime internal constructor(
                 restoreShuffle = false
             )
         }
-        val seed = PlaybackHydration.resolveIdleSeed(library, last) ?: return null
+        val seed = PlaybackHydration.resolveIdleSeed(
+            library.ifEmpty { hydrationSongs },
+            last
+        ) ?: return null
         return PersistedCollectionProjection(
             snapshot = PlaybackCollectionSnapshot(
                 items = listOf(seed.toPlayable()),
@@ -1047,9 +1108,14 @@ class PlaybackRuntime internal constructor(
     private suspend fun ensurePersistedSessionRestoredLocked(): PlaybackCollectionSnapshot? {
         currentRuntimeSnapshot()?.let { return it }
         if (idleSeedDone) return null
+        val projection = loadPersistedCollectionProjection()
+        if (projection == null) {
+            if (!libraryReady.value) return null
+            idleSeedDone = true
+            return null
+        }
         idleSeedDone = true
 
-        val projection = loadPersistedCollectionProjection() ?: return null
         if (projection.hydratedQueue != null) {
             applyHydratedQueue(projection.hydratedQueue, projection.restoreShuffle)
             persistedSessionRestored = true
@@ -2801,6 +2867,8 @@ class PlaybackRuntime internal constructor(
                     touchSongLastPlayed = repository::touchSongLastPlayed,
                     updateSongDuration = repository::updateSongDuration,
                     enhanceSong = repository::enhanceSongMetadataAndLyrics,
+                    loadSongById = repository::getSongById,
+                    loadSongsByIds = repository::getSongsByIds,
                     requestListenSync = sync::requestSync
                 )
             )

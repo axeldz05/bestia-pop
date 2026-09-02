@@ -74,6 +74,24 @@ class PlaybackRuntimeContinuityTest {
     }
 
     @Test
+    fun currentLocal_hydratesLyricsFromFullRow() {
+        val slim = song(1, "Local")
+        val full = slim.copy(lyrics = "[00:01.00]hello")
+        val fixture = fixture(loadSongById = { id -> full.takeIf { id == 1L } })
+        try {
+            fixture.runtime.attachUi()
+            fixture.runtime.playPlayableCollection(
+                items = listOf(PlayableItem.Local(slim)),
+                rotate = false
+            )
+            assertEquals("[00:01.00]hello", fixture.runtime.currentSong.value?.lyrics)
+            assertEquals("Local", fixture.runtime.currentSong.value?.title)
+        } finally {
+            fixture.close()
+        }
+    }
+
+    @Test
     fun discoverOrigin_setsForShuffleAndClearsForManualLocalPlayback() {
         val fixture = fixture()
         try {
@@ -1667,7 +1685,9 @@ class PlaybackRuntimeContinuityTest {
         controllerReconnectBackoffMs: (Int) -> Long = { 0L },
         startTicker: Boolean = false,
         dispatcher: CoroutineDispatcher = Dispatchers.Unconfined,
-        clockMs: (() -> Long)? = null
+        clockMs: (() -> Long)? = null,
+        loadSongById: suspend (Long) -> Song? = { null },
+        ioDispatcher: CoroutineDispatcher = dispatcher
     ): Fixture {
         val scope = CoroutineScope(SupervisorJob() + dispatcher)
         val clock = AtomicLong(10_000L)
@@ -1688,7 +1708,9 @@ class PlaybackRuntimeContinuityTest {
                 clockMs = clockMs ?: clock::get,
                 elapsedRealtimeMs = clock::get,
                 controllerReconnectBackoffMs = controllerReconnectBackoffMs,
-                startTicker = startTicker
+                startTicker = startTicker,
+                loadSongById = loadSongById,
+                ioDispatcher = ioDispatcher
             )
         )
         if (attachController) runtime.attachControllerForTest(controller)

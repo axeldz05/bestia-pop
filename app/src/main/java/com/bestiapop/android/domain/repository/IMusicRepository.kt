@@ -3,6 +3,7 @@ package com.bestiapop.android.domain.repository
 import android.net.Uri
 import com.bestiapop.android.data.model.AlbumOverride
 import com.bestiapop.android.data.model.IdentifyApplyFields
+import com.bestiapop.android.data.model.IdentifyApplyRequest
 import com.bestiapop.android.data.model.IdentifyCandidate
 import com.bestiapop.android.data.model.IdentifyProposal
 import com.bestiapop.android.data.model.IdentifyResult
@@ -20,6 +21,7 @@ typealias LibraryScanProgress = (done: Int, total: Int, fileName: String) -> Uni
 
 interface IMusicRepository {
     val allSongsFlow: Flow<List<Song>>
+    val songPlayStatsFlow: Flow<Map<Long, Long>>
     val playlistsFlow: Flow<List<Playlist>>
     val albumOverridesFlow: Flow<List<AlbumOverride>>
 
@@ -33,7 +35,12 @@ interface IMusicRepository {
     suspend fun resyncAppManagedMusic(onProgress: LibraryScanProgress? = null): List<Song>
     /** SAF folder import. Returns newly inserted songs (with ids). */
     suspend fun scanFolderUri(treeUri: Uri, onProgress: LibraryScanProgress? = null): List<Song>
+    /** Identity-slim library snapshot (no `lyrics`, no play stamps), same columns as [allSongsFlow]. */
     suspend fun getAllSongsSync(): List<Song>
+    /** Identity-slim rows for [ids]. Empty [ids] → empty list. */
+    suspend fun getSongsByIds(ids: List<Long>): List<Song>
+    /** Full Room row including `lyrics`. The [allSongsFlow] list is identity-slim. */
+    suspend fun getSongById(id: Long): Song?
     suspend fun findSongByArtistTitle(artist: String, title: String): Song?
     suspend fun saveUploadedSong(song: Song): Long
     suspend fun deleteSongsFromApp(songs: List<Song>)
@@ -47,7 +54,9 @@ interface IMusicRepository {
      * Song tags are predominant ranking source; [customQuery] replaces the default search text.
      * [filters] refine artist/album/year (Deezer advanced query + ranking boosts).
      * [catalogIndex] + [existingCandidates] page/append for “mostrar más” without reshuffling shown rows.
-     * When [listenBrainzToken] is set and catalog confidence is not HIGH, may enrich via ListenBrainz.
+     * Identify catalog order: ListenBrainz (when [listenBrainzToken] is set) → MusicBrainz →
+     * Deezer/iTunes → YouTube. Generic titles are never auto-applied as HIGH without supporting
+     * artist/album, but they do not skip ListenBrainz when duration or file tags exist.
      */
     suspend fun proposeSongIdentity(
         song: Song,
@@ -65,6 +74,22 @@ interface IMusicRepository {
         candidate: IdentifyCandidate,
         fields: IdentifyApplyFields = IdentifyApplyFields.ALL
     ): IdentifyResult
+
+    /**
+     * Persist many identify candidates. Default loops [applySongIdentity].
+     */
+    suspend fun applySongIdentities(requests: List<IdentifyApplyRequest>): Set<Long> {
+        if (requests.isEmpty()) return emptySet()
+        val applied = LinkedHashSet<Long>()
+        for (request in requests) {
+            if (applySongIdentity(request.songId, request.candidate, request.fields) is
+                IdentifyResult.Updated
+            ) {
+                applied += request.songId
+            }
+        }
+        return applied
+    }
 
     /**
      * Look up artist/album online for a library song with missing/placeholder metadata.

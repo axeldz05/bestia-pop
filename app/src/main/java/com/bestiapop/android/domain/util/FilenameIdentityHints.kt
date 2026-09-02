@@ -32,6 +32,10 @@ private val KHZ_SUFFIX = Regex(
     RegexOption.IGNORE_CASE
 )
 private val DUP_INDEX_SUFFIX = Regex("""\s*\(\d+\)\s*$""")
+private val AUDIO_EXT_SUFFIX = Regex(
+    """\.(mp3|flac|m4a|wav|ogg|opus|aac|wma|alac)$""",
+    RegexOption.IGNORE_CASE
+)
 private val SINGLE_LETTER_WORDS = setOf("a", "e", "i", "o", "u", "y")
 private val TAIL_SKIP = setOf(
     "part", "pt", "live", "remaster", "remastered", "bonus", "album", "version",
@@ -72,17 +76,17 @@ fun tidyFilenamePhrase(value: String): String {
     return stripLeadingTitleJunk(s)
 }
 
-/** Search strings for identify: full phrase, glued accent holes, distinctive tail. */
-fun identifySearchTexts(primary: String): List<String> {
-    val cleaned = tidyFilenamePhrase(primary)
-    if (cleaned.isEmpty()) return emptyList()
-    val out = LinkedHashSet<String>(4)
-    out.add(cleaned)
-    val glued = glueSingleLetterTokens(cleaned)
-    if (glued != cleaned) out.add(glued)
-    distinctiveSearchTail(cleaned)?.let { out.add(it) }
-    headAndTailSearch(cleaned)?.let { out.add(it) }
-    return out.take(3)
+/** Search strings for identify: full phrase, script runs, pinyin head, OST, tail. */
+fun identifySearchTexts(primary: String, filename: String? = null): List<String> =
+    IdentifyQueryVariants.expand(primary, filename)
+
+/** `1-07. Midnight Channel` / `1-03_Insisto` — disc-track rip filenames. */
+fun looksLikeDiscTrackRip(nameWithoutExtension: String): Boolean {
+    val raw = nameWithoutExtension.substringAfterLast('/')
+        .replace(AUDIO_EXT_SUFFIX, "")
+        .replace("_-_", " - ")
+        .trim()
+    return raw.isNotEmpty() && DISC_TRACK_FILE.matches(raw)
 }
 
 /**
@@ -168,6 +172,56 @@ fun parseFilenameMetadataHints(nameWithoutExtension: String): FilenameMetadataHi
     }
 
     return FilenameMetadataHints(null, tidyFilenamePhrase(raw).ifBlank { null })
+}
+
+/**
+ * When `{artist}_{title}` downloads collapse spaces to `_`, recover artist/title by
+ * matching the longest known library artist as a prefix of [phrase].
+ */
+fun splitUsingKnownArtists(
+    phrase: String,
+    knownArtists: Collection<String>
+): FilenameMetadataHints? {
+    val tidy = tidyFilenamePhrase(phrase)
+    val haystack = TrackMatchKeys.normalize(tidy)
+    if (haystack.isEmpty()) return null
+    var bestArtist: String? = null
+    var bestNorm = ""
+    for (artist in knownArtists) {
+        if (IdentifyRanking.isPlaceholderArtist(artist)) continue
+        val n = TrackMatchKeys.normalize(artist)
+        if (!isUsableKnownArtistKey(n)) continue
+        if (n.length < bestNorm.length) continue
+        val isPrefix = haystack == n || haystack.startsWith("$n ")
+        if (!isPrefix) continue
+        bestArtist = artist.trim()
+        bestNorm = n
+    }
+    val artist = bestArtist ?: return null
+    val title = titleTailAfterArtist(tidy, artist)
+    return FilenameMetadataHints(artist, title)
+}
+
+private fun isUsableKnownArtistKey(normalized: String): Boolean {
+    if (normalized.length < 4) return false
+    val tokens = normalized.split(' ').filter { it.isNotEmpty() }
+    return tokens.size >= 2 || normalized.length >= 6
+}
+
+private fun titleTailAfterArtist(tidyPhrase: String, artist: String): String? {
+    val nArtist = TrackMatchKeys.normalize(artist)
+    val tokens = tidyPhrase.split(' ').filter { it.isNotEmpty() }
+    var used = 0
+    var acc = ""
+    for (i in tokens.indices) {
+        acc = if (acc.isEmpty()) tokens[i] else "$acc ${tokens[i]}"
+        if (TrackMatchKeys.normalize(acc) == nArtist) {
+            used = i + 1
+            break
+        }
+    }
+    if (used == 0 || used >= tokens.size) return null
+    return tokens.drop(used).joinToString(" ").ifBlank { null }
 }
 
 private fun hintsFromTrackRest(track: Int?, rest: String): FilenameMetadataHints {

@@ -33,6 +33,9 @@ object IdentifyRanking {
     private const val UNINFORMATIVE_TITLE_WEIGHT = 0.15f
     private const val UNINFORMATIVE_DURATION_CLOSE = 0.35f
     private const val UNINFORMATIVE_DURATION_NEAR = 0.20f
+    private const val DURATION_FAR_PENALTY = 0.25f
+    private const val CLOSE_DURATION_MS = 2_000L
+    private const val TITLE_OVERLAP = 0.55f
 
     data class Query(
         val artist: String,
@@ -108,6 +111,92 @@ object IdentifyRanking {
     fun fieldSimilarity(a: String, b: String): Float =
         max(similarity(a, b), compactSimilarity(a, b))
 
+    /** Title-only: also compare latin vs CJK/kana runs and pinyin heads. */
+    fun titleFieldSimilarity(a: String, b: String): Float =
+        max(fieldSimilarity(a, b), scriptRunSimilarity(a, b))
+
+    /**
+     * Compare latin vs CJK/kana runs separately so `Mirror Jing Zi` ≈ `Mirror`
+     * and `夜鷹` ≈ a haystack that also contains `Yodaka`.
+     */
+    fun scriptRunSimilarity(a: String, b: String): Float {
+        val ra = IdentifyQueryVariants.letterRuns(a)
+        val rb = IdentifyQueryVariants.letterRuns(b)
+        var best = 0f
+        for (x in ra) {
+            for (y in rb) {
+                if (x.kind != y.kind) continue
+                best = max(
+                    best,
+                    max(similarity(x.normalized, y.normalized), compactSimilarity(x.normalized, y.normalized))
+                )
+            }
+        }
+        IdentifyQueryVariants.latinHeadDroppingPinyin(a)?.let { head ->
+            val n = TrackMatchKeys.normalize(head)
+            best = max(best, max(similarity(n, b), compactSimilarity(n, b)))
+        }
+        IdentifyQueryVariants.latinHeadDroppingPinyin(b)?.let { head ->
+            val n = TrackMatchKeys.normalize(head)
+            best = max(best, max(similarity(a, n), compactSimilarity(a, n)))
+        }
+        return best
+    }
+
+    /**
+     * Keep catalog script + source script/pinyin when they complement each other.
+     * Does not invent romanization: `夜鷹` + `Yodaka` → `夜鷹 (Yodaka)`.
+     */
+    fun preferBilingualTitle(catalog: String, source: String): String {
+        val cat = cleanIdentityTitle(catalog).ifBlank { catalog.trim() }
+        val src = source.trim()
+        if (cat.isEmpty()) return src
+        if (src.isEmpty()) return cat
+        if (TrackMatchKeys.normalize(cat) == TrackMatchKeys.normalize(src)) return cat
+
+        val catOther = IdentifyQueryVariants.hasOtherLetterScript(cat)
+        val srcOther = IdentifyQueryVariants.hasOtherLetterScript(src)
+        val catLatin = IdentifyQueryVariants.hasLatinLetter(cat)
+        val srcLatin = IdentifyQueryVariants.hasLatinLetter(src)
+
+        if (catOther && srcLatin && !catLatin) {
+            val latin = IdentifyQueryVariants.latinLetters(src)
+            if (latin.isNotEmpty() &&
+                !TrackMatchKeys.normalize(cat).contains(TrackMatchKeys.normalize(latin))
+            ) {
+                return "$cat ($latin)"
+            }
+        }
+        if (catLatin && srcOther && !catOther) {
+            val other = IdentifyQueryVariants.otherLetters(src)
+            if (other.isNotEmpty() &&
+                !TrackMatchKeys.normalize(cat).contains(TrackMatchKeys.normalize(other))
+            ) {
+                return "$cat ($other)"
+            }
+        }
+        val tail = IdentifyQueryVariants.pinyinTail(src)
+        val head = IdentifyQueryVariants.latinHeadDroppingPinyin(src)
+        if (tail != null && head != null && catLatin && !srcOther) {
+            if (TrackMatchKeys.normalize(head) == TrackMatchKeys.normalize(cat)) {
+                return "$cat ($tail)"
+            }
+        }
+        return cat
+    }
+
+    fun shouldApplyBilingualTitle(catalog: String, source: String): Boolean {
+        val merged = preferBilingualTitle(catalog, source)
+        if (merged.isBlank()) return false
+        val src = source.trim()
+        if (merged == src) return false
+        val catOther = IdentifyQueryVariants.hasOtherLetterScript(catalog)
+        val srcOther = IdentifyQueryVariants.hasOtherLetterScript(source)
+        if (catOther != srcOther) return true
+        return IdentifyQueryVariants.pinyinTail(source) != null &&
+            TrackMatchKeys.normalize(merged) != TrackMatchKeys.normalize(src)
+    }
+
     /** Generic/blank album → `"$artist - Single"`; otherwise keep [current]. */
     fun fallbackAlbum(artist: String, current: String = ""): String {
         val trimmed = current.trim()
@@ -132,6 +221,7 @@ object IdentifyRanking {
             p.contains("itunes") ||
             p.contains("apple") ||
             p.contains("listenbrainz") ||
+            p.contains("musicbrainz") ||
             p == "catalog"
     }
 
@@ -158,7 +248,7 @@ object IdentifyRanking {
         val qAll = stripTitleNoise("$qArtistForBag ${query.title}")
         val cAll = stripTitleNoise("${track.artist} ${track.title}")
         val combinedSim = fieldSimilarity(qAll, cAll)
-        val titleSim = fieldSimilarity(qTitle, cTitle)
+        val titleSim = titleFieldSimilarity(qTitle, cTitle)
         val identityBagMatch = combinedSim >= SOURCE_AGREE_SIM
         val uninformativeTitle = titleUninformative(query)
 
@@ -216,7 +306,7 @@ object IdentifyRanking {
                     reasons.add(if (rounded <= 0) "duración exacta" else "duración ±${rounded}s")
                 }
                 diffSec <= 5f -> total += nearBoost
-                else -> total += 0.02f
+                else -> total -= DURATION_FAR_PENALTY
             }
         } else {
             total += 0.08f
@@ -262,10 +352,15 @@ object IdentifyRanking {
                 }
             }
         }
-        // Compared against the song's own tag even when the *query* bag-matches (filename hint
-        // `Creep` vs ID3 title `Radiohead`). Containment still lets `Doors Roadhouse Blues`
-        // agree with `Roadhouse Blues`.
-        if (srcTitle.isNotEmpty() && fieldSimilarity(srcTitle, cTitle) < SOURCE_CONFLICT_SIM) {
+        // Filename `{artist}_{title}` with spaces as `_` stores artist+title in sourceTitle
+        // (`Clever Girl Elm` vs catalog `Elm`). That is not a title conflict.
+        // Real mismatch: ID3 title `Radiohead` vs catalog `Creep`.
+        val sourceIsArtistPlusTitle = srcTitle.isNotEmpty() &&
+            fieldSimilarity(srcTitle, cAll) >= SOURCE_AGREE_SIM
+        if (srcTitle.isNotEmpty() &&
+            !sourceIsArtistPlusTitle &&
+            titleFieldSimilarity(srcTitle, cTitle) < SOURCE_CONFLICT_SIM
+        ) {
             reasons.add("título distinto")
         }
 
@@ -276,7 +371,7 @@ object IdentifyRanking {
 
         val hintTitle = query.filenameTitle?.let { stripTitleNoise(it) }.orEmpty()
         if (hintTitle.isNotEmpty()) {
-            val hintSim = max(fieldSimilarity(hintTitle, cTitle), fieldSimilarity(hintTitle, cAll))
+            val hintSim = max(titleFieldSimilarity(hintTitle, cTitle), fieldSimilarity(hintTitle, cAll))
             if (hintSim >= 0.85f) {
                 total += 0.05f
                 if ("archivo" !in reasons) reasons.add("archivo")
@@ -390,16 +485,69 @@ object IdentifyRanking {
         if (ranked.isEmpty()) return IdentifyConfidence.NONE
         val top = ranked.first()
         val gap = if (ranked.size >= 2) top.score - ranked[1].score else 1f
-        val base = when {
+        var base = when {
             top.score >= HIGH_SCORE && gap >= HIGH_GAP -> IdentifyConfidence.HIGH
             top.score >= MEDIUM_SCORE -> IdentifyConfidence.MEDIUM
             else -> IdentifyConfidence.LOW
         }
-        if (base != IdentifyConfidence.HIGH) return base
-        if (isYouTubeProvider(top.provider)) return IdentifyConfidence.MEDIUM
-        if (hasSevereConflict(top.reasons)) return IdentifyConfidence.MEDIUM
-        if (query != null && titleUninformative(query)) return IdentifyConfidence.MEDIUM
-        return IdentifyConfidence.HIGH
+        val genericTitle = query != null &&
+            (titleUninformative(query) || isGenericIdentifyTitle(query.title))
+        if (isYouTubeProvider(top.provider) || hasSevereConflict(top.reasons) || genericTitle) {
+            if (base == IdentifyConfidence.HIGH) base = IdentifyConfidence.MEDIUM
+        }
+        if (query != null &&
+            base != IdentifyConfidence.HIGH &&
+            !genericTitle &&
+            !isYouTubeProvider(top.provider) &&
+            !hasSevereConflict(top.reasons) &&
+            uniqueCloseDuration(ranked, query) &&
+            titleOverlaps(query, top.track)
+        ) {
+            return IdentifyConfidence.HIGH
+        }
+        if (query != null &&
+            base != IdentifyConfidence.HIGH &&
+            query.artistIsPlaceholder &&
+            !genericTitle &&
+            !isYouTubeProvider(top.provider) &&
+            !hasSevereConflict(top.reasons) &&
+            top.score >= MEDIUM_SCORE &&
+            sourceMatchesConcatenatedIdentity(query, top.track)
+        ) {
+            return IdentifyConfidence.HIGH
+        }
+        return base
+    }
+
+    private fun sourceMatchesConcatenatedIdentity(
+        query: Query,
+        track: OnlineCatalogTrack
+    ): Boolean {
+        val src = stripTitleNoise(query.sourceTitle ?: query.title)
+        if (src.isEmpty()) return false
+        val cAll = stripTitleNoise("${track.artist} ${track.title}")
+        return fieldSimilarity(src, cAll) >= SOURCE_AGREE_SIM
+    }
+
+    private fun uniqueCloseDuration(
+        ranked: List<IdentifyCandidate>,
+        query: Query
+    ): Boolean {
+        if (query.durationMs <= 0L) return false
+        val close = ranked.filter { candidate ->
+            candidate.durationMs > 0L &&
+                abs(candidate.durationMs - query.durationMs) <= CLOSE_DURATION_MS
+        }
+        return close.size == 1 && close.first().track.id == ranked.first().track.id
+    }
+
+    private fun titleOverlaps(query: Query, track: OnlineCatalogTrack): Boolean {
+        val qTitle = stripTitleNoise(query.title)
+        val cTitle = stripTitleNoise(track.title)
+        if (qTitle.isEmpty() || cTitle.isEmpty()) return false
+        if (titleFieldSimilarity(qTitle, cTitle) >= TITLE_OVERLAP) return true
+        val hint = query.filenameTitle?.let { stripTitleNoise(it) }.orEmpty()
+        return hint.isNotEmpty() && titleFieldSimilarity(hint, cTitle) >= TITLE_OVERLAP
     }
 
     private fun titleUninformative(query: Query): Boolean {
@@ -407,6 +555,14 @@ object IdentifyRanking {
         val artist = query.sourceArtist
             ?: query.artist.takeUnless { query.artistIsPlaceholder || isPlaceholderArtist(it) }
         return titleCollidesWithArtistOrAlbum(title, artist, query.sourceAlbum)
+    }
+
+    /** Short/common titles that match too many catalog hits (`Castle`, `Black Hole`). */
+    fun isGenericIdentifyTitle(title: String): Boolean {
+        val t = TrackMatchKeys.normalize(title)
+        if (t.isEmpty() || t in GENERIC_IDENTIFY_TITLES) return true
+        val tokens = t.split(' ').filter { it.isNotEmpty() }
+        return tokens.size == 1 && tokens[0].length <= 2
     }
 
     fun hasSevereConflict(reasons: List<String>): Boolean =
@@ -516,6 +672,11 @@ object IdentifyRanking {
     private val TRAILING_LYRICS = Regex(
         """\s+(?:letras?|lyrics?)\s*$""",
         RegexOption.IGNORE_CASE
+    )
+    private val GENERIC_IDENTIFY_TITLES = setOf(
+        "black hole", "castle", "computer", "d", "rose", "flashback", "sauna",
+        "demo", "instrumental", "remix", "intro", "outro", "untitled", "title",
+        "theme", "ost", "soundtrack"
     )
     private val WHITESPACE = Regex("""\s+""")
     private val STRONG_MARKER_REGEX = Regex(

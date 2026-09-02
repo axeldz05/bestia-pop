@@ -10,6 +10,7 @@ import android.os.ParcelFileDescriptor
 import androidx.test.core.app.ApplicationProvider
 import com.bestiapop.android.data.db.PlaylistSongCrossRef
 import com.bestiapop.android.data.model.AlbumOverride
+import com.bestiapop.android.data.model.IdentifyApplyRequest
 import com.bestiapop.android.data.model.IdentifyCandidate
 import com.bestiapop.android.data.model.IdentifyResult
 import com.bestiapop.android.data.model.OnlineCatalogTrack
@@ -18,6 +19,7 @@ import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.data.model.TrackIdentity
 import com.bestiapop.android.testutil.MediumTest
 import com.bestiapop.android.testutil.RoomTestDatabaseRule
+import com.bestiapop.android.testutil.TaggedAudioFixtures
 import com.bestiapop.android.testutil.TemporaryMusicFiles
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
@@ -26,6 +28,7 @@ import java.io.FileNotFoundException
 import java.util.UUID
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -51,11 +54,13 @@ class MusicRepositoryRoomIntegrationTest {
     private val context: Context
         get() = ApplicationProvider.getApplicationContext()
 
-    private fun repository() = MusicRepository(
+    private fun repository(
+        metadataSource: RepositoryMetadataSource = NoNetworkRepositoryMetadata
+    ) = MusicRepository(
         context = context,
         database = database.database,
         audioStore = TemporaryRepositoryFileStore(files.root),
-        metadataSource = NoNetworkRepositoryMetadata,
+        metadataSource = metadataSource,
         downloadRetryDelay = {}
     )
 
@@ -148,6 +153,24 @@ class MusicRepositoryRoomIntegrationTest {
     }
 
     @Test
+    fun migrateCanonicalAudioUris_doesNotWipeLyrics() = runTest {
+        val audio = files.create("lyrics-keep.m4a", byteArrayOf(1, 2, 3))
+        val id = database.musicDao.insertSong(
+            Song(
+                uriString = audio.toURI().toString(),
+                title = "Keep lyrics",
+                artist = "Artist",
+                lyrics = "[00:01.00]secret"
+            )
+        )
+
+        repository().migrateCanonicalAudioUris()
+
+        assertEquals("[00:01.00]secret", database.musicDao.getSongById(id)?.lyrics)
+        assertEquals(audio.absolutePath, database.musicDao.getSongById(id)?.uriString)
+    }
+
+    @Test
     fun applySongIdentity_changesCatalogIdentity_butKeepsMeasuredLocalDuration() = runTest {
         val songId = database.musicDao.insertSong(
             song("identify.mp3", "Local title", album = "Unknown Album", artist = "Unknown Artist")
@@ -227,6 +250,106 @@ class MusicRepositoryRoomIntegrationTest {
         assertEquals("https://images.invalid/new_art.jpg", updated.artworkUri)
         assertEquals(2024, updated.year)
     }
+
+    @Test
+    fun allSongsFlow_skipsLyricsBlobs_getSongByIdKeepsThem() = runTest {
+        val id = database.musicDao.insertSong(
+            song("lyrics.mp3", "With Lyrics").copy(lyrics = "[00:01.00]secret")
+        )
+        val listed = database.musicDao.getAllSongsFlow().first().single()
+        assertNull(listed.lyrics)
+        assertEquals("With Lyrics", listed.title)
+        assertEquals("[00:01.00]secret", database.musicDao.getSongById(id)?.lyrics)
+    }
+
+    @Test
+    fun touchSongLastPlayed_writesPlayStatsWithoutChangingIdentityFlow() = runTest {
+        val id = database.musicDao.insertSong(song("played.mp3", "Played"))
+        val listedBefore = repository().allSongsFlow.first().single { it.id == id }
+        repository().touchSongLastPlayed(id, 12_345L)
+        val listedAfter = repository().allSongsFlow.first().single { it.id == id }
+        assertEquals(listedBefore, listedAfter)
+        assertEquals(0L, listedAfter.lastPlayedAt)
+        assertEquals(12_345L, database.musicDao.getPlayStat(id))
+        assertEquals(12_345L, repository().songPlayStatsFlow.first()[id])
+    }
+
+    @Test
+    fun enhanceSongMetadataAndLyrics_usesPersistedRowWhenListSongIsSlim() = runTest {
+        val trap = object : RepositoryMetadataSource by NoNetworkRepositoryMetadata {
+            var lyricFetches = 0
+            override suspend fun fetchLyrics(artist: String, title: String): String? {
+                lyricFetches++
+                return "SHOULD NOT APPLY"
+            }
+        }
+        val id = database.musicDao.insertSong(
+            song("full.mp3", "Kept").copy(
+                lyrics = "[00:01.00]kept",
+                artworkUri = "file:///art.jpg",
+                durationMs = 120_000L
+            )
+        )
+        val repo = repository(metadataSource = trap)
+        val slim = database.musicDao.getAllSongsFlow().first().single { it.id == id }
+        assertNull(slim.lyrics)
+        repo.enhanceSongMetadataAndLyrics(slim)
+        assertEquals(0, trap.lyricFetches)
+        assertEquals("[00:01.00]kept", database.musicDao.getSongById(id)?.lyrics)
+    }
+
+    @Test
+    fun applySongIdentities_batchKeepsLyricsAndLocalDuration() = runTest {
+        val firstId = database.musicDao.insertSong(
+            song("batch-a.mp3", "Local A", album = "Unknown Album", artist = "Unknown Artist")
+                .copy(durationMs = 111_000L, lyrics = "[00:01.00]kept a")
+        )
+        val secondId = database.musicDao.insertSong(
+            song("batch-b.mp3", "Local B", album = "Unknown Album", artist = "Unknown Artist")
+                .copy(durationMs = 222_000L, lyrics = "[00:02.00]kept b")
+        )
+        val untouchedId = database.musicDao.insertSong(
+            song("batch-c.mp3", "Leave me", album = "Other Album", artist = "Other Artist")
+                .copy(lyrics = "untouched lyrics")
+        )
+        val repo = repository()
+        val applied = repo.applySongIdentities(
+            listOf(
+                IdentifyApplyRequest(firstId, catalogCandidate("A", 180_000L, 1)),
+                IdentifyApplyRequest(secondId, catalogCandidate("B", 190_000L, 2))
+            )
+        )
+
+        assertEquals(setOf(firstId, secondId), applied)
+        val first = checkNotNull(database.musicDao.getSongById(firstId))
+        val second = checkNotNull(database.musicDao.getSongById(secondId))
+        val untouched = checkNotNull(database.musicDao.getSongById(untouchedId))
+        assertEquals("Catalog A", first.title)
+        assertEquals("Catalog B", second.title)
+        assertEquals(111_000L, first.durationMs)
+        assertEquals(222_000L, second.durationMs)
+        assertEquals("[00:01.00]kept a", first.lyrics)
+        assertEquals("[00:02.00]kept b", second.lyrics)
+        assertEquals("Leave me", untouched.title)
+        assertEquals("untouched lyrics", untouched.lyrics)
+        // Auto-write tags is off by default: apply returns without waiting on ID3 I/O.
+    }
+
+    private fun catalogCandidate(suffix: String, durationMs: Long, trackNumber: Int) =
+        IdentifyCandidate(
+            track = OnlineCatalogTrack(
+                identity = TrackIdentity(
+                    title = "Catalog $suffix",
+                    artist = "Catalog artist",
+                    album = "Catalog album",
+                    durationMs = durationMs,
+                    trackNumber = trackNumber
+                ),
+                id = "catalog-$suffix",
+                provider = "Test"
+            ),
+            score = 0.9f
+        )
 
     @Test
     fun albumCoverImport_copiesBytesIntoAppFilesBeforeSourceDisappears() = runTest {
@@ -494,6 +617,155 @@ class MusicRepositoryRoomIntegrationTest {
         val updated = database.musicDao.getSongById(id)
         assertNotNull(updated)
         assertEquals(1600000000000L, updated?.dateAdded)
+    }
+
+    @Test
+    fun migrateEmbeddedFileTags_fillsUnknownFromJaudiotagger() = runTest {
+        val file = files.create("02__________Black_Hole_.mp3", byteArrayOf(1))
+        TaggedAudioFixtures.writeTaggedMp3(
+            dest = file,
+            title = "ブラックホール / Black Hole",
+            artist = "namitape; Kaai Yuki",
+            album = "Flitter"
+        )
+        database.musicDao.insertSong(
+            Song(
+                uriString = files.create("alive.mp3", byteArrayOf(1)).absolutePath,
+                title = "Alive",
+                artist = "Namitape",
+                album = "Flitter",
+                genre = "Electronica",
+                durationMs = 180_000L
+            )
+        )
+        val unknownId = database.musicDao.insertSong(
+            Song(
+                uriString = file.absolutePath,
+                title = "Black Hole",
+                artist = "Unknown Artist",
+                album = "Unknown Album",
+                genre = "Music",
+                durationMs = 214_204L,
+                artworkUri = "https://cdn.example/wrong.jpg",
+                lyrics = "I'd rather be a light"
+            )
+        )
+
+        val leftover = repository().migrateEmbeddedFileTags()
+        val updated = checkNotNull(database.musicDao.getSongById(unknownId))
+        assertEquals("Namitape", updated.artist)
+        assertEquals("Flitter", updated.album)
+        assertEquals("ブラックホール / Black Hole", updated.title)
+        assertEquals("Electronica; Vocaloid", updated.genre)
+        assertEquals(2023, updated.year)
+        assertEquals("目にブラックホールがあります", updated.lyrics)
+        assertFalse(updated.artworkUri.orEmpty().startsWith("https://"))
+        assertTrue(leftover.none { it.id == unknownId })
+    }
+
+    @Test
+    fun enhanceSongMetadataAndLyrics_skipsCatalogWhenArtistIsPlaceholder() = runTest {
+        val trap = object : RepositoryMetadataSource by NoNetworkRepositoryMetadata {
+            var lyricFetches = 0
+            var artFetches = 0
+            override suspend fun fetchLyrics(artist: String, title: String): String? {
+                lyricFetches++
+                return "WRONG"
+            }
+            override suspend fun fetchAlbumArtUrl(artist: String, titleOrAlbum: String): String? {
+                artFetches++
+                return "https://cdn.example/wrong.jpg"
+            }
+        }
+        val id = database.musicDao.insertSong(
+            song("unknown.mp3", "Black Hole", album = "Unknown Album", artist = "Unknown Artist")
+                .copy(durationMs = 214_204L, artworkUri = null, lyrics = null)
+        )
+        repository(metadataSource = trap).enhanceSongMetadataAndLyrics(
+            checkNotNull(database.musicDao.getSongById(id))
+        )
+        assertEquals(0, trap.lyricFetches)
+        assertEquals(0, trap.artFetches)
+        val persisted = checkNotNull(database.musicDao.getSongById(id))
+        assertNull(persisted.lyrics)
+        assertNull(persisted.artworkUri)
+    }
+
+    @Test
+    fun proposeSongIdentity_queriesListenBrainzBeforeCatalog_evenForGenericTitle() = runTest {
+        val calls = mutableListOf<String>()
+        val lbTrack = OnlineCatalogTrack(
+            id = "lb-1",
+            title = "ブラックホール",
+            artist = "namitape",
+            album = "Flitter",
+            durationMs = 214_204L,
+            audioUrl = "",
+            provider = "ListenBrainz"
+        )
+        val deezerTrack = OnlineCatalogTrack(
+            id = "dz-1",
+            title = "Black Hole",
+            artist = "Muse",
+            album = "Absolution",
+            durationMs = 214_000L,
+            audioUrl = "",
+            provider = "Deezer"
+        )
+        val source = object : RepositoryMetadataSource by NoNetworkRepositoryMetadata {
+            override suspend fun lookupListenBrainzIdentifyTrack(
+                artist: String,
+                title: String,
+                releaseName: String?,
+                token: String
+            ): OnlineCatalogTrack? {
+                calls += "lb"
+                assertEquals("token-1", token)
+                return lbTrack
+            }
+
+            override suspend fun searchMusicBrainzRecordings(
+                query: String,
+                durationMs: Long,
+                limit: Int
+            ): List<OnlineCatalogTrack> {
+                calls += "mb"
+                return emptyList()
+            }
+
+            override suspend fun fetchFullTrackMetadata(
+                artist: String,
+                title: String
+            ): TrackIdentity? {
+                calls += "exact"
+                return null
+            }
+
+            override suspend fun searchOnlineCatalog(
+                query: String,
+                limit: Int,
+                index: Int
+            ): List<OnlineCatalogTrack> {
+                calls += "catalog"
+                return listOf(deezerTrack)
+            }
+        }
+        val id = database.musicDao.insertSong(
+            song("hole.mp3", "Black Hole", album = "Unknown Album", artist = "Unknown Artist")
+                .copy(durationMs = 214_204L)
+        )
+        val song = checkNotNull(database.musicDao.getSongById(id))
+        val proposal = repository(metadataSource = source).proposeSongIdentity(
+            song = song,
+            listenBrainzToken = "token-1"
+        )
+        assertEquals(listOf("lb", "mb", "catalog"), calls.take(3))
+        assertTrue(proposal.usedListenBrainz)
+        assertTrue(proposal.candidates.any { it.provider == "ListenBrainz" })
+        assertNotEquals(
+            com.bestiapop.android.data.model.IdentifyConfidence.HIGH,
+            proposal.confidence
+        )
     }
 }
 

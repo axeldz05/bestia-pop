@@ -48,8 +48,8 @@ class LibraryScreenFunctionalTest {
         )
     )
 
-    private val libraryItems = GetLibrarySongsUseCase()
-        .buildListItems(sampleSongs, LibraryViewMode.FLAT)
+    private val libraryList = GetLibrarySongsUseCase()
+        .buildListModel(sampleSongs, LibraryViewMode.FLAT)
 
     @Test
     fun multiSelectActionBar_displaysSelectedCountAndActions() {
@@ -105,7 +105,7 @@ class LibraryScreenFunctionalTest {
 
         composeTestRule.setContent {
             LibrarySongList(
-                items = libraryItems,
+                list = libraryList,
                 currentSongId = null,
                 isSelectionMode = false,
                 selectedSongIds = emptySet(),

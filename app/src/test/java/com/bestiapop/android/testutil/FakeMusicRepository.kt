@@ -18,6 +18,7 @@ import com.bestiapop.android.domain.repository.IMusicRepository
 import com.bestiapop.android.domain.repository.LibraryScanProgress
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.flowOf
 
 /**
  * L1 stub for unit tests: override only the methods under exercise.
@@ -25,6 +26,7 @@ import kotlinx.coroutines.flow.emptyFlow
  */
 open class FakeMusicRepository : IMusicRepository {
     override val allSongsFlow: Flow<List<Song>> = emptyFlow()
+    override val songPlayStatsFlow: Flow<Map<Long, Long>> = flowOf(emptyMap())
     override val playlistsFlow: Flow<List<Playlist>> = emptyFlow()
     override val albumOverridesFlow: Flow<List<AlbumOverride>> = emptyFlow()
     override fun getPlaylistSongsFlow(playlistId: Long): Flow<List<Song>> = emptyFlow()
@@ -34,6 +36,8 @@ open class FakeMusicRepository : IMusicRepository {
     override suspend fun scanFolderUri(treeUri: Uri, onProgress: LibraryScanProgress?): List<Song> =
         emptyList()
     override suspend fun getAllSongsSync(): List<Song> = emptyList()
+    override suspend fun getSongsByIds(ids: List<Long>): List<Song> = emptyList()
+    override suspend fun getSongById(id: Long): Song? = null
     override suspend fun findSongByArtistTitle(artist: String, title: String): Song? = null
     override suspend fun saveUploadedSong(song: Song): Long = 0L
     override suspend fun deleteSongsFromApp(songs: List<Song>) = Unit

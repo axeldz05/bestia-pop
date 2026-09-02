@@ -87,11 +87,6 @@ fun IdentifyReviewScreen(
     val state by viewModel.identifyReview.collectAsState()
     if (!state.isOpen) return
 
-    val isPlaying by viewModel.isPlaying.collectAsState()
-    val resolvingRemote by viewModel.resolvingRemote.collectAsState()
-    val catalogPreviewKey by viewModel.catalogPreviewKey.collectAsState()
-    val currentItem by viewModel.currentItem.collectAsState()
-
     BackHandler {
         if (state.phase == IdentifyReviewPhase.Item && state.openedFromOverview) {
             viewModel.returnIdentifyReviewOverview()
@@ -145,9 +140,6 @@ fun IdentifyReviewScreen(
                     Text("Nada por revisar")
                 }
             } else {
-                val localPlaying = currentItem is PlayableItem.Local &&
-                    (currentItem as PlayableItem.Local).song.id == item.song.id &&
-                    isPlaying
                 val showSearch = state.showSearchField || item.proposal.candidates.isEmpty()
                 val searchPlaceholder = item.proposal.queryTitle.trim()
                     .takeUnless { it.isBlank() || looksLikeStoragePath(it) }
@@ -158,6 +150,10 @@ fun IdentifyReviewScreen(
                             IdentifyRanking.isPlaceholderArtist(it)
                     }
                     ?: "Título o artista"
+                val candidates = remember(item.proposal.candidates, state.visibleCandidateCount) {
+                    val all = item.proposal.candidates
+                    all.take(state.visibleCandidateCount.coerceIn(0, all.size))
+                }
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -170,12 +166,11 @@ fun IdentifyReviewScreen(
                         color = MaterialTheme.colorScheme.primary
                     )
                     Spacer(Modifier.height(8.dp))
-                    IdentifySourceBlock(
+                    IdentifySourcePlaying(
+                        viewModel = viewModel,
                         song = item.song,
                         sourceHints = item.proposal.sourceHints,
-                        confidence = item.proposal.confidence,
-                        isPlaying = localPlaying,
-                        onPreview = { viewModel.previewIdentifyLocalSong(item.song) }
+                        confidence = item.proposal.confidence
                     )
                     if (showSearch) {
                         Spacer(Modifier.height(12.dp))
@@ -195,67 +190,26 @@ fun IdentifyReviewScreen(
                         )
                     }
                 }
-                LazyColumn(
+                IdentifyCandidateList(
+                    viewModel = viewModel,
+                    song = item.song,
+                    candidates = candidates,
+                    selectedIndex = state.selectedCandidateIndex,
+                    applyFields = state.applyFields,
+                    canShowMore = state.canShowMoreCandidates,
+                    isLoadingMore = state.isLoadingMore,
+                    isSearching = state.isSearching,
                     modifier = Modifier
                         .weight(1f)
-                        .fillMaxWidth(),
-                    contentPadding = PaddingValues(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    item {
-                        Text(
-                            text = if (item.proposal.candidates.isEmpty()) {
-                                "Sin candidatos — buscá otro"
-                            } else {
-                                "Candidatos"
-                            },
-                            style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
-
-                    itemsIndexed(
-                        items = state.visibleCandidates,
-                        key = { index, c ->
-                            "${c.provider}|${c.track.id.ifBlank { "${c.artist}|${c.title}|${c.album}" }}|$index"
-                        }
-                    ) { index, candidate ->
-                        val track = candidate.track
-                        val flags = previewFlags(
-                            catalogPreviewKey,
-                            viewModel.catalogPreviewKeyFor(track),
-                            isPlaying,
-                            resolvingRemote
-                        )
-                        IdentifyCandidateRow(
-                            candidate = candidate,
-                            fileDurationMs = item.song.durationMs,
-                            song = item.song,
-                            applyFields = state.applyFields,
-                            selected = index == state.selectedCandidateIndex,
-                            isPlaying = flags.isPlaying,
-                            isResolving = flags.isResolving,
-                            onClick = { viewModel.selectIdentifyCandidate(index) },
-                            onPreview = { viewModel.previewIdentifyCandidate(candidate) }
-                        )
-                    }
-
-                    if (state.canShowMoreCandidates) {
-                        item(key = "load_more") {
-                            IdentifyLoadMoreButton(
-                                isLoading = state.isLoadingMore,
-                                enabled = !state.isSearching,
-                                onClick = viewModel::loadMoreIdentifyCandidates
-                            )
-                        }
-                    }
-                }
+                        .fillMaxWidth()
+                )
 
                 IdentifyReviewFooter(
                     canApply = state.canApplySelected,
                     showSearchField = state.showSearchField,
                     showSearchFilters = state.showSearchFilters,
                     isSearching = state.isSearching || state.isLoadingMore,
+                    isApplying = state.isApplying,
                     onUse = viewModel::applySelectedIdentifyCandidate,
                     onSkip = viewModel::skipIdentifyReviewItem,
                     onToggleSearch = { viewModel.toggleIdentifySearchField() },
@@ -274,15 +228,16 @@ private fun IdentifyReviewOverview(
     onReviewAll: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val remainingById = remember(state.remaining) {
-        state.remaining.associateBy { it.song.id }
-    }
+    val remaining = remember(state.items, state.currentIndex) { state.remaining }
+    val remainingById = remember(remaining) { remaining.associateBy { it.song.id } }
+    val groups = remember(state.items, state.currentIndex) { state.albumGroups }
+    val ungrouped = remember(state.items, state.currentIndex) { state.ungroupedCount }
     LazyColumn(
         modifier = modifier.fillMaxWidth(),
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        if (state.albumGroups.isNotEmpty()) {
+        if (groups.isNotEmpty()) {
             item {
                 Text(
                     text = "Álbumes sugeridos",
@@ -290,21 +245,22 @@ private fun IdentifyReviewOverview(
                     color = MaterialTheme.colorScheme.primary
                 )
             }
-            items(state.albumGroups, key = { it.key }) { group ->
+            items(groups, key = { it.key }) { group ->
                 val titles = group.songIds.mapNotNull { remainingById[it]?.song?.title }
                 IdentifyAlbumGroupCard(
                     group = group,
                     titles = titles,
-                    canApply = state.applyFields.hasAny,
+                    canApply = state.applyFields.hasAny && !state.isApplying,
+                    applying = state.isApplying,
                     onApplyAll = { onApplyGroup(group.key) },
                     onReviewOneByOne = { onReviewGroup(group.key) }
                 )
             }
         }
-        if (state.ungroupedCount > 0) {
+        if (ungrouped > 0) {
             item {
                 IdentifyUngroupedBlock(
-                    count = state.ungroupedCount,
+                    count = ungrouped,
                     onReview = onReviewAll
                 )
             }
@@ -317,6 +273,7 @@ private fun IdentifyAlbumGroupCard(
     group: IdentifyAlbumGroup,
     titles: List<String>,
     canApply: Boolean,
+    applying: Boolean,
     onApplyAll: () -> Unit,
     onReviewOneByOne: () -> Unit
 ) {
@@ -366,9 +323,17 @@ private fun IdentifyAlbumGroupCard(
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Button(onClick = onApplyAll, enabled = canApply, modifier = Modifier.weight(1f)) {
-                Text("Aplicar a todas", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(
+                    if (applying) "Aplicando…" else "Aplicar a todas",
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
-            OutlinedButton(onClick = onReviewOneByOne, modifier = Modifier.weight(1f)) {
+            OutlinedButton(
+                onClick = onReviewOneByOne,
+                enabled = !applying,
+                modifier = Modifier.weight(1f)
+            ) {
                 Text("Revisar una a una", maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
@@ -445,11 +410,14 @@ private fun IdentifyReviewHeader(
                     enabled = state.canApplyRemaining && !state.isSearching,
                     modifier = Modifier.weight(1f)
                 ) {
-                    Text("Aplicar automático a restantes", maxLines = 2)
+                    Text(
+                        if (state.isApplying) "Aplicando…" else "Aplicar automático a restantes",
+                        maxLines = 2
+                    )
                 }
                 TextButton(
                     onClick = onSkipAll,
-                    enabled = !state.isSearching,
+                    enabled = !state.isSearching && !state.isApplying,
                     modifier = Modifier.weight(1f)
                 ) {
                     Text("Omitir todas", maxLines = 2)
@@ -487,6 +455,95 @@ private fun IdentifyApplyFieldsChips(
                         selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
                         selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
                     )
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun IdentifySourcePlaying(
+    viewModel: MusicPlayerViewModel,
+    song: Song,
+    sourceHints: String?,
+    confidence: IdentifyConfidence
+) {
+    val isPlaying by viewModel.isPlaying.collectAsState()
+    val currentItem by viewModel.currentItem.collectAsState()
+    val localPlaying = currentItem is PlayableItem.Local &&
+        (currentItem as PlayableItem.Local).song.id == song.id &&
+        isPlaying
+    IdentifySourceBlock(
+        song = song,
+        sourceHints = sourceHints,
+        confidence = confidence,
+        isPlaying = localPlaying,
+        onPreview = { viewModel.previewIdentifyLocalSong(song) }
+    )
+}
+
+@Composable
+private fun IdentifyCandidateList(
+    viewModel: MusicPlayerViewModel,
+    song: Song,
+    candidates: List<IdentifyCandidate>,
+    selectedIndex: Int,
+    applyFields: IdentifyApplyFields,
+    canShowMore: Boolean,
+    isLoadingMore: Boolean,
+    isSearching: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val isPlaying by viewModel.isPlaying.collectAsState()
+    val resolvingRemote by viewModel.resolvingRemote.collectAsState()
+    val catalogPreviewKey by viewModel.catalogPreviewKey.collectAsState()
+    LazyColumn(
+        modifier = modifier,
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        item {
+            Text(
+                text = if (candidates.isEmpty()) {
+                    "Sin candidatos — buscá otro"
+                } else {
+                    "Candidatos"
+                },
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary
+            )
+        }
+        itemsIndexed(
+            items = candidates,
+            key = { index, c ->
+                val stableId = c.track.id.ifBlank { "${c.artist}|${c.title}|${c.album}" }
+                "${c.provider}|$stableId|$index"
+            }
+        ) { index, candidate ->
+            val flags = previewFlags(
+                catalogPreviewKey,
+                viewModel.catalogPreviewKeyFor(candidate.track),
+                isPlaying,
+                resolvingRemote
+            )
+            IdentifyCandidateRow(
+                candidate = candidate,
+                fileDurationMs = song.durationMs,
+                song = song,
+                applyFields = applyFields,
+                selected = index == selectedIndex,
+                isPlaying = flags.isPlaying,
+                isResolving = flags.isResolving,
+                onClick = { viewModel.selectIdentifyCandidate(index) },
+                onPreview = { viewModel.previewIdentifyCandidate(candidate) }
+            )
+        }
+        if (canShowMore) {
+            item(key = "load_more") {
+                IdentifyLoadMoreButton(
+                    isLoading = isLoadingMore,
+                    enabled = !isSearching,
+                    onClick = viewModel::loadMoreIdentifyCandidates
                 )
             }
         }
@@ -628,7 +685,9 @@ fun IdentifyCandidateRow(
                     )
                 }
             }
-            val changes = identifyApplyChanges(song, candidate, applyFields)
+            val changes = remember(song.id, candidate.track.id, candidate.title, candidate.artist, candidate.album, applyFields) {
+                identifyApplyChanges(song, candidate, applyFields)
+            }
             Text(
                 text = formatIdentifyApplyChanges(changes),
                 style = MaterialTheme.typography.labelSmall,
@@ -786,11 +845,13 @@ private fun IdentifyReviewFooter(
     showSearchField: Boolean,
     showSearchFilters: Boolean,
     isSearching: Boolean,
+    isApplying: Boolean,
     onUse: () -> Unit,
     onSkip: () -> Unit,
     onToggleSearch: () -> Unit,
     onToggleFilters: () -> Unit
 ) {
+    val actionsEnabled = !isSearching && !isApplying
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -799,10 +860,10 @@ private fun IdentifyReviewFooter(
     ) {
         Button(
             onClick = onUse,
-            enabled = canApply && !isSearching,
+            enabled = canApply && actionsEnabled,
             modifier = Modifier.fillMaxWidth()
         ) {
-            Text("Usar este")
+            Text(if (isApplying) "Aplicando…" else "Usar este")
         }
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -810,14 +871,14 @@ private fun IdentifyReviewFooter(
         ) {
             OutlinedButton(
                 onClick = onSkip,
-                enabled = !isSearching,
+                enabled = actionsEnabled,
                 modifier = Modifier.weight(1f)
             ) {
                 Text("Omitir")
             }
             TextButton(
                 onClick = onToggleSearch,
-                enabled = !isSearching,
+                enabled = actionsEnabled,
                 modifier = Modifier.weight(1f)
             ) {
                 Text(if (showSearchField) "Ocultar búsqueda" else "Buscar otro…")
@@ -826,7 +887,7 @@ private fun IdentifyReviewFooter(
         if (showSearchField) {
             TextButton(
                 onClick = onToggleFilters,
-                enabled = !isSearching,
+                enabled = actionsEnabled,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(if (showSearchFilters) "Ocultar filtros" else "Filtros adicionales…")

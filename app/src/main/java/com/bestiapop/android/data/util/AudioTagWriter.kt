@@ -25,7 +25,7 @@ data class TagSyncSummary(
  */
 object AudioTagWriter {
 
-    private val SUPPORTED_EXT = setOf("mp3", "m4a", "mp4", "flac", "ogg", "oga")
+    internal val SUPPORTED_EXT = setOf("mp3", "m4a", "mp4", "flac", "ogg", "oga")
 
     fun isSupportedExtension(file: File): Boolean =
         file.extension.lowercase() in SUPPORTED_EXT

@@ -29,6 +29,7 @@ import com.bestiapop.android.data.preferences.PLAYLIST_DETAIL_LOCAL
 import com.bestiapop.android.data.preferences.UiNavSnapshot
 import com.bestiapop.android.data.util.MusicFileStore
 import com.bestiapop.android.data.util.StorageUtils
+import com.bestiapop.android.data.util.UploadNameSanitizer
 import com.bestiapop.android.domain.util.TrackMatchKeys
 import com.bestiapop.android.service.DownloadNotificationHelper
 import com.bestiapop.android.testutil.PcmWavFixture
@@ -82,7 +83,7 @@ internal class PlaylistPendingDownloadTestFixture : AutoCloseable {
     private val videoId = "Bp${token.take(9)}"
     private val downloadId = TrackMatchKeys.downloadIdFor(artist, title)
     private val audioFileName =
-        "${artist}_$title".replace(Regex("[^a-zA-Z0-9_.-]"), "_") + ".wav"
+        UploadNameSanitizer.sanitize("${artist}_$title") + ".wav"
 
     private var playlistId = 0L
     private var scenario: ActivityScenario<MainActivity>? = null

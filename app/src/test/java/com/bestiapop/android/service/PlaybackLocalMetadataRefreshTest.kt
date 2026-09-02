@@ -41,6 +41,29 @@ class PlaybackLocalMetadataRefreshTest {
     }
 
     @Test
+    fun refresh_keepsHydratedLyricsWhenLibraryRowIsSlim() {
+        val queued = PlayableItem.Local(
+            song = song(id = 7L, uri = "file:///same", title = "Old").copy(lyrics = "[00:01]kept"),
+            queueEntryId = "slot-7"
+        )
+        val slim = song(id = 7L, uri = "file:///same", title = "New")
+        val refreshed = refreshLocalQueueMetadata(listOf(queued), listOf(slim))
+            .single() as PlayableItem.Local
+        assertEquals("New", refreshed.song.title)
+        assertEquals("[00:01]kept", refreshed.song.lyrics)
+    }
+
+    @Test
+    fun keepLyricsIfIncomingSlim_copiesOnlyWhenIncomingHasNone() {
+        val hydrated = song(id = 1L, uri = "file:///a", title = "A").copy(lyrics = "[00:01]kept")
+        val slim = song(id = 1L, uri = "file:///a", title = "B")
+        val full = slim.copy(lyrics = "[00:02]fresh")
+        assertEquals("[00:01]kept", hydrated.keepLyricsIfIncomingSlim(slim).lyrics)
+        assertEquals("B", hydrated.keepLyricsIfIncomingSlim(slim).title)
+        assertEquals("[00:02]fresh", hydrated.keepLyricsIfIncomingSlim(full).lyrics)
+    }
+
+    @Test
     fun refresh_keepsUnmatchedQueueItem() {
         val queued = PlayableItem.Local(
             song = song(id = 1L, uri = "file:///missing", title = "Missing"),

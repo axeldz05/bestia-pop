@@ -1,5 +1,6 @@
 package com.bestiapop.android.data.preferences
 
+import com.bestiapop.android.data.model.Song
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -171,5 +172,37 @@ class LibraryUiPreferencesCodecTest {
         assertNull(bothGone.albumName)
         assertNull(bothGone.artistName)
         assertNull(bothGone.genreName)
+    }
+
+    @Test
+    fun libraryStackLookups_matchIgnoreCaseAfterOnePass() {
+        val songs = listOf(
+            Song(id = 1, uriString = "u1", title = "A", artist = "Queen", album = "Opera", genre = "Rock"),
+            Song(id = 2, uriString = "u2", title = "B", artist = "Eagles", album = "Hotel", genre = "")
+        )
+        val lookups = LibraryStackLookups.fromSongs(songs)
+        val kept = LibraryUiPreferencesCodec.pruneLibraryStack(
+            albumName = "opera",
+            artistName = "eagles",
+            genreName = Song.UNKNOWN_GENRE,
+            albumExists = lookups.albumExists,
+            artistExists = lookups.artistExists,
+            genreExists = lookups.genreExists
+        )
+        assertEquals("opera", kept.albumName)
+        assertEquals("eagles", kept.artistName)
+        assertEquals(Song.UNKNOWN_GENRE, kept.genreName)
+
+        val dropped = LibraryUiPreferencesCodec.pruneLibraryStack(
+            albumName = "Missing",
+            artistName = "Ghost",
+            genreName = "Jazz",
+            albumExists = lookups.albumExists,
+            artistExists = lookups.artistExists,
+            genreExists = lookups.genreExists
+        )
+        assertNull(dropped.albumName)
+        assertNull(dropped.artistName)
+        assertNull(dropped.genreName)
     }
 }

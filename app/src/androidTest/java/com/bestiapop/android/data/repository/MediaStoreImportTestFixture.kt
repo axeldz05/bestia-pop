@@ -301,4 +301,7 @@ private class FixtureOnlyRepositoryFileStore(
 
     override fun writableFile(uriString: String, folderPath: String): File? =
         delegate.writableFile(uriString, folderPath)
+
+    override fun readableFile(uriString: String, folderPath: String): File? =
+        delegate.readableFile(uriString, folderPath)
 }

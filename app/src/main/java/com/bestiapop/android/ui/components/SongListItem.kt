@@ -50,6 +50,7 @@ fun SongListItem(
     subtitle: String? = null,
     trailing: String? = null,
     trailingIsSortKey: Boolean = false,
+    artworkUri: String? = song.artworkUri,
     onClick: () -> Unit,
     onLongClick: () -> Unit = {},
     onToggleSelect: () -> Unit = {},
@@ -104,7 +105,7 @@ fun SongListItem(
         }
 
         ArtworkThumbnail(
-            artworkUri = song.artworkUri,
+            artworkUri = artworkUri,
             size = ListDensity.artworkSong,
             contentDescription = song.title
         )

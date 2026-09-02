@@ -1,5 +1,6 @@
 package com.bestiapop.android.ui.components
 
+import androidx.compose.runtime.Immutable
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.ui.SortOption
 
@@ -7,6 +8,7 @@ import com.bestiapop.android.ui.SortOption
  * Row copy for library lists: dominant line = active [SortOption], optional trailing sort key.
  * Absorbs the old [formatSortRelevantInfo] subtitle fragment for songs.
  */
+@Immutable
 data class SortEmphasizedTexts(
     val title: String,
     val subtitle: String,

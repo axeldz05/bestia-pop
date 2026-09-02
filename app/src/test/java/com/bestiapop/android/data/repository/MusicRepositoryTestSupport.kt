@@ -44,6 +44,11 @@ internal class TemporaryRepositoryFileStore(
         return file.takeIf { it.isFile && it.canWrite() }
     }
 
+    override fun readableFile(uriString: String, folderPath: String): File? {
+        val file = resolveFile(canonicalize(uriString, folderPath)) ?: return null
+        return file.takeIf { it.isFile && it.canRead() }
+    }
+
     private fun requireFile(ref: AudioPersistRef): File =
         checkNotNull(resolveFile(ref)) { "Not a local test file: ${ref.uriString}" }
 

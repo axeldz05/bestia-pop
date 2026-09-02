@@ -107,6 +107,43 @@ class MusicRepositoryDownloadIntegrationTest {
     }
 
     @Test
+    fun googlevideoFirstRequest_sendsPartialChunksNotWholeFile() = runTest {
+        val capturedRanges = mutableListOf<String?>()
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(206)
+                .setHeader("Content-Range", "bytes 0-6/8")
+                .setBody("1234567")
+        )
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(206)
+                .setHeader("Content-Range", "bytes 7-7/8")
+                .setBody("8")
+        )
+        val client = OkHttpClient.Builder()
+            .addInterceptor { chain ->
+                val original = chain.request()
+                capturedRanges += original.header("Range")
+                chain.proceed(
+                    original.newBuilder().url(server.url("/gv.m4a")).build()
+                )
+            }
+            .build()
+        val googlevideoUrl =
+            "https://rr1---sn-uxaxjxougv-x1xl7.googlevideo.com/videoplayback?clen=8"
+        val repository = repository(
+            resolver(googlevideoUrl),
+            downloadCallFactory = client
+        )
+
+        val saved = repository.downloadAndSaveOnlineTrack(track(title = "Bounded"))
+
+        assertEquals("12345678", java.io.File(saved.uriString).readText())
+        assertEquals(listOf("bytes=0-6", "bytes=7-7"), capturedRanges)
+    }
+
+    @Test
     fun forbiddenAndGone_forceFreshResolve_andRestartWithoutRange() = runTest {
         for (code in listOf(403, 410)) {
             val calls = AtomicInteger()
@@ -233,13 +270,14 @@ class MusicRepositoryDownloadIntegrationTest {
 
     private fun repository(
         streamResolver: StreamResolver,
-        retryDelay: suspend (Long) -> Unit = {}
+        retryDelay: suspend (Long) -> Unit = {},
+        downloadCallFactory: OkHttpClient = OkHttpClient()
     ) = MusicRepository(
         context = context,
         database = database.database,
         streamResolver = streamResolver,
         audioStore = TemporaryRepositoryFileStore(files.root),
-        downloadCallFactory = OkHttpClient(),
+        downloadCallFactory = downloadCallFactory,
         metadataSource = NoNetworkRepositoryMetadata,
         downloadRetryDelay = retryDelay
     )

@@ -38,6 +38,7 @@ import androidx.media3.session.MediaSessionService
 import com.bestiapop.android.BestiaPopApplication
 import com.bestiapop.android.MainActivity
 import com.bestiapop.android.R
+import com.bestiapop.android.data.network.GoogleVideoRange
 import com.bestiapop.android.data.preferences.MAX_VOLUME_BOOST_GAIN_MB
 import com.bestiapop.android.data.preferences.PlaybackPreferencesRepository
 import com.bestiapop.android.data.preferences.PlaybackSettings
@@ -808,11 +809,9 @@ internal fun googleVideoBoundedLength(
     requestedLength: Long
 ): Long? {
     if (requestedLength != C.LENGTH_UNSET.toLong()) return null
-    if (host?.endsWith(".googlevideo.com") != true) return null
-    val contentLength = contentLengthParam
-        ?.toLongOrNull()
-        ?.takeIf { it > 0L }
-        ?: return null
-    val remainingLength = contentLength - position
-    return remainingLength.takeIf { it > 0L }
+    return GoogleVideoRange.remainingLength(
+        host,
+        contentLengthParam,
+        position
+    )
 }

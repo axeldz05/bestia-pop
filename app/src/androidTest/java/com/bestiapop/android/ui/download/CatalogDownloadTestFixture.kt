@@ -30,6 +30,7 @@ import com.bestiapop.android.data.preferences.LibraryPreferencesRepository
 import com.bestiapop.android.data.preferences.UiNavSnapshot
 import com.bestiapop.android.data.util.MusicFileStore
 import com.bestiapop.android.data.util.SongPathNormalizer
+import com.bestiapop.android.data.util.UploadNameSanitizer
 import com.bestiapop.android.domain.util.TrackMatchKeys
 import com.bestiapop.android.service.DownloadNotificationHelper
 import com.bestiapop.android.testutil.PcmWavFixture
@@ -97,7 +98,7 @@ internal object CatalogDownloadTestContract {
     fun downloadIdFor(title: String): String = TrackMatchKeys.downloadIdFor(ARTIST, title)
 
     fun fileNameFor(title: String): String {
-        val sanitized = "${ARTIST}_$title".replace(Regex("[^a-zA-Z0-9_.-]"), "_")
+        val sanitized = UploadNameSanitizer.sanitize("${ARTIST}_$title")
         return "$sanitized.wav"
     }
 

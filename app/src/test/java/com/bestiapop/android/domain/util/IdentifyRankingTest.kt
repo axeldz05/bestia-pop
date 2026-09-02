@@ -486,6 +486,45 @@ class IdentifyRankingTest {
     }
 
     @Test
+    fun concatenatedFilenameTitle_isNotTitleConflict() {
+        val query = IdentifyRanking.Query(
+            artist = "Unknown Artist",
+            title = "Clever Girl Elm",
+            durationMs = 180_000L,
+            artistIsPlaceholder = true,
+            sourceTitle = "Clever Girl Elm"
+        )
+        val ranked = IdentifyRanking.rank(
+            query,
+            listOf(track("Elm", "Clever Girl", album = "No Drum And Bass In The Jazz Room", durationMs = 180_500L))
+        )
+        assertEquals("Clever Girl", ranked.first().artist)
+        assertEquals("Elm", ranked.first().title)
+        assertFalse(ranked.first().reasons.any { it.startsWith("título distinto") })
+        assertEquals(IdentifyConfidence.HIGH, IdentifyRanking.confidence(ranked, query))
+    }
+
+    @Test
+    fun concatenatedFilename_promotesHighDespiteCloseCatalogRivals() {
+        val query = IdentifyRanking.Query(
+            artist = "Unknown Artist",
+            title = "The Doors Roadhouse Blues",
+            durationMs = 240_000L,
+            artistIsPlaceholder = true,
+            sourceTitle = "The Doors Roadhouse Blues"
+        )
+        val ranked = IdentifyRanking.rank(
+            query,
+            listOf(
+                track("Roadhouse Blues", "The Doors", album = "Morrison Hotel", durationMs = 240_000L),
+                track("Roadhouse Blues", "The Doors", album = "Absolutely Live", durationMs = 238_000L)
+            )
+        )
+        assertEquals("The Doors", ranked.first().artist)
+        assertEquals(IdentifyConfidence.HIGH, IdentifyRanking.confidence(ranked, query))
+    }
+
+    @Test
     fun compactSimilarity_matchesAccentSanitizerHoles() {
         val query = IdentifyRanking.Query(
             artist = "Anibal Troilo",
@@ -513,7 +552,81 @@ class IdentifyRankingTest {
             listOf(track("kick in the world", "Haru Nemuri", album = "kick in the world", durationMs = 210_000L))
         )
         assertEquals("Haru Nemuri", ranked.first().artist)
+        assertEquals(IdentifyConfidence.HIGH, IdentifyRanking.confidence(ranked, query))
         assertTrue(ranked.first().score >= IdentifyRanking.MEDIUM_SCORE)
+    }
+
+    @Test
+    fun farDuration_wrongCatalogHit_isNotMedium() {
+        val query = IdentifyRanking.Query(
+            artist = "Unknown Artist",
+            title = "Mirror Jing Zi",
+            durationMs = 38_952L,
+            artistIsPlaceholder = true
+        )
+        val (score, _) = IdentifyRanking.score(
+            query,
+            track(
+                "Mirror (Zhao Jing Zi)",
+                "Guan Mucun",
+                album = "Best Of",
+                durationMs = 135_000L
+            )
+        )
+        assertTrue("far duration should not stay MEDIUM, score=$score", score < IdentifyRanking.MEDIUM_SCORE)
+    }
+
+    @Test
+    fun uniqueCloseDuration_romanizedTitle_isHigh() {
+        val query = IdentifyRanking.Query(
+            artist = "Unknown Artist",
+            title = "Yodaka",
+            durationMs = 313_861L,
+            artistIsPlaceholder = true
+        )
+        val ranked = IdentifyRanking.rank(
+            query,
+            listOf(
+                track("Yodaka", "Kinoko Teikoku", album = "eureka", durationMs = 313_827L),
+                track("Yodaka", "Kenshi Yonezu", album = "STRAY SHEEP", durationMs = 198_000L)
+            )
+        )
+        assertEquals("Kinoko Teikoku", ranked.first().artist)
+        assertEquals(IdentifyConfidence.HIGH, IdentifyRanking.confidence(ranked, query))
+    }
+
+    @Test
+    fun genericTitle_blackHole_isNotHigh() {
+        val query = IdentifyRanking.Query(
+            artist = "Unknown Artist",
+            title = "Black Hole",
+            durationMs = 214_204L,
+            artistIsPlaceholder = true
+        )
+        val ranked = IdentifyRanking.rank(
+            query,
+            listOf(
+                track("Black Hole", "Muse", album = "Absolution", durationMs = 214_000L)
+            )
+        )
+        assertNotEquals(IdentifyConfidence.HIGH, IdentifyRanking.confidence(ranked, query))
+        assertTrue(IdentifyRanking.isGenericIdentifyTitle("Black Hole"))
+        assertTrue(IdentifyRanking.isGenericIdentifyTitle("Castle"))
+        assertFalse(IdentifyRanking.isGenericIdentifyTitle("Yodaka"))
+    }
+
+    @Test
+    fun preferBilingualTitle_keepsBothScripts() {
+        assertEquals("夜鷹 (Yodaka)", IdentifyRanking.preferBilingualTitle("夜鷹", "Yodaka"))
+        assertEquals("Mirror (Jing Zi)", IdentifyRanking.preferBilingualTitle("Mirror", "Mirror Jing Zi"))
+        assertEquals("Mirror (鏡子)", IdentifyRanking.preferBilingualTitle("Mirror", "Mirror 鏡子"))
+        assertTrue(IdentifyRanking.shouldApplyBilingualTitle("夜鷹", "Yodaka"))
+    }
+
+    @Test
+    fun musicBrainz_isPreferredProvider() {
+        assertTrue(IdentifyRanking.isPreferredProvider("MusicBrainz"))
+        assertTrue(IdentifyRanking.isPreferredProvider("musicbrainz"))
     }
 
     @Test

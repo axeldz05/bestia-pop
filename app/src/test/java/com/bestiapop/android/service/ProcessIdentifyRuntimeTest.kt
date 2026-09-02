@@ -18,7 +18,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
@@ -62,7 +61,7 @@ class ProcessIdentifyRuntimeTest {
                 appliedFields += fields
                 IdentifyResult.Updated(songId)
             },
-            appendReview = { proposal, _ -> reviews += proposal.songId }
+            appendReview = { proposals, _ -> reviews += proposals.map { it.songId } }
         )
         try {
             fixture.runtime.submit(listOf(song(10L))).join()
@@ -81,7 +80,7 @@ class ProcessIdentifyRuntimeTest {
     }
 
     @Test
-    fun mediumMatch_appendsReviewIncrementally() = runBlocking {
+    fun mediumMatch_flushesReviewAtEndOfBatch() = runBlocking {
         val reviews = mutableListOf<Long>()
         val gate = CompletableDeferred<Unit>()
         val enteredSecond = CompletableDeferred<Unit>()
@@ -93,15 +92,12 @@ class ProcessIdentifyRuntimeTest {
                 }
                 proposal(song.id, IdentifyConfidence.MEDIUM)
             },
-            appendReview = { proposal, _ -> reviews += proposal.songId }
+            appendReview = { proposals, _ -> reviews += proposals.map { it.songId } }
         )
         try {
             fixture.runtime.submit(listOf(song(1L), song(2L)))
             withTimeout(TIMEOUT_MS) { enteredSecond.await() }
-            withTimeout(TIMEOUT_MS) {
-                while (!reviews.contains(1L)) delay(10)
-            }
-            assertEquals(setOf(1L), reviews.toSet())
+            assertTrue(reviews.isEmpty())
             assertTrue(fixture.work.single().remainingSongIds.contains(2L))
 
             gate.complete(Unit)
@@ -110,6 +106,46 @@ class ProcessIdentifyRuntimeTest {
             assertTrue(fixture.work.isEmpty())
         } finally {
             gate.complete(Unit)
+            fixture.close()
+        }
+    }
+
+    @Test
+    fun workPersist_coalescesUntilBatchFinishes() = runBlocking {
+        val saves = AtomicInteger(0)
+        val fixture = fixture(
+            propose = { song, _, _ -> proposal(song.id, IdentifyConfidence.HIGH) },
+            apply = { songId, _, _ -> IdentifyResult.Updated(songId) },
+            onSaveWork = { saves.incrementAndGet() }
+        )
+        try {
+            fixture.runtime.submit((1L..5L).map { song(it) }).join()
+            withTimeout(TIMEOUT_MS) { fixture.runtime.awaitIdle() }
+            assertTrue(saves.get() <= 3)
+            assertTrue(fixture.work.isEmpty())
+        } finally {
+            fixture.close()
+        }
+    }
+
+    @Test
+    fun reviewBuffer_flushesInBatchesNotPerSong() = runBlocking {
+        val flushes = AtomicInteger(0)
+        val reviews = mutableListOf<Long>()
+        val fixture = fixture(
+            propose = { song, _, _ -> proposal(song.id, IdentifyConfidence.MEDIUM) },
+            appendReview = { proposals, _ ->
+                flushes.incrementAndGet()
+                reviews += proposals.map { it.songId }
+            }
+        )
+        try {
+            fixture.runtime.submit((1L..8L).map { song(it) }).join()
+            withTimeout(TIMEOUT_MS) { fixture.runtime.awaitIdle() }
+            assertEquals(8, reviews.toSet().size)
+            assertTrue(flushes.get() < 8)
+            assertTrue(flushes.get() >= 1)
+        } finally {
             fixture.close()
         }
     }
@@ -331,7 +367,7 @@ class ProcessIdentifyRuntimeTest {
                 proposes.incrementAndGet()
                 proposal(song.id, IdentifyConfidence.NONE)
             },
-            appendReview = { proposal, _ -> reviews += proposal.songId }
+            appendReview = { proposals, _ -> reviews += proposals.map { it.songId } }
         )
         try {
             fixture.runtime.submit(listOf(song(5L))).join()
@@ -378,8 +414,19 @@ class ProcessIdentifyRuntimeTest {
             )
         )
         val seedApplied = CompletableDeferred<Unit>()
+        val getSongCalls = AtomicInteger(0)
+        val getSongsCalls = AtomicInteger(0)
         val fixture = fixture(
             songsById = songs.associateBy { it.id },
+            getSong = { id ->
+                getSongCalls.incrementAndGet()
+                songs.firstOrNull { it.id == id }
+            },
+            getSongs = { ids ->
+                getSongsCalls.incrementAndGet()
+                val byId = songs.associateBy { it.id }
+                ids.mapNotNull { byId[it] }
+            },
             propose = { song, _, _ ->
                 proposed += song.id
                 if (song.id != 1L) seedApplied.await()
@@ -406,7 +453,7 @@ class ProcessIdentifyRuntimeTest {
                 if (songId == 1L) seedApplied.complete(Unit)
                 IdentifyResult.Updated(songId)
             },
-            appendReview = { proposal, _ -> reviews += proposal.songId },
+            appendReview = { proposals, _ -> reviews += proposals.map { it.songId } },
             loadScopedAlbumTracks = { _, _ -> album }
         )
         try {
@@ -416,6 +463,8 @@ class ProcessIdentifyRuntimeTest {
             assertTrue(proposed.contains(1L))
             assertTrue(applied.contains(1L))
             assertTrue(applied.contains(4L) || applied.contains(5L))
+            assertTrue(getSongsCalls.get() >= 1)
+            assertTrue(getSongCalls.get() <= ProcessIdentifyRuntime.IDENTIFY_PARALLEL + 1)
             assertTrue(proposed.size <= ProcessIdentifyRuntime.IDENTIFY_PARALLEL)
             assertTrue(reviews.none { it in applied })
             assertTrue(fixture.work.isEmpty())
@@ -431,11 +480,14 @@ class ProcessIdentifyRuntimeTest {
         songsById: Map<Long, Song> = emptyMap(),
         isOnline: () -> Boolean = { true },
         acquireExecutionLease: suspend () -> AutoCloseable = { AutoCloseable {} },
+        getSong: (suspend (Long) -> Song?)? = null,
+        getSongs: (suspend (List<Long>) -> List<Song>)? = null,
         propose: suspend (Song, Boolean, String?) -> IdentifyProposal,
         apply: suspend (Long, IdentifyProposal, IdentifyApplyFields) -> IdentifyResult = { _, _, _ ->
             IdentifyResult.NoMatch
         },
-        appendReview: suspend (IdentifyProposal, IdentifyApplyFields) -> Unit = { _, _ -> },
+        appendReview: suspend (List<IdentifyProposal>, IdentifyApplyFields) -> Unit = { _, _ -> },
+        onSaveWork: () -> Unit = {},
         loadScopedAlbumTracks: suspend (String, String) ->
             com.bestiapop.android.domain.util.KnownAlbumTracks? = { _, _ -> null }
     ): Fixture {
@@ -445,7 +497,8 @@ class ProcessIdentifyRuntimeTest {
         val runtime = ProcessIdentifyRuntime(
             scope = scope,
             dependencies = ProcessIdentifyRuntime.Dependencies(
-                getSong = { id -> songsById[id] ?: song(id) },
+                getSong = getSong ?: { id -> songsById[id] ?: song(id) },
+                getSongs = getSongs,
                 propose = propose,
                 apply = apply,
                 listenBrainzToken = { null },
@@ -453,6 +506,7 @@ class ProcessIdentifyRuntimeTest {
                 appendReview = appendReview,
                 loadWork = { work.lastOrNull() },
                 saveWork = { snapshot ->
+                    onSaveWork()
                     work.clear()
                     if (snapshot != null) work += snapshot
                 },

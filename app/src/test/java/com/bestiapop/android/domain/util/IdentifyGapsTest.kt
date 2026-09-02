@@ -32,6 +32,7 @@ class IdentifyGapsTest {
         assertTrue(isWeakIdentityTitle("Unknown Artist", "content://tree/primary:Music"))
         assertTrue(isWeakIdentityTitle("Unknown Artist", "Artist - Song"))
         assertFalse(isWeakIdentityTitle("Radiohead", "Creep"))
+        assertFalse(isWeakIdentityTitle("namitape", "ブラックホール / Black Hole"))
         val fields = gapApplyFields(complete(title = "Creep"))
         assertFalse(fields.title)
     }

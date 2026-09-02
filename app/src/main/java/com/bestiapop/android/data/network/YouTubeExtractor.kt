@@ -96,7 +96,18 @@ object YouTubeExtractor {
         val extraContextJson: String?
     )
 
-    // yt-dlp primary TV & Android VR client profiles
+    // yt-dlp: TVHTML5 7.x is SABR-only; 5.x still returns HTTPS URLs without PO token.
+    private val TV_DOWNGRADED = ClientProfile(
+        name = "TVHTML5",
+        version = "5.20260707",
+        apiKey = "",
+        userAgent = "Mozilla/5.0 (ChromiumStylePlatform) Cobalt/Version",
+        clientId = "7",
+        osName = "TV",
+        osVersion = "5.0",
+        extraContextJson = null
+    )
+
     private val TV_EMBED = ClientProfile(
         name = "TVHTML5",
         version = "7.20260707.07.00",
@@ -108,16 +119,15 @@ object YouTubeExtractor {
         extraContextJson = null
     )
 
-
-    private val ANDROID_VR = ClientProfile(
-        name = "ANDROID_VR",
-        version = "1.65.10",
+    private val VISION_OS = ClientProfile(
+        name = "VISIONOS",
+        version = "1.02",
         apiKey = "",
-        userAgent = "com.google.android.apps.youtube.vr.oculus/1.65.10 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip",
-        clientId = "28",
-        osName = "Android",
-        osVersion = "12L",
-        extraContextJson = """{"deviceMake":"Oculus","deviceModel":"Quest 3","androidSdkVersion":32}"""
+        userAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_7_3) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15",
+        clientId = "101",
+        osName = "visionOS",
+        osVersion = "26.5.23O471",
+        extraContextJson = """{"deviceMake":"Apple","deviceModel":"RealityDevice17,1"}"""
     )
 
     private val ANDROID_MUSIC = ClientProfile(
@@ -133,16 +143,17 @@ object YouTubeExtractor {
 
     private val ANDROID_MAIN = ClientProfile(
         name = "ANDROID",
-        version = "20.10.38",
+        version = "21.26.364",
         apiKey = "AIzaSyA8eiZmM1FaDVjRy-df2KTyQ_vz_yYM39w",
-        userAgent = "com.google.android.youtube/20.10.38 (Linux; U; Android 14; es_ES; gts8uwifi Build/UP1A.231005.007) gzip",
-        clientId = "1",
+        userAgent = "com.google.android.youtube/21.26.364 (Linux; U; Android 11) gzip",
+        clientId = "3",
         osName = "Android",
-        osVersion = "14",
-        extraContextJson = """{"androidSdkVersion":34}"""
+        osVersion = "11",
+        extraContextJson = """{"androidSdkVersion":30}"""
     )
 
-    private val AUDIO_CLIENTS = listOf(TV_EMBED, ANDROID_VR, ANDROID_MUSIC, ANDROID_MAIN)
+    // ANDROID_VR 1.65.10 omitted: since 2026.08.17 those URLs 403 after ~1MB.
+    private val AUDIO_CLIENTS = listOf(TV_DOWNGRADED, VISION_OS, ANDROID_MAIN, ANDROID_MUSIC, TV_EMBED)
 
     private val AUDIO_ONLY_TITLE = Regex(
         """(?i)(?:\b(?:official\s+)?audio\b|\baudio\s+oficial\b|\báudio\s+oficial\b)"""
@@ -346,13 +357,13 @@ object YouTubeExtractor {
         // 1. InnerTube API Search (/youtubei/v1/search)
         try {
             val clientCtx = JSONObject().apply {
-                put("clientName", ANDROID_VR.name)
-                put("clientVersion", ANDROID_VR.version)
+                put("clientName", ANDROID_MAIN.name)
+                put("clientVersion", ANDROID_MAIN.version)
                 put("hl", "es")
                 put("gl", "US")
-                put("userAgent", ANDROID_VR.userAgent)
-                put("osName", ANDROID_VR.osName)
-                put("osVersion", ANDROID_VR.osVersion)
+                put("userAgent", ANDROID_MAIN.userAgent)
+                put("osName", ANDROID_MAIN.osName)
+                put("osVersion", ANDROID_MAIN.osVersion)
             }
 
             val bodyJson = JSONObject().apply {
@@ -362,9 +373,9 @@ object YouTubeExtractor {
 
             val request = Request.Builder()
                 .url(endpoint(endpoints.webBaseUrl, "youtubei/v1/search"))
-                .header("X-YouTube-Client-Name", ANDROID_VR.clientId)
-                .header("X-YouTube-Client-Version", ANDROID_VR.version)
-                .header("User-Agent", ANDROID_VR.userAgent)
+                .header("X-YouTube-Client-Name", ANDROID_MAIN.clientId)
+                .header("X-YouTube-Client-Version", ANDROID_MAIN.version)
+                .header("User-Agent", ANDROID_MAIN.userAgent)
                 .header("Content-Type", "application/json")
                 .post(bodyJson.toString().toRequestBody("application/json".toMediaType()))
                 .build()

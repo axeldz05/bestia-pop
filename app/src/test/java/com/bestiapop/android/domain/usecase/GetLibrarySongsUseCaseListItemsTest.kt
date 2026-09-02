@@ -6,6 +6,8 @@ import com.bestiapop.android.ui.SortDirection
 import com.bestiapop.android.ui.SortOption
 import com.bestiapop.android.ui.components.formatSortRelevantInfo
 import com.bestiapop.android.ui.components.sortEmphasisFor
+import com.bestiapop.android.ui.screens.library.AlbumHeaderSelectionState
+import com.bestiapop.android.ui.screens.library.albumHeaderSelectionState
 import com.bestiapop.android.ui.screens.library.filterCollapsedAlbumSongs
 import com.bestiapop.android.ui.state.LibraryListItem
 import com.bestiapop.android.ui.state.LibraryViewMode
@@ -45,13 +47,20 @@ class GetLibrarySongsUseCaseListItemsTest {
         val header1 = items[0] as LibraryListItem.AlbumHeader
         assertEquals("Hotel", header1.albumName)
         assertEquals(1, header1.songCount)
+        assertEquals(listOf(3L), header1.songIds)
         assertEquals(0, (items[1] as LibraryListItem.SongRow).index)
 
         val header2 = items[2] as LibraryListItem.AlbumHeader
         assertEquals("Opera", header2.albumName)
         assertEquals(2, header2.songCount)
+        assertEquals(listOf(1L, 2L), header2.songIds)
         assertEquals(1, (items[3] as LibraryListItem.SongRow).index)
         assertEquals(2, (items[4] as LibraryListItem.SongRow).index)
+        assertEquals(
+            listOf(items[1] as LibraryListItem.SongRow, items[3] as LibraryListItem.SongRow, items[4] as LibraryListItem.SongRow)
+                .map { it.song },
+            useCase.songsInOrder(songs, header1.songIds + header2.songIds)
+        )
     }
 
     @Test
@@ -68,6 +77,21 @@ class GetLibrarySongsUseCaseListItemsTest {
         assertEquals(listOf(3L, 1L, 2L), operaRows.map { it.song.id })
         assertEquals(listOf(1, 2, 3), operaRows.map { it.index })
         assertEquals(listOf(4L, 3L, 1L, 2L), useCase.songsFromListItems(items).map { it.id })
+    }
+
+    @Test
+    fun buildListItems_albumGroups_inheritsArtworkOntoRows() {
+        val mixed = listOf(
+            Song(id = 1, uriString = "u1", title = "A", artist = "X", album = "Real Album", artworkUri = "file:///cover"),
+            Song(id = 2, uriString = "u2", title = "B", artist = "X", album = "Real Album", artworkUri = null),
+            Song(id = 3, uriString = "u3", title = "C", artist = "Y", album = "Unknown Album", artworkUri = "file:///other"),
+            Song(id = 4, uriString = "u4", title = "D", artist = "Y", album = "Unknown Album", artworkUri = null)
+        )
+        val rows = useCase.buildListItems(mixed, LibraryViewMode.ALBUM_GROUPS)
+            .filterIsInstance<LibraryListItem.SongRow>()
+        assertEquals("file:///cover", rows.first { it.song.id == 2L }.artworkUri)
+        assertEquals(null, rows.first { it.song.id == 2L }.song.artworkUri)
+        assertEquals(null, rows.first { it.song.id == 4L }.artworkUri)
     }
 
     @Test
@@ -359,6 +383,31 @@ class GetLibrarySongsUseCaseListItemsTest {
     }
 
     @Test
+    fun albumHeaderSelectionState_earlyExitsOnPartial() {
+        val albumIds = listOf(1L, 2L, 3L, 4L)
+        assertEquals(
+            AlbumHeaderSelectionState.NONE,
+            albumHeaderSelectionState(albumIds, emptySet(), isSelectionMode = false)
+        )
+        assertEquals(
+            AlbumHeaderSelectionState.NONE,
+            albumHeaderSelectionState(albumIds, emptySet(), isSelectionMode = true)
+        )
+        assertEquals(
+            AlbumHeaderSelectionState.ALL,
+            albumHeaderSelectionState(albumIds, albumIds.toSet(), isSelectionMode = true)
+        )
+        assertEquals(
+            AlbumHeaderSelectionState.PARTIAL,
+            albumHeaderSelectionState(albumIds, setOf(1L), isSelectionMode = true)
+        )
+        assertEquals(
+            AlbumHeaderSelectionState.PARTIAL,
+            albumHeaderSelectionState(albumIds, setOf(1L, 3L), isSelectionMode = true)
+        )
+    }
+
+    @Test
     fun filterCollapsedAlbumSongs_hidesVariantAndSessionRowsInSameGroup() {
         val mixed = listOf(
             Song(id = 1, uriString = "u1", title = "A", artist = "Muse", album = "eureka"),
@@ -372,15 +421,39 @@ class GetLibrarySongsUseCaseListItemsTest {
             .first { it.albumName.equals("Eureka", ignoreCase = true) }
         val filtered = filterCollapsedAlbumSongs(items, setOf(eureka.albumName))
         val leftover = filtered.filterIsInstance<LibraryListItem.SongRow>()
-            .filter { row -> eureka.albumSongs.any { it.id == row.song.id } }
+            .filter { row -> eureka.songIds.contains(row.song.id) }
         assertEquals(emptyList<String>(), leftover.map { it.song.album })
 
         val studio = items.filterIsInstance<LibraryListItem.AlbumHeader>()
             .first { it.albumName == "This Town Needs Guns" }
         val filteredStudio = filterCollapsedAlbumSongs(items, setOf(studio.albumName))
         val leftoverStudio = filteredStudio.filterIsInstance<LibraryListItem.SongRow>()
-            .filter { row -> studio.albumSongs.any { it.id == row.song.id } }
+            .filter { row -> studio.songIds.contains(row.song.id) }
         assertEquals(emptyList<String>(), leftoverStudio.map { it.song.album })
+    }
+
+    @Test
+    fun libraryListModel_cachesAlbumNamesAndSongsById() {
+        val model = useCase.buildListModel(songs, LibraryViewMode.ALBUM_GROUPS)
+        assertEquals(setOf("Hotel", "Opera"), model.albumNames)
+        assertEquals(songs.map { it.id }.toSet(), model.songsById.keys)
+        assertEquals(listOf(3L), model.segments.first { it.albumName == "Hotel" }.songIds)
+        assertEquals(
+            model.albumNames,
+            model.collapsed(setOf("Opera")).albumNames
+        )
+    }
+
+    @Test
+    fun libraryListModel_collapsed_matchesFilterCollapsedAlbumSongs() {
+        val model = useCase.buildListModel(songs, LibraryViewMode.ALBUM_GROUPS)
+        val filtered = filterCollapsedAlbumSongs(model.toListItems(), setOf("Opera"))
+        val collapsed = model.collapsed(setOf("Opera")).toListItems()
+        assertEquals(filtered.map { it.key }, collapsed.map { it.key })
+        assertEquals(
+            model.songsVisual.map { it.id },
+            useCase.songsFromListItems(model.toListItems()).map { it.id }
+        )
     }
 
     @Test

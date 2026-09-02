@@ -10,6 +10,7 @@ import com.bestiapop.android.data.model.mergePreferring
 import com.bestiapop.android.data.model.toCatalogTrack
 import com.bestiapop.android.data.model.youtubeSearchQuery
 import com.bestiapop.android.data.util.encodeAlbumTrack
+import com.bestiapop.android.domain.util.IdentifyQueryVariants
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -412,24 +413,50 @@ object MetadataFetcher {
 
     /**
      * Identify-only: Deezer often returns unrelated fuzzy hits for romanized leftover
-     * titles, which skips iTunes/YouTube. Fetch those providers anyway.
+     * titles, which skips iTunes/YouTube/MusicBrainz. Fetch those providers anyway.
      */
     suspend fun searchIdentifyFallbacks(
         query: String,
-        limit: Int = 25
+        limit: Int = 25,
+        durationMs: Long = 0L
     ): List<OnlineCatalogTrack> = withContext(Dispatchers.IO) {
         val cleanQ = query.trim()
         if (cleanQ.isEmpty()) return@withContext emptyList()
         val pageLimit = limit.coerceIn(1, 100)
+        val itunesTracks = searchItunesSongs(cleanQ, pageLimit, country = null) +
+            searchItunesSongs(cleanQ, pageLimit, country = "JP") +
+            if (IdentifyQueryVariants.hasHan(cleanQ)) {
+                searchItunesSongs(cleanQ, pageLimit, country = "TW")
+            } else {
+                emptyList()
+            }
+        val mbTracks = try {
+            MusicBrainzClient.searchRecordings(
+                query = cleanQ,
+                durationMs = durationMs.takeIf { it > 0L },
+                limit = pageLimit
+            )
+        } catch (e: Exception) {
+            e.printStackTrace()
+            emptyList()
+        }
+        val youtubeTracks = YouTubeExtractor.searchYouTube(cleanQ)
+        return@withContext itunesTracks + mbTracks + youtubeTracks
+    }
+
+    private fun searchItunesSongs(
+        query: String,
+        limit: Int,
+        country: String?
+    ): List<OnlineCatalogTrack> {
+        val countryParam = if (country.isNullOrBlank()) "" else "&country=$country"
         val itunesUrl = endpoint(
             endpoints.itunesBaseUrl,
-            "search?term=${encodeQuery(cleanQ)}&entity=song&limit=$pageLimit"
+            "search?term=${encodeQuery(query)}&entity=song&limit=$limit$countryParam"
         )
-        val itunesTracks = parseItunesSongResults(
+        return parseItunesSongResults(
             getJson(itunesUrl, userAgent = "Mozilla/5.0")?.optJSONArray("results")
         )
-        val youtubeTracks = YouTubeExtractor.searchYouTube(cleanQ)
-        return@withContext itunesTracks + youtubeTracks
     }
 
     /** First 4-digit year from ISO-ish release strings (`2012-03-01`, `2012`). */

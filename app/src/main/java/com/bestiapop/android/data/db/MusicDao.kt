@@ -8,17 +8,32 @@ import androidx.room.Transaction
 import androidx.room.Update
 import com.bestiapop.android.data.model.AlbumOverride
 import com.bestiapop.android.data.model.Song
+import com.bestiapop.android.data.model.SongPlayStat
 import kotlinx.coroutines.flow.Flow
+
+/** Identity columns only — skips `lyrics` blobs and play stamps (`song_play_stats`). Full rows: [MusicDao.getSongById] / [MusicDao.getAllSongs]. */
+internal const val IDENTITY_SONG_SELECT = """
+        SELECT id, uriString, title, artist, album, genre, durationMs, year, trackNumber,
+               artworkUri, CAST(NULL AS TEXT) AS lyrics, folderPath, dateAdded,
+               0 AS lastPlayedAt
+        FROM songs
+"""
 
 @Dao
 interface MusicDao {
 
     // Songs
-    @Query("SELECT * FROM songs ORDER BY title ASC")
+    @Query(IDENTITY_SONG_SELECT)
     fun getAllSongsFlow(): Flow<List<Song>>
 
     @Query("SELECT * FROM songs ORDER BY title ASC")
     suspend fun getAllSongs(): List<Song>
+
+    @Query("$IDENTITY_SONG_SELECT ORDER BY title ASC")
+    suspend fun getIdentitySongs(): List<Song>
+
+    @Query("$IDENTITY_SONG_SELECT WHERE id IN (:ids)")
+    suspend fun getIdentitySongsByIds(ids: List<Long>): List<Song>
 
     @Query("SELECT * FROM songs WHERE album = 'YouTube Music'")
     suspend fun getLegacyYouTubeMusicSongs(): List<Song>
@@ -46,6 +61,26 @@ interface MusicDao {
     @Update
     suspend fun updateSong(song: Song)
 
+    /** Identity columns only — never writes `lyrics`. */
+    @Query(
+        """
+        UPDATE songs SET title = :title, artist = :artist, album = :album,
+               artworkUri = :artworkUri, trackNumber = :trackNumber, year = :year,
+               durationMs = :durationMs
+        WHERE id = :songId
+        """
+    )
+    suspend fun updateSongIdentity(
+        songId: Long,
+        title: String,
+        artist: String,
+        album: String,
+        artworkUri: String?,
+        trackNumber: Int,
+        year: Int,
+        durationMs: Long
+    )
+
     @Query("DELETE FROM songs WHERE id = :songId")
     suspend fun deleteSong(songId: Long)
 
@@ -60,6 +95,9 @@ interface MusicDao {
 
     @Query("UPDATE songs SET dateAdded = :dateAdded WHERE id = :songId")
     suspend fun updateSongDateAdded(songId: Long, dateAdded: Long)
+
+    @Query("UPDATE songs SET uriString = :uriString, folderPath = :folderPath WHERE id = :songId")
+    suspend fun updateSongUri(songId: Long, uriString: String, folderPath: String)
 
     @Query("UPDATE songs SET title = :title, artist = :artist, album = :album, genre = :genre, year = :year, trackNumber = :trackNumber WHERE id = :songId")
     suspend fun updateSongMetadata(
@@ -100,8 +138,17 @@ interface MusicDao {
     @Query("UPDATE songs SET durationMs = :durationMs WHERE id = :songId")
     suspend fun updateSongDuration(songId: Long, durationMs: Long)
 
-    @Query("UPDATE songs SET lastPlayedAt = :ts WHERE id = :songId")
+    @Query("INSERT OR REPLACE INTO song_play_stats (songId, lastPlayedAt) VALUES (:songId, :ts)")
     suspend fun updateLastPlayedAt(songId: Long, ts: Long)
+
+    @Query("SELECT * FROM song_play_stats")
+    fun getPlayStatsFlow(): Flow<List<SongPlayStat>>
+
+    @Query("SELECT lastPlayedAt FROM song_play_stats WHERE songId = :songId")
+    suspend fun getPlayStat(songId: Long): Long?
+
+    @Query("DELETE FROM song_play_stats WHERE songId IN (:songIds)")
+    suspend fun deletePlayStatsForSongs(songIds: List<Long>)
 
     // Album overrides
     @Query("SELECT * FROM album_overrides")

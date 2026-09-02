@@ -101,7 +101,7 @@ internal class WifiSyncHttpBoundary(
                 call.response.header("Cache-Control", "no-cache, no-store, must-revalidate")
                 val existing = (listManagedNames() + listLibraryNames())
                     .asSequence()
-                    .map(UploadNameSanitizer::sanitize)
+                    .flatMap { UploadNameSanitizer.matchingBasenames(it) }
                     .filter(String::isNotBlank)
                     .map { it.lowercase(Locale.ROOT) }
                     .distinct()
@@ -698,7 +698,7 @@ class WebServerService : Service() {
 
                     function sanitizeFileName(rawName) {
                         const fileName = rawName.split('/').pop().split('\\').pop();
-                        return fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
+                        return fileName.replace(/[\/\\:*?"<>|\s]/g, '_');
                     }
 
                     function isAudioFile(filename) {

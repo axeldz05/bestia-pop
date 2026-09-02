@@ -254,13 +254,16 @@ object ListenBrainzClient {
         if (token.isBlank()) {
             return@withContext LbApiResult.Failure("Token vacío")
         }
-        if (artistName.isBlank() || recordingName.isBlank()) {
-            return@withContext LbApiResult.Failure("Artista o título vacío")
+        if (recordingName.isBlank()) {
+            return@withContext LbApiResult.Failure("Título vacío")
         }
         val utf8 = Charsets.UTF_8.name()
         val params = buildString {
-            append("artist_name=").append(URLEncoder.encode(artistName.trim(), utf8))
-            append("&recording_name=").append(URLEncoder.encode(recordingName.trim(), utf8))
+            if (artistName.isNotBlank()) {
+                append("artist_name=").append(URLEncoder.encode(artistName.trim(), utf8))
+                append("&")
+            }
+            append("recording_name=").append(URLEncoder.encode(recordingName.trim(), utf8))
             if (!releaseName.isNullOrBlank()) {
                 append("&release_name=").append(URLEncoder.encode(releaseName.trim(), utf8))
             }

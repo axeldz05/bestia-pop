@@ -55,7 +55,7 @@ class WebServerServiceIntegrationTest {
                 assertEquals(200, response.code)
                 val json = JSONArray(response.body!!.string())
                 assertEquals(
-                    listOf("m_sica__cida.mp3", "otro_tema.flac", "same.mp3"),
+                    listOf("m_sica__cida.mp3", "música_ácida.mp3", "otro_tema.flac", "same.mp3"),
                     (0 until json.length()).map(json::getString)
                 )
             }
@@ -91,12 +91,12 @@ class WebServerServiceIntegrationTest {
 
             client.newCall(request).execute().use { response ->
                 assertEquals(200, response.code)
-                assertTrue(response.body!!.string().contains("M_sica__cida.mp3"))
+                assertTrue(response.body!!.string().contains("Música_Ácida.mp3"))
             }
 
-            assertEquals("M_sica__cida.mp3", persistedName.get())
+            assertEquals("Música_Ácida.mp3", persistedName.get())
             val published = File(persistedPath.get())
-            assertEquals("M_sica__cida.mp3", published.name)
+            assertEquals("Música_Ácida.mp3", published.name)
             assertEquals(bodyBytes.toList(), published.readBytes().toList())
             assertEquals(
                 listOf(

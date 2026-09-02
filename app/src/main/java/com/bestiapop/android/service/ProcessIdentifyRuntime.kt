@@ -74,12 +74,13 @@ internal class ProcessIdentifyRuntime(
 ) {
     internal data class Dependencies(
         val getSong: suspend (Long) -> Song?,
+        val getSongs: (suspend (List<Long>) -> List<Song>)? = null,
         val propose: suspend (Song, force: Boolean, listenBrainzToken: String?) -> IdentifyProposal,
         val apply: suspend (songId: Long, proposal: IdentifyProposal, fields: IdentifyApplyFields) ->
             IdentifyResult,
         val listenBrainzToken: suspend () -> String?,
         val pendingSongIds: suspend () -> Set<Long>,
-        val appendReview: suspend (IdentifyProposal, IdentifyApplyFields) -> Unit,
+        val appendReview: suspend (List<IdentifyProposal>, IdentifyApplyFields) -> Unit,
         val loadWork: suspend () -> IdentifyWorkSnapshot?,
         val saveWork: suspend (IdentifyWorkSnapshot?) -> Unit,
         val isOnline: () -> Boolean = { true },
@@ -101,6 +102,9 @@ internal class ProcessIdentifyRuntime(
 
     private var snapshot: IdentifyWorkSnapshot? = null
     private var hydrated = false
+    private var unpersistedWorkEdits = 0
+    private val reviewBuffer = ArrayList<IdentifyProposal>()
+    private var reviewBufferFields: IdentifyApplyFields? = null
 
     fun submit(
         songs: List<Song>,
@@ -135,21 +139,23 @@ internal class ProcessIdentifyRuntime(
 
     fun interruptNow() {
         scope.launch {
+            flushReviewBuffer()
             workMutex.withLock {
                 val current = snapshot ?: return@withLock
                 if (!current.hasRemaining) return@withLock
                 val interrupted = current.copy(interrupted = true)
                 snapshot = interrupted
-                persistLocked(interrupted)
+                persistLocked(interrupted, force = true)
             }
         }
     }
 
     fun cancelUser() {
         scope.launch {
+            flushReviewBuffer()
             workMutex.withLock {
                 snapshot = null
-                persistLocked(null)
+                persistLocked(null, force = true)
                 _progress.value = null
             }
         }
@@ -179,7 +185,7 @@ internal class ProcessIdentifyRuntime(
                         alreadyQueued = snapshot!!.alreadyQueued + alreadyQueued,
                         showReview = snapshot!!.showReview || showReview
                     )
-                    persistLocked(snapshot)
+                    persistLocked(snapshot, force = true)
                 }
                 return@withLock
             }
@@ -206,7 +212,7 @@ internal class ProcessIdentifyRuntime(
                 interrupted = false,
                 fillGapsOnlySongIds = fillGapsIds
             )
-            persistLocked(snapshot)
+            persistLocked(snapshot, force = true)
             started = true
         }
         if (queuedOnly) {
@@ -225,6 +231,7 @@ internal class ProcessIdentifyRuntime(
             }
             coroutineScope {
                 val inFlight = mutableSetOf<Long>()
+                val token = dependencies.listenBrainzToken()
                 repeat(IDENTIFY_PARALLEL) {
                     launch {
                         while (true) {
@@ -239,7 +246,7 @@ internal class ProcessIdentifyRuntime(
                             } ?: break
                             try {
                                 val baseline = workMutex.withLock { snapshot } ?: break
-                                processOne(songId, baseline, inFlight)
+                                processOne(songId, baseline, inFlight, token)
                             } catch (cancelled: CancellationException) {
                                 throw cancelled
                             } catch (_: Exception) {
@@ -251,17 +258,19 @@ internal class ProcessIdentifyRuntime(
                     }
                 }
             }
+            flushReviewBuffer()
             val current = workMutex.withLock { snapshot }
             if (current == null || !current.hasRemaining) {
                 finishBatch(current)
             }
         } catch (cancelled: CancellationException) {
+            flushReviewBuffer()
             workMutex.withLock {
                 val current = snapshot ?: return@withLock
                 if (current.hasRemaining) {
                     val interrupted = current.copy(interrupted = true)
                     snapshot = interrupted
-                    persistLocked(interrupted)
+                    persistLocked(interrupted, force = true)
                 }
             }
             throw cancelled
@@ -277,13 +286,14 @@ internal class ProcessIdentifyRuntime(
         if (!snap.hasRemaining) return
         val interrupted = snap.copy(interrupted = true)
         snapshot = interrupted
-        persistLocked(interrupted)
+        persistLocked(interrupted, force = true)
     }
 
     private suspend fun processOne(
         songId: Long,
         baseline: IdentifyWorkSnapshot,
-        inFlight: MutableSet<Long>
+        inFlight: MutableSet<Long>,
+        listenBrainzToken: String?
     ) {
         val song = dependencies.getSong(songId)
         val total = baseline.totalCount.coerceAtLeast(1)
@@ -297,8 +307,7 @@ internal class ProcessIdentifyRuntime(
             commitProcessed(songId) { it.copy(skipped = it.skipped + 1) }
             return
         }
-        val token = dependencies.listenBrainzToken()
-        val proposal = dependencies.propose(song, baseline.force, token)
+        val proposal = dependencies.propose(song, baseline.force, listenBrainzToken)
         val fillGaps = songId in baseline.fillGapsOnlySongIds
         val gapFields = if (fillGaps) gapApplyFields(song) else null
         val applyFields = gapFields ?: baseline.applyFields.copy(title = false)
@@ -325,14 +334,14 @@ internal class ProcessIdentifyRuntime(
                         )
                     }
                     else -> {
-                        dependencies.appendReview(reviewProposal, reviewFields)
+                        bufferReview(reviewProposal, reviewFields)
                         deltaReview = 1
                         deltaMedium = 1
                     }
                 }
             }
             else -> {
-                dependencies.appendReview(reviewProposal, reviewFields)
+                bufferReview(reviewProposal, reviewFields)
                 deltaReview = 1
                 when (proposal.confidence) {
                     IdentifyConfidence.MEDIUM -> deltaMedium = 1
@@ -375,7 +384,8 @@ internal class ProcessIdentifyRuntime(
             }
         }
         if (remainingIds.isEmpty()) return
-        val songs = remainingIds.mapNotNull { id -> dependencies.getSong(id) }
+        val songs = dependencies.getSongs?.invoke(remainingIds)
+            ?: remainingIds.mapNotNull { id -> dependencies.getSong(id) }
         if (songs.isEmpty()) return
         val queries = songs.map { knownAlbumQueryOf(it) }
         val matches = assignUniqueKnownAlbumMatches(
@@ -465,9 +475,10 @@ internal class ProcessIdentifyRuntime(
             )
         }
         current?.let(dependencies.reportTelemetry)
+        flushReviewBuffer()
         workMutex.withLock {
             snapshot = null
-            persistLocked(null)
+            persistLocked(null, force = true)
         }
         if (summary != null &&
             (summary.updated > 0 || summary.reviewCount > 0 ||
@@ -488,12 +499,49 @@ internal class ProcessIdentifyRuntime(
         }
     }
 
-    private suspend fun persistLocked(snapshot: IdentifyWorkSnapshot?) {
+    private suspend fun persistLocked(snapshot: IdentifyWorkSnapshot?, force: Boolean = false) {
+        unpersistedWorkEdits++
+        val mustWrite = force ||
+            snapshot == null ||
+            snapshot.interrupted ||
+            unpersistedWorkEdits >= PERSIST_EVERY
+        if (!mustWrite) return
         dependencies.saveWork(snapshot)
+        unpersistedWorkEdits = 0
+    }
+
+    private suspend fun bufferReview(proposal: IdentifyProposal, fields: IdentifyApplyFields) {
+        val flush = workMutex.withLock {
+            reviewBuffer += proposal
+            reviewBufferFields = fields
+            if (reviewBuffer.size >= PERSIST_EVERY) {
+                takeReviewBufferLocked()
+            } else {
+                null
+            }
+        }
+        if (flush != null) {
+            dependencies.appendReview(flush.first, flush.second)
+        }
+    }
+
+    private suspend fun flushReviewBuffer() {
+        val flush = workMutex.withLock { takeReviewBufferLocked() } ?: return
+        dependencies.appendReview(flush.first, flush.second)
+    }
+
+    private fun takeReviewBufferLocked(): Pair<List<IdentifyProposal>, IdentifyApplyFields>? {
+        if (reviewBuffer.isEmpty()) return null
+        val items = reviewBuffer.toList()
+        val fields = reviewBufferFields ?: IdentifyApplyFields.ALL
+        reviewBuffer.clear()
+        reviewBufferFields = null
+        return items to fields
     }
 
     companion object {
         internal const val IDENTIFY_PARALLEL = 3
+        internal const val PERSIST_EVERY = 8
 
         fun create(
             context: Context,
@@ -509,6 +557,7 @@ internal class ProcessIdentifyRuntime(
                 scope = scope,
                 dependencies = Dependencies(
                     getSong = { id -> repository.getSongById(id) },
+                    getSongs = { ids -> repository.getSongsByIds(ids) },
                     propose = { song, force, token ->
                         repository.proposeSongIdentity(
                             song = song,
@@ -525,11 +574,9 @@ internal class ProcessIdentifyRuntime(
                         val settings = listenBrainzPreferences.settingsFlow.first()
                         settings.userToken.takeIf { settings.enabled && it.isNotBlank() }
                     },
-                    pendingSongIds = {
-                        reviewStore.load().proposals.map { it.songId }.toSet()
-                    },
-                    appendReview = { proposal, fields ->
-                        reviewStore.appendProposals(listOf(proposal), fields)
+                    pendingSongIds = { reviewStore.pendingSongIds() },
+                    appendReview = { proposals, fields ->
+                        reviewStore.appendProposals(proposals, fields)
                     },
                     loadWork = { workStore.load() },
                     saveWork = { workStore.save(it) },

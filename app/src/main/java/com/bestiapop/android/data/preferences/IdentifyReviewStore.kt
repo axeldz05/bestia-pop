@@ -171,6 +171,9 @@ class IdentifyReviewStore internal constructor(
 ) {
     constructor(context: Context) : this(context.identifyReviewDataStore)
 
+    @Volatile
+    private var cachedPendingIds: Set<Long>? = null
+
     private object Keys {
         val QUEUE_JSON = stringPreferencesKey("queue_json")
     }
@@ -182,11 +185,19 @@ class IdentifyReviewStore internal constructor(
 
     suspend fun load(): PersistedIdentifyReviewQueue = queueFlow.first()
 
+    suspend fun pendingSongIds(): Set<Long> {
+        cachedPendingIds?.let { return it }
+        val ids = load().proposals.map { it.songId }.toSet()
+        cachedPendingIds = ids
+        return ids
+    }
+
     suspend fun save(queue: PersistedIdentifyReviewQueue) {
         val json = if (queue.proposals.isEmpty()) "" else IdentifyReviewCodec.encode(queue)
         dataStore.edit { prefs ->
             prefs[Keys.QUEUE_JSON] = json
         }
+        cachedPendingIds = queue.proposals.map { it.songId }.toSet()
     }
 
     /** Append proposals whose songIds are not already queued. */
@@ -251,5 +262,6 @@ class IdentifyReviewStore internal constructor(
         val json = if (queue.proposals.isEmpty()) "" else IdentifyReviewCodec.encode(queue)
         if (prefs[Keys.QUEUE_JSON].orEmpty() == json) return
         prefs[Keys.QUEUE_JSON] = json
+        cachedPendingIds = queue.proposals.map { it.songId }.toSet()
     }
 }

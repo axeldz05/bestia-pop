@@ -136,6 +136,22 @@ fun pickPersistedAlbumName(
     proposedArtist: String,
     sourceAlbum: String = "",
     isGeneric: (String) -> Boolean
+): String = pickPersistedAlbumName(
+    library = library,
+    proposedAlbum = proposedAlbum,
+    proposedArtist = proposedArtist,
+    sourceAlbum = sourceAlbum,
+    isGeneric = isGeneric,
+    studioKeysByArtist = studioAlbumKeysByArtist(library, isGeneric)
+)
+
+fun pickPersistedAlbumName(
+    library: List<Song>,
+    proposedAlbum: String,
+    proposedArtist: String,
+    sourceAlbum: String = "",
+    isGeneric: (String) -> Boolean,
+    studioKeysByArtist: Map<String, List<String>>
 ): String {
     val proposed = proposedAlbum.trim().ifBlank { sourceAlbum }
     if (proposed.isEmpty()) return proposedAlbum
@@ -145,11 +161,10 @@ fun pickPersistedAlbumName(
     ) {
         return source
     }
-    val studio = studioAlbumKeysByArtist(library, isGeneric)
-    val key = albumGroupingKey(proposed, proposedArtist, studio, isGeneric)
+    val key = albumGroupingKey(proposed, proposedArtist, studioKeysByArtist, isGeneric)
     val existing = library.map { it.album }.filter { album ->
         albumIdentityKey(album) == key ||
-            albumGroupingKey(album, proposedArtist, studio, isGeneric) == key
+            albumGroupingKey(album, proposedArtist, studioKeysByArtist, isGeneric) == key
     }
     val cleaned = stripAlbumEditionDecor(normalizeAlbumName(proposed)).ifBlank { proposed }
     return preferredAlbumDisplayName(existing + cleaned).ifBlank { proposed }

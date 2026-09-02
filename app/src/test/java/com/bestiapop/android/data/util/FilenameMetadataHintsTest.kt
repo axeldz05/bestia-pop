@@ -2,8 +2,10 @@ package com.bestiapop.android.data.util
 
 import com.bestiapop.android.domain.util.identifySearchTexts
 import com.bestiapop.android.domain.util.isTrackNumberLabel
+import com.bestiapop.android.domain.util.looksLikeDiscTrackRip
 import com.bestiapop.android.domain.util.parseFilenameMetadataHints
 import com.bestiapop.android.domain.util.resolveWeakIdentityHints
+import com.bestiapop.android.domain.util.splitUsingKnownArtists
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -64,6 +66,32 @@ class FilenameMetadataHintsTest {
             "And So I Watch You From Afar Mother Belfast Part 2"
         )
         assertTrue(tail.any { it.contains("Mother Belfast") })
+    }
+
+    @Test
+    fun identifySearchTexts_splitsMixedScript_andLatinPinyinHead() {
+        val jingZi = identifySearchTexts("Mirror Jing Zi")
+        assertTrue(jingZi.contains("Mirror Jing Zi"))
+        assertTrue("expected latin head Mirror in $jingZi", jingZi.contains("Mirror"))
+        assertFalse(jingZi.any { it.contains("夜鷹") })
+
+        val mixed = identifySearchTexts("Mirror 鏡子")
+        assertTrue(mixed.contains("Mirror"))
+        assertTrue(mixed.contains("鏡子"))
+
+        val yodaka = identifySearchTexts("Yodaka")
+        assertEquals(listOf("Yodaka"), yodaka)
+
+        val ost = identifySearchTexts("Midnight Channel", filename = "1-07._Midnight_Channel")
+        assertTrue(ost.any { it.contains("soundtrack") })
+        assertTrue(ost.any { it.contains("OST") })
+    }
+
+    @Test
+    fun looksLikeDiscTrackRip_keepsDotInTrackPrefix() {
+        assertTrue(looksLikeDiscTrackRip("1-07._Midnight_Channel"))
+        assertTrue(looksLikeDiscTrackRip("1-03_Insisto.mp3"))
+        assertFalse(looksLikeDiscTrackRip("Radiohead_Creep"))
     }
 
     @Test
@@ -154,6 +182,7 @@ class FilenameMetadataHintsTest {
         assertTrue(looksLikeStoragePath("Music/BestiaPop/Daft_Punk_Digital_Love"))
         assertFalse(looksLikeStoragePath("Digital Love"))
         assertFalse(looksLikeStoragePath("Radiohead_Creep"))
+        assertFalse(looksLikeStoragePath("ブラックホール / Black Hole"))
     }
 
     @Test
@@ -280,5 +309,24 @@ class FilenameMetadataHintsTest {
         assertEquals("Radiohead", result.title)
         assertEquals("Radiohead", result.artist)
         assertEquals("Pablo Honey", result.album)
+    }
+
+    @Test
+    fun splitUsingKnownArtists_longestPrefix() {
+        val hints = splitUsingKnownArtists(
+            "The Doors Roadhouse Blues",
+            listOf("The", "Doors", "The Doors", "The Doors Tribute")
+        )
+        assertEquals("The Doors", hints?.artist)
+        assertEquals("Roadhouse Blues", hints?.title)
+    }
+
+    @Test
+    fun splitUsingKnownArtists_skipsShortSingleToken() {
+        val hints = splitUsingKnownArtists(
+            "The Doors Roadhouse Blues",
+            listOf("The")
+        )
+        assertNull(hints)
     }
 }

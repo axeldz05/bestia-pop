@@ -30,6 +30,13 @@ sealed class IdentifyResult {
     data object Skipped : IdentifyResult()
 }
 
+/** One song + candidate + field mask for a batch identity apply. */
+data class IdentifyApplyRequest(
+    val songId: Long,
+    val candidate: IdentifyCandidate,
+    val fields: IdentifyApplyFields = IdentifyApplyFields.ALL
+)
+
 /** Ranked catalog hit for identify (top-N after multi-signal scoring). */
 data class IdentifyCandidate(
     val track: OnlineCatalogTrack,

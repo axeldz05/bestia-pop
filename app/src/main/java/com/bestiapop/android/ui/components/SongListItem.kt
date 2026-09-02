@@ -250,8 +250,13 @@ private fun SongOptionsMenu(
 }
 
 fun formatDuration(durationMs: Long): String {
+    if (durationMs <= 0L) return "0:00"
     val totalSeconds = durationMs / 1000
     val minutes = totalSeconds / 60
     val seconds = totalSeconds % 60
-    return String.format(Locale.getDefault(), "%d:%02d", minutes, seconds)
+    val secTens = (seconds / 10).toInt()
+    val secOnes = (seconds % 10).toInt()
+    val sb = StringBuilder(8)
+    sb.append(minutes).append(':').append(secTens).append(secOnes)
+    return sb.toString()
 }

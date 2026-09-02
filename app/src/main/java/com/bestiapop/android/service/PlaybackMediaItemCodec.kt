@@ -85,16 +85,20 @@ object PlaybackMediaItemCodec {
     internal fun restore(
         payload: PlaybackMediaItemPortablePayload,
         mediaUri: String? = null,
-        library: List<Song> = emptyList()
+        library: List<Song> = emptyList(),
+        songLookup: ((Long?, String) -> Song?)? = null
     ): PlayableItem? {
         if (payload.version != VERSION || payload.queueEntryId.isBlank()) return null
         return when (payload.kind) {
             KIND_LOCAL -> {
                 val uri = payload.localUri?.takeIf { it.isNotBlank() } ?: return null
-                val song = library.firstOrNull {
-                    payload.localSongId != null && payload.localSongId > 0L &&
-                        it.id == payload.localSongId
-                } ?: library.firstOrNull { it.uriString == uri }
+                val song = songLookup?.invoke(payload.localSongId, uri)
+                    ?: (if (library.isNotEmpty()) {
+                        library.firstOrNull {
+                            payload.localSongId != null && payload.localSongId > 0L &&
+                                it.id == payload.localSongId
+                        } ?: library.firstOrNull { it.uriString == uri }
+                    } else null)
                     ?: Song(
                         id = payload.localSongId ?: 0L,
                         uriString = uri,
@@ -140,10 +144,11 @@ object PlaybackMediaItemCodec {
 
     fun decode(
         mediaItem: MediaItem,
-        library: List<Song> = emptyList()
+        library: List<Song> = emptyList(),
+        songLookup: ((Long?, String) -> Song?)? = null
     ): PlayableItem? {
-        val extras = mediaItem.mediaMetadata.extras ?: return decodeLegacy(mediaItem, library)
-        if (extras.getInt(EXTRA_VERSION, 0) != VERSION) return decodeLegacy(mediaItem, library)
+        val extras = mediaItem.mediaMetadata.extras ?: return decodeLegacy(mediaItem, library, songLookup)
+        if (extras.getInt(EXTRA_VERSION, 0) != VERSION) return decodeLegacy(mediaItem, library, songLookup)
         val queueEntryId = extras.getString(EXTRA_QUEUE_ENTRY_ID)?.takeIf { it.isNotBlank() }
             ?: return null
         val metadata = mediaItem.mediaMetadata
@@ -171,8 +176,9 @@ object PlaybackMediaItemCodec {
         return restore(
             payload = payload,
             mediaUri = mediaItem.localConfiguration?.uri?.toString(),
-            library = library
-        ) ?: decodeLegacy(mediaItem, library)
+            library = library,
+            songLookup = songLookup
+        ) ?: decodeLegacy(mediaItem, library, songLookup)
     }
 
     /** Test/support hook: codec-owned metadata extras, never the MediaItem URI. */
@@ -225,8 +231,13 @@ object PlaybackMediaItemCodec {
         return builder.build()
     }
 
-    private fun decodeLegacy(mediaItem: MediaItem, library: List<Song>): PlayableItem? {
-        val local = library.firstOrNull { it.uriString == mediaItem.mediaId }
+    private fun decodeLegacy(
+        mediaItem: MediaItem,
+        library: List<Song>,
+        songLookup: ((Long?, String) -> Song?)? = null
+    ): PlayableItem? {
+        val uri = mediaItem.mediaId
+        val local = songLookup?.invoke(null, uri) ?: library.firstOrNull { it.uriString == uri }
         if (local != null) return PlayableItem.Local(local)
         return null
     }

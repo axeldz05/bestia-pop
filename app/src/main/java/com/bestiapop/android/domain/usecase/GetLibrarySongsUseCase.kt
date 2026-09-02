@@ -428,16 +428,19 @@ class GetLibrarySongsUseCase {
         val ascending = sortDirection == SortDirection.ASC
         val artists = songs.groupBy { it.artist }.map { (artistName, artistSongs) ->
             val studio = studioAlbumKeysByArtist(artistSongs, IdentifyRanking::isGenericAlbum)
-            val albumCount = artistSongs.map { song ->
-                albumGroupingKey(song.album, song.artist, studio, IdentifyRanking::isGenericAlbum)
-            }.distinct().size
+            val distinctAlbumKeys = HashSet<String>(artistSongs.size)
+            for (song in artistSongs) {
+                distinctAlbumKeys.add(
+                    albumGroupingKey(song.album, song.artist, studio, IdentifyRanking::isGenericAlbum)
+                )
+            }
             val photoArt = artistPhotoMap[artistName]
             Artist(
                 name = artistName,
                 songCount = artistSongs.size,
-                albumCount = albumCount,
+                albumCount = distinctAlbumKeys.size,
                 photoUri = photoArt,
-                genre = dominantGenre(artistSongs.map { it.genre }),
+                genre = dominantGenreFromSongs(artistSongs),
                 dateAdded = artistSongs.maxOfOrNull { it.dateAdded }
             )
         }
@@ -591,7 +594,7 @@ class GetLibrarySongsUseCase {
                 songCount = albumSongs.size,
                 artworkUri = override?.artworkUri?.takeIf { it.isNotBlank() } ?: firstArt,
                 genre = override?.genre?.takeIf { it.isNotBlank() }
-                    ?: dominantGenre(albumSongs.map { it.genre }),
+                    ?: dominantGenreFromSongs(albumSongs),
                 year = if (override != null && override.year > 0) override.year else derivedYear,
                 dateAdded = albumSongs.maxOfOrNull { it.dateAdded },
                 groupingKey = bucketKey
@@ -635,14 +638,38 @@ class GetLibrarySongsUseCase {
     private fun firstArtwork(songs: List<Song>): String? =
         songs.firstOrNull { !it.artworkUri.isNullOrEmpty() }?.artworkUri
 
-    private fun dominantGenre(genres: List<String>): String? {
-        if (genres.isEmpty()) return null
-        return genres
-            .filter { it.isNotBlank() && !it.equals(Song.UNKNOWN_GENRE, ignoreCase = true) }
-            .groupingBy { it }
-            .eachCount()
-            .maxByOrNull { it.value }
-            ?.key
+    private fun dominantGenreFromSongs(songs: List<Song>): String? {
+        if (songs.isEmpty()) return null
+        val counts = HashMap<String, Int>(8)
+        var maxGenre: String? = null
+        var maxCount = 0
+        for (i in songs.indices) {
+            val genre = songs[i].genre
+            if (genre.isBlank() || genre.equals(Song.UNKNOWN_GENRE, ignoreCase = true)) continue
+            val count = (counts[genre] ?: 0) + 1
+            counts[genre] = count
+            if (count > maxCount) {
+                maxCount = count
+                maxGenre = genre
+            }
+        }
+        return maxGenre
+    }
+
+    private fun dominantGenre(genres: Iterable<String>): String? {
+        val counts = HashMap<String, Int>(8)
+        var maxGenre: String? = null
+        var maxCount = 0
+        for (genre in genres) {
+            if (genre.isBlank() || genre.equals(Song.UNKNOWN_GENRE, ignoreCase = true)) continue
+            val count = (counts[genre] ?: 0) + 1
+            counts[genre] = count
+            if (count > maxCount) {
+                maxCount = count
+                maxGenre = genre
+            }
+        }
+        return maxGenre
     }
 
     companion object {

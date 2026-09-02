@@ -187,10 +187,15 @@ fun artistsCompatible(a: String, b: String): Boolean {
     return na.startsWith("$nb ") || nb.startsWith("$na ")
 }
 
-fun dominantNonBlank(values: List<String>, default: String): String {
-    val counted = values.filter { it.isNotBlank() }.groupingBy { it }.eachCount()
-    if (counted.isEmpty()) return default
-    return counted.maxWith(
+fun dominantNonBlank(values: Iterable<String>, default: String): String {
+    val counts = HashMap<String, Int>(8)
+    for (v in values) {
+        if (v.isNotBlank()) {
+            counts[v] = (counts[v] ?: 0) + 1
+        }
+    }
+    if (counts.isEmpty()) return default
+    return counts.entries.maxWith(
         compareBy<Map.Entry<String, Int>> { it.value }
             .thenBy { -it.key.length }
             .thenBy { it.key }

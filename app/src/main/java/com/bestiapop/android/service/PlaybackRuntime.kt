@@ -3087,9 +3087,21 @@ private class MediaControllerFacade(
         controller.addListener(playerListener)
     }
 
-    override fun items(): List<PlayableItem> = buildList {
-        for (index in 0 until controller.mediaItemCount) {
-            PlaybackMediaItemCodec.decode(controller.getMediaItemAt(index), library())?.let(::add)
+    override fun items(): List<PlayableItem> {
+        val lib = library()
+        val byId = HashMap<Long, Song>(lib.size * 2)
+        val byUri = HashMap<String, Song>(lib.size * 2)
+        for (song in lib) {
+            if (song.id > 0L) byId.putIfAbsent(song.id, song)
+            if (song.uriString.isNotBlank()) byUri.putIfAbsent(song.uriString, song)
+        }
+        val lookup: (Long?, String) -> Song? = { id, uri ->
+            (if (id != null && id > 0L) byId[id] else null) ?: byUri[uri]
+        }
+        return buildList {
+            for (index in 0 until controller.mediaItemCount) {
+                PlaybackMediaItemCodec.decode(controller.getMediaItemAt(index), lib, lookup)?.let(::add)
+            }
         }
     }
 

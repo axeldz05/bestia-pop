@@ -57,11 +57,56 @@ class GetLibrarySongsUseCase {
         val inheritedArtwork: Map<Long, String>
     )
 
+    private data class CachedHaystack(
+        val songsRef: Any,
+        val songsSize: Int,
+        val haystack: Map<Long, String>
+    )
+
+    private data class CachedArtists(
+        val songsRef: Any,
+        val songsSize: Int,
+        val photosRef: Any,
+        val sortOption: SortOption,
+        val sortDirection: SortDirection,
+        val artists: List<Artist>
+    )
+
+    private data class CachedGenres(
+        val songsRef: Any,
+        val songsSize: Int,
+        val sortOption: SortOption,
+        val sortDirection: SortDirection,
+        val genres: List<GenreGroup>
+    )
+
     @Volatile
     private var lastCachedProjection: CachedProjection? = null
 
     @Volatile
     private var lastCachedGrouped: CachedGroupedAlbums? = null
+
+    @Volatile
+    private var lastCachedHaystack: CachedHaystack? = null
+
+    @Volatile
+    private var lastCachedArtists: CachedArtists? = null
+
+    @Volatile
+    private var lastCachedGenres: CachedGenres? = null
+
+    fun getOrBuildHaystack(songs: List<Song>): Map<Long, String> {
+        val cached = lastCachedHaystack
+        if (cached != null && cached.songsRef === songs && cached.songsSize == songs.size) {
+            return cached.haystack
+        }
+        val map = HashMap<Long, String>(songs.size * 2)
+        for (song in songs) {
+            map[song.id] = searchHaystack(song)
+        }
+        lastCachedHaystack = CachedHaystack(songs, songs.size, map)
+        return map
+    }
 
     fun execute(
         songs: List<Song>,
@@ -372,6 +417,16 @@ class GetLibrarySongsUseCase {
         sortOption: SortOption = SortOption.TITLE,
         sortDirection: SortDirection = SortDirection.ASC
     ): List<Artist> {
+        val cached = lastCachedArtists
+        if (cached != null &&
+            cached.songsRef === songs &&
+            cached.songsSize == songs.size &&
+            cached.photosRef == artistPhotoMap &&
+            cached.sortOption == sortOption &&
+            cached.sortDirection == sortDirection
+        ) {
+            return cached.artists
+        }
         val ascending = sortDirection == SortDirection.ASC
         val artists = songs.groupBy { it.artist }.map { (artistName, artistSongs) ->
             val studio = studioAlbumKeysByArtist(artistSongs, IdentifyRanking::isGenericAlbum)
@@ -388,7 +443,7 @@ class GetLibrarySongsUseCase {
                 dateAdded = artistSongs.maxOfOrNull { it.dateAdded }
             )
         }
-        return when (sortOption) {
+        val result = when (sortOption) {
             SortOption.TITLE, SortOption.ARTIST, SortOption.ALBUM ->
                 artists.sortedAggregates(ascending) { it.name }
             SortOption.GENRE ->
@@ -396,6 +451,15 @@ class GetLibrarySongsUseCase {
             SortOption.DATE_ADDED ->
                 artists.sortedAggregates(ascending, useLong = true, longKey = { it.dateAdded }) { it.name }
         }
+        lastCachedArtists = CachedArtists(
+            songsRef = songs,
+            songsSize = songs.size,
+            photosRef = artistPhotoMap,
+            sortOption = sortOption,
+            sortDirection = sortDirection,
+            artists = result
+        )
+        return result
     }
 
     /**
@@ -407,6 +471,15 @@ class GetLibrarySongsUseCase {
         sortDirection: SortDirection = SortDirection.ASC
     ): List<GenreGroup> {
         if (songs.isEmpty()) return emptyList()
+        val cached = lastCachedGenres
+        if (cached != null &&
+            cached.songsRef === songs &&
+            cached.songsSize == songs.size &&
+            cached.sortOption == sortOption &&
+            cached.sortDirection == sortDirection
+        ) {
+            return cached.genres
+        }
         val ascending = sortDirection == SortDirection.ASC
         val groups = songs.groupBy { genreKey(it) }.map { (name, genreSongs) ->
             GenreGroup(
@@ -423,7 +496,15 @@ class GetLibrarySongsUseCase {
             SortOption.DATE_ADDED ->
                 known.sortedAggregates(ascending, useLong = true, longKey = { it.dateAdded }) { it.name }
         }
-        return sortedKnown + unknown
+        val result = sortedKnown + unknown
+        lastCachedGenres = CachedGenres(
+            songsRef = songs,
+            songsSize = songs.size,
+            sortOption = sortOption,
+            sortDirection = sortDirection,
+            genres = result
+        )
+        return result
     }
 
     private fun <T> List<T>.sortedAggregates(

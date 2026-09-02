@@ -132,11 +132,7 @@ class LibraryProjectionState internal constructor(
             val haystack = if (filter.query.isBlank()) {
                 null
             } else {
-                val map = HashMap<Long, String>(filter.songs.size * 2)
-                for (song in filter.songs) {
-                    map[song.id] = useCase.searchHaystack(song)
-                }
-                map
+                useCase.getOrBuildHaystack(filter.songs)
             }
             val startedAt = System.nanoTime()
             val projection = useCase.projectCatalog(

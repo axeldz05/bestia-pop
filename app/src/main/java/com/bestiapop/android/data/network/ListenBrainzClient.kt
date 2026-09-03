@@ -75,7 +75,9 @@ object ListenBrainzClient {
     private val JSON = "application/json; charset=utf-8".toMediaType()
 
     private val defaultClient = HttpClients.api.newBuilder()
-        .connectTimeout(15, TimeUnit.SECONDS)
+        .connectTimeout(8, TimeUnit.SECONDS)
+        .readTimeout(10, TimeUnit.SECONDS)
+        .callTimeout(12, TimeUnit.SECONDS)
         .build()
     @Volatile
     private var client: OkHttpClient = defaultClient

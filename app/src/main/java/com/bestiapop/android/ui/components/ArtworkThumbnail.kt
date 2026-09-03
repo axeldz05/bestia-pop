@@ -46,6 +46,23 @@ fun isArtworkCachedInMemory(context: Context, uri: String?, sizePx: Int? = null)
     return context.imageLoader.memoryCache?.get(MemoryCache.Key(key)) != null
 }
 
+fun preloadArtwork(context: Context, uri: String?, sizePx: Int? = null) {
+    if (uri.isNullOrEmpty() || unresolvableArtworkUris.contains(uri)) return
+    val request = ImageRequest.Builder(context)
+        .data(uri)
+        .apply {
+            if (sizePx != null) {
+                size(sizePx)
+                precision(Precision.INEXACT)
+            }
+        }
+        .crossfade(false)
+        .memoryCacheKey(artworkMemoryCacheKey(uri, sizePx))
+        .diskCacheKey(artworkMemoryCacheKey(uri, sizePx))
+        .build()
+    context.imageLoader.enqueue(request)
+}
+
 @Composable
 fun rememberArtworkRequest(uri: String?, sizePx: Int? = null): ImageRequest? {
     val context = LocalContext.current

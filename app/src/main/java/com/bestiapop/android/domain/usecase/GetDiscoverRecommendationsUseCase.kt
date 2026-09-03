@@ -5,6 +5,7 @@ import com.bestiapop.android.data.model.CatalogAlbum
 import com.bestiapop.android.data.model.OnlineCatalogTrack
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.data.model.toCatalogTrack
+import com.bestiapop.android.data.model.toIdentity
 import com.bestiapop.android.data.model.toListenBrainzCatalogTrack
 import com.bestiapop.android.data.network.ListenBrainzClient
 import com.bestiapop.android.data.network.MetadataFetcher
@@ -44,6 +45,7 @@ class GetDiscoverRecommendationsUseCase {
         preloadedLbTracks: List<OnlineCatalogTrack> = emptyList()
     ): DiscoverFeed = withContext(Dispatchers.IO) {
         coroutineScope {
+            // 1. Chart tracks (parallel async)
             val chartTracksDeferred = async {
                 try {
                     MetadataFetcher.fetchChartTracks(limit = 20)
@@ -52,171 +54,113 @@ class GetDiscoverRecommendationsUseCase {
                 }
             }
 
-            // Find top played or recent local artists using shared CollectionUtils
+            // Find top played or recent local artists using shared CollectionUtils (instant local)
             val localTopArtists = CollectionUtils.calculateTopLocalArtists(librarySongs, playStats)
 
             val lbToken = userToken?.takeIf { it.isNotBlank() }
             val lbUser = username?.takeIf { it.isNotBlank() }
             val hasLb = lbToken != null && lbUser != null
 
-            // 1. Fetch ListenBrainz tracks & artists if required by source preference
-            var lbTracks = preloadedLbTracks
-            val lbArtists = mutableListOf<String>()
+            // 2. Fetch ListenBrainz tracks & artists in parallel
+            val lbDeferred = async {
+                if (!hasLb || sourcePreference == DiscoverSourcePreference.DEEZER) {
+                    return@async Pair(preloadedLbTracks, emptyList<String>())
+                }
 
-            if (hasLb && sourcePreference != DiscoverSourcePreference.DEEZER) {
-                // CF Recording recommendations (reuse preloaded if available)
-                if (lbTracks.isEmpty()) {
-                    try {
-                        val cfResult = ListenBrainzClient.fetchCfRecordingRecommendations(
-                            username = lbUser,
-                            token = lbToken,
-                            count = 25
-                        )
-                        if (cfResult is LbApiResult.Success && cfResult.data.recordings.isNotEmpty()) {
-                            val mbids = cfResult.data.recordings.map { it.recordingMbid }
-                            val metaResult = ListenBrainzClient.fetchRecordingMetadata(mbids, lbToken)
-                            if (metaResult is LbApiResult.Success) {
-                                lbTracks = cfResult.data.recordings.mapNotNull { rec ->
-                                    val meta = metaResult.data[rec.recordingMbid] ?: return@mapNotNull null
-                                    meta.identity.toListenBrainzCatalogTrack(rec.recordingMbid)
+                var tracks = preloadedLbTracks
+                val artists = mutableListOf<String>()
+
+                val cfDeferred = async {
+                    if (tracks.isEmpty()) {
+                        try {
+                            val cfResult = ListenBrainzClient.fetchCfRecordingRecommendations(
+                                username = lbUser!!,
+                                token = lbToken,
+                                count = 25
+                            )
+                            if (cfResult is LbApiResult.Success && cfResult.data.recordings.isNotEmpty()) {
+                                val mbids = cfResult.data.recordings.map { it.recordingMbid }
+                                val metaResult = ListenBrainzClient.fetchRecordingMetadata(mbids, lbToken)
+                                if (metaResult is LbApiResult.Success) {
+                                    return@async cfResult.data.recordings.mapNotNull { rec ->
+                                        val meta = metaResult.data[rec.recordingMbid] ?: return@mapNotNull null
+                                        meta.identity.toListenBrainzCatalogTrack(rec.recordingMbid)
+                                    }
                                 }
                             }
+                        } catch (e: Exception) {
+                            if (e is CancellationException) throw e
                         }
+                    }
+                    emptyList()
+                }
+
+                val topArtistsDeferred = async {
+                    try {
+                        ListenBrainzClient.fetchUserTopArtistsWithRecentFallback(lbUser!!, count = 10, token = lbToken)
                     } catch (e: Exception) {
                         if (e is CancellationException) throw e
+                        emptyList()
                     }
                 }
 
-                // Top artists from ListenBrainz for albums / related
-                try {
-                    val topArtists = ListenBrainzClient.fetchUserTopArtistsWithRecentFallback(lbUser, count = 10, token = lbToken)
-                    lbArtists.addAll(topArtists)
-                } catch (e: Exception) {
-                    if (e is CancellationException) throw e
+                val cfTracks = cfDeferred.await()
+                if (tracks.isEmpty()) {
+                    tracks = cfTracks
                 }
-
-                // Also incorporate artists from CF recommendations
-                for (track in lbTracks) {
+                artists.addAll(topArtistsDeferred.await())
+                for (track in tracks) {
                     val artist = track.artist.trim()
                     if (artist.isNotBlank() && !IdentifyRanking.isPlaceholderArtist(artist)) {
-                        lbArtists.add(artist)
+                        artists.add(artist)
                     }
                 }
+                Pair(tracks, artists.distinct().filter { it.isNotBlank() && !IdentifyRanking.isPlaceholderArtist(it) })
             }
 
-            val distinctLbArtists = lbArtists.distinct().filter {
-                it.isNotBlank() && !IdentifyRanking.isPlaceholderArtist(it)
-            }
-
-            // 2. Fetch Deezer tracks if needed
+            // 3. Fetch Deezer tracks in parallel (using local seed artists first to avoid waiting for LB)
             val shouldFetchDeezerTracks = sourcePreference == DiscoverSourcePreference.DEEZER ||
-                sourcePreference == DiscoverSourcePreference.BOTH ||
-                lbTracks.isEmpty()
+                sourcePreference == DiscoverSourcePreference.BOTH
 
-            var deezerTracks = emptyList<OnlineCatalogTrack>()
-            if (shouldFetchDeezerTracks) {
-                val candidateArtists = resolveSeedArtists(sourcePreference, distinctLbArtists, localTopArtists, limit = 4)
+            val deezerTracksDeferred = async {
+                if (!shouldFetchDeezerTracks && sourcePreference == DiscoverSourcePreference.LISTENBRAINZ) {
+                    return@async emptyList<OnlineCatalogTrack>()
+                }
+                val candidateArtists = localTopArtists.take(2)
+                if (candidateArtists.isEmpty()) return@async emptyList<OnlineCatalogTrack>()
 
                 val collectedDeezer = ArrayList<OnlineCatalogTrack>()
-                if (candidateArtists.isNotEmpty()) {
-                    val artistTrackJobs = candidateArtists.take(2).map { artist ->
-                        async {
-                            val tracks = mutableListOf<OnlineCatalogTrack>()
-                            try {
-                                val artistId = deezerSemaphore.withPermit {
-                                    MetadataFetcher.resolveDeezerArtistId(artist)
-                                }
-                                if (artistId != null) {
-                                    // Direct top tracks for seed artist
-                                    val directTopDeferred = async {
-                                        try {
-                                            deezerSemaphore.withPermit {
-                                                MetadataFetcher.fetchDeezerArtistTop(artistId, limit = 5).map { identity ->
-                                                    identity.toCatalogTrack(provider = "Deezer")
-                                                }
-                                            }
-                                        } catch (e: Exception) {
-                                            if (e is CancellationException) throw e
-                                            emptyList()
-                                        }
-                                    }
-                                    // Related artists top tracks (limit to 2 for diversity without request explosion)
-                                    val relatedIds = deezerSemaphore.withPermit {
-                                        MetadataFetcher.fetchDeezerRelatedArtistIds(artistId, limit = 2)
-                                    }
-                                    val topJobs = relatedIds.map { relId ->
-                                        async {
-                                            try {
-                                                deezerSemaphore.withPermit {
-                                                    MetadataFetcher.fetchDeezerArtistTop(relId, limit = 4).map { identity ->
-                                                        identity.toCatalogTrack(provider = "Deezer")
-                                                    }
-                                                }
-                                            } catch (e: Exception) {
-                                                if (e is CancellationException) throw e
-                                                emptyList()
-                                            }
-                                        }
-                                    }
-                                    tracks.addAll(directTopDeferred.await())
-                                    tracks.addAll(topJobs.awaitAll().flatten())
-                                }
-                            } catch (e: Exception) {
-                                if (e is CancellationException) throw e
+                val artistTrackJobs = candidateArtists.map { artist ->
+                    async {
+                        val tracks = mutableListOf<OnlineCatalogTrack>()
+                        try {
+                            val artistId = deezerSemaphore.withPermit {
+                                MetadataFetcher.resolveDeezerArtistId(artist)
                             }
-                            tracks
+                            if (artistId != null) {
+                                val directTop = deezerSemaphore.withPermit {
+                                    MetadataFetcher.fetchDeezerArtistTop(artistId, limit = 8).map { identity ->
+                                        identity.toCatalogTrack(provider = "Deezer")
+                                    }
+                                }
+                                tracks.addAll(directTop)
+                            }
+                        } catch (e: Exception) {
+                            if (e is CancellationException) throw e
                         }
+                        tracks
                     }
-                    collectedDeezer.addAll(artistTrackJobs.awaitAll().flatten())
                 }
-
-                if (collectedDeezer.isEmpty()) {
-                    val chartTracks = chartTracksDeferred.await()
-                    collectedDeezer.addAll(chartTracks)
-                }
-                deezerTracks = collectedDeezer.distinctCatalogTracks(25)
+                collectedDeezer.addAll(artistTrackJobs.awaitAll().flatten())
+                collectedDeezer.distinctCatalogTracks(25)
             }
 
-            // 3. Resolve Recommended Tracks and Source Label
-            val chartTracks = chartTracksDeferred.await()
-            val fallbackTracks = if (deezerTracks.isNotEmpty()) deezerTracks else chartTracks.take(20)
-            val recTracks: List<OnlineCatalogTrack>
-            val sourceLabel: String
+            // 4. Fetch Deezer albums in parallel
+            val deezerAlbumsDeferred = async {
+                val albumSeedArtists = localTopArtists.take(2)
+                if (albumSeedArtists.isEmpty()) return@async emptyList<CatalogAlbum>()
 
-            when (sourcePreference) {
-                DiscoverSourcePreference.LISTENBRAINZ -> {
-                    if (lbTracks.isNotEmpty()) {
-                        recTracks = lbTracks.distinctCatalogTracks(25)
-                        sourceLabel = "ListenBrainz"
-                    } else {
-                        recTracks = fallbackTracks
-                        sourceLabel = "Deezer (Fallback)"
-                    }
-                }
-                DiscoverSourcePreference.DEEZER -> {
-                    recTracks = fallbackTracks
-                    sourceLabel = "Deezer"
-                }
-                DiscoverSourcePreference.BOTH -> {
-                    if (lbTracks.isNotEmpty() && deezerTracks.isNotEmpty()) {
-                        recTracks = CollectionUtils.interleaveEquitable(lbTracks, deezerTracks, limit = 25).distinctCatalogTracks(25)
-                        sourceLabel = "Ambos (Deezer + ListenBrainz)"
-                    } else if (lbTracks.isNotEmpty()) {
-                        recTracks = lbTracks.distinctCatalogTracks(25)
-                        sourceLabel = "ListenBrainz"
-                    } else {
-                        recTracks = fallbackTracks
-                        sourceLabel = "Deezer"
-                    }
-                }
-            }
-
-            // 4. Resolve Recommended Albums
-            val albumSeedArtists = resolveSeedArtists(sourcePreference, distinctLbArtists, localTopArtists, limit = 6)
-
-            val albums = ArrayList<CatalogAlbum>()
-            if (albumSeedArtists.isNotEmpty()) {
-                val albumJobs = albumSeedArtists.take(3).map { artist ->
+                val albumJobs = albumSeedArtists.map { artist ->
                     async {
                         try {
                             deezerSemaphore.withPermit {
@@ -228,56 +172,101 @@ class GetDiscoverRecommendationsUseCase {
                         }
                     }
                 }
-                albums.addAll(albumJobs.awaitAll().flatten())
+                albumJobs.awaitAll().flatten().distinctCatalogAlbums(16, artistOf = { it.artist }, titleOf = { it.title })
+            }
+
+            // Await all parallel results
+            val (lbTracks, _) = lbDeferred.await()
+            var deezerTracks = deezerTracksDeferred.await()
+            var recAlbums = deezerAlbumsDeferred.await()
+            val chartTracks = chartTracksDeferred.await()
+
+            if (deezerTracks.isEmpty() && (shouldFetchDeezerTracks || lbTracks.isEmpty())) {
+                deezerTracks = chartTracks.take(20)
+            }
+
+            val recTracks: List<OnlineCatalogTrack>
+            val sourceLabel: String
+
+            when (sourcePreference) {
+                DiscoverSourcePreference.LISTENBRAINZ -> {
+                    if (lbTracks.isNotEmpty()) {
+                        recTracks = lbTracks.distinctCatalogTracks(25)
+                        sourceLabel = "ListenBrainz"
+                    } else {
+                        recTracks = if (deezerTracks.isNotEmpty()) deezerTracks else chartTracks.take(20)
+                        sourceLabel = if (recTracks.isNotEmpty()) "Deezer (Fallback)" else "Sin conexión"
+                    }
+                }
+                DiscoverSourcePreference.DEEZER -> {
+                    recTracks = if (deezerTracks.isNotEmpty()) deezerTracks else chartTracks.take(20)
+                    sourceLabel = "Deezer"
+                }
+                DiscoverSourcePreference.BOTH -> {
+                    if (lbTracks.isNotEmpty() && deezerTracks.isNotEmpty()) {
+                        recTracks = CollectionUtils.interleaveEquitable(lbTracks, deezerTracks, limit = 25).distinctCatalogTracks(25)
+                        sourceLabel = "Ambos (Deezer + ListenBrainz)"
+                    } else if (lbTracks.isNotEmpty()) {
+                        recTracks = lbTracks.distinctCatalogTracks(25)
+                        sourceLabel = "ListenBrainz"
+                    } else {
+                        recTracks = if (deezerTracks.isNotEmpty()) deezerTracks else chartTracks.take(20)
+                        sourceLabel = "Deezer"
+                    }
+                }
             }
 
             // Fallback for recommended albums when empty
-            if (albums.isEmpty()) {
-                try {
-                    val chartAlbums = MetadataFetcher.fetchChartAlbums(limit = 16)
-                    albums.addAll(chartAlbums)
-                } catch (_: Exception) {
-                }
-                if (albums.isEmpty()) {
+            if (recAlbums.isEmpty()) {
+                if (chartTracks.isNotEmpty()) {
                     try {
-                        albums.addAll(MetadataFetcher.searchAlbums("hits").take(16))
+                        val chartAlbums = MetadataFetcher.fetchChartAlbums(limit = 12)
+                        recAlbums = chartAlbums.distinctCatalogAlbums(16, artistOf = { it.artist }, titleOf = { it.title })
                     } catch (_: Exception) {
                     }
                 }
             }
 
-            val recAlbums = albums.distinctCatalogAlbums(16, artistOf = { it.artist }, titleOf = { it.title })
+            // Local fallback when device is offline or remote APIs failed completely
+            var finalRecTracks = recTracks
+            var finalRecAlbums = recAlbums
+            var finalSource = sourceLabel
+
+            if (finalRecTracks.isEmpty() && librarySongs.isNotEmpty()) {
+                finalRecTracks = librarySongs.asSequence()
+                    .filter { it.title.isNotBlank() && it.artist.isNotBlank() }
+                    .shuffled()
+                    .take(16)
+                    .map { it.toIdentity().toCatalogTrack(provider = "Local") }
+                    .toList()
+                finalSource = "Biblioteca local"
+            }
+
+            if (finalRecAlbums.isEmpty() && librarySongs.isNotEmpty()) {
+                finalRecAlbums = librarySongs.asSequence()
+                    .filter { it.album.isNotBlank() && !IdentifyRanking.isGenericAlbum(it.album) }
+                    .distinctBy { "${it.artist}|${it.album}" }
+                    .take(12)
+                    .map { song ->
+                        CatalogAlbum(
+                            id = "${song.artist}|${song.album}",
+                            title = song.album,
+                            artist = song.artist,
+                            coverUrl = song.artworkUri,
+                            trackCount = 0
+                        )
+                    }
+                    .toList()
+            }
 
             DiscoverFeed(
-                recommendedTracks = recTracks,
-                recommendedAlbums = recAlbums,
+                recommendedTracks = finalRecTracks,
+                recommendedAlbums = finalRecAlbums,
                 chartTracks = chartTracks,
-                recommendationSource = sourceLabel
+                recommendationSource = finalSource
             )
         }
     }
 }
 
-private fun resolveSeedArtists(
-    sourcePreference: DiscoverSourcePreference,
-    lbArtists: List<String>,
-    localArtists: List<String>,
-    limit: Int
-): List<String> = when (sourcePreference) {
-    DiscoverSourcePreference.LISTENBRAINZ -> {
-        if (lbArtists.isNotEmpty()) lbArtists.take(limit) else localArtists.take(limit)
-    }
-    DiscoverSourcePreference.DEEZER -> {
-        localArtists.take(limit)
-    }
-    DiscoverSourcePreference.BOTH -> {
-        if (lbArtists.isNotEmpty() && localArtists.isNotEmpty()) {
-            CollectionUtils.interleaveEquitable(lbArtists, localArtists, limit = limit)
-        } else if (lbArtists.isNotEmpty()) {
-            lbArtists.take(limit)
-        } else {
-            localArtists.take(limit)
-        }
-    }
-}
 

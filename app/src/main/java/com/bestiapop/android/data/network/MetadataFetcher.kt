@@ -36,8 +36,9 @@ internal data class MetadataFetcherEndpoints(
 object MetadataFetcher {
 
     private val defaultClient = HttpClients.api.newBuilder()
-        .connectTimeout(8, TimeUnit.SECONDS)
-        .readTimeout(8, TimeUnit.SECONDS)
+        .connectTimeout(5, TimeUnit.SECONDS)
+        .readTimeout(6, TimeUnit.SECONDS)
+        .callTimeout(8, TimeUnit.SECONDS)
         .build()
     @Volatile
     private var client: OkHttpClient = defaultClient
@@ -105,7 +106,7 @@ object MetadataFetcher {
                     Triple(response.code, if (response.isSuccessful) response.body?.string() else null, retrySec)
                 }
                 if (statusCode == 429 && attempts < 3) {
-                    val waitMs = (retryAfterSec?.times(1000L) ?: 500L).coerceIn(250L, 3000L)
+                    val waitMs = (retryAfterSec?.times(1000L) ?: 500L).coerceIn(250L, 1500L)
                     Thread.sleep(waitMs)
                     continue
                 }
@@ -115,6 +116,10 @@ object MetadataFetcher {
                 if (e is CancellationException) throw e
                 if (e is InterruptedException) {
                     Thread.currentThread().interrupt()
+                    return null
+                }
+                if (e is java.net.UnknownHostException) {
+                    // Host cannot be resolved / offline; fail fast without sleeping or retrying
                     return null
                 }
                 if (attempts >= 3) {

@@ -75,7 +75,7 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 | Empty / back header | `ui/components/EmptyListHint.kt` (`actionLabel` / `onAction`); `ui/components/ScreenBackHeader.kt` (`backContentDescription`, default `"Volver"`) |
 | Playback chrome | `ui/components/PlaybackUi.kt` (`playPauseVector`, `playbackProgressFraction`, `previewProgressFraction`, `previewFlags`, `PlaybackScrubber`) |
 | Control Radio | `ui/components/RadioModeControl.kt` (tap preferred; long-press `RadioMode.entries` KNOWN/NEW/BOTH + Detener; usado por `NowPlayingScreen`) |
-| Artwork UI | `ui/components/ArtworkThumbnail.kt` (`rememberArtworkRequest` + `Precision.INEXACT`, `isArtworkCachedInMemory`, `ArtworkThumbnail`, `ArtworkHero`); `ui/components/ArtworkPicker.kt` (`ArtworkPickerBlock`, `rememberImagePicker`) |
+| Artwork UI | `ui/components/ArtworkThumbnail.kt` (`rememberArtworkRequest` + `Precision.INEXACT`, `isArtworkCachedInMemory`, `preloadArtwork`, `ArtworkThumbnail`, `ArtworkHero`); `ui/components/ArtworkPicker.kt` (`ArtworkPickerBlock`, `rememberImagePicker`) |
 | Play / shuffle icons | `ui/components/PlayShuffleButtons.kt` (`PlayIconButton`, `ShuffleIconButton`, `PlayShuffleIconPair`, `LabeledPlayShuffleButtons`) |
 | Settings switch row | `ui/components/SettingsSwitchRow.kt` (`SettingsSwitchRow`, `SettingsScrollColumn`) |
 | Download action widgets | `ui/components/DownloadActionWidgets.kt` (`DownloadStateTrailing`, `downloadStateStatusLabel`, `DownloadSuccessReadyLabel`, `List<ActiveDownload>.findUiDownloadByTrack`, progress/queued/retry/preview primitives) |

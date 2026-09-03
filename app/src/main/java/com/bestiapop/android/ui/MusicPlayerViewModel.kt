@@ -2694,6 +2694,9 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         if (forceRefresh) {
             ListenBrainzClient.clearUserStatsCache()
         }
+        if (discoverSource.value != DiscoverSourcePreference.DEEZER) {
+            refreshListenBrainzDiscoverPlaylists()
+        }
         viewModelScope.launch {
             _isLoadingDiscoverFeed.value = true
             try {
@@ -2716,9 +2719,6 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             } catch (_: Exception) {
             } finally {
                 _isLoadingDiscoverFeed.value = false
-            }
-            if (discoverSource.value != DiscoverSourcePreference.DEEZER) {
-                refreshListenBrainzDiscoverPlaylists()
             }
         }
     }

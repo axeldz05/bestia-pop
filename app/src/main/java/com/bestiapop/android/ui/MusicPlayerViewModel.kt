@@ -1089,7 +1089,11 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
         val targetQueue = if (indexInBase != -1) baseList else listOf(song)
         val index = if (indexInBase != -1) indexInBase else 0
-        playPlayableCollection(targetQueue.toPlayableItemsWithFreshIds(), index, applyManualModes = applyManualModes)
+        playPlayableCollection(
+            targetQueue.toPlayableItemsWithFreshIds { libraryProjection.resolveAlbumArtwork(it) },
+            index,
+            applyManualModes = applyManualModes
+        )
     }
 
     fun playPlayableCollection(
@@ -1228,7 +1232,10 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         playSong(startSong, songs)
     }
 
+    fun resolveAlbumArtwork(song: Song): String? = libraryProjection.resolveAlbumArtwork(song)
+
     fun setAlbumArtwork(albumName: String, artworkUri: String) {
+        playbackRuntime.updateAlbumArtworkInQueue(albumName, artworkUri)
         viewModelScope.launch(Dispatchers.IO) {
             repository.setAlbumArtwork(albumName, artworkUri)
         }
@@ -1304,7 +1311,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     fun shuffleCollection(songs: List<Song>) {
-        shufflePlayableCollection(songs.toPlayableItems())
+        shufflePlayableCollection(songs.toPlayableItems { libraryProjection.resolveAlbumArtwork(it) })
     }
 
     private fun shufflePlayableCollection(
@@ -1362,7 +1369,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     fun addToQueueBatch(songs: List<Song>) {
         if (songs.isEmpty()) return
-        addPlayableBatch(songs.toPlayableItems())
+        addPlayableBatch(songs.toPlayableItems { libraryProjection.resolveAlbumArtwork(it) })
     }
 
     fun addPlayableBatch(items: List<PlayableItem>) {
@@ -1571,7 +1578,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     fun playNextBatch(songs: List<Song>) {
-        playbackRuntime.playNextBatch(songs.toPlayableItems())
+        playbackRuntime.playNextBatch(songs.toPlayableItems { libraryProjection.resolveAlbumArtwork(it) })
     }
 
     fun addSongsToPlaylist(playlistId: Long, songs: List<Song>) =

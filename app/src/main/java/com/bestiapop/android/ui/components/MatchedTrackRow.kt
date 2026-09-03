@@ -89,6 +89,7 @@ fun MatchedTrackRow(
     if (local != null) {
         SongListItem(
             song = local,
+            artworkUri = meta.artworkUri ?: local.artworkUri,
             isCurrentPlaying = isCurrentPlaying,
             onClick = onPlayAt,
             onPlayNext = { queueActions.onPlayNext(local) },

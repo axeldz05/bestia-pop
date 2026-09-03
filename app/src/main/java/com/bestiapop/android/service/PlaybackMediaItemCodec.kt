@@ -65,7 +65,7 @@ object PlaybackMediaItemCodec {
                 version = VERSION,
                 kind = KIND_LOCAL,
                 queueEntryId = item.queueEntryId,
-                identity = item.song.toIdentity(),
+                identity = item.song.toIdentity().copy(artworkUri = item.artworkUri),
                 localSongId = item.song.id,
                 localUri = item.song.uriString
             )
@@ -109,7 +109,7 @@ object PlaybackMediaItemCodec {
                         durationMs = payload.identity.durationMs,
                         trackNumber = payload.identity.trackNumber
                     )
-                PlayableItem.Local(song, payload.queueEntryId)
+                PlayableItem.Local(song, payload.queueEntryId, resolvedArtworkUri = payload.identity.artworkUri)
             }
             KIND_REMOTE -> {
                 val videoId = payload.videoId?.takeIf { it.isNotBlank() }

@@ -11,7 +11,10 @@ import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -41,6 +44,42 @@ fun isArtworkCachedInMemory(context: Context, uri: String?, sizePx: Int? = null)
     if (uri.isNullOrEmpty()) return false
     val key = artworkMemoryCacheKey(uri, sizePx)
     return context.imageLoader.memoryCache?.get(MemoryCache.Key(key)) != null
+}
+
+object ArtworkScrollGate {
+    private val loadedUris = ConcurrentHashMap.newKeySet<String>()
+    private val inFlightUris = ConcurrentHashMap.newKeySet<String>()
+    @Volatile
+    private var lastDecodeLaunchTimeMs = 0L
+    private const val MIN_INTERVAL_DURING_FAST_SCROLL_MS = 140L
+
+    fun isLoaded(uri: String): Boolean = loadedUris.contains(uri)
+
+    fun markLoaded(uri: String) {
+        inFlightUris.remove(uri)
+        loadedUris.add(uri)
+    }
+
+    fun shouldAllowLoad(context: Context, uri: String?, sizePx: Int?, isFastScroll: Boolean): Boolean {
+        if (uri.isNullOrEmpty()) return false
+        if (loadedUris.contains(uri) || inFlightUris.contains(uri)) return true
+        if (isArtworkCachedInMemory(context, uri, sizePx)) {
+            loadedUris.add(uri)
+            return true
+        }
+        if (!isFastScroll) {
+            inFlightUris.add(uri)
+            return true
+        }
+
+        val now = android.os.SystemClock.uptimeMillis()
+        if (now - lastDecodeLaunchTimeMs >= MIN_INTERVAL_DURING_FAST_SCROLL_MS) {
+            lastDecodeLaunchTimeMs = now
+            inFlightUris.add(uri)
+            return true
+        }
+        return false
+    }
 }
 
 @Composable
@@ -74,15 +113,19 @@ fun ArtworkThumbnail(
     cornerRadius: Dp = 8.dp,
     fallbackIcon: ImageVector = Icons.Default.MusicNote,
     contentDescription: String? = "Artwork",
-    isScrollInProgress: Boolean = false,
+    isFastScroll: Boolean = false,
     allowIntermittent: Boolean = true
 ) {
     val sizePx = size?.let { with(LocalDensity.current) { it.roundToPx().coerceAtLeast(1) } }
     val context = LocalContext.current
-    val inMemory = remember(artworkUri, sizePx) {
-        isArtworkCachedInMemory(context, artworkUri, sizePx)
+
+    var isLoaded by remember(artworkUri) {
+        mutableStateOf(
+            artworkUri != null && (ArtworkScrollGate.isLoaded(artworkUri) || isArtworkCachedInMemory(context, artworkUri, sizePx))
+        )
     }
-    val canLoad = inMemory || !isScrollInProgress || allowIntermittent
+
+    val canLoad = isLoaded || !isFastScroll || (allowIntermittent && ArtworkScrollGate.shouldAllowLoad(context, artworkUri, sizePx, isFastScroll))
     val imageRequest = if (canLoad) rememberArtworkRequest(artworkUri, sizePx) else null
     val fallbackSize = size ?: 48.dp
     val placeholderColor = MaterialTheme.colorScheme.surfaceVariant
@@ -100,6 +143,12 @@ fun ArtworkThumbnail(
                 contentDescription = contentDescription,
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop,
+                onSuccess = {
+                    isLoaded = true
+                    if (artworkUri != null) {
+                        ArtworkScrollGate.markLoaded(artworkUri)
+                    }
+                },
                 onError = {
                     if (artworkUri != null) {
                         unresolvableArtworkUris.add(artworkUri)

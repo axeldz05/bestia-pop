@@ -234,7 +234,17 @@ sealed interface LibraryListItem {
         val songCount: Int,
         val songIds: List<Long>,
         val groupingKey: String = albumName,
-        val sortHint: String? = null
+        val sortHint: String? = null,
+        val subtitle: String = buildString {
+            append(artistName)
+            append(" • ")
+            append(songCount)
+            append(" canciones")
+            if (!sortHint.isNullOrBlank()) {
+                append(" • ")
+                append(sortHint)
+            }
+        }
     ) : LibraryListItem {
         override val key: Any get() = "header_$groupingKey"
         override val contentType: String get() = CONTENT_TYPE_ALBUM_HEADER

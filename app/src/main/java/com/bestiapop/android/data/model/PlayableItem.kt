@@ -18,9 +18,11 @@ sealed class PlayableItem : TrackMeta {
 
     data class Local(
         val song: Song,
-        override val queueEntryId: String = newQueueEntryId()
+        override val queueEntryId: String = newQueueEntryId(),
+        val resolvedArtworkUri: String? = null
     ) : PlayableItem(), TrackMeta by song {
         override val mediaId: String get() = song.uriString
+        override val artworkUri: String? get() = resolvedArtworkUri ?: song.artworkUri
     }
 
     data class Remote(
@@ -138,22 +140,27 @@ private inline fun <T, R> List<T>.mapFast(transform: (T) -> R): List<R> {
     return out
 }
 
-fun Song.toPlayable(): PlayableItem.Local = PlayableItem.Local(this)
+fun Song.toPlayable(artworkUri: String? = null): PlayableItem.Local =
+    PlayableItem.Local(this, resolvedArtworkUri = artworkUri)
 
-fun Song.toPlayableItem(queueEntryId: String = newQueueEntryId()): PlayableItem = if (isRemote) {
+fun Song.toPlayableItem(
+    queueEntryId: String = newQueueEntryId(),
+    artworkUri: String? = null
+): PlayableItem = if (isRemote) {
     PlayableItem.remoteFrom(
-        identity = toIdentity(),
+        identity = toIdentity().copy(artworkUri = artworkUri ?: this.artworkUri),
         youtubeQueryOrId = if (uriString.startsWith("remote://yt/")) uriString.removePrefix("remote://yt/") else null
     ).copy(queueEntryId = queueEntryId)
 } else {
-    PlayableItem.Local(this, queueEntryId = queueEntryId)
+    PlayableItem.Local(this, queueEntryId = queueEntryId, resolvedArtworkUri = artworkUri)
 }
 
-fun List<Song>.toPlayableItems(): List<PlayableItem> = mapFast { it.toPlayableItem() }
+fun List<Song>.toPlayableItems(artworkLookup: ((Song) -> String?)? = null): List<PlayableItem> =
+    mapFast { it.toPlayableItem(artworkUri = artworkLookup?.invoke(it)) }
 
 /** Transforms songs into playable items with fresh queue IDs in a single pass. */
-fun List<Song>.toPlayableItemsWithFreshIds(): List<PlayableItem> =
-    mapFast { it.toPlayableItem(queueEntryId = newQueueEntryId()) }
+fun List<Song>.toPlayableItemsWithFreshIds(artworkLookup: ((Song) -> String?)? = null): List<PlayableItem> =
+    mapFast { it.toPlayableItem(queueEntryId = newQueueEntryId(), artworkUri = artworkLookup?.invoke(it)) }
 
 /** Every occurrence entering a queue gets its own identity, even if the same object repeats. */
 fun List<PlayableItem>.withFreshQueueEntryIds(): List<PlayableItem> =

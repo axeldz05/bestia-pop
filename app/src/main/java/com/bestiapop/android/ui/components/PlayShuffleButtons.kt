@@ -5,10 +5,12 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.ui.Alignment
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material3.Button
@@ -63,11 +65,12 @@ fun PlayShuffleIconPair(
     onShuffle: () -> Unit,
     playDescription: String,
     shuffleDescription: String,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    iconButtonSize: androidx.compose.ui.unit.Dp = 36.dp
 ) {
-    Row(modifier = modifier) {
-        PlayIconButton(onClick = onPlay, contentDescription = playDescription)
-        ShuffleIconButton(onClick = onShuffle, contentDescription = shuffleDescription)
+    Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
+        PlayIconButton(onClick = onPlay, contentDescription = playDescription, modifier = Modifier.size(iconButtonSize))
+        ShuffleIconButton(onClick = onShuffle, contentDescription = shuffleDescription, modifier = Modifier.size(iconButtonSize))
     }
 }
 

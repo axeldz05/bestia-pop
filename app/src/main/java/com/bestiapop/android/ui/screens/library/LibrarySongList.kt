@@ -43,6 +43,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.state.ToggleableState
@@ -147,7 +148,27 @@ fun LibrarySongList(
     val onOpenAlbumState = rememberUpdatedState(onOpenAlbum)
 
     val listState = rememberLazyListState()
-    val isScrolling = listState.isScrollInProgress
+    var isFastScrolling by remember { mutableStateOf(false) }
+    LaunchedEffect(listState) {
+        var lastOffset = listState.firstVisibleItemScrollOffset
+        var lastIndex = listState.firstVisibleItemIndex
+        var lastTime = android.os.SystemClock.uptimeMillis()
+
+        snapshotFlow { listState.firstVisibleItemIndex to listState.firstVisibleItemScrollOffset }
+            .collect { (currentIndex, currentOffset) ->
+                val now = android.os.SystemClock.uptimeMillis()
+                val dt = (now - lastTime).coerceAtLeast(1)
+                val dIndex = currentIndex - lastIndex
+                val dOffset = currentOffset - lastOffset
+                val totalPx = (dIndex * 180) + dOffset
+                val speed = kotlin.math.abs(totalPx * 1000L / dt)
+                isFastScrolling = listState.isScrollInProgress && speed > 2200
+                lastIndex = currentIndex
+                lastOffset = currentOffset
+                lastTime = now
+            }
+    }
+    val isScrollingFast = isFastScrolling && listState.isScrollInProgress
     var menuSong by remember { mutableStateOf<Song?>(null) }
     val onOpenSongMenu: (Song) -> Unit = remember { { menuSong = it } }
 
@@ -164,7 +185,8 @@ fun LibrarySongList(
                         selectedSongIds = selectedSongIds,
                         isSelectionMode = isSelectionMode,
                         collapsedAlbumNames = collapsedAlbumNames,
-                        isScrollInProgress = isScrolling,
+                        isScrollInProgress = isScrollingFast,
+                        allowIntermittentArtwork = true,
                         onPlayAlbumState = onPlayAlbumState,
                         onShuffleAlbumState = onShuffleAlbumState,
                         onToggleSelectAlbumState = onToggleSelectAlbumState,
@@ -186,8 +208,8 @@ fun LibrarySongList(
                         isSelectionMode = isSelectionMode,
                         isSelected = selectedSongIds.contains(item.song.id),
                         emphasis = item.emphasis,
-                        isScrollInProgress = isScrolling,
-                        allowIntermittentArtwork = (item.index % 4 == 0),
+                        isScrollInProgress = isScrollingFast,
+                        allowIntermittentArtwork = true,
                         onOptionsClick = onOpenSongMenu,
                         onSongClickState = onSongClickState,
                         onSongLongClickState = onSongLongClickState,
@@ -221,6 +243,7 @@ private fun LibraryAlbumHeaderRow(
     isSelectionMode: Boolean,
     collapsedAlbumNames: Set<String>,
     isScrollInProgress: Boolean = false,
+    allowIntermittentArtwork: Boolean = true,
     onPlayAlbumState: State<(String, List<Long>) -> Unit>,
     onShuffleAlbumState: State<(String, List<Long>) -> Unit>,
     onToggleSelectAlbumState: State<(List<Long>) -> Unit>,
@@ -232,8 +255,12 @@ private fun LibraryAlbumHeaderRow(
     onOpenAlbumState: State<(String) -> Unit>
 ) {
     val albumIds = item.songIds
-    val selectionState = remember(albumIds, selectedSongIds, isSelectionMode) {
-        albumHeaderSelectionState(albumIds, selectedSongIds, isSelectionMode)
+    val selectionState = if (isSelectionMode) {
+        remember(albumIds, selectedSongIds) {
+            albumHeaderSelectionState(albumIds, selectedSongIds, true)
+        }
+    } else {
+        AlbumHeaderSelectionState.NONE
     }
     val playAlbum = remember(item.albumName, albumIds) {
         { onPlayAlbumState.value(item.albumName, albumIds) }
@@ -265,6 +292,7 @@ private fun LibraryAlbumHeaderRow(
     TauonAlbumHeader(
         title = item.displayName,
         artistName = item.artistName,
+        subtitle = item.subtitle,
         artworkUri = item.artworkUri,
         songCount = item.songCount,
         sortHint = item.sortHint,
@@ -272,6 +300,7 @@ private fun LibraryAlbumHeaderRow(
         isSelectionMode = isSelectionMode,
         selectionState = selectionState,
         isScrollInProgress = isScrollInProgress,
+        allowIntermittent = allowIntermittentArtwork,
         onPlayAlbum = playAlbum,
         onShuffleAlbum = shuffleAlbum,
         onToggleSelect = toggleSelectAlbum,
@@ -411,7 +440,7 @@ private fun LibrarySongRow(
             artworkUri = artworkUri,
             size = ListDensity.artworkSong,
             contentDescription = song.title,
-            isScrollInProgress = isScrollInProgress,
+            isFastScroll = isScrollInProgress,
             allowIntermittent = allowIntermittentArtwork
         )
 
@@ -475,12 +504,14 @@ fun TauonAlbumHeader(
     artistName: String,
     artworkUri: String?,
     songCount: Int,
+    subtitle: String = "$artistName • $songCount canciones",
     sortHint: String? = null,
     isCollapsed: Boolean = false,
     isSelectionMode: Boolean = false,
     selectionState: AlbumHeaderSelectionState = AlbumHeaderSelectionState.NONE,
     showCollapseToggle: Boolean = true,
     isScrollInProgress: Boolean = false,
+    allowIntermittent: Boolean = true,
     onPlayAlbum: () -> Unit,
     onShuffleAlbum: () -> Unit,
     onToggleSelect: () -> Unit = {},
@@ -492,26 +523,25 @@ fun TauonAlbumHeader(
     onOpenAlbum: () -> Unit = {}
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
+    val handleHeaderClick = remember(isSelectionMode, onToggleSelect, onOpenAlbum) {
+        if (isSelectionMode) onToggleSelect else onOpenAlbum
+    }
+    val onOpenMenu = remember { { menuExpanded = true } }
+    val onDismissMenu = remember { { menuExpanded = false } }
 
-    Surface(
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+    Box(
         modifier = Modifier
             .fillMaxWidth()
             .padding(
                 horizontal = ListDensity.rowHorizontalPadding,
                 vertical = ListDensity.rowVerticalPadding
             )
+            .clip(RoundedCornerShape(ListDensity.corner))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
             .combinedClickable(
-                onClick = {
-                    if (isSelectionMode) {
-                        onToggleSelect()
-                    } else {
-                        onOpenAlbum()
-                    }
-                },
+                onClick = handleHeaderClick,
                 onLongClick = onLongClick
-            ),
-        shape = RoundedCornerShape(ListDensity.corner)
+            )
     ) {
         Row(
             modifier = Modifier.padding(ListDensity.rowInnerPadding),
@@ -541,8 +571,8 @@ fun TauonAlbumHeader(
                     artworkUri = artworkUri,
                     size = ListDensity.artworkAlbumHeader,
                     cornerRadius = ListDensity.corner,
-                    isScrollInProgress = isScrollInProgress,
-                    allowIntermittent = true
+                    isFastScroll = isScrollInProgress,
+                    allowIntermittent = allowIntermittent
                 )
                 Spacer(modifier = Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
@@ -553,10 +583,7 @@ fun TauonAlbumHeader(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Text(
-                        text = buildString {
-                            append("$artistName • $songCount canciones")
-                            if (!sortHint.isNullOrBlank()) append(" • $sortHint")
-                        },
+                        text = subtitle,
                         style = ListDensity.subtitleStyle,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                     )
@@ -578,7 +605,7 @@ fun TauonAlbumHeader(
                 if (!isSelectionMode) {
                     Box {
                         IconButton(
-                            onClick = { menuExpanded = true },
+                            onClick = onOpenMenu,
                             modifier = Modifier.size(36.dp)
                         ) {
                             Icon(
@@ -590,7 +617,7 @@ fun TauonAlbumHeader(
                         if (menuExpanded) {
                             DropdownMenu(
                                 expanded = true,
-                                onDismissRequest = { menuExpanded = false }
+                                onDismissRequest = onDismissMenu
                             ) {
                                 AlbumEditCoverMenuItems(
                                     onEditAlbum = {

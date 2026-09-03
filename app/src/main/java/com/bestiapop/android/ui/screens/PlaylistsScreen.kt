@@ -517,6 +517,7 @@ private fun PlaylistDetailScreen(
                     ) { song ->
                         SongListItem(
                             song = song,
+                            artworkUri = viewModel.resolveAlbumArtwork(song),
                             isCurrentPlaying = isCurrentPlaying(currentItem ?: currentSong?.toPlayable(), song),
                             onClick = { viewModel.playSong(song, songs) },
                             onPlayNext = { songActions.onPlayNext(song) },

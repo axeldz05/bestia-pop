@@ -178,6 +178,32 @@ class LibraryProjectionState internal constructor(
         .map { it.projection.albums }
         .stateInUi(scope, emptyList())
 
+    val albumArtworkMap: StateFlow<Map<String, String>> = albums
+        .map { albumList ->
+            val map = HashMap<String, String>(albumList.size * 3)
+            for (album in albumList) {
+                val art = album.artworkUri
+                if (!art.isNullOrBlank()) {
+                    map[album.groupingKey] = art
+                    map[album.name] = art
+                    map[album.displayName] = art
+                }
+            }
+            map
+        }
+        .flowOn(projectionDispatcher)
+        .stateInUi(scope, emptyMap())
+
+    fun resolveAlbumArtwork(song: Song): String? {
+        if (com.bestiapop.android.domain.util.IdentifyRanking.isGenericAlbum(song.album)) {
+            return song.artworkUri
+        }
+        val map = albumArtworkMap.value
+        return map[song.album]
+            ?: map[com.bestiapop.android.domain.util.albumIdentityKey(song.album)]
+            ?: song.artworkUri
+    }
+
     val artists: StateFlow<List<Artist>> = combine(
         songs,
         artistPhotos,

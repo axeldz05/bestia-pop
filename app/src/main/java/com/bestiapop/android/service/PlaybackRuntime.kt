@@ -1541,6 +1541,32 @@ class PlaybackRuntime internal constructor(
         restartAsyncPlaybackWork()
     }
 
+    fun updateAlbumArtworkInQueue(albumKey: String, artworkUri: String?) {
+        val current = _currentItem.value
+        if (current is PlayableItem.Local &&
+            (current.song.album.equals(albumKey, ignoreCase = true) ||
+                com.bestiapop.android.domain.util.albumIdentityKey(current.song.album) == albumKey)
+        ) {
+            _currentItem.value = current.copy(resolvedArtworkUri = artworkUri)
+        }
+        val q = _queue.value
+        var changed = false
+        val newQ = q.map { item ->
+            if (item is PlayableItem.Local &&
+                (item.song.album.equals(albumKey, ignoreCase = true) ||
+                    com.bestiapop.android.domain.util.albumIdentityKey(item.song.album) == albumKey)
+            ) {
+                changed = true
+                item.copy(resolvedArtworkUri = artworkUri)
+            } else {
+                item
+            }
+        }
+        if (changed) {
+            _queue.value = newQ
+        }
+    }
+
     fun removeFromQueue(index: Int) {
         val old = _queue.value
         if (index !in old.indices) return

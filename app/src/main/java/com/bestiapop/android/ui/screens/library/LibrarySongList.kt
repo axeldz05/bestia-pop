@@ -16,7 +16,13 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Shuffle
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
@@ -43,7 +49,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.state.ToggleableState
@@ -148,27 +153,6 @@ fun LibrarySongList(
     val onOpenAlbumState = rememberUpdatedState(onOpenAlbum)
 
     val listState = rememberLazyListState()
-    var isFastScrolling by remember { mutableStateOf(false) }
-    LaunchedEffect(listState) {
-        var lastOffset = listState.firstVisibleItemScrollOffset
-        var lastIndex = listState.firstVisibleItemIndex
-        var lastTime = android.os.SystemClock.uptimeMillis()
-
-        snapshotFlow { listState.firstVisibleItemIndex to listState.firstVisibleItemScrollOffset }
-            .collect { (currentIndex, currentOffset) ->
-                val now = android.os.SystemClock.uptimeMillis()
-                val dt = (now - lastTime).coerceAtLeast(1)
-                val dIndex = currentIndex - lastIndex
-                val dOffset = currentOffset - lastOffset
-                val totalPx = (dIndex * 180) + dOffset
-                val speed = kotlin.math.abs(totalPx * 1000L / dt)
-                isFastScrolling = listState.isScrollInProgress && speed > 2200
-                lastIndex = currentIndex
-                lastOffset = currentOffset
-                lastTime = now
-            }
-    }
-    val isScrollingFast = isFastScrolling && listState.isScrollInProgress
     var menuSong by remember { mutableStateOf<Song?>(null) }
     val onOpenSongMenu: (Song) -> Unit = remember { { menuSong = it } }
 
@@ -185,8 +169,6 @@ fun LibrarySongList(
                         selectedSongIds = selectedSongIds,
                         isSelectionMode = isSelectionMode,
                         collapsedAlbumNames = collapsedAlbumNames,
-                        isScrollInProgress = isScrollingFast,
-                        allowIntermittentArtwork = true,
                         onPlayAlbumState = onPlayAlbumState,
                         onShuffleAlbumState = onShuffleAlbumState,
                         onToggleSelectAlbumState = onToggleSelectAlbumState,
@@ -208,8 +190,6 @@ fun LibrarySongList(
                         isSelectionMode = isSelectionMode,
                         isSelected = selectedSongIds.contains(item.song.id),
                         emphasis = item.emphasis,
-                        isScrollInProgress = isScrollingFast,
-                        allowIntermittentArtwork = true,
                         onOptionsClick = onOpenSongMenu,
                         onSongClickState = onSongClickState,
                         onSongLongClickState = onSongLongClickState,
@@ -242,8 +222,6 @@ private fun LibraryAlbumHeaderRow(
     selectedSongIds: Set<Long>,
     isSelectionMode: Boolean,
     collapsedAlbumNames: Set<String>,
-    isScrollInProgress: Boolean = false,
-    allowIntermittentArtwork: Boolean = true,
     onPlayAlbumState: State<(String, List<Long>) -> Unit>,
     onShuffleAlbumState: State<(String, List<Long>) -> Unit>,
     onToggleSelectAlbumState: State<(List<Long>) -> Unit>,
@@ -254,39 +232,39 @@ private fun LibraryAlbumHeaderRow(
     onIdentifyAlbumState: State<(String) -> Unit>,
     onOpenAlbumState: State<(String) -> Unit>
 ) {
-    val albumIds = item.songIds
+    val groupingKey = item.groupingKey
     val selectionState = if (isSelectionMode) {
-        remember(albumIds, selectedSongIds) {
-            albumHeaderSelectionState(albumIds, selectedSongIds, true)
+        remember(groupingKey, selectedSongIds) {
+            albumHeaderSelectionState(item.songIds, selectedSongIds, true)
         }
     } else {
         AlbumHeaderSelectionState.NONE
     }
-    val playAlbum = remember(item.albumName, albumIds) {
-        { onPlayAlbumState.value(item.albumName, albumIds) }
+    val playAlbum = remember(groupingKey) {
+        { onPlayAlbumState.value(item.albumName, item.songIds) }
     }
-    val shuffleAlbum = remember(item.albumName, albumIds) {
-        { onShuffleAlbumState.value(item.albumName, albumIds) }
+    val shuffleAlbum = remember(groupingKey) {
+        { onShuffleAlbumState.value(item.albumName, item.songIds) }
     }
-    val toggleSelectAlbum = remember(albumIds) {
-        { onToggleSelectAlbumState.value(albumIds) }
+    val toggleSelectAlbum = remember(groupingKey) {
+        { onToggleSelectAlbumState.value(item.songIds) }
     }
-    val albumLongClick = remember(albumIds) {
-        { onAlbumLongClickState.value(albumIds) }
+    val albumLongClick = remember(groupingKey) {
+        { onAlbumLongClickState.value(item.songIds) }
     }
-    val toggleCollapse = remember(item.albumName) {
+    val toggleCollapse = remember(groupingKey) {
         { onToggleCollapseAlbumState.value(item.albumName) }
     }
-    val editAlbum = remember(item.albumName) {
+    val editAlbum = remember(groupingKey) {
         { onEditAlbumState.value(item.albumName) }
     }
-    val changeAlbumCover = remember(item.albumName) {
+    val changeAlbumCover = remember(groupingKey) {
         { onChangeAlbumCoverState.value(item.albumName) }
     }
-    val identifyAlbum = remember(item.albumName) {
+    val identifyAlbum = remember(groupingKey) {
         { onIdentifyAlbumState.value(item.albumName) }
     }
-    val openAlbum = remember(item.albumName) {
+    val openAlbum = remember(groupingKey) {
         { onOpenAlbumState.value(item.albumName) }
     }
     TauonAlbumHeader(
@@ -299,8 +277,6 @@ private fun LibraryAlbumHeaderRow(
         isCollapsed = item.matchesCollapsed(collapsedAlbumNames),
         isSelectionMode = isSelectionMode,
         selectionState = selectionState,
-        isScrollInProgress = isScrollInProgress,
-        allowIntermittent = allowIntermittentArtwork,
         onPlayAlbum = playAlbum,
         onShuffleAlbum = shuffleAlbum,
         onToggleSelect = toggleSelectAlbum,
@@ -368,8 +344,6 @@ private fun LibrarySongRow(
     isSelectionMode: Boolean,
     isSelected: Boolean,
     emphasis: SortEmphasizedTexts,
-    isScrollInProgress: Boolean,
-    allowIntermittentArtwork: Boolean,
     onOptionsClick: (Song) -> Unit,
     onSongClickState: State<(Song, Int) -> Unit>,
     onSongLongClickState: State<(Song) -> Unit>,
@@ -439,9 +413,7 @@ private fun LibrarySongRow(
         ArtworkThumbnail(
             artworkUri = artworkUri,
             size = ListDensity.artworkSong,
-            contentDescription = song.title,
-            isFastScroll = isScrollInProgress,
-            allowIntermittent = allowIntermittentArtwork
+            contentDescription = song.title
         )
 
         Spacer(modifier = Modifier.width(12.dp))
@@ -510,8 +482,6 @@ fun TauonAlbumHeader(
     isSelectionMode: Boolean = false,
     selectionState: AlbumHeaderSelectionState = AlbumHeaderSelectionState.NONE,
     showCollapseToggle: Boolean = true,
-    isScrollInProgress: Boolean = false,
-    allowIntermittent: Boolean = true,
     onPlayAlbum: () -> Unit,
     onShuffleAlbum: () -> Unit,
     onToggleSelect: () -> Unit = {},
@@ -529,7 +499,7 @@ fun TauonAlbumHeader(
     val onOpenMenu = remember { { menuExpanded = true } }
     val onDismissMenu = remember { { menuExpanded = false } }
 
-    Box(
+    Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(
@@ -542,110 +512,120 @@ fun TauonAlbumHeader(
                 onClick = handleHeaderClick,
                 onLongClick = onLongClick
             )
+            .padding(ListDensity.rowInnerPadding),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(
-            modifier = Modifier.padding(ListDensity.rowInnerPadding),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Row(
-                modifier = Modifier.weight(1f),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                if (isSelectionMode) {
-                    val toggleState = when (selectionState) {
-                        AlbumHeaderSelectionState.NONE -> ToggleableState.Off
-                        AlbumHeaderSelectionState.PARTIAL -> ToggleableState.Indeterminate
-                        AlbumHeaderSelectionState.ALL -> ToggleableState.On
-                    }
-                    TriStateCheckbox(
-                        state = toggleState,
-                        onClick = onToggleSelect,
-                        colors = CheckboxDefaults.colors(
-                            checkedColor = MaterialTheme.colorScheme.primary
-                        )
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                }
-                ArtworkThumbnail(
-                    artworkUri = artworkUri,
-                    size = ListDensity.artworkAlbumHeader,
-                    cornerRadius = ListDensity.corner,
-                    isFastScroll = isScrollInProgress,
-                    allowIntermittent = allowIntermittent
+        if (isSelectionMode) {
+            val toggleState = when (selectionState) {
+                AlbumHeaderSelectionState.NONE -> ToggleableState.Off
+                AlbumHeaderSelectionState.PARTIAL -> ToggleableState.Indeterminate
+                AlbumHeaderSelectionState.ALL -> ToggleableState.On
+            }
+            TriStateCheckbox(
+                state = toggleState,
+                onClick = onToggleSelect,
+                colors = CheckboxDefaults.colors(
+                    checkedColor = MaterialTheme.colorScheme.primary
                 )
-                Spacer(modifier = Modifier.width(12.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = title,
-                        style = ListDensity.titleStyle,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        text = subtitle,
-                        style = ListDensity.subtitleStyle,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-                    )
-                }
-            }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                if (showCollapseToggle) {
-                    IconButton(
-                        onClick = onToggleCollapse,
-                        modifier = Modifier.size(36.dp)
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+        }
+        ArtworkThumbnail(
+            artworkUri = artworkUri,
+            size = ListDensity.artworkAlbumHeader,
+            cornerRadius = ListDensity.corner
+        )
+        Spacer(modifier = Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                style = ListDensity.titleStyle,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = subtitle,
+                style = ListDensity.subtitleStyle,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        if (showCollapseToggle) {
+            HeaderActionIcon(
+                onClick = onToggleCollapse,
+                icon = if (isCollapsed) Icons.Default.ExpandMore else Icons.Default.ExpandLess,
+                contentDescription = if (isCollapsed) "Expandir álbum" else "Plegar álbum"
+            )
+        }
+        if (!isSelectionMode) {
+            Box {
+                HeaderActionIcon(
+                    onClick = onOpenMenu,
+                    icon = Icons.Default.MoreVert,
+                    contentDescription = "Opciones de álbum"
+                )
+                if (menuExpanded) {
+                    DropdownMenu(
+                        expanded = true,
+                        onDismissRequest = onDismissMenu
                     ) {
-                        Icon(
-                            imageVector = if (isCollapsed) Icons.Default.ExpandMore else Icons.Default.ExpandLess,
-                            contentDescription = if (isCollapsed) "Expandir álbum" else "Plegar álbum",
-                            modifier = Modifier.size(20.dp)
+                        AlbumEditCoverMenuItems(
+                            onEditAlbum = {
+                                menuExpanded = false
+                                onEditAlbum()
+                            },
+                            onChangeCover = {
+                                menuExpanded = false
+                                onChangeAlbumCover()
+                            },
+                            onIdentifyAlbum = onIdentifyAlbum?.let { action ->
+                                {
+                                    menuExpanded = false
+                                    action()
+                                }
+                            }
                         )
                     }
                 }
-                if (!isSelectionMode) {
-                    Box {
-                        IconButton(
-                            onClick = onOpenMenu,
-                            modifier = Modifier.size(36.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.MoreVert,
-                                contentDescription = "Opciones de álbum",
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-                        if (menuExpanded) {
-                            DropdownMenu(
-                                expanded = true,
-                                onDismissRequest = onDismissMenu
-                            ) {
-                                AlbumEditCoverMenuItems(
-                                    onEditAlbum = {
-                                        menuExpanded = false
-                                        onEditAlbum()
-                                    },
-                                    onChangeCover = {
-                                        menuExpanded = false
-                                        onChangeAlbumCover()
-                                    },
-                                    onIdentifyAlbum = onIdentifyAlbum?.let { action ->
-                                        {
-                                            menuExpanded = false
-                                            action()
-                                        }
-                                    }
-                                )
-                            }
-                        }
-                    }
-                    PlayShuffleIconPair(
-                        onPlay = onPlayAlbum,
-                        onShuffle = onShuffleAlbum,
-                        playDescription = "Reproducir álbum",
-                        shuffleDescription = "Mezclar álbum"
-                    )
-                }
             }
+            HeaderActionIcon(
+                onClick = onPlayAlbum,
+                icon = Icons.Default.PlayArrow,
+                contentDescription = "Reproducir álbum",
+                tint = MaterialTheme.colorScheme.primary
+            )
+            HeaderActionIcon(
+                onClick = onShuffleAlbum,
+                icon = Icons.Default.Shuffle,
+                contentDescription = "Mezclar álbum"
+            )
         }
+    }
+}
+
+@Composable
+private fun HeaderActionIcon(
+    onClick: () -> Unit,
+    icon: ImageVector,
+    contentDescription: String,
+    modifier: Modifier = Modifier,
+    tint: Color = MaterialTheme.colorScheme.onSurfaceVariant
+) {
+    Box(
+        modifier = modifier
+            .size(36.dp)
+            .clip(CircleShape)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = contentDescription,
+            tint = tint,
+            modifier = Modifier.size(20.dp)
+        )
     }
 }

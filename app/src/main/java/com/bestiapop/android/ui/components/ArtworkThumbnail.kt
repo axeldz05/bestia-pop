@@ -46,42 +46,6 @@ fun isArtworkCachedInMemory(context: Context, uri: String?, sizePx: Int? = null)
     return context.imageLoader.memoryCache?.get(MemoryCache.Key(key)) != null
 }
 
-object ArtworkScrollGate {
-    private val loadedUris = ConcurrentHashMap.newKeySet<String>()
-    private val inFlightUris = ConcurrentHashMap.newKeySet<String>()
-    @Volatile
-    private var lastDecodeLaunchTimeMs = 0L
-    private const val MIN_INTERVAL_DURING_FAST_SCROLL_MS = 140L
-
-    fun isLoaded(uri: String): Boolean = loadedUris.contains(uri)
-
-    fun markLoaded(uri: String) {
-        inFlightUris.remove(uri)
-        loadedUris.add(uri)
-    }
-
-    fun shouldAllowLoad(context: Context, uri: String?, sizePx: Int?, isFastScroll: Boolean): Boolean {
-        if (uri.isNullOrEmpty()) return false
-        if (loadedUris.contains(uri) || inFlightUris.contains(uri)) return true
-        if (isArtworkCachedInMemory(context, uri, sizePx)) {
-            loadedUris.add(uri)
-            return true
-        }
-        if (!isFastScroll) {
-            inFlightUris.add(uri)
-            return true
-        }
-
-        val now = android.os.SystemClock.uptimeMillis()
-        if (now - lastDecodeLaunchTimeMs >= MIN_INTERVAL_DURING_FAST_SCROLL_MS) {
-            lastDecodeLaunchTimeMs = now
-            inFlightUris.add(uri)
-            return true
-        }
-        return false
-    }
-}
-
 @Composable
 fun rememberArtworkRequest(uri: String?, sizePx: Int? = null): ImageRequest? {
     val context = LocalContext.current
@@ -117,16 +81,7 @@ fun ArtworkThumbnail(
     allowIntermittent: Boolean = true
 ) {
     val sizePx = size?.let { with(LocalDensity.current) { it.roundToPx().coerceAtLeast(1) } }
-    val context = LocalContext.current
-
-    var isLoaded by remember(artworkUri) {
-        mutableStateOf(
-            artworkUri != null && (ArtworkScrollGate.isLoaded(artworkUri) || isArtworkCachedInMemory(context, artworkUri, sizePx))
-        )
-    }
-
-    val canLoad = isLoaded || !isFastScroll || (allowIntermittent && ArtworkScrollGate.shouldAllowLoad(context, artworkUri, sizePx, isFastScroll))
-    val imageRequest = if (canLoad) rememberArtworkRequest(artworkUri, sizePx) else null
+    val imageRequest = rememberArtworkRequest(artworkUri, sizePx)
     val fallbackSize = size ?: 48.dp
     val placeholderColor = MaterialTheme.colorScheme.surfaceVariant
 
@@ -143,12 +98,6 @@ fun ArtworkThumbnail(
                 contentDescription = contentDescription,
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop,
-                onSuccess = {
-                    isLoaded = true
-                    if (artworkUri != null) {
-                        ArtworkScrollGate.markLoaded(artworkUri)
-                    }
-                },
                 onError = {
                     if (artworkUri != null) {
                         unresolvableArtworkUris.add(artworkUri)

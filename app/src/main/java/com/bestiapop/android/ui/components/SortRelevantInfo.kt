@@ -2,9 +2,10 @@ package com.bestiapop.android.ui.components
 
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.ui.SortOption
-import java.text.SimpleDateFormat
-import java.util.Calendar
-import java.util.Date
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 /**
@@ -29,11 +30,37 @@ fun formatSortRelevantInfo(
     }
 }
 
-fun formatDateAdded(epochMs: Long): String {
-    val date = Date(epochMs)
-    val now = Calendar.getInstance()
-    val songCal = Calendar.getInstance().apply { time = date }
-    val pattern = if (songCal.get(Calendar.YEAR) == now.get(Calendar.YEAR)) "dd MMM" else "dd MMM yyyy"
-    val formatter = SimpleDateFormat(pattern, Locale.getDefault())
-    return formatter.format(date)
+private object DateAddedFormatters {
+    @Volatile
+    private var lastLocale: Locale? = null
+    @Volatile
+    private var lastYear: Int = 0
+    @Volatile
+    private var lastYearCheck = 0L
+    @Volatile
+    private var sameYearFormatter: DateTimeFormatter? = null
+    @Volatile
+    private var differentYearFormatter: DateTimeFormatter? = null
+    @Volatile
+    private var defaultZone: ZoneId = ZoneId.systemDefault()
+
+    fun format(epochMs: Long): String {
+        val now = System.currentTimeMillis()
+        val currentLocale = Locale.getDefault()
+        if (currentLocale != lastLocale || sameYearFormatter == null) {
+            lastLocale = currentLocale
+            defaultZone = ZoneId.systemDefault()
+            sameYearFormatter = DateTimeFormatter.ofPattern("dd MMM", currentLocale)
+            differentYearFormatter = DateTimeFormatter.ofPattern("dd MMM yyyy", currentLocale)
+        }
+        if (now - lastYearCheck > 60_000L) {
+            lastYear = LocalDate.now(defaultZone).year
+            lastYearCheck = now
+        }
+        val date = Instant.ofEpochMilli(epochMs).atZone(defaultZone)
+        val formatter = if (date.year == lastYear) sameYearFormatter!! else differentYearFormatter!!
+        return formatter.format(date)
+    }
 }
+
+fun formatDateAdded(epochMs: Long): String = DateAddedFormatters.format(epochMs)

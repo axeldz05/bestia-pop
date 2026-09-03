@@ -121,6 +121,11 @@ if [ "$INSTALL_RC" -ne 0 ]; then
     fi
 fi
 
+if [ "$BUILD_TYPE" = "debug" ]; then
+    echo -e "${YELLOW}Optimizando compilación AOT en el dispositivo (dex2oat) para máximo rendimiento de scroll...${NC}"
+    adb shell cmd package compile -m speed -f "$PACKAGE" >/dev/null 2>&1 || true
+fi
+
 adb shell cmd appops reset "$PACKAGE" || true
 adb shell cmd activity set-bg-restriction-level --user 0 "$PACKAGE" unrestricted || true
 adb shell cmd appops set "$PACKAGE" RUN_ANY_IN_BACKGROUND allow || true

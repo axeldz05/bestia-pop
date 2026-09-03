@@ -11,7 +11,6 @@ import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -25,22 +24,30 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
-import coil.imageLoader
-import coil.memory.MemoryCache
 import coil.request.ImageRequest
 import coil.size.Precision
 
-/** When false, list thumbs only render if already in Coil's memory cache (no decode on fling). */
-val LocalAllowArtworkDecode = compositionLocalOf { true }
+import coil.imageLoader
+import coil.memory.MemoryCache
+import java.util.concurrent.ConcurrentHashMap
+
+/** Thread-safe set of URIs that failed to load (e.g. FileNotFoundException in MediaStore). */
+private val unresolvableArtworkUris = ConcurrentHashMap.newKeySet<String>()
 
 internal fun artworkMemoryCacheKey(uri: String, sizePx: Int?): String =
     if (sizePx != null) "$uri@$sizePx" else uri
+
+fun isArtworkCachedInMemory(context: Context, uri: String?, sizePx: Int? = null): Boolean {
+    if (uri.isNullOrEmpty()) return false
+    val key = artworkMemoryCacheKey(uri, sizePx)
+    return context.imageLoader.memoryCache?.get(MemoryCache.Key(key)) != null
+}
 
 @Composable
 fun rememberArtworkRequest(uri: String?, sizePx: Int? = null): ImageRequest? {
     val context = LocalContext.current
     return remember(uri, sizePx) {
-        if (uri.isNullOrEmpty()) {
+        if (uri.isNullOrEmpty() || unresolvableArtworkUris.contains(uri)) {
             null
         } else {
             ImageRequest.Builder(context)
@@ -66,16 +73,19 @@ fun ArtworkThumbnail(
     size: Dp? = 48.dp,
     cornerRadius: Dp = 8.dp,
     fallbackIcon: ImageVector = Icons.Default.MusicNote,
-    contentDescription: String? = "Artwork"
+    contentDescription: String? = "Artwork",
+    isScrollInProgress: Boolean = false,
+    allowIntermittent: Boolean = true
 ) {
-    val context = LocalContext.current
     val sizePx = size?.let { with(LocalDensity.current) { it.roundToPx().coerceAtLeast(1) } }
-    val imageRequest = rememberArtworkRequest(artworkUri, sizePx)
+    val context = LocalContext.current
+    val inMemory = remember(artworkUri, sizePx) {
+        isArtworkCachedInMemory(context, artworkUri, sizePx)
+    }
+    val canLoad = inMemory || !isScrollInProgress || allowIntermittent
+    val imageRequest = if (canLoad) rememberArtworkRequest(artworkUri, sizePx) else null
     val fallbackSize = size ?: 48.dp
     val placeholderColor = MaterialTheme.colorScheme.surfaceVariant
-    val placeholder = remember(placeholderColor) { ColorPainter(placeholderColor) }
-    val allowDecode = LocalAllowArtworkDecode.current
-    val canDecode = allowDecode || artworkCachedInMemory(context, artworkUri, sizePx)
 
     Box(
         modifier = modifier
@@ -84,15 +94,19 @@ fun ArtworkThumbnail(
             .background(placeholderColor),
         contentAlignment = Alignment.Center
     ) {
-        if (imageRequest != null && canDecode) {
+        if (imageRequest != null) {
             AsyncImage(
                 model = imageRequest,
                 contentDescription = contentDescription,
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop,
-                placeholder = placeholder
+                onError = {
+                    if (artworkUri != null) {
+                        unresolvableArtworkUris.add(artworkUri)
+                    }
+                }
             )
-        } else if (imageRequest == null) {
+        } else {
             Icon(
                 imageVector = fallbackIcon,
                 contentDescription = contentDescription,
@@ -101,16 +115,6 @@ fun ArtworkThumbnail(
             )
         }
     }
-}
-
-private fun artworkCachedInMemory(
-    context: Context,
-    uri: String?,
-    sizePx: Int?
-): Boolean {
-    if (uri.isNullOrEmpty()) return false
-    val key = MemoryCache.Key(artworkMemoryCacheKey(uri, sizePx))
-    return context.imageLoader.memoryCache?.get(key) != null
 }
 
 @Composable

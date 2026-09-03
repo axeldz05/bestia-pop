@@ -20,10 +20,17 @@ class LibraryListModel internal constructor(
     val emphasizeLastPlayed: Boolean,
     val albumNames: Set<String>,
     private val slots: IntArray,
-    lazySongsById: Map<Long, Song>? = null
+    lazySongsById: Map<Long, Song>? = null,
+    cachedRows: Array<LibraryListItem.SongRow?>? = null,
+    cachedHeaders: Array<LibraryListItem.AlbumHeader?>? = null
 ) {
     val size: Int get() = slots.size
     val isEmpty: Boolean get() = slots.isEmpty()
+
+    private val rowCache: Array<LibraryListItem.SongRow?> =
+        cachedRows ?: arrayOfNulls(songsVisual.size)
+    private val headerCache: Array<LibraryListItem.AlbumHeader?> =
+        cachedHeaders ?: arrayOfNulls(segments.size)
 
     val songsById: Map<Long, Song> by lazy(LazyThreadSafetyMode.NONE) {
         lazySongsById ?: run {
@@ -45,7 +52,7 @@ class LibraryListModel internal constructor(
         return if (slot >= 0) {
             songsVisual[slot].id
         } else {
-            "header_${segments[headerIndex(slot)].groupingKey}"
+            segments[headerIndex(slot)].key
         }
     }
 
@@ -59,25 +66,36 @@ class LibraryListModel internal constructor(
     fun itemAt(index: Int): LibraryListItem {
         val slot = slots[index]
         if (slot >= 0) {
-            val song = songsVisual[slot]
-            return LibraryListItem.SongRow(
-                song = song,
-                index = slot,
-                emphasis = rowEmphasis(song),
-                artworkUri = song.artworkUri ?: inheritedArtworkBySongId[song.id]
-            )
+            var row = rowCache[slot]
+            if (row == null) {
+                val song = songsVisual[slot]
+                row = LibraryListItem.SongRow(
+                    song = song,
+                    index = slot,
+                    emphasis = rowEmphasis(song),
+                    artworkUri = inheritedArtworkBySongId[song.id] ?: song.artworkUri
+                )
+                rowCache[slot] = row
+            }
+            return row
         }
-        val segment = segments[headerIndex(slot)]
-        return LibraryListItem.AlbumHeader(
-            albumName = segment.albumName,
-            displayName = segment.displayName,
-            artistName = segment.artistName,
-            artworkUri = segment.artworkUri,
-            songCount = segment.count,
-            songIds = segment.songIds,
-            groupingKey = segment.groupingKey,
-            sortHint = segment.sortHint
-        )
+        val hIdx = headerIndex(slot)
+        var header = headerCache[hIdx]
+        if (header == null) {
+            val segment = segments[hIdx]
+            header = LibraryListItem.AlbumHeader(
+                albumName = segment.albumName,
+                displayName = segment.displayName,
+                artistName = segment.artistName,
+                artworkUri = segment.artworkUri,
+                songCount = segment.count,
+                songIds = segment.songIds,
+                groupingKey = segment.groupingKey,
+                sortHint = segment.sortHint
+            )
+            headerCache[hIdx] = header
+        }
+        return header
     }
 
     fun collapsed(collapsedAlbumNames: Set<String>): LibraryListModel {
@@ -90,7 +108,9 @@ class LibraryListModel internal constructor(
             emphasizeLastPlayed = emphasizeLastPlayed,
             albumNames = albumNames,
             slots = buildSlots(segments, collapsedAlbumNames),
-            lazySongsById = null
+            lazySongsById = songsById,
+            cachedRows = rowCache,
+            cachedHeaders = headerCache
         )
     }
 
@@ -182,7 +202,8 @@ data class LibraryAlbumSegment(
     val sortHint: String?,
     val start: Int,
     val count: Int,
-    val songIds: List<Long>
+    val songIds: List<Long>,
+    val key: String = "header_$groupingKey"
 ) {
     fun matchesCollapsed(collapsed: Set<String>): Boolean =
         collapsed.contains(albumName) ||

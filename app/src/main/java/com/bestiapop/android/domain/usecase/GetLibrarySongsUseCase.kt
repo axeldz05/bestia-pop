@@ -152,24 +152,23 @@ class GetLibrarySongsUseCase {
         }
 
         val cachedGrouped = lastCachedGrouped
-        val (grouped, inherited) = if (cachedGrouped != null &&
+        val grouped = if (cachedGrouped != null &&
             cachedGrouped.songsRef === filtered &&
             cachedGrouped.songsSize == filtered.size
         ) {
-            cachedGrouped.grouped to cachedGrouped.inheritedArtwork
+            cachedGrouped.grouped
         } else {
-            val g = songsByAlbumBucket(pool, IdentifyRanking::isGenericAlbum)
-            val inh = inheritedArtworkBySongId(pool, g)
-            lastCachedGrouped = CachedGroupedAlbums(
-                songsRef = filtered,
-                songsSize = filtered.size,
-                grouped = g,
-                inheritedArtwork = inh
-            )
-            g to inh
+            songsByAlbumBucket(pool, IdentifyRanking::isGenericAlbum)
         }
 
         val albums = albumsFromGrouped(grouped, overrides, sortOption, sortDirection)
+        val inherited = albumArtworkBySongId(pool, grouped, albums)
+        lastCachedGrouped = CachedGroupedAlbums(
+            songsRef = filtered,
+            songsSize = filtered.size,
+            grouped = grouped,
+            inheritedArtwork = inherited
+        )
         val projection = CatalogProjection(
             songs = pool,
             albums = albums,
@@ -295,8 +294,8 @@ class GetLibrarySongsUseCase {
         if (songs.isEmpty()) return LibraryListModel.EMPTY
         val grouped = songsByAlbumBucket(songs, IdentifyRanking::isGenericAlbum)
         val albums = albumsFromGrouped(grouped, overrides, sortOption, sortDirection)
-        val inherited = inheritedArtworkBySongId(songs, grouped)
-        return listModelFrom(songs, grouped, albums, viewMode, sortOption, emphasizeLastPlayed, inherited)
+        val albumArtworks = albumArtworkBySongId(songs, grouped, albums)
+        return listModelFrom(songs, grouped, albums, viewMode, sortOption, emphasizeLastPlayed, albumArtworks)
     }
 
     fun buildListItems(
@@ -315,22 +314,35 @@ class GetLibrarySongsUseCase {
         return TrackMatchKeys.normalize(IdentifyQueryVariants.searchTokens(raw))
     }
 
-    private fun inheritedArtworkBySongId(
+    private fun albumArtworkBySongId(
         songs: List<Song>,
-        grouped: Map<String, List<Song>>
+        grouped: Map<String, List<Song>>,
+        albums: List<Album>
     ): Map<Long, String> {
-        val needsInherit = songs.any { song ->
-            song.artworkUri.isNullOrEmpty() && !IdentifyRanking.isGenericAlbum(song.album)
+        val albumArtByKey = HashMap<String, String>(albums.size)
+        for (album in albums) {
+            val art = album.artworkUri
+            if (!art.isNullOrBlank()) {
+                albumArtByKey[album.groupingKey] = art
+                albumArtByKey[album.name] = art
+            }
         }
-        if (!needsInherit) return emptyMap()
-        val out = HashMap<Long, String>()
-        for ((_, albumSongs) in grouped) {
-            if (albumSongs.none { !IdentifyRanking.isGenericAlbum(it.album) }) continue
-            val albumArt = firstArtwork(albumSongs) ?: continue
-            for (song in albumSongs) {
-                if (song.artworkUri.isNullOrEmpty() && !IdentifyRanking.isGenericAlbum(song.album)) {
-                    out[song.id] = albumArt
+        val out = HashMap<Long, String>(songs.size)
+        for ((bucketKey, albumSongs) in grouped) {
+            val isGeneric = albumSongs.all { IdentifyRanking.isGenericAlbum(it.album) }
+            if (isGeneric) {
+                // Generic/Unknown albums do not inherit covers across unrelated tracks
+                for (song in albumSongs) {
+                    val art = song.artworkUri?.takeIf(String::isNotBlank)
+                    if (art != null) out[song.id] = art
                 }
+                continue
+            }
+            val art = albumArtByKey[bucketKey]
+                ?: albumSongs.firstNotNullOfOrNull { it.artworkUri?.takeIf(String::isNotBlank) }
+                ?: continue
+            for (song in albumSongs) {
+                out[song.id] = art
             }
         }
         return out

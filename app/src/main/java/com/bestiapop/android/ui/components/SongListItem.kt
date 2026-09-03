@@ -55,8 +55,8 @@ fun SongListItem(
     onLongClick: () -> Unit = {},
     onToggleSelect: () -> Unit = {},
     onOptionsClick: (() -> Unit)? = null,
-    onPlayNext: () -> Unit,
-    onAddToQueue: () -> Unit,
+    onPlayNext: () -> Unit = {},
+    onAddToQueue: () -> Unit = {},
     onStartRadio: (() -> Unit)? = null,
     onAddToPlaylist: (() -> Unit)? = null,
     onEditMetadata: (() -> Unit)? = null,
@@ -64,7 +64,6 @@ fun SongListItem(
     onIdentify: (() -> Unit)? = null,
     onDelete: (() -> Unit)? = null
 ) {
-    var menuExpanded by remember { mutableStateOf(false) }
     val colors = playingRowColors(highlighted = isCurrentPlaying, selected = isSelected)
     val displayTitle = title ?: song.title
     val displaySubtitle = subtitle ?: remember(song.artist, song.album, secondaryInfo) {
@@ -79,8 +78,15 @@ fun SongListItem(
                 horizontal = ListDensity.rowHorizontalPadding,
                 vertical = ListDensity.rowVerticalPadding
             )
-            .clip(RoundedCornerShape(ListDensity.corner))
-            .background(colors.background)
+            .then(
+                if (colors.background != Color.Transparent) {
+                    Modifier
+                        .clip(RoundedCornerShape(ListDensity.corner))
+                        .background(colors.background)
+                } else {
+                    Modifier
+                }
+            )
             .combinedClickable(
                 onClick = {
                     if (isSelectionMode) {
@@ -150,32 +156,58 @@ fun SongListItem(
                     )
                 }
             } else {
-                Box {
-                    IconButton(
-                        onClick = { menuExpanded = true },
-                        modifier = Modifier.testTag("song-options-${song.id}")
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.MoreVert,
-                            contentDescription = "Opciones",
-                            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                        )
-                    }
-                    if (menuExpanded) {
-                        SongOptionsMenu(
-                            onDismiss = { menuExpanded = false },
-                            onPlayNext = onPlayNext,
-                            onAddToQueue = onAddToQueue,
-                            onStartRadio = onStartRadio,
-                            onAddToPlaylist = onAddToPlaylist,
-                            onEditMetadata = onEditMetadata,
-                            onEditLyrics = onEditLyrics,
-                            onIdentify = onIdentify,
-                            onDelete = onDelete
-                        )
-                    }
-                }
+                InlineSongOptionsButton(
+                    songId = song.id,
+                    onPlayNext = onPlayNext,
+                    onAddToQueue = onAddToQueue,
+                    onStartRadio = onStartRadio,
+                    onAddToPlaylist = onAddToPlaylist,
+                    onEditMetadata = onEditMetadata,
+                    onEditLyrics = onEditLyrics,
+                    onIdentify = onIdentify,
+                    onDelete = onDelete
+                )
             }
+        }
+    }
+}
+
+@Composable
+private fun InlineSongOptionsButton(
+    songId: Long,
+    onPlayNext: () -> Unit,
+    onAddToQueue: () -> Unit,
+    onStartRadio: (() -> Unit)?,
+    onAddToPlaylist: (() -> Unit)?,
+    onEditMetadata: (() -> Unit)?,
+    onEditLyrics: (() -> Unit)?,
+    onIdentify: (() -> Unit)?,
+    onDelete: (() -> Unit)?
+) {
+    var menuExpanded by remember { mutableStateOf(false) }
+    Box {
+        IconButton(
+            onClick = { menuExpanded = true },
+            modifier = Modifier.testTag("song-options-$songId")
+        ) {
+            Icon(
+                imageVector = Icons.Default.MoreVert,
+                contentDescription = "Opciones",
+                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+            )
+        }
+        if (menuExpanded) {
+            SongOptionsMenu(
+                onDismiss = { menuExpanded = false },
+                onPlayNext = onPlayNext,
+                onAddToQueue = onAddToQueue,
+                onStartRadio = onStartRadio,
+                onAddToPlaylist = onAddToPlaylist,
+                onEditMetadata = onEditMetadata,
+                onEditLyrics = onEditLyrics,
+                onIdentify = onIdentify,
+                onDelete = onDelete
+            )
         }
     }
 }

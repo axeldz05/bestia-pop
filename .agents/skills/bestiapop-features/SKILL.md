@@ -24,7 +24,7 @@ Cada feature lista **invariantes** + **entry points**. Si el código diverge, ac
 | Una canción | `MusicPlayerViewModel.playSong(song, playlistOrQueue)` | adapta a colección y delega en `PlaybackRuntime.playPlayableCollection` |
 | Tap en Cola / NP | `skipToQueueIndex(index)` | display == físico (`PlaybackRuntime.displayQueue`); **no** rota ni apaga shuffle. `PlaybackSelectionIntentGate` + job process-scoped hacen latest-tap-wins; antes de aplicar recalcula por `queueEntryId`. Compose usa ese mismo id como key/foco/scroll, así duplicados exactos siguen siendo slots distintos. Si un Remote falla, `PlaybackFallbackPlanner.circularPlan` prueba la cola circularmente e incluye Local |
 
-Archivos: `ui/MusicPlayerViewModel.kt` (façade pública); `service/PlaybackRuntime.kt` (`playPlayableCollection` / `toggleShuffle` / `displayQueue` / `moveQueueItem` / `skipToQueueIndex`); `data/playback/PlaybackQueueOrder.kt` (`shufflePlayOrder`); `data/playback/PlaybackQueueSlots.kt`; `data/playback/PlaybackFallbackPlanner.kt`; `data/playback/PlaybackSelectionIntentGate.kt`; `service/MusicService.kt` (`ACTION_SET_SHUFFLE_ORDER` legacy); `ui/components/PlayShuffleButtons.kt`.
+Archivos: `ui/MusicPlayerViewModel.kt` (façade pública); `service/PlaybackRuntime.kt` (`playPlayableCollection` / `toggleShuffle` / `displayQueue` / `moveQueueItem` / `skipToQueueIndex`); `data/playback/PlaybackQueueOrder.kt` (`shufflePlayOrder`); `data/playback/PlaybackQueueSlots.kt`; `data/playback/PlaybackFallbackPlanner.kt`; `data/playback/PlaybackSelectionIntentGate.kt`; `service/MusicService.kt` (`applyIdentityShuffleOrderIfEnabled`, `ACTION_SET_SHUFFLE_ORDER`); `ui/components/PlayShuffleButtons.kt`.
 
 ## 2. Búsqueda online y descarga de audio
 

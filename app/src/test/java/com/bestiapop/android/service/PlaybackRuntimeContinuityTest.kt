@@ -728,6 +728,45 @@ class PlaybackRuntimeContinuityTest {
     }
 
     @Test
+    fun autoStartRadioOnQueueEnd_updatesCurrentItemAndDisplayQueueWithoutBeingClobberedByTimeline() {
+        val radioCalls = AtomicInteger(0)
+        val radioSongs = (1..35).map { PlayableItem.Local(song(100L + it, "Radio Track $it")) }
+        val fixture = fixture(
+            radioSuggester = PlaybackRuntimeRadioSuggester {
+                radioCalls.incrementAndGet()
+                RadioSuggestResult(
+                    items = radioSongs,
+                    usedOnlineDiscovery = false,
+                    onlineDiscoveryFailed = false
+                )
+            }
+        )
+        try {
+            fixture.runtime.playPlayableCollection(
+                listOf(PlayableItem.Local(song(1, "Seed Song"))),
+                rotate = false
+            )
+            assertEquals(RepeatMode.OFF, fixture.runtime.repeatMode.value)
+            assertEquals("Seed Song", fixture.runtime.currentItem.value?.title)
+            assertEquals(1, fixture.runtime.displayQueue.value.size)
+
+            fixture.controller.endNaturally()
+
+            assertTrue("Radio must be triggered", radioCalls.get() >= 1)
+            assertTrue("Radio must be active", fixture.runtime.radioActive.value)
+            assertEquals("Radio Track 1", fixture.runtime.currentItem.value?.title)
+            assertEquals(35, fixture.runtime.displayQueue.value.size)
+            assertEquals("Radio Track 1", fixture.runtime.displayQueue.value[0].title)
+
+            fixture.controller.triggerTimelineChanged()
+            assertEquals("Radio Track 1", fixture.runtime.currentItem.value?.title)
+            assertEquals(35, fixture.runtime.displayQueue.value.size)
+        } finally {
+            fixture.close()
+        }
+    }
+
+    @Test
     fun failedControllerFuture_isClearedAndRetriedWithBackoff() = runBlocking {
         val backoffAttempts = mutableListOf<Int>()
         val fixture = fixture(
@@ -2027,6 +2066,10 @@ class PlaybackRuntimeContinuityTest {
 
         fun externalSetShuffleEnabled(value: Boolean) {
             shuffleModeEnabled = value
+        }
+
+        fun triggerTimelineChanged() {
+            listener?.onTimelineChanged()
         }
 
         fun enterBuffering() {

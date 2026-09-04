@@ -815,10 +815,11 @@ class PlaybackRuntime internal constructor(
     }
 
     private fun reconcileTimelineFromController() {
-        if (suppressPlaylistMutationCallbacks) return
+        if (suppressPlaylistMutationCallbacks || queueAppendJob?.isActive == true) return
         val player = controller ?: return
         val itemCount = player.mediaItemCount
         if (itemCount <= 0) {
+            if (playWhenReadyIntent || pendingPlayIntentEpoch != null || timelineMaterialized) return
             val changed = _queue.value.isNotEmpty()
             if (changed) invalidatePlaybackWork(clearRejectedEntries = false)
             _queue.value = emptyList()
@@ -836,19 +837,46 @@ class PlaybackRuntime internal constructor(
         }
         val rebuilt = player.items()
         if (rebuilt.size != itemCount || rebuilt.isEmpty()) return
-        val oldQueueEntryIds = _queue.value.map { it.queueEntryId }
+        val oldQueue = _queue.value
+        val oldQueueEntryIds = oldQueue.map { it.queueEntryId }
         val newQueueEntryIds = rebuilt.map { it.queueEntryId }
-        val structureChanged = oldQueueEntryIds != newQueueEntryIds
+
+        val isWindowOfOldQueue = oldQueue.size > INITIAL_PLAYBACK_WINDOW_SIZE &&
+                newQueueEntryIds.size <= INITIAL_PLAYBACK_WINDOW_SIZE &&
+                newQueueEntryIds.isNotEmpty() &&
+                run {
+                    val firstIndex = oldQueueEntryIds.indexOf(newQueueEntryIds.first())
+                    firstIndex >= 0 &&
+                            firstIndex + newQueueEntryIds.size <= oldQueueEntryIds.size &&
+                            oldQueueEntryIds.subList(firstIndex, firstIndex + newQueueEntryIds.size) == newQueueEntryIds
+                }
+        val structureChanged = !isWindowOfOldQueue && oldQueueEntryIds != newQueueEntryIds
         if (structureChanged) invalidatePlaybackWork(clearRejectedEntries = false)
+
         val index = player.currentMediaItemIndex.coerceIn(rebuilt.indices)
-        val occurrenceChanged = _currentItem.value?.queueEntryId != rebuilt[index].queueEntryId
-        _queue.value = rebuilt
+        val targetQueueEntryId = rebuilt[index].queueEntryId
+
+        val liveQueue = if (isWindowOfOldQueue) {
+            oldQueue
+        } else if (structureChanged) {
+            rebuilt.map { rebuiltItem ->
+                oldQueue.firstOrNull { it.queueEntryId == rebuiltItem.queueEntryId } ?: rebuiltItem
+            }
+        } else {
+            oldQueue
+        }
+
+        val liveCurrentItem = liveQueue.firstOrNull { it.queueEntryId == targetQueueEntryId } ?: rebuilt[index]
+        val occurrenceChanged = _currentItem.value?.queueEntryId != liveCurrentItem.queueEntryId
+
+        _queue.value = liveQueue
         timelineMaterialized = true
         liveSessionHydrated = true
-        lastMediaItemIndex = index
+        lastMediaItemIndex = liveQueue.indexOfFirst { it.queueEntryId == targetQueueEntryId }
+            .takeIf { it >= 0 } ?: index
         _playbackPositionMs.value = player.currentPosition.coerceAtLeast(0L)
         setCurrentItem(
-            rebuilt[index],
+            liveCurrentItem,
             persistLastPlayed = occurrenceChanged,
             hint = if (occurrenceChanged) {
                 PlaybackChangeHint.NEW_PLAYBACK
@@ -2590,11 +2618,16 @@ class PlaybackRuntime internal constructor(
         val initialItems = if (useWindow) items.subList(windowStart, windowEnd) else items
         val initialIndex = validIndex - windowStart
 
-        player.setMediaItems(
-            initialItems,
-            initialIndex,
-            startPositionMs.coerceAtLeast(0L)
-        )
+        suppressPlaylistMutationCallbacks = true
+        try {
+            player.setMediaItems(
+                initialItems,
+                initialIndex,
+                startPositionMs.coerceAtLeast(0L)
+            )
+        } finally {
+            suppressPlaylistMutationCallbacks = false
+        }
         timelineMaterialized = true
         lastMediaItemIndex = validIndex
         if (startPlaying) {
@@ -3149,6 +3182,7 @@ private class MediaControllerFacade(
     override var shuffleModeEnabled: Boolean
         get() = controller.shuffleModeEnabled
         set(value) {
+            controller.shuffleModeEnabled = value
             val args = Bundle().apply {
                 putIntArray(
                     MusicService.EXTRA_SHUFFLE_ORDER,

@@ -279,6 +279,24 @@ class MusicService : MediaLibraryService() {
                         acquireTransientWakeLock(30_000L)
                     }
                 }
+
+                override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) {
+                    PlaybackDiagnostics.log(
+                        PlaybackDiagnostics.TAG_PLAYBACK,
+                        "ExoPlayer.onTimelineChanged: windowCount=${timeline.windowCount}, reason=$reason"
+                    )
+                    applyIdentityShuffleOrderIfEnabled()
+                }
+
+                override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
+                    PlaybackDiagnostics.log(
+                        PlaybackDiagnostics.TAG_PLAYBACK,
+                        "ExoPlayer.onShuffleModeEnabledChanged: shuffleModeEnabled=$shuffleModeEnabled"
+                    )
+                    if (shuffleModeEnabled) {
+                        applyIdentityShuffleOrderIfEnabled()
+                    }
+                }
             })
             val callback = BestiaPopMediaLibraryCallback(
                 scope = serviceScope,
@@ -724,6 +742,23 @@ class MusicService : MediaLibraryService() {
         }
     }
 
+    private fun applyIdentityShuffleOrderIfEnabled() {
+        val p = player ?: return
+        if (!p.shuffleModeEnabled) return
+        val count = p.mediaItemCount
+        if (count > 0) {
+            val identity = IntArray(count) { it }
+            try {
+                p.setShuffleOrder(ShuffleOrder.DefaultShuffleOrder(identity, 0L))
+            } catch (e: Exception) {
+                PlaybackDiagnostics.warn(
+                    PlaybackDiagnostics.TAG_SERVICE,
+                    "Failed to apply identity shuffle order: ${e.message}"
+                )
+            }
+        }
+    }
+
     private fun applyShuffleOrder(indices: IntArray?) {
         val p = player ?: return
         if (indices == null || indices.isEmpty()) {
@@ -731,35 +766,8 @@ class MusicService : MediaLibraryService() {
             publishShuffleExtras()
             return
         }
-        val playlistSize = p.mediaItemCount
-        // Media3 requires order.length == playlistSize; mismatch used to crash the process.
-        if (indices.size != playlistSize) {
-            CrashReporter.recordNonFatal(
-                IllegalArgumentException("shuffle_order_size_mismatch"),
-                mapOf(
-                    "playback_phase" to "set_shuffle_order",
-                    "order_size" to indices.size.toString(),
-                    "playlist_size" to playlistSize.toString()
-                )
-            )
-            if (playlistSize <= 0) p.shuffleModeEnabled = false
-            publishShuffleExtras()
-            return
-        }
-        try {
-            p.setShuffleOrder(ShuffleOrder.DefaultShuffleOrder(indices, /* randomSeed */ 0L))
-            p.shuffleModeEnabled = true
-        } catch (e: Exception) {
-            CrashReporter.recordNonFatal(
-                e,
-                mapOf(
-                    "playback_phase" to "set_shuffle_order",
-                    "order_size" to indices.size.toString(),
-                    "playlist_size" to playlistSize.toString()
-                )
-            )
-            p.shuffleModeEnabled = false
-        }
+        p.shuffleModeEnabled = true
+        applyIdentityShuffleOrderIfEnabled()
         publishShuffleExtras()
     }
 

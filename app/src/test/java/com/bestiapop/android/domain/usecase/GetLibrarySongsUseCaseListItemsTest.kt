@@ -457,6 +457,29 @@ class GetLibrarySongsUseCaseListItemsTest {
     }
 
     @Test
+    fun libraryListModel_artworkQueryHelpers_returnExpectedUris() {
+        val testSongs = listOf(
+            Song(id = 1, uriString = "u1", title = "Song 1", album = "Album A", artworkUri = "content://art/a"),
+            Song(id = 2, uriString = "u2", title = "Song 2", album = "Album A", artworkUri = "content://art/a"),
+            Song(id = 3, uriString = "u3", title = "Song 3", album = "Album B", artworkUri = "content://art/b"),
+            Song(id = 4, uriString = "u4", title = "Song 4", album = "Album C", artworkUri = null)
+        )
+        val flatModel = useCase.buildListModel(testSongs, LibraryViewMode.FLAT)
+        assertEquals("content://art/a", flatModel.artworkUriAt(0))
+        assertEquals("content://art/a", flatModel.artworkUriAt(1))
+        assertEquals("content://art/b", flatModel.artworkUriAt(2))
+        assertNull(flatModel.artworkUriAt(3))
+        assertNull(flatModel.artworkUriAt(100))
+
+        val uniqueInRange = flatModel.uniqueArtworkUrisInRange(0..2)
+        assertEquals(listOf("content://art/a", "content://art/b"), uniqueInRange)
+
+        val headerModel = useCase.buildListModel(testSongs, LibraryViewMode.ALBUM_GROUPS)
+        val allUnique = headerModel.uniqueArtworkUris()
+        assertEquals(listOf("content://art/a", "content://art/b"), allUnique)
+    }
+
+    @Test
     fun formatSortRelevantInfo_showsGenreAndDateOnlyWhenNotAlreadyVisible() {
         assertNull(
             formatSortRelevantInfo(

@@ -46,9 +46,8 @@ fun isArtworkCachedInMemory(context: Context, uri: String?, sizePx: Int? = null)
     return context.imageLoader.memoryCache?.get(MemoryCache.Key(key)) != null
 }
 
-fun preloadArtwork(context: Context, uri: String?, sizePx: Int? = null) {
-    if (uri.isNullOrEmpty() || unresolvableArtworkUris.contains(uri)) return
-    val request = ImageRequest.Builder(context)
+internal fun buildArtworkImageRequest(context: Context, uri: String, sizePx: Int?): ImageRequest {
+    return ImageRequest.Builder(context)
         .data(uri)
         .apply {
             if (sizePx != null) {
@@ -60,7 +59,25 @@ fun preloadArtwork(context: Context, uri: String?, sizePx: Int? = null) {
         .memoryCacheKey(artworkMemoryCacheKey(uri, sizePx))
         .diskCacheKey(artworkMemoryCacheKey(uri, sizePx))
         .build()
+}
+
+fun preloadArtwork(context: Context, uri: String?, sizePx: Int? = null) {
+    if (uri.isNullOrEmpty() || unresolvableArtworkUris.contains(uri)) return
+    if (isArtworkCachedInMemory(context, uri, sizePx)) return
+    val request = buildArtworkImageRequest(context, uri, sizePx)
     context.imageLoader.enqueue(request)
+}
+
+suspend fun preloadArtworkSuspend(context: Context, uri: String?, sizePx: Int? = null): Boolean {
+    if (uri.isNullOrEmpty() || unresolvableArtworkUris.contains(uri)) return false
+    if (isArtworkCachedInMemory(context, uri, sizePx)) return false
+    val request = buildArtworkImageRequest(context, uri, sizePx)
+    val result = context.imageLoader.execute(request)
+    if (result is coil.request.ErrorResult) {
+        unresolvableArtworkUris.add(uri)
+        return false
+    }
+    return true
 }
 
 @Composable
@@ -70,18 +87,7 @@ fun rememberArtworkRequest(uri: String?, sizePx: Int? = null): ImageRequest? {
         if (uri.isNullOrEmpty() || unresolvableArtworkUris.contains(uri)) {
             null
         } else {
-            ImageRequest.Builder(context)
-                .data(uri)
-                .apply {
-                    if (sizePx != null) {
-                        size(sizePx)
-                        precision(Precision.INEXACT)
-                    }
-                }
-                .crossfade(false)
-                .memoryCacheKey(artworkMemoryCacheKey(uri, sizePx))
-                .diskCacheKey(artworkMemoryCacheKey(uri, sizePx))
-                .build()
+            buildArtworkImageRequest(context, uri, sizePx)
         }
     }
 }

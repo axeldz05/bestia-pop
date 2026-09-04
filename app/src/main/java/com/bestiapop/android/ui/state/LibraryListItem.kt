@@ -114,6 +114,56 @@ class LibraryListModel internal constructor(
         )
     }
 
+    fun artworkUriAt(index: Int): String? {
+        if (index !in slots.indices) return null
+        val slot = slots[index]
+        if (slot >= 0) {
+            val row = rowCache[slot]
+            if (row != null) return row.artworkUri
+            val song = songsVisual[slot]
+            return inheritedArtworkBySongId[song.id] ?: song.artworkUri
+        }
+        val hIdx = headerIndex(slot)
+        val header = headerCache[hIdx]
+        if (header != null) return header.artworkUri
+        return segments[hIdx].artworkUri
+    }
+
+    /**
+     * Level 2: Collects unique non-blank artwork URIs within [range] in order of appearance.
+     * Useful for proximity-based preloading without duplicate requests per album.
+     */
+    fun uniqueArtworkUrisInRange(range: IntRange): List<String> {
+        if (slots.isEmpty() || range.isEmpty()) return emptyList()
+        val start = range.first.coerceIn(0, slots.size - 1)
+        val end = range.last.coerceIn(0, slots.size - 1)
+        if (start > end) return emptyList()
+        val unique = LinkedHashSet<String>((end - start + 1).coerceAtMost(64))
+        for (i in start..end) {
+            val uri = artworkUriAt(i)
+            if (!uri.isNullOrBlank()) {
+                unique.add(uri)
+            }
+        }
+        return unique.toList()
+    }
+
+    /**
+     * Returns unique non-blank artwork URIs for the model in visual order up to [limit].
+     */
+    fun uniqueArtworkUris(limit: Int = Int.MAX_VALUE): List<String> {
+        if (slots.isEmpty() || limit <= 0) return emptyList()
+        val unique = LinkedHashSet<String>(segments.size.takeIf { it > 0 } ?: 64)
+        for (i in slots.indices) {
+            val uri = artworkUriAt(i)
+            if (!uri.isNullOrBlank()) {
+                unique.add(uri)
+                if (unique.size >= limit) break
+            }
+        }
+        return unique.toList()
+    }
+
     fun toListItems(): List<LibraryListItem> = List(size, ::itemAt)
 
     private fun rowEmphasis(song: Song): SortEmphasizedTexts =

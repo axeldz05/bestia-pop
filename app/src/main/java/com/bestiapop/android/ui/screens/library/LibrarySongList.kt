@@ -62,10 +62,16 @@ import com.bestiapop.android.ui.components.PlayShuffleIconPair
 import com.bestiapop.android.ui.components.SongListItem
 import com.bestiapop.android.ui.components.SongOptionsMenu
 import com.bestiapop.android.ui.components.SortEmphasizedTexts
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import com.bestiapop.android.ui.components.preloadArtworkSuspend
 import com.bestiapop.android.ui.state.LibraryListItem
 import com.bestiapop.android.ui.state.LibraryListModel
 import com.bestiapop.android.ui.theme.ListDensity
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.collectLatest
 
 @Composable
 @Suppress("UNUSED_PARAMETER")
@@ -155,6 +161,51 @@ fun LibrarySongList(
     val listState = rememberLazyListState()
     var menuSong by remember { mutableStateOf<Song?>(null) }
     val onOpenSongMenu: (Song) -> Unit = remember { { menuSong = it } }
+
+    val context = LocalContext.current
+    val density = LocalDensity.current
+    val sizePx = remember(density) {
+        with(density) { ListDensity.artworkSong.roundToPx().coerceAtLeast(1) }
+    }
+
+    LaunchedEffect(visible, sizePx) {
+        if (visible.isEmpty) return@LaunchedEffect
+        snapshotFlow { listState.firstVisibleItemIndex to listState.isScrollInProgress }
+            .collectLatest { (firstVisible, isScrollInProgress) ->
+                // While scrolling actively, pause background preloading to keep 100% thread pool for visible items
+                if (isScrollInProgress) return@collectLatest
+
+                // Small resting window after scrolling stops
+                delay(60)
+                if (listState.isScrollInProgress) return@collectLatest
+
+                // 1. Immediate proximity window (ahead +35, behind -10)
+                val windowStart = (firstVisible - 10).coerceAtLeast(0)
+                val windowEnd = (firstVisible + 35).coerceAtMost(visible.size - 1)
+                val proximityUris = visible.uniqueArtworkUrisInRange(windowStart..windowEnd)
+
+                for (uri in proximityUris) {
+                    if (listState.isScrollInProgress) break
+                    val decoded = preloadArtworkSuspend(context, uri, sizePx)
+                    if (decoded) delay(25)
+                }
+
+                // 2. Idle background pacing: slowly pre-warm further ahead when completely idle
+                if (!listState.isScrollInProgress) {
+                    delay(120)
+                    val idleStart = (windowEnd + 1).coerceAtMost(visible.size)
+                    val idleEnd = (firstVisible + 200).coerceAtMost(visible.size - 1)
+                    if (idleStart <= idleEnd) {
+                        val idleUris = visible.uniqueArtworkUrisInRange(idleStart..idleEnd)
+                        for (uri in idleUris) {
+                            if (listState.isScrollInProgress) break
+                            val decoded = preloadArtworkSuspend(context, uri, sizePx)
+                            if (decoded) delay(60)
+                        }
+                    }
+                }
+            }
+    }
 
     LazyColumn(state = listState, modifier = modifier.fillMaxSize()) {
         items(

@@ -88,7 +88,7 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 | Navegación agrupada | `ui/state/UiNavigationState.kt` (`UiNavigationState.toSnapshot` / `fromSnapshot`, `LibraryBrowseStack` transitions); detalle `ui/state/PlaylistDetailNav.kt` |
 | Sort helper UI | `ui/components/SortEmphasis.kt` (`sortEmphasisFor`, `sortEmphasisForLastPlayed`); aggregate rows still `SortRelevantInfo.kt` |
 | Color picker | `ui/components/ColorPickerDialog.kt` |
-| Library list model | `ui/state/LibraryListItem.kt` (`LibraryListModel` `songsVisual`/`segments`/`songsById`/`albumNames`/`keyAt`/`itemAt`/`collapsed`; `LibraryAlbumSegment.songIds`; `AlbumHeader.songIds` / `sortHint`; `SongRow.emphasis` / `artworkUri`); `LibraryUiState.kt` conserva solo `LibraryViewMode` |
+| Library list model | `ui/state/LibraryListItem.kt` (`LibraryListModel` `songsVisual`/`segments`/`songsById`/`albumNames`/`keyAt`/`itemAt`/`artworkUriAt`/`uniqueArtworkUrisInRange`/`collapsed`; `LibraryAlbumSegment.songIds`; `AlbumHeader.songIds` / `sortHint`; `SongRow.emphasis` / `artworkUri`); `LibraryUiState.kt` conserva solo `LibraryViewMode` |
 | Playlist / nav detail | `ui/state/UiNavigationState.kt` + `PlaylistDetailNav.kt` (`None` / `Local` / `ListenBrainz` / `CfRecommendations`) |
 | Discover playback origin | `data/model/DiscoverPlaybackOrigin.kt` (`None` / `ListenBrainz` / `CfRecommendations`, `MatchedLbPlaylist.toDiscoverOrigin`); process state `PlaybackRuntime.discoverPlaybackOrigin`, VM solo lo expone |
 | NP song/album actions | `ui/screens/NowPlayingActions.kt` (`NowPlayingActionsMenu`) |

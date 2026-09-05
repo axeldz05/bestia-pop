@@ -1,8 +1,10 @@
 package com.bestiapop.android.ui.screens.library
 
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Audiotrack
 import androidx.compose.runtime.Composable
@@ -11,13 +13,18 @@ import androidx.compose.ui.Modifier
 import com.bestiapop.android.data.model.GenreGroup
 import com.bestiapop.android.ui.SortOption
 import com.bestiapop.android.ui.components.EmptyListHint
+import com.bestiapop.android.ui.components.FastScrollContainer
+import com.bestiapop.android.ui.components.FastScrollSections
 import com.bestiapop.android.ui.components.formatSortRelevantInfo
 import com.bestiapop.android.ui.theme.ListDensity
+
+import com.bestiapop.android.data.preferences.FastScrollSettings
 
 @Composable
 fun LibraryGenreList(
     genres: List<GenreGroup>,
     sortOption: SortOption = SortOption.TITLE,
+    fastScrollSettings: FastScrollSettings = FastScrollSettings(),
     onGenreClick: (GenreGroup) -> Unit,
     onPlayGenre: (GenreGroup) -> Unit,
     onShuffleGenre: (GenreGroup) -> Unit,
@@ -31,15 +38,27 @@ fun LibraryGenreList(
         return
     }
 
-    LazyColumn(modifier = modifier.fillMaxSize()) {
-        items(genres, key = { it.name }) { genre ->
-            GenreListItem(
-                genre = genre,
-                sortOption = sortOption,
-                onClick = { onGenreClick(genre) },
-                onPlay = { onPlayGenre(genre) },
-                onShuffle = { onShuffleGenre(genre) }
-            )
+    val listState = rememberLazyListState()
+    val sections = remember(genres, sortOption) {
+        FastScrollSections.fromGenres(genres, sortOption)
+    }
+
+    FastScrollContainer(
+        sections = sections,
+        listState = listState,
+        settings = fastScrollSettings,
+        modifier = modifier.fillMaxSize()
+    ) { listModifier ->
+        LazyColumn(state = listState, modifier = listModifier) {
+            items(genres, key = { it.name }) { genre ->
+                GenreListItem(
+                    genre = genre,
+                    sortOption = sortOption,
+                    onClick = { onGenreClick(genre) },
+                    onPlay = { onPlayGenre(genre) },
+                    onShuffle = { onShuffleGenre(genre) }
+                )
+            }
         }
     }
 }

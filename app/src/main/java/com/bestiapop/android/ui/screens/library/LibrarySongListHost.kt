@@ -13,6 +13,7 @@ import com.bestiapop.android.data.model.Album
 import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.data.model.Playlist
 import com.bestiapop.android.data.model.Song
+import com.bestiapop.android.data.preferences.FastScrollSettings
 import com.bestiapop.android.ui.MusicPlayerViewModel
 import com.bestiapop.android.ui.SortOption
 import com.bestiapop.android.ui.state.LibraryListModel
@@ -31,10 +32,10 @@ data class LibrarySongListActions(
     val onDeleteSong: (Song) -> Unit,
     val onPlayAlbum: (String, List<Long>) -> Unit,
     val onShuffleAlbum: (String, List<Long>) -> Unit,
-    val onToggleSelect: (Song) -> Unit,
-    val onToggleSelectAlbum: (List<Long>) -> Unit,
-    val onAlbumLongClick: (List<Long>) -> Unit,
-    val onToggleCollapseAlbum: (String) -> Unit,
+    val onToggleSelect: (Song) -> Unit = {},
+    val onToggleSelectAlbum: (List<Long>) -> Unit = {},
+    val onAlbumLongClick: (List<Long>) -> Unit = {},
+    val onToggleCollapseAlbum: (String) -> Unit = {},
     val onEditAlbum: (String) -> Unit = {},
     val onChangeAlbumCover: (String) -> Unit = {},
     val onIdentifyAlbum: (String) -> Unit = {},
@@ -60,6 +61,7 @@ fun LibrarySongListHost(
     emptySubtitle: String? = null,
     emptyText: String = "No se encontraron canciones",
     loading: Boolean = false,
+    fastScrollSettings: FastScrollSettings = FastScrollSettings(),
     currentSongIdFlow: StateFlow<Long?>? = null,
     modifier: Modifier = Modifier
 ) {
@@ -75,6 +77,7 @@ fun LibrarySongListHost(
         emptySubtitle = emptySubtitle,
         emptyText = emptyText,
         loading = loading,
+        fastScrollSettings = fastScrollSettings,
         onSongClick = onSongClick,
         onSongLongClick = onSongLongClick,
         onToggleSelect = actions.onToggleSelect,

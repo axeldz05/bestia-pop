@@ -58,6 +58,8 @@ import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.ui.SortOption
 import com.bestiapop.android.ui.components.ArtworkThumbnail
 import com.bestiapop.android.ui.components.EmptyListHint
+import com.bestiapop.android.ui.components.FastScrollContainer
+import com.bestiapop.android.ui.components.FastScrollSections
 import com.bestiapop.android.ui.components.PlayShuffleIconPair
 import com.bestiapop.android.ui.components.SongListItem
 import com.bestiapop.android.ui.components.SongOptionsMenu
@@ -73,6 +75,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collectLatest
 
+import com.bestiapop.android.data.preferences.FastScrollSettings
+
 @Composable
 @Suppress("UNUSED_PARAMETER")
 fun LibrarySongList(
@@ -86,6 +90,7 @@ fun LibrarySongList(
     emptySubtitle: String? = null,
     emptyText: String = "No se encontraron canciones",
     loading: Boolean = false,
+    fastScrollSettings: FastScrollSettings = FastScrollSettings(),
     onSongClick: (Song, Int) -> Unit,
     onSongLongClick: (Song) -> Unit,
     onToggleSelect: (Song) -> Unit,
@@ -207,45 +212,56 @@ fun LibrarySongList(
             }
     }
 
-    LazyColumn(state = listState, modifier = modifier.fillMaxSize()) {
-        items(
-            count = visible.size,
-            key = { visible.keyAt(it) },
-            contentType = { visible.contentTypeAt(it) }
-        ) { index ->
-            when (val item = visible.itemAt(index)) {
-                is LibraryListItem.AlbumHeader -> {
-                    LibraryAlbumHeaderRow(
-                        item = item,
-                        selectedSongIds = selectedSongIds,
-                        isSelectionMode = isSelectionMode,
-                        collapsedAlbumNames = collapsedAlbumNames,
-                        onPlayAlbumState = onPlayAlbumState,
-                        onShuffleAlbumState = onShuffleAlbumState,
-                        onToggleSelectAlbumState = onToggleSelectAlbumState,
-                        onAlbumLongClickState = onAlbumLongClickState,
-                        onToggleCollapseAlbumState = onToggleCollapseAlbumState,
-                        onEditAlbumState = onEditAlbumState,
-                        onChangeAlbumCoverState = onChangeAlbumCoverState,
-                        onIdentifyAlbumState = onIdentifyAlbumState,
-                        onOpenAlbumState = onOpenAlbumState
-                    )
-                }
+    val sections = remember(visible, sortOption, emphasizeLastPlayed) {
+        FastScrollSections.fromLibraryList(visible, sortOption, emphasizeLastPlayed)
+    }
 
-                is LibraryListItem.SongRow -> {
-                    LibrarySongRow(
-                        song = item.song,
-                        index = item.index,
-                        artworkUri = item.artworkUri,
-                        isPlaying = playingIdState.value == item.song.id,
-                        isSelectionMode = isSelectionMode,
-                        isSelected = selectedSongIds.contains(item.song.id),
-                        emphasis = item.emphasis,
-                        onOptionsClick = onOpenSongMenu,
-                        onSongClickState = onSongClickState,
-                        onSongLongClickState = onSongLongClickState,
-                        onToggleSelectState = onToggleSelectState
-                    )
+    FastScrollContainer(
+        sections = sections,
+        listState = listState,
+        settings = fastScrollSettings,
+        modifier = modifier.fillMaxSize()
+    ) { listModifier ->
+        LazyColumn(state = listState, modifier = listModifier) {
+            items(
+                count = visible.size,
+                key = { visible.keyAt(it) },
+                contentType = { visible.contentTypeAt(it) }
+            ) { index ->
+                when (val item = visible.itemAt(index)) {
+                    is LibraryListItem.AlbumHeader -> {
+                        LibraryAlbumHeaderRow(
+                            item = item,
+                            selectedSongIds = selectedSongIds,
+                            isSelectionMode = isSelectionMode,
+                            collapsedAlbumNames = collapsedAlbumNames,
+                            onPlayAlbumState = onPlayAlbumState,
+                            onShuffleAlbumState = onShuffleAlbumState,
+                            onToggleSelectAlbumState = onToggleSelectAlbumState,
+                            onAlbumLongClickState = onAlbumLongClickState,
+                            onToggleCollapseAlbumState = onToggleCollapseAlbumState,
+                            onEditAlbumState = onEditAlbumState,
+                            onChangeAlbumCoverState = onChangeAlbumCoverState,
+                            onIdentifyAlbumState = onIdentifyAlbumState,
+                            onOpenAlbumState = onOpenAlbumState
+                        )
+                    }
+
+                    is LibraryListItem.SongRow -> {
+                        LibrarySongRow(
+                            song = item.song,
+                            index = item.index,
+                            artworkUri = item.artworkUri,
+                            isPlaying = playingIdState.value == item.song.id,
+                            isSelectionMode = isSelectionMode,
+                            isSelected = selectedSongIds.contains(item.song.id),
+                            emphasis = item.emphasis,
+                            onOptionsClick = onOpenSongMenu,
+                            onSongClickState = onSongClickState,
+                            onSongLongClickState = onSongLongClickState,
+                            onToggleSelectState = onToggleSelectState
+                        )
+                    }
                 }
             }
         }

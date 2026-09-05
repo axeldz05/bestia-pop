@@ -177,6 +177,23 @@ class LibraryPreferencesRepository(private val context: Context) {
         }
     }
 
+    val fastScrollSettingsFlow: Flow<FastScrollSettings> = context.libraryDataStore.data.map { prefs ->
+        val enabled = prefs[Keys.FAST_SCROLL_ENABLED] ?: true
+        val side = when (prefs[Keys.FAST_SCROLL_SIDE]?.uppercase()) {
+            "LEFT" -> FastScrollSide.LEFT
+            else -> FastScrollSide.RIGHT
+        }
+        FastScrollSettings(enabled = enabled, side = side)
+    }
+
+    suspend fun setFastScrollEnabled(enabled: Boolean) {
+        context.libraryDataStore.put(Keys.FAST_SCROLL_ENABLED, enabled)
+    }
+
+    suspend fun setFastScrollSide(side: FastScrollSide) {
+        context.libraryDataStore.put(Keys.FAST_SCROLL_SIDE, side.name)
+    }
+
     private object Keys {
         val INITIAL_SCAN_COMPLETED = booleanPreferencesKey("initial_library_scan_completed")
         val LEGACY_YTM_MIGRATED = booleanPreferencesKey("legacy_ytm_album_migrated")
@@ -197,5 +214,7 @@ class LibraryPreferencesRepository(private val context: Context) {
         val PLAYLIST_LOCAL_ID = longPreferencesKey("playlist_local_id")
         val PLAYLIST_LB_MBID = stringPreferencesKey("playlist_lb_mbid")
         val DISCOVER_SOURCE = stringPreferencesKey("discover_source_preference")
+        val FAST_SCROLL_ENABLED = booleanPreferencesKey("fast_scroll_enabled")
+        val FAST_SCROLL_SIDE = stringPreferencesKey("fast_scroll_side")
     }
 }

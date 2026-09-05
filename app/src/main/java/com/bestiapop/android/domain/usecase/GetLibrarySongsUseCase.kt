@@ -8,6 +8,8 @@ import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.data.util.albumTrackSortKey
 import com.bestiapop.android.domain.util.IdentifyQueryVariants
 import com.bestiapop.android.domain.util.IdentifyRanking
+import com.bestiapop.android.domain.util.NaturalTextOrder
+import com.bestiapop.android.domain.util.sortedWithNaturalOrder
 import com.bestiapop.android.domain.util.TrackMatchKeys
 import com.bestiapop.android.domain.util.albumGroupingKey
 import com.bestiapop.android.domain.util.albumIdentityKey
@@ -261,10 +263,7 @@ class GetLibrarySongsUseCase {
     private fun List<Song>.sortedByText(
         ascending: Boolean,
         selector: (Song) -> String
-    ): List<Song> {
-        val cmp = compareBy(String.CASE_INSENSITIVE_ORDER, selector)
-        return if (ascending) sortedWith(cmp) else sortedWith(cmp.reversed())
-    }
+    ): List<Song> = sortedWithNaturalOrder(ascending, selector)
 
     fun compareSongsWithinAlbum(a: Song, b: Song): Int {
         val byTrack = albumTrackSortKey(a.trackNumber).compareTo(albumTrackSortKey(b.trackNumber))
@@ -530,8 +529,7 @@ class GetLibrarySongsUseCase {
         if (useLong && longKey != null) {
             if (ascending) sortedBy { longKey(it) ?: 0L } else sortedByDescending { longKey(it) ?: 0L }
         } else {
-            val cmp = compareBy(String.CASE_INSENSITIVE_ORDER, stringKey)
-            if (ascending) sortedWith(cmp) else sortedWith(cmp.reversed())
+            sortedWithNaturalOrder(ascending, stringKey)
         }
 
     fun songsMatchingGenre(songs: List<Song>, genreName: String): List<Song> =

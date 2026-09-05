@@ -41,12 +41,14 @@ import com.bestiapop.android.data.preferences.NAV_PLAYLISTS
 import com.bestiapop.android.data.preferences.NAV_SETTINGS
 import com.bestiapop.android.data.preferences.SearchHistoryPreferencesRepository
 import com.bestiapop.android.domain.usecase.GetDiscoverRecommendationsUseCase
+import com.bestiapop.android.domain.usecase.GetTopRelatedItemsUseCase
 import com.bestiapop.android.domain.usecase.DiscoverFeed
 import com.bestiapop.android.domain.usecase.RelatedAlbumItem
 import com.bestiapop.android.domain.usecase.TopRelatedFeed
 import com.bestiapop.android.data.model.toListenBrainzCatalogTrack
-import com.bestiapop.android.domain.usecase.GetTopRelatedItemsUseCase
 import com.bestiapop.android.data.preferences.DiscoverSourcePreference
+import com.bestiapop.android.data.preferences.FastScrollSettings
+import com.bestiapop.android.data.preferences.FastScrollSide
 import com.bestiapop.android.data.preferences.UiNavSnapshot
 import com.bestiapop.android.data.preferences.ListenBrainzPreferencesRepository
 import com.bestiapop.android.data.preferences.ListenBrainzSettings
@@ -537,6 +539,10 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     val discoverSource: StateFlow<DiscoverSourcePreference> =
         libraryPreferences.discoverSourceFlow
             .stateInUi(viewModelScope, DiscoverSourcePreference.BOTH)
+
+    val fastScrollSettings: StateFlow<FastScrollSettings> =
+        libraryPreferences.fastScrollSettingsFlow
+            .stateInUi(viewModelScope, FastScrollSettings())
 
     private val _discoverFeed = MutableStateFlow(DiscoverFeed())
     val discoverFeed = _discoverFeed.asStateFlow()
@@ -2688,6 +2694,14 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             libraryPreferences.setDiscoverSourcePreference(source)
             refreshDiscoverFeed()
         }
+    }
+
+    fun setFastScrollEnabled(enabled: Boolean) {
+        viewModelScope.launch { libraryPreferences.setFastScrollEnabled(enabled) }
+    }
+
+    fun setFastScrollSide(side: FastScrollSide) {
+        viewModelScope.launch { libraryPreferences.setFastScrollSide(side) }
     }
 
     fun refreshDiscoverFeed(forceRefresh: Boolean = false) {

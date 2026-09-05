@@ -49,6 +49,16 @@ fun parseDiscoverSourcePreference(name: String?): DiscoverSourcePreference = whe
     else -> DiscoverSourcePreference.BOTH
 }
 
+enum class FastScrollSide {
+    RIGHT,
+    LEFT
+}
+
+data class FastScrollSettings(
+    val enabled: Boolean = true,
+    val side: FastScrollSide = FastScrollSide.RIGHT
+)
+
 data class LibraryDisplaySettings(
     val sortOptionName: String = DEFAULT_SORT_OPTION_NAME,
     val sortDirectionName: String = DEFAULT_SORT_DIRECTION_NAME,

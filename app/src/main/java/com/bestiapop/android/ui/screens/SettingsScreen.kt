@@ -52,8 +52,11 @@ import com.bestiapop.android.ui.components.ScreenBackHeader
 import com.bestiapop.android.ui.update.AppUpdateScreen
 import com.bestiapop.android.ui.update.AppUpdateViewModel
 
+import androidx.compose.material.icons.filled.LibraryMusic
+
 private enum class SettingsSection {
     Themes,
+    Library,
     ListenBrainz,
     Playback,
     Sound,
@@ -93,6 +96,7 @@ fun SettingsScreen(viewModel: MusicPlayerViewModel, appUpdateViewModel: AppUpdat
         null -> SettingsHome(
             appUpdateViewModel = appUpdateViewModel,
             onOpenThemes = { section = SettingsSection.Themes },
+            onOpenLibrary = { section = SettingsSection.Library },
             onOpenListenBrainz = { section = SettingsSection.ListenBrainz },
             onOpenPlayback = { section = SettingsSection.Playback },
             onOpenSound = { section = SettingsSection.Sound },
@@ -102,6 +106,9 @@ fun SettingsScreen(viewModel: MusicPlayerViewModel, appUpdateViewModel: AppUpdat
         )
         SettingsSection.Themes -> SettingsSectionPage("Temas", onBack = closeSection) {
             ThemeSettingsScreen(viewModel = viewModel, showTitle = false)
+        }
+        SettingsSection.Library -> SettingsSectionPage("Biblioteca", onBack = closeSection) {
+            LibrarySettingsScreen(viewModel = viewModel)
         }
         SettingsSection.ListenBrainz -> SettingsSectionPage("ListenBrainz y recomendaciones", onBack = closeSection) {
             ListenBrainzSettingsScreen(viewModel = viewModel)
@@ -144,6 +151,7 @@ private fun SettingsSectionPage(
 private fun SettingsHome(
     appUpdateViewModel: AppUpdateViewModel,
     onOpenThemes: () -> Unit,
+    onOpenLibrary: () -> Unit,
     onOpenListenBrainz: () -> Unit,
     onOpenPlayback: () -> Unit,
     onOpenSound: () -> Unit,
@@ -208,6 +216,12 @@ private fun SettingsHome(
 
         val entries = listOf(
             SettingsHomeEntry("Temas", "Colores y estilo visual", Icons.Default.Palette, onOpenThemes),
+            SettingsHomeEntry(
+                "Biblioteca",
+                "Scroll vertical rápido y visualización",
+                Icons.Default.LibraryMusic,
+                onOpenLibrary
+            ),
             SettingsHomeEntry(
                 "ListenBrainz y recomendaciones",
                 "Scrobbling y motor de recomendaciones para Discover",

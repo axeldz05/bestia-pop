@@ -50,6 +50,7 @@ import com.bestiapop.android.data.model.Artist
 import com.bestiapop.android.data.model.GenreGroup
 import com.bestiapop.android.data.model.Playlist
 import com.bestiapop.android.data.model.Song
+import com.bestiapop.android.data.preferences.FastScrollSettings
 import com.bestiapop.android.domain.util.albumNamesMatch
 import com.bestiapop.android.ui.MusicPlayerViewModel
 import com.bestiapop.android.ui.SortDirection
@@ -104,6 +105,7 @@ fun LibraryScreen(
     val selectedGenreName = navigation.libraryStack.genreName
     val libraryJobProgress by viewModel.libraryJobProgress.collectAsStateWithLifecycle()
     val similarPlaylistPreview by viewModel.similarPlaylistPreview.collectAsStateWithLifecycle()
+    val fastScrollSettings by viewModel.fastScrollSettings.collectAsStateWithLifecycle()
 
     var showBrowseSortSheet by remember { mutableStateOf(false) }
     var searchExpanded by remember { mutableStateOf(false) }
@@ -635,7 +637,8 @@ fun LibraryScreen(
                 onShuffleArtist = onShuffleArtistBrowse,
                 onGenreClick = onGenreClickBrowse,
                 onPlayGenre = onPlayGenreBrowse,
-                onShuffleGenre = onShuffleGenreBrowse
+                onShuffleGenre = onShuffleGenreBrowse,
+                fastScrollSettings = fastScrollSettings
             )
 
             if (!isPlaylistAdditionMode) {
@@ -737,7 +740,8 @@ private fun LibraryBrowsePane(
     onShuffleArtist: (Artist) -> Unit,
     onGenreClick: (GenreGroup) -> Unit,
     onPlayGenre: (GenreGroup) -> Unit,
-    onShuffleGenre: (GenreGroup) -> Unit
+    onShuffleGenre: (GenreGroup) -> Unit,
+    fastScrollSettings: FastScrollSettings
 ) {
     when {
         selectedAlbumName != null || selectedArtistName != null || selectedGenreName != null -> {
@@ -754,7 +758,8 @@ private fun LibraryBrowsePane(
                 sortOption = sortOption,
                 sortDirection = sortDirection,
                 actions = actions,
-                onToggleSelect = onToggleSelect
+                onToggleSelect = onToggleSelect,
+                fastScrollSettings = fastScrollSettings
             )
         }
 
@@ -783,7 +788,8 @@ private fun LibraryBrowsePane(
                 sortOption = sortOption,
                 actions = actions,
                 onSongClick = onLibrarySongsClick,
-                loading = !catalogLoaded
+                loading = !catalogLoaded,
+                fastScrollSettings = fastScrollSettings
             )
         }
 
@@ -796,7 +802,8 @@ private fun LibraryBrowsePane(
                 sortOption = SortOption.DATE_ADDED,
                 actions = actions,
                 searchQuery = searchQuery,
-                onToggleSelect = onToggleSelect
+                onToggleSelect = onToggleSelect,
+                fastScrollSettings = fastScrollSettings
             )
         }
 
@@ -809,7 +816,8 @@ private fun LibraryBrowsePane(
                 onShuffleAlbum = onShuffleAlbum,
                 onEditAlbum = onEditAlbum,
                 onChangeAlbumCover = onChangeAlbumCover,
-                onIdentifyAlbum = onIdentifyAlbum
+                onIdentifyAlbum = onIdentifyAlbum,
+                fastScrollSettings = fastScrollSettings
             )
         }
 
@@ -819,7 +827,8 @@ private fun LibraryBrowsePane(
                 sortOption = sortOption,
                 onArtistClick = onArtistClick,
                 onPlayArtist = onPlayArtist,
-                onShuffleArtist = onShuffleArtist
+                onShuffleArtist = onShuffleArtist,
+                fastScrollSettings = fastScrollSettings
             )
         }
 
@@ -829,7 +838,8 @@ private fun LibraryBrowsePane(
                 sortOption = sortOption,
                 onGenreClick = onGenreClick,
                 onPlayGenre = onPlayGenre,
-                onShuffleGenre = onShuffleGenre
+                onShuffleGenre = onShuffleGenre,
+                fastScrollSettings = fastScrollSettings
             )
         }
 
@@ -911,7 +921,8 @@ private fun NestedLibraryBrowse(
     sortOption: SortOption,
     sortDirection: SortDirection,
     actions: LibrarySongListActions,
-    onToggleSelect: (Song) -> Unit
+    onToggleSelect: (Song) -> Unit,
+    fastScrollSettings: FastScrollSettings
 ) {
     val songs by viewModel.libraryProjection.songs.collectAsStateWithLifecycle()
     val browseSongs = remember(songs, selectedAlbumName, selectedArtistName, selectedGenreName) {
@@ -953,7 +964,8 @@ private fun NestedLibraryBrowse(
         collapsedAlbumNames = collapsedAlbumNames,
         sortOption = sortOption,
         actions = actions,
-        onSongClick = onSongClick
+        onSongClick = onSongClick,
+        fastScrollSettings = fastScrollSettings
     )
 }
 
@@ -966,7 +978,8 @@ private fun LibraryAlbumsTab(
     onShuffleAlbum: (Album) -> Unit,
     onEditAlbum: (Album) -> Unit,
     onChangeAlbumCover: (Album) -> Unit,
-    onIdentifyAlbum: (Album) -> Unit
+    onIdentifyAlbum: (Album) -> Unit,
+    fastScrollSettings: FastScrollSettings
 ) {
     val albums by viewModel.libraryProjection.albums.collectAsStateWithLifecycle()
     LibraryAlbumBrowseList(
@@ -977,7 +990,8 @@ private fun LibraryAlbumsTab(
         onShuffleAlbum = onShuffleAlbum,
         onEditAlbum = onEditAlbum,
         onChangeAlbumCover = onChangeAlbumCover,
-        onIdentifyAlbum = onIdentifyAlbum
+        onIdentifyAlbum = onIdentifyAlbum,
+        fastScrollSettings = fastScrollSettings
     )
 }
 
@@ -990,7 +1004,8 @@ private fun LibraryRecentTab(
     sortOption: SortOption,
     actions: LibrarySongListActions,
     searchQuery: String,
-    onToggleSelect: (Song) -> Unit
+    onToggleSelect: (Song) -> Unit,
+    fastScrollSettings: FastScrollSettings
 ) {
     val recentSongs by viewModel.libraryProjection.recentSongs.collectAsStateWithLifecycle()
     val recentList by viewModel.libraryProjection.recentList.collectAsStateWithLifecycle()
@@ -1021,7 +1036,8 @@ private fun LibraryRecentTab(
             "Reproducí canciones para verlas acá"
         },
         actions = actions,
-        onSongClick = onSongClick
+        onSongClick = onSongClick,
+        fastScrollSettings = fastScrollSettings
     )
 }
 
@@ -1031,7 +1047,8 @@ private fun LibraryArtistsTab(
     sortOption: SortOption,
     onArtistClick: (Artist) -> Unit,
     onPlayArtist: (Artist) -> Unit,
-    onShuffleArtist: (Artist) -> Unit
+    onShuffleArtist: (Artist) -> Unit,
+    fastScrollSettings: FastScrollSettings
 ) {
     val artists by viewModel.libraryProjection.artists.collectAsStateWithLifecycle()
     LibraryArtistList(
@@ -1039,7 +1056,8 @@ private fun LibraryArtistsTab(
         sortOption = sortOption,
         onArtistClick = onArtistClick,
         onPlayArtist = onPlayArtist,
-        onShuffleArtist = onShuffleArtist
+        onShuffleArtist = onShuffleArtist,
+        fastScrollSettings = fastScrollSettings
     )
 }
 
@@ -1049,7 +1067,8 @@ private fun LibraryGenresTab(
     sortOption: SortOption,
     onGenreClick: (GenreGroup) -> Unit,
     onPlayGenre: (GenreGroup) -> Unit,
-    onShuffleGenre: (GenreGroup) -> Unit
+    onShuffleGenre: (GenreGroup) -> Unit,
+    fastScrollSettings: FastScrollSettings
 ) {
     val genres by viewModel.libraryProjection.genres.collectAsStateWithLifecycle()
     LibraryGenreList(
@@ -1057,7 +1076,8 @@ private fun LibraryGenresTab(
         sortOption = sortOption,
         onGenreClick = onGenreClick,
         onPlayGenre = onPlayGenre,
-        onShuffleGenre = onShuffleGenre
+        onShuffleGenre = onShuffleGenre,
+        fastScrollSettings = fastScrollSettings
     )
 }
 

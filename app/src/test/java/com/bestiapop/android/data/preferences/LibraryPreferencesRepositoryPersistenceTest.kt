@@ -69,4 +69,19 @@ class LibraryPreferencesRepositoryPersistenceTest {
         assertEquals(newerVersion, restored)
         assertTrue(restored > AppDatabase.VERSION)
     }
+
+    @Test
+    fun fastScrollSettings_survivesRepositoryRecreation() = runTest {
+        val repo = LibraryPreferencesRepository(context)
+        val defaultSettings = repo.fastScrollSettingsFlow.first()
+        assertEquals(true, defaultSettings.enabled)
+        assertEquals(FastScrollSide.RIGHT, defaultSettings.side)
+
+        repo.setFastScrollEnabled(false)
+        repo.setFastScrollSide(FastScrollSide.LEFT)
+
+        val reloaded = LibraryPreferencesRepository(context).fastScrollSettingsFlow.first()
+        assertEquals(false, reloaded.enabled)
+        assertEquals(FastScrollSide.LEFT, reloaded.side)
+    }
 }

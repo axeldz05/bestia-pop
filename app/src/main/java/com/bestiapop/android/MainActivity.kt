@@ -9,7 +9,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
-import android.provider.Settings
+import android.view.KeyEvent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -128,6 +128,39 @@ class MainActivity : ComponentActivity() {
     override fun onDestroy() {
         PlaybackDiagnostics.log(PlaybackDiagnostics.TAG_LIFECYCLE, "MainActivity.onDestroy (Activity destroyed, isFinishing=$isFinishing)")
         super.onDestroy()
+    }
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        val action = event.action
+        val keyCode = event.keyCode
+        if (action == KeyEvent.ACTION_DOWN) {
+            when (keyCode) {
+                KeyEvent.KEYCODE_VOLUME_UP -> {
+                    if (viewModel.handleVolumeUp()) {
+                        return true
+                    }
+                }
+                KeyEvent.KEYCODE_VOLUME_DOWN -> {
+                    if (viewModel.handleVolumeDown()) {
+                        return true
+                    }
+                }
+            }
+        } else if (action == KeyEvent.ACTION_UP) {
+            when (keyCode) {
+                KeyEvent.KEYCODE_VOLUME_UP -> {
+                    if (viewModel.isVolumeBoostActive()) {
+                        return true
+                    }
+                }
+                KeyEvent.KEYCODE_VOLUME_DOWN -> {
+                    if (viewModel.consumeVolumeDownUpAction()) {
+                        return true
+                    }
+                }
+            }
+        }
+        return super.dispatchKeyEvent(event)
     }
 
     override fun onNewIntent(intent: Intent) {

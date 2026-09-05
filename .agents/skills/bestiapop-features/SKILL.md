@@ -185,7 +185,8 @@ State: `currentThemeState`.
 
 **Invariantes:**
 - Boost solo si `PlaybackSettings.volumeBoostEnabled` (Ajustes → Sonido; off por defecto).
-- Now Playing: barra `0..1` (sistema) o `0..2` si enabled; `>1` = sistema al máximo + `LoudnessEnhancer` (0…`MAX_VOLUME_BOOST_GAIN_MB`). Volumen general; no faders L/R en Now Playing.
+- Volumen general: se controla con los botones de hardware del dispositivo. Cuando boost está activo, `>1` = sistema al máximo + `LoudnessEnhancer` (0…`MAX_VOLUME_BOOST_GAIN_MB`). Sin faders de volumen en Now Playing.
+- Botones físicos de volumen (`MainActivity.dispatchKeyEvent`): al alcanzar el 100% de volumen del sistema con boost habilitado, `VOLUME_UP` incrementa el boost en pasos de 10% (hasta 200%) y despliega `VolumeBoostHud`. Al presionar `VOLUME_DOWN` estando por encima del 100%, reduce el boost de 10% en 10%; al llegar al 100%, la siguiente pulsación baja el volumen nativo del dispositivo normalmente.
 - Persistir `volumeBoostAmount` (`0f..1f`); al desactivar el flag se conserva el amount para reactivar.
 - Balance L/R: `stereoLeftGain` / `stereoRightGain` (`0f..1f`, default `1f`); faders **independientes** (bajar uno no sube el otro). Atenuación PCM vía `StereoBalanceAudioProcessor` **antes** del `AudioTrack`; el boost (`LoudnessEnhancer`) se aplica después a ambos canales por igual (relación L/R se conserva).
 
@@ -195,9 +196,9 @@ State: `currentThemeState`.
 | Settings UI | `VolumeBoostSettingsScreen` vía `SettingsScreen` sección Sonido |
 | Aplicar boost | `MusicService.applyBoost` + `LoudnessEnhancer` en `ExoPlayer.audioSessionId` |
 | Aplicar balance | `MusicService.applyStereoBalance` + `StereoBalanceAudioProcessor` en `DefaultAudioSink` |
-| UI / persistir boost | `MusicPlayerViewModel.setVolume` / `setVolumeBoostEnabled` / `restoreVolumeBoostIfNeeded`; restore espera `PlaybackRuntime.awaitPlaybackSettings` (primera emisión real, no defaults) |
+| UI / persistir boost | `MusicPlayerViewModel.setVolume` / `setVolumeBoostEnabled` / `handleVolumeUp` / `handleVolumeDown` / `restoreVolumeBoostIfNeeded`; restore espera `PlaybackRuntime.awaitPlaybackSettings` (primera emisión real, no defaults) |
 | UI / persistir balance | `setStereoLeftGain` / `setStereoRightGain` / `resetStereoBalance` |
-| UI slider general | `NowPlayingScreen` (`volumeBoostEnabled`, `valueRange` 0…2) |
+| UI HUD flotante boost | `VolumeBoostHud` en `MainScreen` |
 
 ## 7c. Aleatorio y repetición entre sesiones
 

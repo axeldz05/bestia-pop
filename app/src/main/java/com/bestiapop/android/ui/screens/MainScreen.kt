@@ -20,6 +20,7 @@ import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Wifi
+import com.bestiapop.android.ui.components.VolumeBoostHud
 import com.bestiapop.android.ui.screens.discover.DiscoverScreen
 import com.bestiapop.android.ui.state.LibraryBrowseFilter
 import androidx.compose.material3.AlertDialog
@@ -98,6 +99,8 @@ fun MainScreen(
     val identifySetup by viewModel.identifySetup.collectAsStateWithLifecycle()
     val pendingAlbumMerge by viewModel.pendingAlbumMerge.collectAsStateWithLifecycle()
     val appUpdateState by appUpdateViewModel.state.collectAsStateWithLifecycle()
+    val volumeLevel by viewModel.volumeLevel.collectAsStateWithLifecycle()
+    val volumeBoostHudVisible by viewModel.volumeBoostHudVisible.collectAsStateWithLifecycle()
     val downloadBadgeCount = activeDownloadBadgeCount(activeDownloads)
     val backgroundExecutionStatus by viewModel.backgroundExecutionStatus.collectAsStateWithLifecycle()
     val oemScreenOffCleanupHintDismissed by viewModel.oemScreenOffCleanupHintDismissed.collectAsStateWithLifecycle()
@@ -446,6 +449,12 @@ fun MainScreen(
                 }
             )
         }
+
+        VolumeBoostHud(
+            volumeLevel = volumeLevel,
+            visible = volumeBoostHudVisible,
+            onDismiss = viewModel::hideVolumeBoostHud
+        )
     }
 }
 

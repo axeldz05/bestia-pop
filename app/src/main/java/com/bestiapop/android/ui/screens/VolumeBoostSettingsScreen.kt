@@ -31,7 +31,7 @@ fun VolumeBoostSettingsScreen(viewModel: MusicPlayerViewModel) {
     val rightGain by viewModel.stereoRightGain.collectAsStateWithLifecycle()
 
     SettingsScrollColumn(
-        intro = "El volumen de Now Playing es general. Acá podés amplificar por encima del 100% y atenuar el canal izquierdo o derecho por separado."
+        intro = "El volumen general se controla con los botones del dispositivo. Acá podés amplificar por encima del 100% y atenuar el canal izquierdo o derecho por separado."
     ) {
         Text(
             text = "Amplificar volumen",
@@ -40,7 +40,7 @@ fun VolumeBoostSettingsScreen(viewModel: MusicPlayerViewModel) {
         )
         Spacer(modifier = Modifier.height(8.dp))
         Text(
-            text = "Permite subir el volumen de Now Playing por encima del 100% del sistema. Puede distorsionar temas ya masterizados a alto volumen. Nota: Deshabilita la decodificación por hardware de ultra-bajo consumo (Audio Offload) del sistema, lo que puede incrementar el consumo de batería durante la reproducción en segundo plano.",
+            text = "Permite subir el volumen por encima del 100% del sistema. Puede distorsionar temas ya masterizados a alto volumen. Nota: Deshabilita la decodificación por hardware de ultra-bajo consumo (Audio Offload) del sistema, lo que puede incrementar el consumo de batería durante la reproducción en segundo plano.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -49,7 +49,7 @@ fun VolumeBoostSettingsScreen(viewModel: MusicPlayerViewModel) {
         SettingsSwitchRow(
             title = "Amplificar volumen",
             subtitle = if (boostEnabled) {
-                "Activo — la barra de Now Playing llega hasta 200%"
+                "Activo — amplificación disponible hasta 200%"
             } else {
                 "Desactivado — volumen limitado al 100% del sistema"
             },

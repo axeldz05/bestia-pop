@@ -542,6 +542,12 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private val _volumeLevel = MutableStateFlow(getDeviceVolumeRatio())
     val volumeLevel = _volumeLevel.asStateFlow()
 
+    private val _volumeBoostHudVisible = MutableStateFlow(false)
+    val volumeBoostHudVisible = _volumeBoostHudVisible.asStateFlow()
+
+    private var hudHideJob: Job? = null
+    private var handledVolumeDownAction = false
+
     private val searchHistoryPreferences = SearchHistoryPreferencesRepository(application)
     private val getDiscoverRecommendationsUseCase = GetDiscoverRecommendationsUseCase()
 
@@ -735,6 +741,72 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 _volumeLevel.value = getDeviceVolumeRatio().coerceAtMost(1f)
             }
         }
+    }
+
+    fun showVolumeBoostHud() {
+        hudHideJob?.cancel()
+        _volumeBoostHudVisible.value = true
+        hudHideJob = viewModelScope.launch {
+            delay(VOLUME_BOOST_HUD_DURATION_MS)
+            _volumeBoostHudVisible.value = false
+        }
+    }
+
+    fun hideVolumeBoostHud() {
+        hudHideJob?.cancel()
+        _volumeBoostHudVisible.value = false
+    }
+
+    fun handleVolumeUp(): Boolean {
+        val boostEnabled = volumeBoostEnabled.value
+        if (!boostEnabled) return false
+
+        val currentVol = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+        val maxVol = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
+
+        if (currentVol < maxVol) {
+            if (playbackSettings.value.volumeBoostAmount > 0f) {
+                persistPlayback { setVolumeBoostAmount(0f) }
+            }
+            return false
+        }
+
+        // System volume is at 100%. Increase boost in steps of 10% (0.10f).
+        val currentBoost = playbackSettings.value.volumeBoostAmount.coerceIn(0f, 1f)
+        val newBoost = (currentBoost + VOLUME_BOOST_STEP).coerceIn(0f, 1f)
+        val newRatio = 1f + newBoost
+        _volumeLevel.value = newRatio
+        persistPlayback { setVolumeBoostAmount(newBoost) }
+        showVolumeBoostHud()
+        return true
+    }
+
+    fun handleVolumeDown(): Boolean {
+        val boostEnabled = volumeBoostEnabled.value
+        val currentBoost = if (boostEnabled) playbackSettings.value.volumeBoostAmount.coerceIn(0f, 1f) else 0f
+        if (boostEnabled && currentBoost > 0.001f) {
+            handledVolumeDownAction = true
+            val newBoost = (currentBoost - VOLUME_BOOST_STEP).coerceAtLeast(0f)
+            persistPlayback { setVolumeBoostAmount(newBoost) }
+            val newRatio = 1f + newBoost
+            _volumeLevel.value = newRatio
+            showVolumeBoostHud()
+            return true
+        }
+
+        hideVolumeBoostHud()
+        handledVolumeDownAction = false
+        return false
+    }
+
+    fun consumeVolumeDownUpAction(): Boolean {
+        val wasHandled = handledVolumeDownAction
+        handledVolumeDownAction = false
+        return wasHandled
+    }
+
+    fun isVolumeBoostActive(): Boolean {
+        return volumeBoostEnabled.value && _volumeLevel.value > 1.0f
     }
 
     fun setDownloadOnMeteredNetwork(enabled: Boolean) {
@@ -3432,6 +3504,8 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         const val RADIO_LOADING_LABEL = "Armando radio…"
         private const val METADATA_ENHANCE_BATCH = 20
         private const val FIRST_LIBRARY_IDLE_MS = 1_500L
+        const val VOLUME_BOOST_STEP = 0.10f
+        const val VOLUME_BOOST_HUD_DURATION_MS = 2_000L
     }
 }
 

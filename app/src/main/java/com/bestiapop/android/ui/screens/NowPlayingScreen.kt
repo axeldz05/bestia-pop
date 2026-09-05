@@ -34,9 +34,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
-import androidx.compose.material.icons.automirrored.filled.VolumeDown
-import androidx.compose.material.icons.automirrored.filled.VolumeMute
-import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Download
@@ -146,8 +143,6 @@ fun NowPlayingScreen(
     // the whole screen (including the Cola LazyColumn). Scrubber/lyrics collect locally.
     val repeatMode by viewModel.repeatMode.collectAsState()
     val isShuffle by viewModel.isShuffle.collectAsState()
-    val volumeLevel by viewModel.volumeLevel.collectAsState()
-    val volumeBoostEnabled by viewModel.volumeBoostEnabled.collectAsState()
     val queueItems by viewModel.displayQueue.collectAsState()
     val queueFocusEpoch by viewModel.queueFocusEpoch.collectAsState()
     val resolvingRemote by viewModel.resolvingRemote.collectAsState()
@@ -682,63 +677,6 @@ fun NowPlayingScreen(
                         imageVector = icon,
                         contentDescription = "Repeat Mode",
                         tint = tint
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(4.dp))
-
-            // Compact Volume Slider Bar
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth(0.85f)
-                    .padding(vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                IconButton(
-                    onClick = {
-                        if (volumeLevel > 0f) viewModel.setVolume(0f) else viewModel.setVolume(0.5f)
-                    },
-                    modifier = Modifier.size(32.dp)
-                ) {
-                    Icon(
-                        imageVector = if (volumeLevel == 0f) Icons.AutoMirrored.Filled.VolumeMute else Icons.AutoMirrored.Filled.VolumeDown,
-                        contentDescription = "Volumen Bajo",
-                        tint = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-
-                val volumeBoosted = volumeBoostEnabled && volumeLevel > 1f
-                val volumeActiveColor = if (volumeBoosted) {
-                    MaterialTheme.colorScheme.tertiary
-                } else {
-                    MaterialTheme.colorScheme.primary
-                }
-                Slider(
-                    value = volumeLevel.coerceIn(0f, if (volumeBoostEnabled) 2f else 1f),
-                    onValueChange = { viewModel.setVolume(it) },
-                    valueRange = if (volumeBoostEnabled) 0f..2f else 0f..1f,
-                    colors = SliderDefaults.colors(
-                        thumbColor = volumeActiveColor,
-                        activeTrackColor = volumeActiveColor.copy(alpha = 0.8f),
-                        inactiveTrackColor = MaterialTheme.colorScheme.surfaceVariant
-                    ),
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(24.dp)
-                        .padding(horizontal = 6.dp)
-                )
-
-                IconButton(
-                    onClick = { viewModel.setVolume(1.0f) },
-                    modifier = Modifier.size(32.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.VolumeUp,
-                        contentDescription = "Volumen Alto",
-                        tint = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
-                        modifier = Modifier.size(20.dp)
                     )
                 }
             }

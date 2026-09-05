@@ -197,7 +197,7 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 | Lifetime identify Android | `IdentifyExecutionLauncher.kt`; `IdentifyJobService` UIDT; `IdentifyForegroundService` FGS dataSync; `IdentifyNotificationHelper` (`TAB_IDENTIFY_REVIEW`) |
 | Guardar al escuchar process-scoped | `service/ProcessSaveWhileListeningCoordinator.kt` (`save` / `dismiss`; usa el registry compartido, éxito inmediato si ya existe, `SaveWhileListeningDownloadResult.InFlight` neutral si el claim pertenece a otro owner) |
 | Stereo balance (PCM) | `service/StereoBalanceAudioProcessor.kt` (`queueInput`) + `MusicService.applyStereoBalance`; seam instrumentado debug `MusicServiceSettingsProbe.observe` (`MusicServiceSettingsProbe.kt`, inerte sin observer) |
-| Volume boost (LoudnessEnhancer) | `MusicService.applyBoost` + `PlaybackPreferencesRepository`; el mismo `MusicServiceSettingsProbe` observa gains/target mB sin capturar audio |
+| Volume boost (LoudnessEnhancer) | `MusicService.applyBoost` + `PlaybackPreferencesRepository`; `MainActivity.dispatchKeyEvent` + `MusicPlayerViewModel.handleVolumeUp` / `handleVolumeDown` + `ui/components/VolumeBoostHud.kt`; el mismo `MusicServiceSettingsProbe` observa gains/target mB sin capturar audio |
 | Ktor WiFi server | `service/WebServerService.kt` (`WifiSyncHttpBoundary`; `onTimeout` → `markWifiTransfersTimedOut` + stop FGS; state/transfers; `/existing-files`); identify post-upload en VM |
 | Download progress notif | `service/DownloadNotificationHelper.kt` (`EXTRA_OPEN_TAB` / `TAB_DOWNLOADS`) |
 

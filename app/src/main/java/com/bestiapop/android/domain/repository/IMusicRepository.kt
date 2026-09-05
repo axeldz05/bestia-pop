@@ -154,7 +154,11 @@ interface IMusicRepository {
     suspend fun updatePlaylist(id: Long, name: String, description: String? = null, coverUri: String? = null)
     suspend fun deletePlaylist(id: Long)
     suspend fun addSongToPlaylist(playlistId: Long, songId: Long)
+    suspend fun addSongsToPlaylist(playlistId: Long, songIds: List<Long>) {
+        songIds.forEach { addSongToPlaylist(playlistId, it) }
+    }
     suspend fun removeSongFromPlaylist(playlistId: Long, songId: Long)
+    suspend fun reorderPlaylistSongs(playlistId: Long, songIds: List<Long>) {}
 
     /**
      * Level 2: Creates a playlist and populates it with mixed local and remote playables.

@@ -118,6 +118,7 @@ import com.bestiapop.android.ui.state.seedIdentifySearch
 import com.bestiapop.android.ui.state.withGapApplyFields
 import com.bestiapop.android.ui.state.withItemSearchChrome
 import com.bestiapop.android.ui.state.LibraryBrowseFilter
+import com.bestiapop.android.ui.state.LibraryBrowseStack
 import com.bestiapop.android.ui.state.LibraryListItem
 import com.bestiapop.android.ui.state.LibraryListModel
 import com.bestiapop.android.ui.state.LibraryProjectionState
@@ -1082,7 +1083,10 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     fun retryFetchLyrics(song: Song) {
-        requestMetadataEnhancement(song, force = true)
+        viewModelScope.launch {
+            repository.enhanceSongMetadataAndLyrics(song)
+            playbackRuntime.hydrateCurrentSongLyrics(song.id)
+        }
     }
 
     fun enhanceSongMetadataAndLyrics(song: Song) {
@@ -1617,11 +1621,10 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         addSongsToPlaylist(playlistId, songs.map { it.id })
 
     @JvmName("addSongsToPlaylistByIds")
-    fun addSongsToPlaylist(playlistId: Long, songIds: List<Long>) {
+    fun addSongsToPlaylist(playlistId: Long, songIds: List<Long>, onAdded: (() -> Unit)? = null) {
         viewModelScope.launch {
-            songIds.forEach { id ->
-                repository.addSongToPlaylist(playlistId, id)
-            }
+            repository.addSongsToPlaylist(playlistId, songIds)
+            onAdded?.invoke()
         }
     }
 
@@ -1655,6 +1658,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     fun updateSongLyrics(songId: Long, lyrics: String?) {
         viewModelScope.launch {
             repository.updateSongLyrics(songId, lyrics)
+            playbackRuntime.updateCurrentSongLyrics(songId, lyrics)
         }
     }
 
@@ -1834,7 +1838,17 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     fun openLocalPlaylist(id: Long) {
         closeDiscoverSessionUi()
-        updateNavigation { it.copy(playlistDetail = PlaylistDetailNav.Local(id)) }
+        setSearchQuery("")
+        persistedNavIndex = NAV_LIBRARY
+        _selectedNavIndex.value = NAV_LIBRARY
+        updateNavigation {
+            it.copy(
+                selectedNavIndex = NAV_LIBRARY,
+                libraryBrowseFilter = LibraryBrowseFilter.PLAYLISTS,
+                libraryStack = LibraryBrowseStack(),
+                playlistDetail = PlaylistDetailNav.Local(id)
+            )
+        }
         persistNavSnapshot()
     }
 
@@ -2201,10 +2215,14 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         name: String,
         description: String? = null,
         coverUri: String? = null,
+        initialSongIds: List<Long> = emptyList(),
         onCreated: ((Long) -> Unit)? = null
     ) {
         viewModelScope.launch {
             val id = repository.createPlaylist(name, description, coverUri)
+            if (initialSongIds.isNotEmpty()) {
+                repository.addSongsToPlaylist(id, initialSongIds)
+            }
             onCreated?.invoke(id)
         }
     }
@@ -2239,6 +2257,39 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     fun removeSongFromPlaylist(playlistId: Long, songId: Long) {
         viewModelScope.launch {
             repository.removeSongFromPlaylist(playlistId, songId)
+        }
+    }
+
+    fun reorderPlaylistSongs(playlistId: Long, songIds: List<Long>) {
+        viewModelScope.launch {
+            repository.reorderPlaylistSongs(playlistId, songIds)
+        }
+    }
+
+    fun playPlaylist(playlistId: Long, startShuffled: Boolean = false) {
+        viewModelScope.launch {
+            val songs = repository.getPlaylistSongsOrdered(playlistId)
+            if (songs.isNotEmpty()) {
+                playCollection(songs, startShuffled = startShuffled)
+            }
+        }
+    }
+
+    fun playPlaylistNext(playlistId: Long) {
+        viewModelScope.launch {
+            val songs = repository.getPlaylistSongsOrdered(playlistId)
+            if (songs.isNotEmpty()) {
+                playNextBatch(songs)
+            }
+        }
+    }
+
+    fun enqueuePlaylist(playlistId: Long) {
+        viewModelScope.launch {
+            val songs = repository.getPlaylistSongsOrdered(playlistId)
+            if (songs.isNotEmpty()) {
+                enqueueCollection(songs)
+            }
         }
     }
 

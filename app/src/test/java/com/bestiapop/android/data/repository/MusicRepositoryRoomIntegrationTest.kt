@@ -583,6 +583,82 @@ class MusicRepositoryRoomIntegrationTest {
         assertFalse(repository.getPlaylistIdsForSong(songId).contains(playlistId))
     }
 
+    @Test
+    fun playlist_supportsDuplicateSongs_andSingleOccurrenceRemoval() = runTest {
+        val repository = repository()
+        val s1Id = database.musicDao.insertSong(song("s1.mp3", "Song 1"))
+        val s2Id = database.musicDao.insertSong(song("s2.mp3", "Song 2"))
+
+        val playlistId = repository.createPlaylist("Duplicates Test")
+
+        repository.addSongsToPlaylist(playlistId, listOf(s1Id, s2Id, s1Id, s2Id, s1Id))
+
+        val songs = repository.getPlaylistSongsFlow(playlistId).first()
+        assertEquals(5, songs.size)
+        assertEquals(listOf(s1Id, s2Id, s1Id, s2Id, s1Id), songs.map { it.id })
+
+        val details = checkNotNull(repository.getPlaylistDetailsFlow(playlistId).first())
+        assertEquals(5, details.second.size)
+        assertEquals(listOf(s1Id, s2Id, s1Id, s2Id, s1Id), details.second.map { it.id })
+
+        repository.removeSongFromPlaylist(playlistId, s1Id)
+
+        val remainingSongs = repository.getPlaylistSongsFlow(playlistId).first()
+        assertEquals(4, remainingSongs.size)
+        assertEquals(listOf(s2Id, s1Id, s2Id, s1Id), remainingSongs.map { it.id })
+    }
+
+    @Test
+    fun playlist_withoutCover_usesSongArtworkAsCover() = runTest {
+        val repository = repository()
+        val s1Id = database.musicDao.insertSong(
+            song("s1.mp3", "Song 1").copy(artworkUri = null)
+        )
+        val s2Id = database.musicDao.insertSong(
+            song("s2.mp3", "Song 2").copy(artworkUri = "file:///song2-cover.jpg")
+        )
+
+        val playlistId = repository.createPlaylist("Auto Cover Playlist")
+        repository.addSongsToPlaylist(playlistId, listOf(s1Id, s2Id))
+
+        val details = checkNotNull(repository.getPlaylistDetailsFlow(playlistId).first())
+        assertEquals("file:///song2-cover.jpg", details.first.coverUri)
+
+        val playlists = repository.playlistsFlow.first()
+        val p = checkNotNull(playlists.find { it.id == playlistId })
+        assertEquals("file:///song2-cover.jpg", p.coverUri)
+        assertEquals(2, p.songCount)
+
+        val customCover = files.create("custom.jpg", byteArrayOf(7, 8, 9))
+        repository.updatePlaylist(playlistId, "Auto Cover Playlist", coverUri = customCover.toURI().toString())
+        val updatedDetails = checkNotNull(repository.getPlaylistDetailsFlow(playlistId).first())
+        val updatedCover = checkNotNull(updatedDetails.first.coverUri)
+        assertTrue(updatedCover.contains("playlist_covers"))
+    }
+
+    @Test
+    fun playlist_reorderSongs_updatesOrderAndPersists() = runTest {
+        val repository = repository()
+        val s1Id = database.musicDao.insertSong(song("s1.mp3", "Song 1"))
+        val s2Id = database.musicDao.insertSong(song("s2.mp3", "Song 2"))
+        val s3Id = database.musicDao.insertSong(song("s3.mp3", "Song 3"))
+
+        val playlistId = repository.createPlaylist("Reorder Test")
+        repository.addSongsToPlaylist(playlistId, listOf(s1Id, s2Id, s3Id))
+
+        val initialSongs = repository.getPlaylistSongsFlow(playlistId).first()
+        assertEquals(listOf(s1Id, s2Id, s3Id), initialSongs.map { it.id })
+
+        // Reorder: Move s3 to first position, followed by s1, then s2
+        repository.reorderPlaylistSongs(playlistId, listOf(s3Id, s1Id, s2Id))
+
+        val reorderedSongs = repository.getPlaylistSongsFlow(playlistId).first()
+        assertEquals(listOf(s3Id, s1Id, s2Id), reorderedSongs.map { it.id })
+
+        val details = checkNotNull(repository.getPlaylistDetailsFlow(playlistId).first())
+        assertEquals(listOf(s3Id, s1Id, s2Id), details.second.map { it.id })
+    }
+
     private fun song(
         fileName: String,
         title: String,

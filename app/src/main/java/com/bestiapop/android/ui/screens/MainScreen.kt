@@ -46,6 +46,7 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -82,6 +83,7 @@ fun MainScreen(
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+    val navSaveableStateHolder = rememberSaveableStateHolder()
 
     val currentItem by viewModel.currentItem.collectAsStateWithLifecycle()
     val isPlaying by viewModel.isPlaying.collectAsStateWithLifecycle()
@@ -223,37 +225,39 @@ fun MainScreen(
                     .padding(innerPadding)
                     .padding(bottom = bottomChromePadding)
             ) {
-                when (selectedNavIndex) {
-                    0 -> LibraryScreen(
-                        viewModel = viewModel,
-                        targetPlaylistForAddition = targetPlaylistForAddition,
-                        onCompletePlaylistAddition = {
-                            val playlistId = targetPlaylistForAddition?.id
-                            targetPlaylistForAddition = null
-                            if (playlistId != null) viewModel.openLocalPlaylist(playlistId)
-                            viewModel.setLibraryBrowseFilter(LibraryBrowseFilter.PLAYLISTS)
-                            clearPendingExit()
-                        },
-                        onCancelPlaylistAddition = {
-                            val playlistId = targetPlaylistForAddition?.id
-                            targetPlaylistForAddition = null
-                            if (playlistId != null) viewModel.openLocalPlaylist(playlistId)
-                            viewModel.setLibraryBrowseFilter(LibraryBrowseFilter.PLAYLISTS)
-                            clearPendingExit()
-                        },
-                        onSelectFolderClick = onSelectFolderClick,
-                        onOpenDownloads = {
-                            viewModel.setSelectedNavIndex(2)
-                            clearPendingExit()
-                        }
-                    )
-                    1 -> DiscoverScreen(viewModel = viewModel)
-                    2 -> DownloadsScreen(viewModel = viewModel)
-                    3 -> WebServerScreen(viewModel = viewModel)
-                    4 -> SettingsScreen(
-                        viewModel = viewModel,
-                        appUpdateViewModel = appUpdateViewModel
-                    )
+                navSaveableStateHolder.SaveableStateProvider(selectedNavIndex) {
+                    when (selectedNavIndex) {
+                        0 -> LibraryScreen(
+                            viewModel = viewModel,
+                            targetPlaylistForAddition = targetPlaylistForAddition,
+                            onCompletePlaylistAddition = {
+                                val playlistId = targetPlaylistForAddition?.id
+                                targetPlaylistForAddition = null
+                                if (playlistId != null) viewModel.openLocalPlaylist(playlistId)
+                                viewModel.setLibraryBrowseFilter(LibraryBrowseFilter.PLAYLISTS)
+                                clearPendingExit()
+                            },
+                            onCancelPlaylistAddition = {
+                                val playlistId = targetPlaylistForAddition?.id
+                                targetPlaylistForAddition = null
+                                if (playlistId != null) viewModel.openLocalPlaylist(playlistId)
+                                viewModel.setLibraryBrowseFilter(LibraryBrowseFilter.PLAYLISTS)
+                                clearPendingExit()
+                            },
+                            onSelectFolderClick = onSelectFolderClick,
+                            onOpenDownloads = {
+                                viewModel.setSelectedNavIndex(2)
+                                clearPendingExit()
+                            }
+                        )
+                        1 -> DiscoverScreen(viewModel = viewModel)
+                        2 -> DownloadsScreen(viewModel = viewModel)
+                        3 -> WebServerScreen(viewModel = viewModel)
+                        4 -> SettingsScreen(
+                            viewModel = viewModel,
+                            appUpdateViewModel = appUpdateViewModel
+                        )
+                    }
                 }
             }
         }

@@ -110,6 +110,7 @@ class SongActionDialogsController(
     val onEdit: (Song) -> Unit,
     val onEditLyrics: (Song) -> Unit,
     val onAddToPlaylist: (Song) -> Unit,
+    val onAddManyToPlaylist: (List<Song>) -> Unit = { songs -> songs.firstOrNull()?.let(onAddToPlaylist) },
     val onDelete: (Song) -> Unit,
     val onDeleteMany: (List<Song>) -> Unit
 )
@@ -128,19 +129,19 @@ fun rememberSongActionDialogs(
 ): SongActionDialogsController {
     var editingSong by remember { mutableStateOf<Song?>(null) }
     var editingLyricsSong by remember { mutableStateOf<Song?>(null) }
-    var songForPlaylistAddition by remember { mutableStateOf<Song?>(null) }
+    var songsForPlaylistAddition by remember { mutableStateOf<List<Song>?>(null) }
     var songsForDeletion by remember { mutableStateOf<List<Song>?>(null) }
 
     SongActionDialogsHost(
         editingSong = editingSong,
         editingLyricsSong = editingLyricsSong,
-        songForPlaylistAddition = songForPlaylistAddition,
+        songsForPlaylistAddition = songsForPlaylistAddition,
         songsForDeletion = songsForDeletion,
         playlists = playlists,
         viewModel = viewModel,
         onDismissEdit = { editingSong = null },
         onDismissLyrics = { editingLyricsSong = null },
-        onDismissPlaylist = { songForPlaylistAddition = null },
+        onDismissPlaylist = { songsForPlaylistAddition = null },
         onDismissDelete = { songsForDeletion = null },
         onAfterPlaylistAdd = onAfterPlaylistAdd,
         onAfterDelete = onAfterDelete,
@@ -152,7 +153,8 @@ fun rememberSongActionDialogs(
         SongActionDialogsController(
             onEdit = { editingSong = it },
             onEditLyrics = { editingLyricsSong = it },
-            onAddToPlaylist = { songForPlaylistAddition = it },
+            onAddToPlaylist = { songsForPlaylistAddition = listOf(it) },
+            onAddManyToPlaylist = { songsForPlaylistAddition = it },
             onDelete = { songsForDeletion = listOf(it) },
             onDeleteMany = { songsForDeletion = it }
         )
@@ -166,7 +168,8 @@ fun rememberSongActionDialogs(
 fun SongActionDialogsHost(
     editingSong: Song?,
     editingLyricsSong: Song?,
-    songForPlaylistAddition: Song?,
+    songForPlaylistAddition: Song? = null,
+    songsForPlaylistAddition: List<Song>? = songForPlaylistAddition?.let { listOf(it) },
     songsForDeletion: List<Song>?,
     playlists: List<Playlist>,
     viewModel: MusicPlayerViewModel,
@@ -218,20 +221,36 @@ fun SongActionDialogsHost(
         )
     }
 
-    songForPlaylistAddition?.let { song ->
+    val targetPlaylistSongs = songsForPlaylistAddition ?: songForPlaylistAddition?.let { listOf(it) }
+    targetPlaylistSongs?.takeIf { it.isNotEmpty() }?.let { songs ->
+        val songIds = if (songs.size == 1) playlistSongIds(songs.first()) else songs.map { it.id }
+        val defaultCoverUri = songs.firstNotNullOfOrNull { it.artworkUri?.takeIf(String::isNotBlank) }
         AddToPlaylistDialog(
             playlists = playlists,
+            songCount = songs.size,
+            defaultCoverUri = defaultCoverUri,
             onDismiss = onDismissPlaylist,
-            onSelectPlaylist = { playlist ->
-                if (onSelectPlaylist != null) {
-                    onSelectPlaylist(playlist, song)
+            onSelectPlaylist = { playlist, openAfter ->
+                if (onSelectPlaylist != null && songs.size == 1) {
+                    onSelectPlaylist(playlist, songs.first())
                 } else {
-                    viewModel.addSongsToPlaylist(playlist.id, playlistSongIds(song))
+                    viewModel.addSongsToPlaylist(playlist.id, songIds)
+                }
+                if (openAfter) {
+                    viewModel.openLocalPlaylist(playlist.id)
                 }
                 onDismissPlaylist()
                 onAfterPlaylistAdd()
             },
-            onCreateNewPlaylist = onDismissPlaylist
+            onCreatePlaylist = { name, desc, coverUri, openAfter ->
+                viewModel.createPlaylist(name, desc, coverUri, initialSongIds = songIds) { newId ->
+                    if (openAfter) {
+                        viewModel.openLocalPlaylist(newId)
+                    }
+                }
+                onDismissPlaylist()
+                onAfterPlaylistAdd()
+            }
         )
     }
 

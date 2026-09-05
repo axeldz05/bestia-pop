@@ -2,12 +2,10 @@ package com.bestiapop.android.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -23,24 +21,14 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.zIndex
 import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.ui.theme.ListDensity
-import kotlin.math.roundToInt
 
 /** L1: artwork + title + artist for a queue/playable row. */
 @Composable
@@ -113,38 +101,14 @@ fun QueueItemRow(
     reorderCount: Int = 0,
     onReorder: ((from: Int, to: Int) -> Unit)? = null
 ) {
-    var dragOffsetY by remember { mutableFloatStateOf(0f) }
-    // Measured, not assumed: a hardcoded 56.dp matched neither layout (≈44dp compact in Now Playing,
-    // ≈60dp in the Cola tab), so multi-slot drags landed one or two rows off.
-    var rowHeightPx by remember { mutableIntStateOf(0) }
-    val measured = Modifier.onSizeChanged { rowHeightPx = it.height }
-    val rowModifier = if (onReorder != null && reorderCount > 1) {
-        measured
-            .zIndex(if (dragOffsetY != 0f) 1f else 0f)
-            .offset { IntOffset(0, dragOffsetY.roundToInt()) }
-    } else {
-        measured
-    }
-    val handleModifier = if (onReorder != null && reorderCount > 1) {
-        Modifier.pointerInput(index, reorderCount) {
-            detectVerticalDragGestures(
-                onDragEnd = {
-                    val rowPx = rowHeightPx.takeIf { it > 0 }?.toFloat() ?: 56.dp.toPx()
-                    val deltaSlots = (dragOffsetY / rowPx).roundToInt()
-                    val to = (index + deltaSlots).coerceIn(0, reorderCount - 1)
-                    if (to != index) onReorder(index, to)
-                    dragOffsetY = 0f
-                },
-                onDragCancel = { dragOffsetY = 0f },
-                onVerticalDrag = { change, amount ->
-                    change.consume()
-                    dragOffsetY += amount
-                }
-            )
-        }
-    } else {
-        null
-    }
+    val drag = rememberVerticalReorderDrag(
+        index = index,
+        reorderCount = reorderCount,
+        enabled = onReorder != null && reorderCount > 1,
+        onReorder = onReorder
+    )
+    val rowModifier = drag.rowModifier
+    val handleModifier = drag.handleModifier
 
     if (compact) {
         val bgColor = if (isCurrentPlaying) {

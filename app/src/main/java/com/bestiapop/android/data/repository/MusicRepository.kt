@@ -104,6 +104,7 @@ import kotlinx.coroutines.sync.withPermit
 
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -441,38 +442,41 @@ class MusicRepository private constructor(
     override val albumOverridesFlow: Flow<List<AlbumOverride>> =
         musicDao.getAllAlbumOverridesFlow()
 
-    override val playlistsFlow: Flow<List<Playlist>> = musicDao.getAllPlaylistsFlow().map { entities ->
+    override val playlistsFlow: Flow<List<Playlist>> = musicDao.getAllPlaylistSummariesFlow().map { entities ->
         entities.map { entity ->
             Playlist(
                 id = entity.playlistId,
                 name = entity.name,
                 description = entity.description,
                 coverUri = entity.coverUri,
+                songCount = entity.songCount,
                 createdAt = entity.createdAt
             )
         }
     }
 
     override fun getPlaylistSongsFlow(playlistId: Long): Flow<List<Song>> {
-        return musicDao.getPlaylistWithSongsFlow(playlistId).map { withSongs ->
-            withSongs?.songs ?: emptyList()
-        }
+        return musicDao.getPlaylistSongsOrderedFlow(playlistId)
     }
 
     override fun getPlaylistDetailsFlow(playlistId: Long): Flow<Pair<Playlist, List<Song>>?> {
-        return musicDao.getPlaylistWithSongsFlow(playlistId).map { withSongs ->
-            if (withSongs == null) null
+        return combine(
+            musicDao.getPlaylistByIdFlow(playlistId),
+            musicDao.getPlaylistSongsOrderedFlow(playlistId)
+        ) { entity, songs ->
+            if (entity == null) null
             else {
-                val entity = withSongs.playlist
+                val effectiveCover = entity.coverUri?.takeIf(String::isNotBlank)
+                    ?: songs.firstNotNullOfOrNull { it.artworkUri?.takeIf(String::isNotBlank) }
                 val playlist = Playlist(
                     id = entity.playlistId,
                     name = entity.name,
                     description = entity.description,
-                    coverUri = entity.coverUri,
-                    songCount = withSongs.songs.size,
+                    coverUri = effectiveCover,
+                    songCount = songs.size,
                     createdAt = entity.createdAt
                 )
-                Pair(playlist, withSongs.songs)
+                Pair(playlist, songs)
             }
         }
     }
@@ -2021,12 +2025,25 @@ class MusicRepository private constructor(
         musicDao.deletePlaylist(id)
     }
 
-    override suspend fun addSongToPlaylist(playlistId: Long, songId: Long) = withContext(Dispatchers.IO) {
-        musicDao.addSongToPlaylist(PlaylistSongCrossRef(playlistId = playlistId, songId = songId))
+    override suspend fun addSongToPlaylist(playlistId: Long, songId: Long) {
+        addSongsToPlaylist(playlistId, listOf(songId))
+    }
+
+    override suspend fun addSongsToPlaylist(playlistId: Long, songIds: List<Long>) = withContext(Dispatchers.IO) {
+        if (songIds.isEmpty()) return@withContext
+        val startPos = (musicDao.getMaxPositionInPlaylist(playlistId) ?: -1) + 1
+        val refs = songIds.mapIndexed { index, songId ->
+            PlaylistSongCrossRef(playlistId = playlistId, songId = songId, position = startPos + index)
+        }
+        musicDao.addSongsToPlaylist(refs)
     }
 
     override suspend fun removeSongFromPlaylist(playlistId: Long, songId: Long) = withContext(Dispatchers.IO) {
         musicDao.removeSongFromPlaylist(playlistId, songId)
+    }
+
+    override suspend fun reorderPlaylistSongs(playlistId: Long, songIds: List<Long>) = withContext(Dispatchers.IO) {
+        musicDao.reorderPlaylistSongs(playlistId, songIds)
     }
 
     override suspend fun getPlaylistIdsForSong(songId: Long): List<Long> = withContext(Dispatchers.IO) {

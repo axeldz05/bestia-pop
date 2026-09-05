@@ -975,7 +975,10 @@ class PlaybackRuntime internal constructor(
             hydrateCurrentSongLyrics(displayed.id)
         }
         if (local != null && occurrenceChanged && uiAttachments.get() > 0) {
-            scope.launch(Dispatchers.IO) { dependencies.enhanceSong(local) }
+            scope.launch(Dispatchers.IO) {
+                dependencies.enhanceSong(local)
+                hydrateCurrentSongLyrics(local.id)
+            }
         }
         if (persistLastPlayed) {
             persistPlaybackSession(force = true)
@@ -983,16 +986,29 @@ class PlaybackRuntime internal constructor(
         }
     }
 
-    private fun hydrateCurrentSongLyrics(songId: Long) {
+    fun hydrateCurrentSongLyrics(songId: Long) {
         lyricsHydrateJob?.cancel()
         lyricsHydrateJob = scope.launch(dependencies.ioDispatcher) {
             val full = dependencies.loadSongById(songId) ?: return@launch
             if (full.lyrics.isNullOrEmpty()) return@launch
             withContext(scope.coroutineContext) {
-                val current = _currentSong.value
-                if (current?.id != songId) return@withContext
-                _currentSong.value = current.copy(lyrics = full.lyrics)
+                applyLyricsToCurrent(songId, full.lyrics)
             }
+        }
+    }
+
+    fun updateCurrentSongLyrics(songId: Long, lyrics: String?) {
+        applyLyricsToCurrent(songId, lyrics)
+    }
+
+    private fun applyLyricsToCurrent(songId: Long, lyrics: String?) {
+        val current = _currentSong.value
+        if (current?.id == songId) {
+            _currentSong.value = current.copy(lyrics = lyrics)
+        }
+        val curItem = _currentItem.value
+        if (curItem is PlayableItem.Local && curItem.song.id == songId) {
+            _currentItem.value = curItem.copy(song = curItem.song.copy(lyrics = lyrics))
         }
     }
 

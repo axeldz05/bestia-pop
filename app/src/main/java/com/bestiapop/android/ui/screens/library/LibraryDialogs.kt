@@ -13,12 +13,17 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -27,6 +32,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.foundation.layout.width
 import androidx.compose.ui.unit.dp
 import com.bestiapop.android.data.model.Playlist
 import com.bestiapop.android.data.model.Song
@@ -35,6 +41,7 @@ import com.bestiapop.android.data.util.albumTrackDisplayNumber
 import com.bestiapop.android.data.util.encodeAlbumTrack
 import com.bestiapop.android.ui.components.ArtworkPickerBlock
 import com.bestiapop.android.ui.components.ArtworkThumbnail
+import com.bestiapop.android.ui.components.PlaylistFormDialog
 import com.bestiapop.android.ui.components.rememberImagePicker
 
 @Composable
@@ -361,49 +368,101 @@ fun SetAlbumArtworkDialog(
 @Composable
 fun AddToPlaylistDialog(
     playlists: List<Playlist>,
+    songCount: Int = 1,
+    defaultCoverUri: String? = null,
     onDismiss: () -> Unit,
-    onSelectPlaylist: (Playlist) -> Unit,
-    onCreateNewPlaylist: () -> Unit
+    onSelectPlaylist: (playlist: Playlist, openAfter: Boolean) -> Unit,
+    onCreatePlaylist: (name: String, description: String?, coverUri: String?, openAfter: Boolean) -> Unit
 ) {
+    var showCreateDialog by remember { mutableStateOf(false) }
+
+    if (showCreateDialog) {
+        PlaylistFormDialog(
+            title = "Nueva Playlist",
+            initialCoverUri = defaultCoverUri,
+            confirmText = if (songCount > 1) "Añadir ($songCount)" else "Crear",
+            confirmAndOpenText = "Crear y entrar",
+            onDismiss = { showCreateDialog = false },
+            onSave = { name, desc, cover ->
+                onCreatePlaylist(name, desc, cover, false)
+                showCreateDialog = false
+            },
+            onSaveAndOpen = { name, desc, cover ->
+                onCreatePlaylist(name, desc, cover, true)
+                showCreateDialog = false
+            }
+        )
+    }
+
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Agregar a playlist") },
+        title = {
+            Text(
+                if (songCount > 1) "Agregar $songCount canciones a playlist"
+                else "Agregar a playlist"
+            )
+        },
         text = {
             Column(modifier = Modifier.fillMaxWidth()) {
                 OutlinedButton(
-                    onClick = onCreateNewPlaylist,
+                    onClick = { showCreateDialog = true },
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text("+ Crear nueva playlist")
                 }
                 Spacer(modifier = Modifier.height(12.dp))
-                LazyColumn(modifier = Modifier.height(200.dp)) {
-                    items(playlists) { playlist ->
-                        Surface(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { onSelectPlaylist(playlist) }
-                                .padding(vertical = 6.dp),
-                            shape = RoundedCornerShape(8.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(8.dp),
-                                verticalAlignment = Alignment.CenterVertically
+                if (playlists.isEmpty()) {
+                    Text(
+                        text = "No tenés playlists creadas todavía.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                        modifier = Modifier.padding(vertical = 16.dp)
+                    )
+                } else {
+                    LazyColumn(modifier = Modifier.height(260.dp)) {
+                        items(playlists) { playlist ->
+                            Surface(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp),
+                                shape = RoundedCornerShape(8.dp),
+                                tonalElevation = 1.dp
                             ) {
-                                ArtworkThumbnail(
-                                    artworkUri = playlist.coverUri,
-                                    size = 40.dp
-                                )
-                                Spacer(modifier = Modifier.padding(horizontal = 6.dp))
-                                Column {
-                                    Text(
-                                        text = playlist.name,
-                                        style = MaterialTheme.typography.bodyMedium
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { onSelectPlaylist(playlist, false) }
+                                        .padding(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    ArtworkThumbnail(
+                                        artworkUri = playlist.coverUri,
+                                        size = 42.dp
                                     )
-                                    Text(
-                                        text = "${playlist.songCount} canciones",
-                                        style = MaterialTheme.typography.labelSmall
-                                    )
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = playlist.name,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                        Text(
+                                            text = "${playlist.songCount} canciones",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                        )
+                                    }
+                                    IconButton(
+                                        onClick = { onSelectPlaylist(playlist, true) },
+                                        modifier = Modifier.size(36.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = androidx.compose.material.icons.Icons.AutoMirrored.Filled.ArrowForward,
+                                            contentDescription = "Añadir y entrar",
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
                                 }
                             }
                         }

@@ -35,8 +35,10 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddPhotoAlternate
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -78,7 +80,6 @@ import com.bestiapop.android.data.model.toPlayable
 import com.bestiapop.android.ui.MusicPlayerViewModel
 import com.bestiapop.android.ui.state.PlaylistDetailNav
 import com.bestiapop.android.ui.components.ArtworkHero
-import com.bestiapop.android.ui.components.ArtworkPickerBlock
 import com.bestiapop.android.ui.components.ArtworkThumbnail
 import com.bestiapop.android.ui.components.EmptyListHint
 import com.bestiapop.android.ui.components.PlayShuffleIconPair
@@ -86,9 +87,11 @@ import com.bestiapop.android.ui.components.ScreenBackHeader
 import com.bestiapop.android.ui.components.SongListItem
 import com.bestiapop.android.ui.components.SongQueueActions
 import com.bestiapop.android.ui.components.isCurrentPlaying
-import com.bestiapop.android.ui.components.rememberImagePicker
 import com.bestiapop.android.ui.components.rememberSongQueueActions
 import com.bestiapop.android.ui.screens.library.rememberSongActionDialogs
+import androidx.compose.foundation.lazy.itemsIndexed
+import com.bestiapop.android.ui.components.PlaylistFormDialog
+import com.bestiapop.android.ui.components.PlaylistHeader
 import com.bestiapop.android.ui.components.RemoteTrackPlaceholderRow
 import androidx.compose.runtime.LaunchedEffect
 
@@ -117,6 +120,7 @@ fun PlaylistsScreen(
 
     var showCreateDialog by remember { mutableStateOf(false) }
     var playlistToDelete by remember { mutableStateOf<Playlist?>(null) }
+    var playlistToEdit by remember { mutableStateOf<Playlist?>(null) }
 
     val songActions = rememberSongQueueActions(viewModel)
     val songDialogs = rememberSongActionDialogs(viewModel = viewModel, playlists = playlists)
@@ -134,20 +138,21 @@ fun PlaylistsScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(16.dp)
+                .padding(top = 16.dp)
         ) {
             LazyColumn(
                 state = listState,
                 modifier = Modifier.fillMaxSize(),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                verticalArrangement = Arrangement.spacedBy(2.dp)
             ) {
                     item(key = "mis-playlists-header") {
                         Text(
                             text = "Mis Playlists",
                             style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
-                            color = MaterialTheme.colorScheme.onBackground
+                            color = MaterialTheme.colorScheme.onBackground,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
                         )
-                        Spacer(modifier = Modifier.height(8.dp))
+                        Spacer(modifier = Modifier.height(4.dp))
                     }
 
                     if (visiblePlaylists.isEmpty()) {
@@ -161,17 +166,22 @@ fun PlaylistsScreen(
                                 onAction = { showCreateDialog = true },
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(vertical = 32.dp)
+                                    .padding(horizontal = 16.dp, vertical = 32.dp)
                             )
                         }
                     } else {
                         items(visiblePlaylists, key = { it.id }) { playlist ->
-                            PlaylistCardItem(
+                            PlaylistHeader(
                                 playlist = playlist,
-                                onClick = {
+                                onPlayPlaylist = { viewModel.playPlaylist(playlist.id, startShuffled = false) },
+                                onShufflePlaylist = { viewModel.playPlaylist(playlist.id, startShuffled = true) },
+                                onOpenPlaylist = {
                                     viewModel.openLocalPlaylist(playlist.id)
                                 },
-                                onDelete = { playlistToDelete = playlist }
+                                onEditPlaylist = { playlistToEdit = playlist },
+                                onDeletePlaylist = { playlistToDelete = playlist },
+                                onPlayNext = { viewModel.playPlaylistNext(playlist.id) },
+                                onAddToQueue = { viewModel.enqueuePlaylist(playlist.id) }
                             )
                         }
                     }
@@ -196,23 +206,33 @@ fun PlaylistsScreen(
             val playlistId = selectedPlaylistId!!
             val detailsState by viewModel.getPlaylistDetailsFlow(playlistId).collectAsStateWithLifecycle(initialValue = null)
 
-            detailsState?.let { pair ->
-                val playlist = pair.first
-                val songsInPlaylist = pair.second
-                val pendingTracks by viewModel.getPlaylistPendingTracksFlow(playlistId)
-                    .collectAsStateWithLifecycle(initialValue = emptyList())
-                PlaylistDetailScreen(
-                    playlist = playlist,
-                    songs = songsInPlaylist,
-                    pendingTracks = pendingTracks,
-                    allSongs = allSongs,
-                    onBack = { viewModel.closePlaylistDetail() },
-                    viewModel = viewModel,
-                    onAddSongsRequest = { onAddSongsRequest(it) },
-                    onDeletePlaylist = { playlistToDelete = playlist },
-                    onDownloadPending = { viewModel.downloadPlaylistPendingTracks(playlistId) },
-                    onEditLyrics = songDialogs.onEditLyrics
-                )
+            Surface(
+                modifier = Modifier.fillMaxSize(),
+                color = MaterialTheme.colorScheme.background
+            ) {
+                detailsState?.let { pair ->
+                    val playlist = pair.first
+                    val songsInPlaylist = pair.second
+                    val pendingTracks by viewModel.getPlaylistPendingTracksFlow(playlistId)
+                        .collectAsStateWithLifecycle(initialValue = emptyList())
+                    PlaylistDetailScreen(
+                        playlist = playlist,
+                        songs = songsInPlaylist,
+                        pendingTracks = pendingTracks,
+                        allSongs = allSongs,
+                        onBack = { viewModel.closePlaylistDetail() },
+                        viewModel = viewModel,
+                        onAddSongsRequest = { onAddSongsRequest(it) },
+                        onDeletePlaylist = { playlistToDelete = playlist },
+                        onDownloadPending = { viewModel.downloadPlaylistPendingTracks(playlistId) },
+                        onEditLyrics = songDialogs.onEditLyrics
+                    )
+                } ?: Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator()
+                }
             }
         }
 
@@ -224,12 +244,34 @@ fun PlaylistsScreen(
                 initialDescription = "",
                 initialCoverUri = null,
                 confirmText = "Crear",
+                confirmAndOpenText = "Crear y entrar",
                 onDismiss = { showCreateDialog = false },
                 onSave = { name, desc, coverUri ->
+                    viewModel.createPlaylist(name, desc, coverUri)
+                    showCreateDialog = false
+                },
+                onSaveAndOpen = { name, desc, coverUri ->
                     viewModel.createPlaylist(name, desc, coverUri) { newId ->
                         viewModel.openLocalPlaylist(newId)
                     }
                     showCreateDialog = false
+                }
+            )
+        }
+
+        // Edit Playlist Dialog from List
+        if (playlistToEdit != null) {
+            val target = playlistToEdit!!
+            PlaylistFormDialog(
+                title = "Editar Playlist",
+                initialName = target.name,
+                initialDescription = target.description ?: "",
+                initialCoverUri = target.coverUri,
+                confirmText = "Guardar",
+                onDismiss = { playlistToEdit = null },
+                onSave = { newName, newDesc, newCoverUri ->
+                    viewModel.updatePlaylist(target.id, newName, newDesc, newCoverUri)
+                    playlistToEdit = null
                 }
             )
         }
@@ -298,53 +340,10 @@ fun PlaylistSurfaceCard(
     }
 }
 
-
-
-@Composable
-private fun PlaylistCardItem(
-    playlist: Playlist,
-    onClick: () -> Unit,
-    onDelete: () -> Unit
-) {
-    PlaylistSurfaceCard(
-        title = playlist.name,
-        onClick = onClick,
-        leading = {
-            ArtworkThumbnail(
-                artworkUri = playlist.coverUri,
-                size = 60.dp,
-                cornerRadius = 10.dp,
-                fallbackIcon = Icons.AutoMirrored.Filled.QueueMusic,
-                contentDescription = playlist.name
-            )
-        },
-        lines = {
-            if (!playlist.description.isNullOrBlank()) {
-                Text(
-                    text = playlist.description,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-            Text(
-                text = "Playlist personalizada",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f)
-            )
-        },
-        trailing = {
-            IconButton(onClick = onDelete) {
-                Icon(
-                    imageVector = Icons.Default.Delete,
-                    contentDescription = "Eliminar playlist",
-                    tint = MaterialTheme.colorScheme.error
-                )
-            }
-        }
-    )
-}
+private data class DisplayPlaylistTrack(
+    val entryId: String,
+    val song: Song
+)
 
 @Composable
 private fun PlaylistDetailScreen(
@@ -360,7 +359,32 @@ private fun PlaylistDetailScreen(
     onEditLyrics: (Song) -> Unit
 ) {
     var showEditDialog by remember { mutableStateOf(false) }
-    val totalCount = songs.size + pendingTracks.size
+    var isReorderMode by remember { mutableStateOf(false) }
+    var localSongs by remember {
+        mutableStateOf(songs.mapIndexed { idx, s -> DisplayPlaylistTrack("${s.id}_$idx", s) })
+    }
+
+    LaunchedEffect(songs) {
+        if (localSongs.map { it.song } != songs) {
+            localSongs = songs.mapIndexed { idx, s -> DisplayPlaylistTrack("${s.id}_$idx", s) }
+        }
+    }
+
+    BackHandler(enabled = isReorderMode) {
+        isReorderMode = false
+    }
+
+    val onReorder: (Int, Int) -> Unit = { from, to ->
+        if (from in localSongs.indices && to in localSongs.indices && from != to) {
+            val updated = localSongs.toMutableList()
+            val moved = updated.removeAt(from)
+            updated.add(to, moved)
+            localSongs = updated
+            viewModel.reorderPlaylistSongs(playlist.id, updated.map { it.song.id })
+        }
+    }
+
+    val totalCount = localSongs.size + pendingTracks.size
     val songActions = rememberSongQueueActions(viewModel)
     val currentSong by viewModel.currentSong.collectAsStateWithLifecycle()
     val currentItem by viewModel.currentItem.collectAsStateWithLifecycle()
@@ -375,7 +399,25 @@ private fun PlaylistDetailScreen(
                 .fillMaxSize()
                 .padding(top = 16.dp, start = 16.dp, end = 16.dp)
         ) {
-            ScreenBackHeader(title = playlist.name, onBack = onBack) {
+            ScreenBackHeader(
+                title = playlist.name,
+                onBack = {
+                    if (isReorderMode) {
+                        isReorderMode = false
+                    } else {
+                        onBack()
+                    }
+                }
+            ) {
+                if (localSongs.size > 1) {
+                    IconButton(onClick = { isReorderMode = !isReorderMode }) {
+                        Icon(
+                            imageVector = if (isReorderMode) Icons.Default.Check else Icons.Default.SwapVert,
+                            contentDescription = if (isReorderMode) "Listo" else "Mover canciones",
+                            tint = if (isReorderMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                }
                 IconButton(onClick = { showEditDialog = true }) {
                     Icon(
                         imageVector = Icons.Default.Edit,
@@ -431,9 +473,9 @@ private fun PlaylistDetailScreen(
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = if (pendingTracks.isEmpty()) {
-                            "${songs.size} canciones"
+                            "${localSongs.size} canciones"
                         } else {
-                            "${songs.size} descargadas · ${pendingTracks.size} pendientes"
+                            "${localSongs.size} descargadas · ${pendingTracks.size} pendientes"
                         },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
@@ -451,15 +493,36 @@ private fun PlaylistDetailScreen(
             ) {
                 PlayShuffleIconPair(
                     onPlay = {
-                        if (songs.isNotEmpty()) viewModel.playCollection(songs)
+                        if (localSongs.isNotEmpty()) viewModel.playCollection(localSongs.map { it.song })
                     },
                     onShuffle = {
-                        if (songs.isNotEmpty()) viewModel.shuffleCollection(songs)
+                        if (localSongs.isNotEmpty()) viewModel.shuffleCollection(localSongs.map { it.song })
                     },
                     playDescription = "Reproducir",
                     shuffleDescription = "Aleatorio",
                     modifier = Modifier.weight(1f)
                 )
+                if (localSongs.size > 1) {
+                    Button(
+                        onClick = { isReorderMode = !isReorderMode },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (isReorderMode) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.secondaryContainer,
+                            contentColor = if (isReorderMode) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSecondaryContainer
+                        ),
+                        shape = RoundedCornerShape(12.dp),
+                        contentPadding = PaddingValues(
+                            horizontal = 10.dp,
+                            vertical = 8.dp
+                        )
+                    ) {
+                        Icon(
+                            imageVector = if (isReorderMode) Icons.Default.Check else Icons.Default.SwapVert,
+                            contentDescription = null
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(if (isReorderMode) "Listo" else "Mover canciones", maxLines = 1, softWrap = false)
+                    }
+                }
                 Button(
                     onClick = { onAddSongsRequest(playlist) },
                     colors = ButtonDefaults.buttonColors(
@@ -515,16 +578,21 @@ private fun PlaylistDetailScreen(
                 }
             } else {
                 LazyColumn(state = detailListState, modifier = Modifier.fillMaxSize()) {
-                    items(
-                        items = songs,
-                        key = { "song-${it.id}" },
-                        contentType = { "song" }
-                    ) { song ->
+                    itemsIndexed(
+                        items = localSongs,
+                        key = { _, item -> item.entryId },
+                        contentType = { _, _ -> "song" }
+                    ) { index, item ->
+                        val song = item.song
                         SongListItem(
                             song = song,
                             artworkUri = viewModel.resolveAlbumArtwork(song),
                             isCurrentPlaying = isCurrentPlaying(currentItem ?: currentSong?.toPlayable(), song),
-                            onClick = { viewModel.playSong(song, songs) },
+                            isReorderMode = isReorderMode,
+                            index = index,
+                            reorderCount = localSongs.size,
+                            onReorder = onReorder,
+                            onClick = { viewModel.playSong(song, localSongs.map { it.song }) },
                             onPlayNext = { songActions.onPlayNext(song) },
                             onAddToQueue = { songActions.onAddToQueue(song) },
                             onStartRadio = { songActions.onStartRadio(song) },
@@ -573,131 +641,6 @@ private fun PlaylistPendingTrackRow(pending: PlaylistPendingTrack) {
 }
 
 @Composable
-private fun PlaylistFormDialog(
-    title: String,
-    initialName: String,
-    initialDescription: String,
-    initialCoverUri: String?,
-    confirmText: String,
-    onDismiss: () -> Unit,
-    onSave: (name: String, description: String?, coverUri: String?) -> Unit
-) {
-    var nameInput by remember { mutableStateOf(initialName) }
-    var descInput by remember { mutableStateOf(initialDescription) }
-    var coverUriInput by remember { mutableStateOf(initialCoverUri) }
-
-    val imagePickerLauncher = rememberImagePicker { coverUriInput = it }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(text = title, fontWeight = FontWeight.Bold) },
-        text = {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .verticalScroll(rememberScrollState()),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                ArtworkPickerBlock(
-                    artworkUri = coverUriInput,
-                    onPick = { imagePickerLauncher.launch("image/*") },
-                    buttonText = if (coverUriInput.isNullOrEmpty()) {
-                        "Seleccionar imagen"
-                    } else {
-                        "Cambiar imagen"
-                    },
-                    spacing = 12.dp,
-                    preview = { uri ->
-                        Box(
-                            modifier = Modifier
-                                .size(110.dp)
-                                .clip(RoundedCornerShape(16.dp))
-                                .background(MaterialTheme.colorScheme.surfaceVariant)
-                                .clickable { imagePickerLauncher.launch("image/*") },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            if (!uri.isNullOrEmpty()) {
-                                AsyncImage(
-                                    model = uri,
-                                    contentDescription = "Portada de Playlist",
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier.fillMaxSize()
-                                )
-                            } else {
-                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Icon(
-                                        imageVector = Icons.Default.AddPhotoAlternate,
-                                        contentDescription = "Elegir Portada",
-                                        tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(36.dp)
-                                    )
-                                    Spacer(modifier = Modifier.height(4.dp))
-                                    Text(
-                                        text = "Portada local",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
-                        }
-                    },
-                    buttonLeading = {},
-                    trailing = {
-                    if (!coverUriInput.isNullOrEmpty()) {
-                        IconButton(onClick = { coverUriInput = null }) {
-                            Icon(
-                                imageVector = Icons.Default.Close,
-                                contentDescription = "Quitar portada",
-                                tint = MaterialTheme.colorScheme.error
-                            )
-                        }
-                    }
-                    }
-                )
-
-                OutlinedTextField(
-                    value = nameInput,
-                    onValueChange = { nameInput = it },
-                    label = { Text("Nombre de la playlist *") },
-                    singleLine = true,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("playlist-name-input")
-                )
-
-                OutlinedTextField(
-                    value = descInput,
-                    onValueChange = { descInput = it },
-                    label = { Text("Descripción (opcional)") },
-                    maxLines = 3,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("playlist-description-input")
-                )
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    if (nameInput.isNotBlank()) {
-                        onSave(nameInput.trim(), descInput.trim(), coverUriInput)
-                    }
-                },
-                enabled = nameInput.isNotBlank()
-            ) {
-                Text(confirmText)
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancelar")
-            }
-        }
-    )
-}
-
-@Composable
 private fun AddSongsToPlaylistDialog(
     playlistName: String,
     allSongs: List<Song>,
@@ -705,9 +648,7 @@ private fun AddSongsToPlaylistDialog(
     onDismiss: () -> Unit,
     onAddSongs: (List<Song>) -> Unit
 ) {
-    val availableSongs = remember(allSongs, existingSongIds) {
-        allSongs.filter { !existingSongIds.contains(it.id) }
-    }
+    val availableSongs = allSongs
     var selectedIds by remember { mutableStateOf(setOf<Long>()) }
 
     AlertDialog(
@@ -716,7 +657,7 @@ private fun AddSongsToPlaylistDialog(
         text = {
             if (availableSongs.isEmpty()) {
                 Text(
-                    text = "Todas las canciones de la biblioteca ya están en esta playlist.",
+                    text = "No hay canciones disponibles en la biblioteca.",
                     style = MaterialTheme.typography.bodyMedium,
                     modifier = Modifier.padding(vertical = 12.dp)
                 )
@@ -731,6 +672,7 @@ private fun AddSongsToPlaylistDialog(
                     LazyColumn(modifier = Modifier.height(280.dp)) {
                         items(availableSongs, key = { it.id }) { song ->
                             val isChecked = selectedIds.contains(song.id)
+                            val inPlaylistLabel = if (existingSongIds.contains(song.id)) " • En playlist" else ""
                             Card(
                                 colors = CardDefaults.cardColors(
                                     containerColor = if (isChecked) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
@@ -761,7 +703,7 @@ private fun AddSongsToPlaylistDialog(
                                             overflow = TextOverflow.Ellipsis
                                         )
                                         Text(
-                                            text = "${song.artist} • ${song.album}",
+                                            text = "${song.artist} • ${song.album}$inPlaylistLabel",
                                             style = MaterialTheme.typography.bodySmall,
                                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
                                             maxLines = 1,
@@ -778,8 +720,8 @@ private fun AddSongsToPlaylistDialog(
         confirmButton = {
             Button(
                 onClick = {
-                    val selectedSongs = availableSongs.filter { selectedIds.contains(it.id) }
-                    onAddSongs(selectedSongs)
+                    val toAdd = allSongs.filter { selectedIds.contains(it.id) }
+                    onAddSongs(toAdd)
                 },
                 enabled = selectedIds.isNotEmpty()
             ) {

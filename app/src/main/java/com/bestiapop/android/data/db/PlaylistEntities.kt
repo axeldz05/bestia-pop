@@ -20,13 +20,17 @@ data class PlaylistEntity(
 
 @Entity(
     tableName = "playlist_song_cross_ref",
-    primaryKeys = ["playlistId", "songId"],
-    indices = [Index(value = ["songId"])]
+    indices = [
+        Index(value = ["playlistId"]),
+        Index(value = ["songId"])
+    ]
 )
 data class PlaylistSongCrossRef(
     val playlistId: Long,
     val songId: Long,
-    val position: Int = 0
+    val position: Int = 0,
+    @PrimaryKey(autoGenerate = true)
+    val id: Long = 0
 )
 
 /**
@@ -62,3 +66,13 @@ data class PlaylistWithSongs(
     )
     val songs: List<Song>
 )
+
+data class PlaylistSummary(
+    val playlistId: Long,
+    val name: String,
+    val description: String? = null,
+    val coverUri: String? = null,
+    val songCount: Int = 0,
+    val createdAt: Long = System.currentTimeMillis()
+)
+

@@ -59,7 +59,7 @@ Políticas puras de reproducción: `data/playback/PlaybackQueueOrder.kt`, `data/
 
 ## Navegación UI
 
-`MainScreen` bottom nav (índice persistido en `LibraryPreferencesRepository` / `selectedNavIndex`; deep-link descargas = `openDownloadsTabTransient` sin pisar snapshot):
+`MainScreen` bottom nav (índice persistido en `LibraryPreferencesRepository` / `selectedNavIndex`; deep-link descargas = `openDownloadsTabTransient` sin pisar snapshot; `SaveableStateHolder` / `SaveableStateProvider` preserva estado y scroll de cada tab):
 0. Biblioteca (`LibraryScreen` + chips browse [Canciones, Álbumes, Artistas, Géneros, Playlists, Recientes] + nested album/artist/genre/playlist)
 1. Descubrir (`DiscoverScreen` + feed recomendaciones [ListenBrainz / Deezer] + buscador con historial y categorías + detalle de colecciones)
 2. Descargas (`DownloadsScreen`)

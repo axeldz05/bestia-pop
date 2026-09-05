@@ -57,6 +57,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.ui.SortOption
+import com.bestiapop.android.ui.components.AlbumHeader
 import com.bestiapop.android.ui.components.ArtworkThumbnail
 import com.bestiapop.android.ui.components.EmptyListHint
 import com.bestiapop.android.ui.components.FastScrollContainer
@@ -335,7 +336,7 @@ private fun LibraryAlbumHeaderRow(
     val openAlbum = remember(groupingKey) {
         { onOpenAlbumState.value(item.albumName) }
     }
-    TauonAlbumHeader(
+    AlbumHeader(
         title = item.displayName,
         artistName = item.artistName,
         subtitle = item.subtitle,
@@ -533,167 +534,5 @@ private fun LibrarySongRow(
                 )
             }
         }
-    }
-}
-
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-fun TauonAlbumHeader(
-    /** Display text only: pass the override display name, not the grouping key. */
-    title: String,
-    artistName: String,
-    artworkUri: String?,
-    songCount: Int,
-    subtitle: String = "$artistName • $songCount canciones",
-    sortHint: String? = null,
-    isCollapsed: Boolean = false,
-    isSelectionMode: Boolean = false,
-    selectionState: AlbumHeaderSelectionState = AlbumHeaderSelectionState.NONE,
-    showCollapseToggle: Boolean = true,
-    onPlayAlbum: () -> Unit,
-    onShuffleAlbum: () -> Unit,
-    onToggleSelect: () -> Unit = {},
-    onLongClick: () -> Unit = {},
-    onToggleCollapse: () -> Unit = {},
-    onEditAlbum: () -> Unit = {},
-    onChangeAlbumCover: () -> Unit = {},
-    onIdentifyAlbum: (() -> Unit)? = null,
-    onOpenAlbum: () -> Unit = {}
-) {
-    var menuExpanded by remember { mutableStateOf(false) }
-    val handleHeaderClick = remember(isSelectionMode, onToggleSelect, onOpenAlbum) {
-        if (isSelectionMode) onToggleSelect else onOpenAlbum
-    }
-    val onOpenMenu = remember { { menuExpanded = true } }
-    val onDismissMenu = remember { { menuExpanded = false } }
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(
-                horizontal = ListDensity.rowHorizontalPadding,
-                vertical = ListDensity.rowVerticalPadding
-            )
-            .clip(RoundedCornerShape(ListDensity.corner))
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-            .combinedClickable(
-                onClick = handleHeaderClick,
-                onLongClick = onLongClick
-            )
-            .padding(ListDensity.rowInnerPadding),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        if (isSelectionMode) {
-            val toggleState = when (selectionState) {
-                AlbumHeaderSelectionState.NONE -> ToggleableState.Off
-                AlbumHeaderSelectionState.PARTIAL -> ToggleableState.Indeterminate
-                AlbumHeaderSelectionState.ALL -> ToggleableState.On
-            }
-            TriStateCheckbox(
-                state = toggleState,
-                onClick = onToggleSelect,
-                colors = CheckboxDefaults.colors(
-                    checkedColor = MaterialTheme.colorScheme.primary
-                )
-            )
-            Spacer(modifier = Modifier.width(4.dp))
-        }
-        ArtworkThumbnail(
-            artworkUri = artworkUri,
-            size = ListDensity.artworkAlbumHeader,
-            cornerRadius = ListDensity.corner
-        )
-        Spacer(modifier = Modifier.width(12.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = title,
-                style = ListDensity.titleStyle,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Text(
-                text = subtitle,
-                style = ListDensity.subtitleStyle,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-        if (showCollapseToggle) {
-            HeaderActionIcon(
-                onClick = onToggleCollapse,
-                icon = if (isCollapsed) Icons.Default.ExpandMore else Icons.Default.ExpandLess,
-                contentDescription = if (isCollapsed) "Expandir álbum" else "Plegar álbum"
-            )
-        }
-        if (!isSelectionMode) {
-            Box {
-                HeaderActionIcon(
-                    onClick = onOpenMenu,
-                    icon = Icons.Default.MoreVert,
-                    contentDescription = "Opciones de álbum"
-                )
-                if (menuExpanded) {
-                    DropdownMenu(
-                        expanded = true,
-                        onDismissRequest = onDismissMenu
-                    ) {
-                        AlbumEditCoverMenuItems(
-                            onEditAlbum = {
-                                menuExpanded = false
-                                onEditAlbum()
-                            },
-                            onChangeCover = {
-                                menuExpanded = false
-                                onChangeAlbumCover()
-                            },
-                            onIdentifyAlbum = onIdentifyAlbum?.let { action ->
-                                {
-                                    menuExpanded = false
-                                    action()
-                                }
-                            }
-                        )
-                    }
-                }
-            }
-            HeaderActionIcon(
-                onClick = onPlayAlbum,
-                icon = Icons.Default.PlayArrow,
-                contentDescription = "Reproducir álbum",
-                tint = MaterialTheme.colorScheme.primary
-            )
-            HeaderActionIcon(
-                onClick = onShuffleAlbum,
-                icon = Icons.Default.Shuffle,
-                contentDescription = "Mezclar álbum"
-            )
-        }
-    }
-}
-
-@Composable
-private fun HeaderActionIcon(
-    onClick: () -> Unit,
-    icon: ImageVector,
-    contentDescription: String,
-    modifier: Modifier = Modifier,
-    tint: Color = MaterialTheme.colorScheme.onSurfaceVariant
-) {
-    Box(
-        modifier = modifier
-            .size(36.dp)
-            .clip(CircleShape)
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = contentDescription,
-            tint = tint,
-            modifier = Modifier.size(20.dp)
-        )
     }
 }

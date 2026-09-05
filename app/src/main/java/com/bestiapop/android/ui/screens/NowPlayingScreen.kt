@@ -119,6 +119,7 @@ import com.bestiapop.android.ui.components.playPauseVector
 import com.bestiapop.android.ui.components.formatDuration
 import com.bestiapop.android.ui.screens.library.AlbumEditDialogsHost
 import com.bestiapop.android.ui.screens.library.rememberSongActionDialogs
+import com.bestiapop.android.ui.state.PlaylistDetailNav
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
@@ -139,6 +140,7 @@ fun NowPlayingScreen(
     BackHandler { onDismiss() }
 
     val currentItem by viewModel.currentItem.collectAsState()
+    val currentSong by viewModel.currentSong.collectAsState()
     val isPlaying by viewModel.isPlaying.collectAsState()
     // Do NOT collect playbackPositionMs here — it ticks every 200ms and would recompose
     // the whole screen (including the Cola LazyColumn). Scrubber/lyrics collect locally.
@@ -158,7 +160,15 @@ fun NowPlayingScreen(
     val discoverOrigin by viewModel.discoverPlaybackOrigin.collectAsState()
     val activeDownloads by viewModel.activeDownloads.collectAsState()
     var actionsMenuExpanded by remember { mutableStateOf(false) }
-    val songDialogs = rememberSongActionDialogs(viewModel = viewModel, playlists = playlists)
+    val songDialogs = rememberSongActionDialogs(
+        viewModel = viewModel,
+        playlists = playlists,
+        onAfterPlaylistAdd = {
+            if (viewModel.navigation.value.playlistDetail is PlaylistDetailNav.Local) {
+                onDismiss()
+            }
+        }
+    )
     var albumForEdit by remember { mutableStateOf<Album?>(null) }
     var containingPlaylists by remember { mutableStateOf<List<Playlist>>(emptyList()) }
 
@@ -166,7 +176,14 @@ fun NowPlayingScreen(
     val queueListState = rememberLazyListState()
 
     val item = currentItem ?: return
-    val localSong = (item as? PlayableItem.Local)?.song
+    val baseLocalSong = (item as? PlayableItem.Local)?.song
+    val localSong = when {
+        baseLocalSong == null -> null
+        currentSong?.id == baseLocalSong.id -> baseLocalSong.copy(
+            lyrics = currentSong?.lyrics ?: baseLocalSong.lyrics
+        )
+        else -> baseLocalSong
+    }
     val albumLabel = when (item) {
         is PlayableItem.Local -> item.song.album
         is PlayableItem.Remote -> item.album.takeIf { it.isNotBlank() } ?: "Stream"
@@ -199,7 +216,6 @@ fun NowPlayingScreen(
     }
 
     fun goToPlaylists(open: () -> Unit) {
-        viewModel.setSelectedNavIndex(NAV_PLAYLISTS)
         open()
         onDismiss()
     }

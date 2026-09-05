@@ -170,8 +170,49 @@ interface MusicDao {
     suspend fun deleteAlbumOverride(albumKey: String)
 
     // Playlists
-    @Query("SELECT * FROM playlists ORDER BY createdAt DESC")
+    @Query(
+        """
+        SELECT 
+            playlistId, 
+            name, 
+            description, 
+            COALESCE(NULLIF(coverUri, ''), (
+                SELECT songs.artworkUri FROM songs 
+                INNER JOIN playlist_song_cross_ref AS refs ON refs.songId = songs.id 
+                WHERE refs.playlistId = playlists.playlistId AND songs.artworkUri IS NOT NULL AND songs.artworkUri != '' 
+                ORDER BY refs.position ASC, refs.id ASC 
+                LIMIT 1
+            )) AS coverUri, 
+            createdAt 
+        FROM playlists 
+        ORDER BY createdAt DESC
+        """
+    )
     fun getAllPlaylistsFlow(): Flow<List<PlaylistEntity>>
+
+    @Query(
+        """
+        SELECT 
+            playlists.playlistId, 
+            playlists.name, 
+            playlists.description, 
+            COALESCE(NULLIF(playlists.coverUri, ''), (
+                SELECT songs.artworkUri FROM songs 
+                INNER JOIN playlist_song_cross_ref AS refs ON refs.songId = songs.id 
+                WHERE refs.playlistId = playlists.playlistId AND songs.artworkUri IS NOT NULL AND songs.artworkUri != '' 
+                ORDER BY refs.position ASC, refs.id ASC 
+                LIMIT 1
+            )) AS coverUri, 
+            (
+                (SELECT COUNT(*) FROM playlist_song_cross_ref WHERE playlist_song_cross_ref.playlistId = playlists.playlistId) +
+                (SELECT COUNT(*) FROM playlist_pending_tracks WHERE playlist_pending_tracks.playlistId = playlists.playlistId)
+            ) AS songCount,
+            playlists.createdAt 
+        FROM playlists 
+        ORDER BY playlists.createdAt DESC
+        """
+    )
+    fun getAllPlaylistSummariesFlow(): Flow<List<PlaylistSummary>>
 
     @Query("SELECT * FROM playlists WHERE playlistId = :playlistId")
     suspend fun getPlaylistById(playlistId: Long): PlaylistEntity?
@@ -191,8 +232,30 @@ interface MusicDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun addSongToPlaylist(ref: PlaylistSongCrossRef)
 
-    @Query("DELETE FROM playlist_song_cross_ref WHERE playlistId = :playlistId AND songId = :songId")
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun addSongsToPlaylist(refs: List<PlaylistSongCrossRef>)
+
+    @Transaction
+    suspend fun reorderPlaylistSongs(playlistId: Long, songIds: List<Long>) {
+        clearPlaylistSongs(playlistId)
+        val refs = songIds.mapIndexed { index, songId ->
+            PlaylistSongCrossRef(
+                playlistId = playlistId,
+                songId = songId,
+                position = index
+            )
+        }
+        addSongsToPlaylist(refs)
+    }
+
+    @Query("SELECT MAX(position) FROM playlist_song_cross_ref WHERE playlistId = :playlistId")
+    suspend fun getMaxPositionInPlaylist(playlistId: Long): Int?
+
+    @Query("DELETE FROM playlist_song_cross_ref WHERE id = (SELECT id FROM playlist_song_cross_ref WHERE playlistId = :playlistId AND songId = :songId ORDER BY position ASC, id ASC LIMIT 1)")
     suspend fun removeSongFromPlaylist(playlistId: Long, songId: Long)
+
+    @Query("DELETE FROM playlist_song_cross_ref WHERE playlistId = :playlistId AND songId = :songId")
+    suspend fun removeAllOccurrencesOfSongFromPlaylist(playlistId: Long, songId: Long)
 
     @Query("SELECT playlistId FROM playlist_song_cross_ref WHERE songId = :songId")
     suspend fun getPlaylistIdsForSong(songId: Long): List<Long>
@@ -219,6 +282,26 @@ interface MusicDao {
     )
     suspend fun getCoPlaylistSongIds(songId: Long): List<Long>
 
+    @Query(
+        """
+        SELECT 
+            playlistId, 
+            name, 
+            description, 
+            COALESCE(NULLIF(coverUri, ''), (
+                SELECT songs.artworkUri FROM songs 
+                INNER JOIN playlist_song_cross_ref AS refs ON refs.songId = songs.id 
+                WHERE refs.playlistId = playlists.playlistId AND songs.artworkUri IS NOT NULL AND songs.artworkUri != '' 
+                ORDER BY refs.position ASC, refs.id ASC 
+                LIMIT 1
+            )) AS coverUri, 
+            createdAt 
+        FROM playlists 
+        WHERE playlistId = :playlistId
+        """
+    )
+    fun getPlaylistByIdFlow(playlistId: Long): Flow<PlaylistEntity?>
+
     @Transaction
     @Query("SELECT * FROM playlists WHERE playlistId = :playlistId")
     fun getPlaylistWithSongsFlow(playlistId: Long): Flow<PlaylistWithSongs?>
@@ -228,7 +311,17 @@ interface MusicDao {
         SELECT songs.* FROM songs
         INNER JOIN playlist_song_cross_ref AS refs ON refs.songId = songs.id
         WHERE refs.playlistId = :playlistId
-        ORDER BY refs.position ASC, songs.id ASC
+        ORDER BY refs.position ASC, refs.id ASC
+        """
+    )
+    fun getPlaylistSongsOrderedFlow(playlistId: Long): Flow<List<Song>>
+
+    @Query(
+        """
+        SELECT songs.* FROM songs
+        INNER JOIN playlist_song_cross_ref AS refs ON refs.songId = songs.id
+        WHERE refs.playlistId = :playlistId
+        ORDER BY refs.position ASC, refs.id ASC
         """
     )
     suspend fun getPlaylistSongsOrdered(playlistId: Long): List<Song>

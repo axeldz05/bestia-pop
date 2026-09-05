@@ -80,6 +80,7 @@ import com.bestiapop.android.ui.screens.library.rememberSongActionDialogs
 import com.bestiapop.android.ui.state.LibraryBrowseFilter
 import com.bestiapop.android.ui.state.LibraryListModel
 import com.bestiapop.android.ui.state.LibraryViewMode
+import com.bestiapop.android.ui.state.PlaylistDetailNav
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.withContext
@@ -281,6 +282,11 @@ fun LibraryScreen(
     }
     LaunchedEffect(searchQuery) {
         if (searchQuery.isNotEmpty()) searchExpanded = true
+    }
+    LaunchedEffect(navigation.playlistDetail) {
+        if (navigation.playlistDetail is PlaylistDetailNav.Local) {
+            collapseSearch()
+        }
     }
 
     val playOrShuffleAlbum: (Album, Boolean) -> Unit = remember(viewModel) {
@@ -576,7 +582,9 @@ fun LibraryScreen(
                     clearSelection()
                 },
                 onAddToPlaylist = {
-                    selectedSongs.firstOrNull()?.let(songDialogs.onAddToPlaylist)
+                    if (selectedSongs.isNotEmpty()) {
+                        songDialogs.onAddManyToPlaylist(selectedSongs)
+                    }
                 },
                 onIdentifySelected = {
                     viewModel.openIdentifySetup(
@@ -731,12 +739,12 @@ data class LibraryBrowseListStates(
 
 @Composable
 fun rememberLibraryBrowseListStates(
-    songs: LazyListState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() },
-    albums: LazyListState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() },
-    artists: LazyListState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() },
-    genres: LazyListState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() },
-    playlists: LazyListState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() },
-    recent: LazyListState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
+    songs: LazyListState = rememberSaveable(key = "library_browse_songs", saver = LazyListState.Saver) { LazyListState() },
+    albums: LazyListState = rememberSaveable(key = "library_browse_albums", saver = LazyListState.Saver) { LazyListState() },
+    artists: LazyListState = rememberSaveable(key = "library_browse_artists", saver = LazyListState.Saver) { LazyListState() },
+    genres: LazyListState = rememberSaveable(key = "library_browse_genres", saver = LazyListState.Saver) { LazyListState() },
+    playlists: LazyListState = rememberSaveable(key = "library_browse_playlists", saver = LazyListState.Saver) { LazyListState() },
+    recent: LazyListState = rememberSaveable(key = "library_browse_recent", saver = LazyListState.Saver) { LazyListState() }
 ): LibraryBrowseListStates = remember(songs, albums, artists, genres, playlists, recent) {
     LibraryBrowseListStates(
         songs = songs,

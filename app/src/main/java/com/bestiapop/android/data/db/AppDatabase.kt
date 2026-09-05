@@ -20,7 +20,7 @@ import com.bestiapop.android.data.model.SongPlayStat
         AlbumOverride::class,
         SongPlayStat::class
     ],
-    version = 13,
+    version = 14,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -187,8 +187,33 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_13_14 = object : Migration(13, 14) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `playlist_song_cross_ref_new` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `playlistId` INTEGER NOT NULL,
+                        `songId` INTEGER NOT NULL,
+                        `position` INTEGER NOT NULL DEFAULT 0
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    INSERT INTO `playlist_song_cross_ref_new` (`playlistId`, `songId`, `position`)
+                    SELECT `playlistId`, `songId`, `position` FROM `playlist_song_cross_ref`
+                    """.trimIndent()
+                )
+                db.execSQL("DROP TABLE `playlist_song_cross_ref`")
+                db.execSQL("ALTER TABLE `playlist_song_cross_ref_new` RENAME TO `playlist_song_cross_ref`")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_playlist_song_cross_ref_playlistId` ON `playlist_song_cross_ref` (`playlistId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_playlist_song_cross_ref_songId` ON `playlist_song_cross_ref` (`songId`)")
+            }
+        }
+
         /** Kept in sync with the `@Database` version so a downgrade can be detected and reported. */
-        const val VERSION = 13
+        const val VERSION = 14
 
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
@@ -209,7 +234,8 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_9_10,
                     MIGRATION_10_11,
                     MIGRATION_11_12,
-                    MIGRATION_12_13
+                    MIGRATION_12_13,
+                    MIGRATION_13_14
                 )
                 // Sideloading an older APK is plausible here (GitHub Releases), and Room would refuse
                 // to open a newer schema, so the app has to stay usable. The wipe is not silent:

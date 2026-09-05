@@ -8,10 +8,12 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
@@ -45,6 +47,10 @@ fun SongListItem(
     isCurrentPlaying: Boolean = false,
     isSelectionMode: Boolean = false,
     isSelected: Boolean = false,
+    isReorderMode: Boolean = false,
+    index: Int = 0,
+    reorderCount: Int = 0,
+    onReorder: ((from: Int, to: Int) -> Unit)? = null,
     secondaryInfo: String? = null,
     title: String? = null,
     subtitle: String? = null,
@@ -71,9 +77,19 @@ fun SongListItem(
     }
     val trailingText = trailing ?: remember(song.durationMs) { formatDuration(song.durationMs) }
 
+    val drag = rememberVerticalReorderDrag(
+        index = index,
+        reorderCount = reorderCount,
+        enabled = isReorderMode && onReorder != null && reorderCount > 1,
+        onReorder = onReorder
+    )
+    val rowDragModifier = drag.rowModifier
+    val handleModifier = drag.handleModifier
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .then(rowDragModifier)
             .padding(
                 horizontal = ListDensity.rowHorizontalPadding,
                 vertical = ListDensity.rowVerticalPadding
@@ -89,13 +105,15 @@ fun SongListItem(
             )
             .combinedClickable(
                 onClick = {
-                    if (isSelectionMode) {
+                    if (isReorderMode) {
+                        // no-op while reordering
+                    } else if (isSelectionMode) {
                         onToggleSelect()
                     } else {
                         onClick()
                     }
                 },
-                onLongClick = onLongClick
+                onLongClick = if (isReorderMode) null else onLongClick
             )
             .padding(ListDensity.rowInnerPadding),
         verticalAlignment = Alignment.CenterVertically
@@ -143,7 +161,20 @@ fun SongListItem(
                 .padding(horizontal = 8.dp)
         )
 
-        if (!isSelectionMode) {
+        if (isReorderMode) {
+            Box(
+                modifier = (handleModifier ?: Modifier)
+                    .size(40.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.DragHandle,
+                    contentDescription = "Reordenar canción",
+                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+        } else if (!isSelectionMode) {
             if (onOptionsClick != null) {
                 IconButton(
                     onClick = onOptionsClick,

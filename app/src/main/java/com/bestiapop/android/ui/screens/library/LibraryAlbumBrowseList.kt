@@ -11,13 +11,14 @@ import androidx.compose.ui.Modifier
 import com.bestiapop.android.data.model.Album
 import com.bestiapop.android.data.preferences.FastScrollSettings
 import com.bestiapop.android.ui.SortOption
+import com.bestiapop.android.ui.components.AlbumHeader
 import com.bestiapop.android.ui.components.EmptyListHint
 import com.bestiapop.android.ui.components.FastScrollContainer
 import com.bestiapop.android.ui.components.FastScrollSections
 import com.bestiapop.android.ui.components.formatSortRelevantInfo
 
 /**
- * Browse projection for albums: dense [TauonAlbumHeader] rows (no big grid cards).
+ * Browse projection for albums: dense [AlbumHeader] rows (no big grid cards).
  */
 @Composable
 fun LibraryAlbumBrowseList(
@@ -63,7 +64,7 @@ fun LibraryAlbumBrowseList(
                         alreadyShowsTitle = true
                     )
                 }
-                TauonAlbumHeader(
+                AlbumHeader(
                     title = album.displayName,
                     artistName = album.artist,
                     artworkUri = album.artworkUri,

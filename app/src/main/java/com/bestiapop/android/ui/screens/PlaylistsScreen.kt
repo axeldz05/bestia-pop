@@ -18,7 +18,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -94,6 +96,7 @@ import androidx.compose.runtime.LaunchedEffect
 fun PlaylistsScreen(
     viewModel: MusicPlayerViewModel,
     searchQuery: String = "",
+    listState: LazyListState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() },
     onAddSongsRequest: (Playlist) -> Unit = {}
 ) {
     val playlists by viewModel.playlists.collectAsStateWithLifecycle(initialValue = emptyList())
@@ -134,6 +137,7 @@ fun PlaylistsScreen(
                 .padding(16.dp)
         ) {
             LazyColumn(
+                state = listState,
                 modifier = Modifier.fillMaxSize(),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
@@ -360,6 +364,7 @@ private fun PlaylistDetailScreen(
     val songActions = rememberSongQueueActions(viewModel)
     val currentSong by viewModel.currentSong.collectAsStateWithLifecycle()
     val currentItem by viewModel.currentItem.collectAsStateWithLifecycle()
+    val detailListState = rememberSaveable(playlist.id, saver = LazyListState.Saver) { LazyListState() }
 
     Surface(
         modifier = Modifier.fillMaxSize(),
@@ -509,7 +514,7 @@ private fun PlaylistDetailScreen(
                     }
                 }
             } else {
-                LazyColumn(modifier = Modifier.fillMaxSize()) {
+                LazyColumn(state = detailListState, modifier = Modifier.fillMaxSize()) {
                     items(
                         items = songs,
                         key = { "song-${it.id}" },

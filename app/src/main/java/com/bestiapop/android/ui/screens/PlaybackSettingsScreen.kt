@@ -38,6 +38,9 @@ fun PlaybackSettingsScreen(viewModel: MusicPlayerViewModel) {
     val clearShuffleOnSkip by viewModel.clearShuffleOnSkip.collectAsState()
     val clearRepeatOneOnSkip by viewModel.clearRepeatOneOnSkip.collectAsState()
     val streamGraceSeconds by viewModel.streamSkipGraceSeconds.collectAsState()
+    val openNowPlayingOnPlay by viewModel.openNowPlayingOnPlay.collectAsState()
+    val crossfadeEnabled by viewModel.crossfadeEnabled.collectAsState()
+    val crossfadeDurationSeconds by viewModel.crossfadeDurationSeconds.collectAsState()
     val backgroundExecutionStatus by viewModel.backgroundExecutionStatus.collectAsState()
 
     val context = LocalContext.current
@@ -79,13 +82,10 @@ fun PlaybackSettingsScreen(viewModel: MusicPlayerViewModel) {
 
         SettingsSwitchRow(
             title = "Recordar repetición",
-            subtitle = if (rememberRepeat) {
-                "Al abrir la app, conservar el último modo (todo / una / off)"
-            } else {
-                "Al abrir la app, la repetición arranca apagada"
-            },
             checked = rememberRepeat,
-            onCheckedChange = { viewModel.setRememberRepeatOnLaunch(it) }
+            onCheckedChange = { viewModel.setRememberRepeatOnLaunch(it) },
+            onSubtitle = "Al abrir la app, conservar el último modo (todo / una / off)",
+            offSubtitle = "Al abrir la app, la repetición arranca apagada"
         )
 
         Spacer(modifier = Modifier.height(28.dp))
@@ -98,7 +98,17 @@ fun PlaybackSettingsScreen(viewModel: MusicPlayerViewModel) {
         )
         Spacer(modifier = Modifier.height(12.dp))
 
-        ClearModeSwitchRow(
+        SettingsSwitchRow(
+            title = "Abrir reproductor",
+            checked = openNowPlayingOnPlay,
+            onCheckedChange = { viewModel.setOpenNowPlayingOnPlay(it) },
+            onSubtitle = "Al elegir qué reproducir, se abre automáticamente la pantalla de reproducción",
+            offSubtitle = "La reproducción inicia en la barra inferior sin abrir la pantalla completa"
+        )
+
+        Spacer(modifier = Modifier.height(20.dp))
+
+        SettingsSwitchRow(
             title = "Salir del aleatorio",
             checked = clearShuffleOnManualPlay,
             onCheckedChange = { viewModel.setClearShuffleOnManualPlay(it) },
@@ -108,7 +118,7 @@ fun PlaybackSettingsScreen(viewModel: MusicPlayerViewModel) {
 
         Spacer(modifier = Modifier.height(20.dp))
 
-        ClearModeSwitchRow(
+        SettingsSwitchRow(
             title = "Salir de repetir todo",
             checked = clearRepeatAllOnManualPlay,
             onCheckedChange = { viewModel.setClearRepeatAllOnManualPlay(it) },
@@ -118,7 +128,7 @@ fun PlaybackSettingsScreen(viewModel: MusicPlayerViewModel) {
 
         Spacer(modifier = Modifier.height(20.dp))
 
-        ClearModeSwitchRow(
+        SettingsSwitchRow(
             title = "Salir de repetir una",
             checked = clearRepeatOneOnManualPlay,
             onCheckedChange = { viewModel.setClearRepeatOneOnManualPlay(it) },
@@ -130,7 +140,7 @@ fun PlaybackSettingsScreen(viewModel: MusicPlayerViewModel) {
         PlaybackSettingsSectionTitle("Al usar siguiente o anterior")
         Spacer(modifier = Modifier.height(12.dp))
 
-        ClearModeSwitchRow(
+        SettingsSwitchRow(
             title = "Salir del aleatorio",
             checked = clearShuffleOnSkip,
             onCheckedChange = { viewModel.setClearShuffleOnSkip(it) },
@@ -140,13 +150,46 @@ fun PlaybackSettingsScreen(viewModel: MusicPlayerViewModel) {
 
         Spacer(modifier = Modifier.height(20.dp))
 
-        ClearModeSwitchRow(
+        SettingsSwitchRow(
             title = "Salir de repetir una",
             checked = clearRepeatOneOnSkip,
             onCheckedChange = { viewModel.setClearRepeatOneOnSkip(it) },
             onSubtitle = "Siguiente o anterior sale de repetir una y pasa de tema",
             offSubtitle = "Se mantiene repetir una"
         )
+
+        Spacer(modifier = Modifier.height(28.dp))
+        PlaybackSettingsSectionTitle("Transición entre canciones (Crossfade)")
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = "Fundido gradual de volumen entre el final de una canción y el inicio de la siguiente.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(modifier = Modifier.height(12.dp))
+
+        SettingsSwitchRow(
+            title = "Crossfade activo",
+            checked = crossfadeEnabled,
+            onCheckedChange = { viewModel.setCrossfadeEnabled(it) },
+            onSubtitle = "Transición fluida de $crossfadeDurationSeconds s (${crossfadeDurationSeconds * 1000} ms)",
+            offSubtitle = "Reproducción sin fundido de volumen"
+        )
+
+        if (crossfadeEnabled) {
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(
+                text = "Duración: $crossfadeDurationSeconds ${if (crossfadeDurationSeconds == 1) "segundo" else "segundos"} (${crossfadeDurationSeconds * 1000} ms)",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Slider(
+                value = crossfadeDurationSeconds.toFloat(),
+                onValueChange = { viewModel.setCrossfadeDurationSeconds(it.roundToInt()) },
+                valueRange = 1f..10f,
+                steps = 8
+            )
+        }
 
         Spacer(modifier = Modifier.height(28.dp))
         PlaybackSettingsSectionTitle("Canciones online")
@@ -270,18 +313,3 @@ private fun PlaybackSettingsSectionTitle(text: String) {
     )
 }
 
-@Composable
-private fun ClearModeSwitchRow(
-    title: String,
-    checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit,
-    onSubtitle: String,
-    offSubtitle: String
-) {
-    SettingsSwitchRow(
-        title = title,
-        subtitle = if (checked) onSubtitle else offSubtitle,
-        checked = checked,
-        onCheckedChange = onCheckedChange
-    )
-}

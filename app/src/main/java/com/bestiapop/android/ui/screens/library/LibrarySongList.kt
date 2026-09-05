@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.CircleShape
@@ -112,6 +113,7 @@ fun LibrarySongList(
     onIdentifyAlbum: (String) -> Unit = {},
     onOpenAlbum: (String) -> Unit = {},
     currentSongIdFlow: StateFlow<Long?>? = null,
+    listState: LazyListState = rememberLazyListState(),
     modifier: Modifier = Modifier
 ) {
     val visible = remember(list, collapsedAlbumNames) {
@@ -163,7 +165,6 @@ fun LibrarySongList(
     val onIdentifyAlbumState = rememberUpdatedState(onIdentifyAlbum)
     val onOpenAlbumState = rememberUpdatedState(onOpenAlbum)
 
-    val listState = rememberLazyListState()
     var menuSong by remember { mutableStateOf<Song?>(null) }
     val onOpenSongMenu: (Song) -> Unit = remember { { menuSong = it } }
 

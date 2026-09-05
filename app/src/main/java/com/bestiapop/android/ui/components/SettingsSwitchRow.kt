@@ -84,3 +84,24 @@ fun SettingsSwitchRow(
         )
     }
 }
+
+/**
+ * Level 2: Compressed wrapper for [SettingsSwitchRow] that selects subtitle based on checked state.
+ */
+@Composable
+fun SettingsSwitchRow(
+    title: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    onSubtitle: String,
+    offSubtitle: String,
+    enabled: Boolean = true
+) {
+    SettingsSwitchRow(
+        title = title,
+        subtitle = if (checked) onSubtitle else offSubtitle,
+        checked = checked,
+        onCheckedChange = onCheckedChange,
+        enabled = enabled
+    )
+}

@@ -2,6 +2,7 @@ package com.bestiapop.android.service
 
 import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.data.model.Song
+import com.bestiapop.android.data.util.compareSongsWithinAlbum
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertSame
 import org.junit.Test
@@ -71,6 +72,63 @@ class PlaybackLocalMetadataRefreshTest {
         )
 
         assertSame(queued, refreshLocalQueueMetadata(listOf(queued), emptyList()).single())
+    }
+
+    @Test
+    fun compareSongsWithinAlbum_sortsByTrackNumberAndDisc() {
+        val track1 = song(id = 1L, uri = "file:///1", title = "Track 1").copy(trackNumber = 1)
+        val track2 = song(id = 2L, uri = "file:///2", title = "Track 2").copy(trackNumber = 2)
+        val disc2Track1 = song(id = 3L, uri = "file:///3", title = "D2 T1").copy(trackNumber = 2001)
+        val noTrack = song(id = 4L, uri = "file:///4", title = "No Track").copy(trackNumber = 0)
+
+        val list = listOf(noTrack, disc2Track1, track2, track1)
+        val sorted = list.sortedWith(::compareSongsWithinAlbum)
+
+        assertEquals(listOf(track1, track2, disc2Track1, noTrack), sorted)
+    }
+
+    @Test
+    fun compareSongsWithinAlbum_breaksTiesByTitle() {
+        val songA = song(id = 1L, uri = "file:///1", title = "Alpha").copy(trackNumber = 1)
+        val songB = song(id = 2L, uri = "file:///2", title = "Beta").copy(trackNumber = 1)
+
+        val sorted = listOf(songB, songA).sortedWith(::compareSongsWithinAlbum)
+        assertEquals(listOf(songA, songB), sorted)
+    }
+
+    @Test
+    fun reorderAlbumQueueByTrackNumber_reordersUnsortedAlbumQueue() {
+        val s1 = song(id = 1L, uri = "file:///1", title = "Track 1").copy(trackNumber = 1)
+        val s2 = song(id = 2L, uri = "file:///2", title = "Track 2").copy(trackNumber = 2)
+        val item1 = PlayableItem.Local(s1, "slot-1")
+        val item2 = PlayableItem.Local(s2, "slot-2")
+
+        val reordered = reorderAlbumQueueByTrackNumber(listOf(item2, item1), isShuffle = false)
+        assertEquals(listOf(item1, item2), reordered)
+    }
+
+    @Test
+    fun reorderAlbumQueueByTrackNumber_returnsNullWhenAlreadySorted() {
+        val s1 = song(id = 1L, uri = "file:///1", title = "Track 1").copy(trackNumber = 1)
+        val s2 = song(id = 2L, uri = "file:///2", title = "Track 2").copy(trackNumber = 2)
+        val item1 = PlayableItem.Local(s1, "slot-1")
+        val item2 = PlayableItem.Local(s2, "slot-2")
+
+        val reordered = reorderAlbumQueueByTrackNumber(listOf(item1, item2), isShuffle = false)
+        assertEquals(null, reordered)
+    }
+
+    @Test
+    fun reorderAlbumQueueByTrackNumber_returnsNullWhenShuffledOrMixed() {
+        val s1 = song(id = 1L, uri = "file:///1", title = "Track 1").copy(trackNumber = 1)
+        val s2 = song(id = 2L, uri = "file:///2", title = "Track 2").copy(trackNumber = 2, album = "Different")
+        val item1 = PlayableItem.Local(s1, "slot-1")
+        val item2 = PlayableItem.Local(s2, "slot-2")
+
+        // Shuffle active
+        assertEquals(null, reorderAlbumQueueByTrackNumber(listOf(item2, item1), isShuffle = true))
+        // Mixed albums
+        assertEquals(null, reorderAlbumQueueByTrackNumber(listOf(item2, item1), isShuffle = false))
     }
 
     private fun song(id: Long, uri: String, title: String): Song = Song(

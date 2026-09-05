@@ -5,7 +5,6 @@ import com.bestiapop.android.data.model.AlbumOverride
 import com.bestiapop.android.data.model.Artist
 import com.bestiapop.android.data.model.GenreGroup
 import com.bestiapop.android.data.model.Song
-import com.bestiapop.android.data.util.albumTrackSortKey
 import com.bestiapop.android.domain.util.IdentifyQueryVariants
 import com.bestiapop.android.domain.util.IdentifyRanking
 import com.bestiapop.android.domain.util.NaturalTextOrder
@@ -265,11 +264,8 @@ class GetLibrarySongsUseCase {
         selector: (Song) -> String
     ): List<Song> = sortedWithNaturalOrder(ascending, selector)
 
-    fun compareSongsWithinAlbum(a: Song, b: Song): Int {
-        val byTrack = albumTrackSortKey(a.trackNumber).compareTo(albumTrackSortKey(b.trackNumber))
-        if (byTrack != 0) return byTrack
-        return a.title.compareTo(b.title, ignoreCase = true)
-    }
+    fun compareSongsWithinAlbum(a: Song, b: Song): Int =
+        com.bestiapop.android.data.util.compareSongsWithinAlbum(a, b)
 
     fun sortSongsWithinAlbum(songs: List<Song>): List<Song> =
         songs.sortedWith(::compareSongsWithinAlbum)
@@ -684,22 +680,6 @@ class GetLibrarySongsUseCase {
         var maxCount = 0
         for (i in songs.indices) {
             val genre = songs[i].genre
-            if (genre.isBlank() || genre.equals(Song.UNKNOWN_GENRE, ignoreCase = true)) continue
-            val count = (counts[genre] ?: 0) + 1
-            counts[genre] = count
-            if (count > maxCount) {
-                maxCount = count
-                maxGenre = genre
-            }
-        }
-        return maxGenre
-    }
-
-    private fun dominantGenre(genres: Iterable<String>): String? {
-        val counts = HashMap<String, Int>(8)
-        var maxGenre: String? = null
-        var maxCount = 0
-        for (genre in genres) {
             if (genre.isBlank() || genre.equals(Song.UNKNOWN_GENRE, ignoreCase = true)) continue
             val count = (counts[genre] ?: 0) + 1
             counts[genre] = count

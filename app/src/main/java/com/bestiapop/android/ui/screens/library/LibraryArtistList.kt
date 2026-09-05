@@ -1,9 +1,9 @@
 package com.bestiapop.android.ui.screens.library
 
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Person
@@ -28,6 +28,7 @@ fun LibraryArtistList(
     onArtistClick: (Artist) -> Unit,
     onPlayArtist: (Artist) -> Unit,
     onShuffleArtist: (Artist) -> Unit,
+    listState: LazyListState = rememberLazyListState(),
     modifier: Modifier = Modifier
 ) {
     if (artists.isEmpty()) {
@@ -38,7 +39,6 @@ fun LibraryArtistList(
         return
     }
 
-    val listState = rememberLazyListState()
     val sections = remember(artists, sortOption) {
         FastScrollSections.fromArtists(artists, sortOption)
     }

@@ -27,14 +27,17 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -134,6 +137,8 @@ fun LibraryScreen(
     }
 
     var collapsedAlbumNames by remember { mutableStateOf(setOf<String>()) }
+
+    val browseListStates = rememberLibraryBrowseListStates()
 
     // Multi-selection state
     var selectedSongIds by remember { mutableStateOf(setOf<Long>()) }
@@ -638,7 +643,8 @@ fun LibraryScreen(
                 onGenreClick = onGenreClickBrowse,
                 onPlayGenre = onPlayGenreBrowse,
                 onShuffleGenre = onShuffleGenreBrowse,
-                fastScrollSettings = fastScrollSettings
+                fastScrollSettings = fastScrollSettings,
+                listStates = browseListStates
             )
 
             if (!isPlaylistAdditionMode) {
@@ -710,6 +716,38 @@ fun LibraryScreen(
     }
 }
 
+/**
+ * Level 2: Bundled list states for all tabs in [LibraryBrowsePane].
+ */
+@Immutable
+data class LibraryBrowseListStates(
+    val songs: LazyListState,
+    val albums: LazyListState,
+    val artists: LazyListState,
+    val genres: LazyListState,
+    val playlists: LazyListState,
+    val recent: LazyListState
+)
+
+@Composable
+fun rememberLibraryBrowseListStates(
+    songs: LazyListState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() },
+    albums: LazyListState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() },
+    artists: LazyListState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() },
+    genres: LazyListState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() },
+    playlists: LazyListState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() },
+    recent: LazyListState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
+): LibraryBrowseListStates = remember(songs, albums, artists, genres, playlists, recent) {
+    LibraryBrowseListStates(
+        songs = songs,
+        albums = albums,
+        artists = artists,
+        genres = genres,
+        playlists = playlists,
+        recent = recent
+    )
+}
+
 @Composable
 private fun LibraryBrowsePane(
     selectedAlbumName: String?,
@@ -741,7 +779,8 @@ private fun LibraryBrowsePane(
     onGenreClick: (GenreGroup) -> Unit,
     onPlayGenre: (GenreGroup) -> Unit,
     onShuffleGenre: (GenreGroup) -> Unit,
-    fastScrollSettings: FastScrollSettings
+    fastScrollSettings: FastScrollSettings,
+    listStates: LibraryBrowseListStates = rememberLibraryBrowseListStates()
 ) {
     when {
         selectedAlbumName != null || selectedArtistName != null || selectedGenreName != null -> {
@@ -789,7 +828,8 @@ private fun LibraryBrowsePane(
                 actions = actions,
                 onSongClick = onLibrarySongsClick,
                 loading = !catalogLoaded,
-                fastScrollSettings = fastScrollSettings
+                fastScrollSettings = fastScrollSettings,
+                listState = listStates.songs
             )
         }
 
@@ -803,7 +843,8 @@ private fun LibraryBrowsePane(
                 actions = actions,
                 searchQuery = searchQuery,
                 onToggleSelect = onToggleSelect,
-                fastScrollSettings = fastScrollSettings
+                fastScrollSettings = fastScrollSettings,
+                listState = listStates.recent
             )
         }
 
@@ -817,7 +858,8 @@ private fun LibraryBrowsePane(
                 onEditAlbum = onEditAlbum,
                 onChangeAlbumCover = onChangeAlbumCover,
                 onIdentifyAlbum = onIdentifyAlbum,
-                fastScrollSettings = fastScrollSettings
+                fastScrollSettings = fastScrollSettings,
+                listState = listStates.albums
             )
         }
 
@@ -828,7 +870,8 @@ private fun LibraryBrowsePane(
                 onArtistClick = onArtistClick,
                 onPlayArtist = onPlayArtist,
                 onShuffleArtist = onShuffleArtist,
-                fastScrollSettings = fastScrollSettings
+                fastScrollSettings = fastScrollSettings,
+                listState = listStates.artists
             )
         }
 
@@ -839,7 +882,8 @@ private fun LibraryBrowsePane(
                 onGenreClick = onGenreClick,
                 onPlayGenre = onPlayGenre,
                 onShuffleGenre = onShuffleGenre,
-                fastScrollSettings = fastScrollSettings
+                fastScrollSettings = fastScrollSettings,
+                listState = listStates.genres
             )
         }
 
@@ -847,6 +891,7 @@ private fun LibraryBrowsePane(
             PlaylistsScreen(
                 viewModel = viewModel,
                 searchQuery = searchQuery,
+                listState = listStates.playlists,
                 onAddSongsRequest = { playlist ->
                     viewModel.openLocalPlaylist(playlist.id)
                     viewModel.setLibraryBrowseFilter(LibraryBrowseFilter.SONGS)
@@ -955,6 +1000,14 @@ private fun NestedLibraryBrowse(
             else viewModel.playCollection(playQueue, index)
         }
     }
+    val nestedListState = rememberSaveable(
+        selectedAlbumName,
+        selectedArtistName,
+        selectedGenreName,
+        saver = LazyListState.Saver
+    ) {
+        LazyListState()
+    }
     LibrarySongListHost(
         list = list,
         currentSongId = null,
@@ -965,7 +1018,8 @@ private fun NestedLibraryBrowse(
         sortOption = sortOption,
         actions = actions,
         onSongClick = onSongClick,
-        fastScrollSettings = fastScrollSettings
+        fastScrollSettings = fastScrollSettings,
+        listState = nestedListState
     )
 }
 
@@ -973,6 +1027,7 @@ private fun NestedLibraryBrowse(
 private fun LibraryAlbumsTab(
     viewModel: MusicPlayerViewModel,
     sortOption: SortOption,
+    listState: LazyListState,
     onAlbumClick: (Album) -> Unit,
     onPlayAlbum: (Album) -> Unit,
     onShuffleAlbum: (Album) -> Unit,
@@ -991,7 +1046,8 @@ private fun LibraryAlbumsTab(
         onEditAlbum = onEditAlbum,
         onChangeAlbumCover = onChangeAlbumCover,
         onIdentifyAlbum = onIdentifyAlbum,
-        fastScrollSettings = fastScrollSettings
+        fastScrollSettings = fastScrollSettings,
+        listState = listState
     )
 }
 
@@ -1004,6 +1060,7 @@ private fun LibraryRecentTab(
     sortOption: SortOption,
     actions: LibrarySongListActions,
     searchQuery: String,
+    listState: LazyListState,
     onToggleSelect: (Song) -> Unit,
     fastScrollSettings: FastScrollSettings
 ) {
@@ -1037,7 +1094,8 @@ private fun LibraryRecentTab(
         },
         actions = actions,
         onSongClick = onSongClick,
-        fastScrollSettings = fastScrollSettings
+        fastScrollSettings = fastScrollSettings,
+        listState = listState
     )
 }
 
@@ -1045,6 +1103,7 @@ private fun LibraryRecentTab(
 private fun LibraryArtistsTab(
     viewModel: MusicPlayerViewModel,
     sortOption: SortOption,
+    listState: LazyListState,
     onArtistClick: (Artist) -> Unit,
     onPlayArtist: (Artist) -> Unit,
     onShuffleArtist: (Artist) -> Unit,
@@ -1057,7 +1116,8 @@ private fun LibraryArtistsTab(
         onArtistClick = onArtistClick,
         onPlayArtist = onPlayArtist,
         onShuffleArtist = onShuffleArtist,
-        fastScrollSettings = fastScrollSettings
+        fastScrollSettings = fastScrollSettings,
+        listState = listState
     )
 }
 
@@ -1065,6 +1125,7 @@ private fun LibraryArtistsTab(
 private fun LibraryGenresTab(
     viewModel: MusicPlayerViewModel,
     sortOption: SortOption,
+    listState: LazyListState,
     onGenreClick: (GenreGroup) -> Unit,
     onPlayGenre: (GenreGroup) -> Unit,
     onShuffleGenre: (GenreGroup) -> Unit,
@@ -1077,7 +1138,8 @@ private fun LibraryGenresTab(
         onGenreClick = onGenreClick,
         onPlayGenre = onPlayGenre,
         onShuffleGenre = onShuffleGenre,
-        fastScrollSettings = fastScrollSettings
+        fastScrollSettings = fastScrollSettings,
+        listState = listState
     )
 }
 

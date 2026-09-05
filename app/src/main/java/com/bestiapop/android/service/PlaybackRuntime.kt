@@ -43,6 +43,7 @@ import com.bestiapop.android.data.preferences.PlaybackHydration
 import com.bestiapop.android.data.preferences.PlaybackModeClear
 import com.bestiapop.android.data.preferences.PlaybackModeRestore
 import com.bestiapop.android.data.preferences.PlaybackPreferencesRepository
+import com.bestiapop.android.data.util.compareSongsWithinAlbum
 import com.bestiapop.android.data.preferences.PlaybackSessionStore
 import com.bestiapop.android.data.preferences.PlaybackSettings
 import com.bestiapop.android.data.preferences.PersistedQueueItem
@@ -56,6 +57,7 @@ import com.bestiapop.android.domain.radio.RadioEngine
 import com.bestiapop.android.domain.radio.RadioMode
 import com.bestiapop.android.domain.radio.RadioSuggestResult
 import com.bestiapop.android.domain.util.TrackMatchKeys
+import com.bestiapop.android.domain.util.albumNamesMatch
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.MoreExecutors
 import java.util.concurrent.atomic.AtomicBoolean
@@ -124,6 +126,31 @@ internal fun refreshLocalQueueMetadata(
             item.copy(song = item.song.keepLyricsIfIncomingSlim(incoming))
         } ?: item
     }
+}
+
+/**
+ * Detects if [queue] represents an ordered album playback queue (all items belong to the same
+ * album, not in shuffle mode), and returns the reordered list sorted by album track number
+ * if the track order changed. Returns null if reordering is not needed or not applicable.
+ */
+internal fun reorderAlbumQueueByTrackNumber(
+    queue: List<PlayableItem>,
+    isShuffle: Boolean
+): List<PlayableItem>? {
+    if (isShuffle || queue.size < 2) return null
+    val firstLocal = queue.firstOrNull() as? PlayableItem.Local ?: return null
+    val firstAlbum = firstLocal.song.album
+    if (firstAlbum.isBlank()) return null
+    if (!queue.all { it is PlayableItem.Local && albumNamesMatch(it.song.album, firstAlbum) }) {
+        return null
+    }
+    val sorted = queue.sortedWith { a, b ->
+        compareSongsWithinAlbum(
+            (a as PlayableItem.Local).song,
+            (b as PlayableItem.Local).song
+        )
+    }
+    return if (sorted != queue) sorted else null
 }
 
 internal interface PlaybackControllerFacade {
@@ -512,14 +539,25 @@ class PlaybackRuntime internal constructor(
                 withContext(scope.coroutineContext) {
                     libraryReady.value = true
                     if (updated !== oldQueue) {
-                        _queue.value = updated
-                        val currentSlot = _currentItem.value?.queueEntryId
-                        updated.firstOrNull { it.queueEntryId == currentSlot }?.let {
-                            setCurrentItem(
-                                it,
-                                persistLastPlayed = false,
-                                hint = PlaybackChangeHint.METADATA_UPDATE
-                            )
+                        val sortedByTrack = reorderAlbumQueueByTrackNumber(updated, _isShuffle.value)
+                        if (sortedByTrack != null) {
+                            val currentSlot = _currentItem.value?.queueEntryId
+                            val newIndex = sortedByTrack.indexOfFirst { it.queueEntryId == currentSlot }
+                                .takeIf { it >= 0 } ?: 0
+                            val position = _playbackPositionMs.value
+                            val wasPlaying = _isPlaying.value || playWhenReadyIntent
+                            applyQueueReorder(sortedByTrack, newIndex, position, wasPlaying)
+                            persistPlaybackSession(force = true)
+                        } else {
+                            _queue.value = updated
+                            val currentSlot = _currentItem.value?.queueEntryId
+                            updated.firstOrNull { it.queueEntryId == currentSlot }?.let {
+                                setCurrentItem(
+                                    it,
+                                    persistLastPlayed = false,
+                                    hint = PlaybackChangeHint.METADATA_UPDATE
+                                )
+                            }
                         }
                     }
                     maybeSeedIdlePlayer()

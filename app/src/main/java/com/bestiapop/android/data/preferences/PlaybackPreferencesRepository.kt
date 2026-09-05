@@ -44,14 +44,23 @@ data class PlaybackSettings(
      * first error (the old behaviour); anything above that re-extracts the stream and re-prepares
      * until the window closes, so a track is not dropped over one bad CDN response.
      */
-    val streamSkipGraceSeconds: Int = DEFAULT_STREAM_SKIP_GRACE_SECONDS
+    val streamSkipGraceSeconds: Int = DEFAULT_STREAM_SKIP_GRACE_SECONDS,
+    val openNowPlayingOnPlay: Boolean = true,
+    val crossfadeEnabled: Boolean = true,
+    val crossfadeDurationSeconds: Int = DEFAULT_CROSSFADE_DURATION_SECONDS
 )
 
 const val DEFAULT_STREAM_SKIP_GRACE_SECONDS = 3
 const val MAX_STREAM_SKIP_GRACE_SECONDS = 30
+const val DEFAULT_CROSSFADE_DURATION_SECONDS = 3
+const val MIN_CROSSFADE_DURATION_SECONDS = 1
+const val MAX_CROSSFADE_DURATION_SECONDS = 10
 
 fun clampStreamSkipGraceSeconds(seconds: Int): Int =
     seconds.coerceIn(0, MAX_STREAM_SKIP_GRACE_SECONDS)
+
+fun clampCrossfadeDurationSeconds(seconds: Int): Int =
+    seconds.coerceIn(MIN_CROSSFADE_DURATION_SECONDS, MAX_CROSSFADE_DURATION_SECONDS)
 
 data class PlaybackModesSnapshot(
     val shuffle: Boolean,
@@ -161,6 +170,9 @@ class PlaybackPreferencesRepository internal constructor(
         val CLEAR_SHUFFLE_ON_SKIP = booleanPreferencesKey("clear_shuffle_on_skip")
         val CLEAR_REPEAT_ONE_ON_SKIP = booleanPreferencesKey("clear_repeat_one_on_skip")
         val STREAM_SKIP_GRACE_SECONDS = intPreferencesKey("stream_skip_grace_seconds")
+        val OPEN_NOW_PLAYING_ON_PLAY = booleanPreferencesKey("open_now_playing_on_play")
+        val CROSSFADE_ENABLED = booleanPreferencesKey("crossfade_enabled")
+        val CROSSFADE_DURATION_SECONDS = intPreferencesKey("crossfade_duration_seconds")
         val OEM_SCREEN_OFF_CLEANUP_HINT_DISMISSED =
             booleanPreferencesKey("oem_screen_off_cleanup_hint_dismissed")
     }
@@ -187,6 +199,11 @@ class PlaybackPreferencesRepository internal constructor(
             clearRepeatOneOnSkip = prefs[Keys.CLEAR_REPEAT_ONE_ON_SKIP] ?: true,
             streamSkipGraceSeconds = clampStreamSkipGraceSeconds(
                 prefs[Keys.STREAM_SKIP_GRACE_SECONDS] ?: DEFAULT_STREAM_SKIP_GRACE_SECONDS
+            ),
+            openNowPlayingOnPlay = prefs[Keys.OPEN_NOW_PLAYING_ON_PLAY] ?: true,
+            crossfadeEnabled = prefs[Keys.CROSSFADE_ENABLED] ?: true,
+            crossfadeDurationSeconds = clampCrossfadeDurationSeconds(
+                prefs[Keys.CROSSFADE_DURATION_SECONDS] ?: DEFAULT_CROSSFADE_DURATION_SECONDS
             )
         )
     }
@@ -258,6 +275,21 @@ class PlaybackPreferencesRepository internal constructor(
         dataStore.put(
             Keys.STREAM_SKIP_GRACE_SECONDS,
             clampStreamSkipGraceSeconds(seconds)
+        )
+    }
+
+    suspend fun setOpenNowPlayingOnPlay(enabled: Boolean) {
+        dataStore.put(Keys.OPEN_NOW_PLAYING_ON_PLAY, enabled)
+    }
+
+    suspend fun setCrossfadeEnabled(enabled: Boolean) {
+        dataStore.put(Keys.CROSSFADE_ENABLED, enabled)
+    }
+
+    suspend fun setCrossfadeDurationSeconds(seconds: Int) {
+        dataStore.put(
+            Keys.CROSSFADE_DURATION_SECONDS,
+            clampCrossfadeDurationSeconds(seconds)
         )
     }
 

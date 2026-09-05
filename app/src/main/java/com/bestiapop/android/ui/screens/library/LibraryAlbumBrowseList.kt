@@ -1,9 +1,9 @@
 package com.bestiapop.android.ui.screens.library
 
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -30,6 +30,7 @@ fun LibraryAlbumBrowseList(
     onEditAlbum: (Album) -> Unit,
     onChangeAlbumCover: (Album) -> Unit,
     onIdentifyAlbum: (Album) -> Unit = {},
+    listState: LazyListState = rememberLazyListState(),
     modifier: Modifier = Modifier
 ) {
     if (albums.isEmpty()) {
@@ -40,7 +41,6 @@ fun LibraryAlbumBrowseList(
         return
     }
 
-    val listState = rememberLazyListState()
     val sections = remember(albums, sortOption) {
         FastScrollSections.fromAlbums(albums, sortOption)
     }

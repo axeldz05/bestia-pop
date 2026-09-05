@@ -1,5 +1,7 @@
 package com.bestiapop.android.ui.screens.library
 
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
@@ -63,6 +65,7 @@ fun LibrarySongListHost(
     loading: Boolean = false,
     fastScrollSettings: FastScrollSettings = FastScrollSettings(),
     currentSongIdFlow: StateFlow<Long?>? = null,
+    listState: LazyListState = rememberLazyListState(),
     modifier: Modifier = Modifier
 ) {
     LibrarySongList(
@@ -98,6 +101,7 @@ fun LibrarySongListHost(
         onChangeAlbumCover = actions.onChangeAlbumCover,
         onIdentifyAlbum = actions.onIdentifyAlbum,
         onOpenAlbum = actions.onOpenAlbum,
+        listState = listState,
         modifier = modifier
     )
 }

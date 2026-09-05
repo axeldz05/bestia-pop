@@ -60,6 +60,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 private const val EXOPLAYER_MIN_BUFFER_MS = 15_000
@@ -80,6 +81,7 @@ class MusicService : MediaLibraryService() {
     private var foregroundPromoteRetryAttempts = 0
     private var lastPausedAtElapsedRealtime: Long = 0L
     private var pauseGraceJob: Job? = null
+    private var crossfadeJob: Job? = null
     private var restrictionNoticePosted = false
     private var restrictionConfirmJob: Job? = null
     private var appOpsWatcher: AppOpsManager.OnOpChangedListener? = null
@@ -172,6 +174,7 @@ class MusicService : MediaLibraryService() {
                         positionMs = p.currentPosition
                     )
                     updateWakeMode()
+                    updateCrossfadeLoop()
                     if (playbackState == Player.STATE_BUFFERING) {
                         acquireTransientWakeLock(30_000L)
                     } else if (playbackState == Player.STATE_READY && p.isPlaying) {
@@ -260,6 +263,7 @@ class MusicService : MediaLibraryService() {
                     }
                     persistPlaybackEngaged(isPlaybackEngaged())
                     updateWakeMode()
+                    updateCrossfadeLoop()
                 }
 
                 override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
@@ -274,10 +278,22 @@ class MusicService : MediaLibraryService() {
                         PlaybackDiagnostics.TAG_PLAYBACK,
                         "ExoPlayer.onMediaItemTransition: mediaId='${mediaItem?.mediaId}', title='${mediaItem?.mediaMetadata?.title}', reason=$reasonStr"
                     )
+                    if (latestPlaybackSettings.crossfadeEnabled) {
+                        p.volume = 0f
+                    }
                     updateWakeMode()
+                    updateCrossfadeLoop()
                     if (p.playWhenReady) {
                         acquireTransientWakeLock(30_000L)
                     }
+                }
+
+                override fun onPositionDiscontinuity(
+                    oldPosition: Player.PositionInfo,
+                    newPosition: Player.PositionInfo,
+                    reason: Int
+                ) {
+                    updateCrossfadeLoop()
                 }
 
                 override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) {
@@ -317,6 +333,39 @@ class MusicService : MediaLibraryService() {
                 latestPlaybackSettings = settings
                 applyStereoBalance(settings)
                 applyBoost(settings)
+                updateCrossfadeLoop()
+            }
+        }
+    }
+
+    private fun updateCrossfadeLoop() {
+        val p = player ?: return
+        if (!latestPlaybackSettings.crossfadeEnabled) {
+            crossfadeJob?.cancel()
+            crossfadeJob = null
+            if (p.volume != 1f) {
+                p.volume = 1f
+            }
+            return
+        }
+        if (!p.isPlaying) {
+            crossfadeJob?.cancel()
+            crossfadeJob = null
+            return
+        }
+        if (crossfadeJob?.isActive == true) return
+
+        crossfadeJob = serviceScope.launch {
+            while (isActive && p.isPlaying && latestPlaybackSettings.crossfadeEnabled) {
+                val targetVolume = calculateCrossfadeVolume(
+                    positionMs = p.currentPosition,
+                    durationMs = p.duration,
+                    crossfadeDurationSeconds = latestPlaybackSettings.crossfadeDurationSeconds
+                )
+                if (kotlin.math.abs(p.volume - targetVolume) > 0.01f) {
+                    p.volume = targetVolume
+                }
+                delay(40L)
             }
         }
     }

@@ -1,5 +1,7 @@
 package com.bestiapop.android.data.util
 
+import com.bestiapop.android.data.model.Song
+
 /**
  * MediaStore-compatible album track encoding: `disc * 1000 + track` when disc > 1,
  * otherwise just [track]. Unknown / missing → 0.
@@ -38,4 +40,14 @@ fun parseCdTrackNumber(cdTrack: String?, disc: String?): Int {
     val track = cdTrack?.substringBefore('/')?.trim()?.toIntOrNull() ?: 0
     val discNum = disc?.substringBefore('/')?.trim()?.toIntOrNull() ?: 0
     return encodeAlbumTrack(track, discNum)
+}
+
+/**
+ * Standard album track comparison: disc + track number ascending (missing last),
+ * breaking ties by song title.
+ */
+fun compareSongsWithinAlbum(a: Song, b: Song): Int {
+    val byTrack = albumTrackSortKey(a.trackNumber).compareTo(albumTrackSortKey(b.trackNumber))
+    if (byTrack != 0) return byTrack
+    return a.title.compareTo(b.title, ignoreCase = true)
 }

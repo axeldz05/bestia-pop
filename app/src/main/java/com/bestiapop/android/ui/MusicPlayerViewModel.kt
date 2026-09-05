@@ -33,6 +33,7 @@ import com.bestiapop.android.data.preferences.LibraryTagWritePreferencesReposito
 import com.bestiapop.android.data.preferences.LibraryTagWriteSettings
 import com.bestiapop.android.data.preferences.LibraryUiPreferencesCodec
 import com.bestiapop.android.data.preferences.LibraryStackLookups
+import com.bestiapop.android.data.preferences.DEFAULT_CROSSFADE_DURATION_SECONDS
 import com.bestiapop.android.data.preferences.DEFAULT_STREAM_SKIP_GRACE_SECONDS
 import com.bestiapop.android.data.preferences.NAV_DISCOVER
 import com.bestiapop.android.data.preferences.NAV_DOWNLOADS
@@ -134,9 +135,12 @@ import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
@@ -249,6 +253,13 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     val clearRepeatOneOnSkip: StateFlow<Boolean> = playbackPref(true) { it.clearRepeatOneOnSkip }
     val streamSkipGraceSeconds: StateFlow<Int> =
         playbackPref(DEFAULT_STREAM_SKIP_GRACE_SECONDS) { it.streamSkipGraceSeconds }
+    val openNowPlayingOnPlay: StateFlow<Boolean> = playbackPref(true) { it.openNowPlayingOnPlay }
+    val crossfadeEnabled: StateFlow<Boolean> = playbackPref(true) { it.crossfadeEnabled }
+    val crossfadeDurationSeconds: StateFlow<Int> =
+        playbackPref(DEFAULT_CROSSFADE_DURATION_SECONDS) { it.crossfadeDurationSeconds }
+
+    private val _openNowPlayingEvents = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    val openNowPlayingEvents: SharedFlow<Unit> = _openNowPlayingEvents.asSharedFlow()
 
     val pendingListenCount: StateFlow<Int> = pendingListenDao.countFlow()
         .stateInUi(viewModelScope, 0)
@@ -855,6 +866,18 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         persistPlayback { setStreamSkipGraceSeconds(seconds) }
     }
 
+    fun setOpenNowPlayingOnPlay(enabled: Boolean) {
+        persistPlayback { setOpenNowPlayingOnPlay(enabled) }
+    }
+
+    fun setCrossfadeEnabled(enabled: Boolean) {
+        persistPlayback { setCrossfadeEnabled(enabled) }
+    }
+
+    fun setCrossfadeDurationSeconds(seconds: Int) {
+        persistPlayback { setCrossfadeDurationSeconds(seconds) }
+    }
+
     private suspend fun restoreVolumeBoostIfNeeded() {
         val settings = playbackRuntime.awaitPlaybackSettings()
         if (!settings.volumeBoostEnabled) {
@@ -1122,6 +1145,9 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             origin = origin,
             resumeAtMs = resumeAtMs
         )
+        if (items.isNotEmpty() && !fromRadio && playbackSettings.value.openNowPlayingOnPlay) {
+            _openNowPlayingEvents.tryEmit(Unit)
+        }
     }
 
     fun catalogPreviewKeyFor(track: OnlineCatalogTrack): String {

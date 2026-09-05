@@ -184,6 +184,12 @@ fun MainScreen(
         clearPendingExit()
     }
 
+    LaunchedEffect(viewModel) {
+        viewModel.openNowPlayingEvents.collect {
+            openFullPlayer()
+        }
+    }
+
     fun dismissFullPlayer() {
         showFullPlayer = false
         // Brief enough to drop the same swipe's UP, not a deliberate follow-up tap.

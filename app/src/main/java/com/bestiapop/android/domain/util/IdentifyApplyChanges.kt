@@ -38,7 +38,7 @@ fun identifyApplyChanges(
     fields: IdentifyApplyFields
 ): List<IdentifyFieldChange> = buildList {
     if (fields.isEnabled(IdentifyApplyField.TITLE)) {
-        val written = IdentifyRanking.cleanIdentityTitle(candidate.title).ifBlank { candidate.title }.trim()
+        val written = IdentifyRanking.cleanIdentityTitle(candidate.title, candidate.artist).ifBlank { candidate.title }.trim()
         val current = song.title.trim()
         if (written.isNotEmpty() && written != current) {
             add(IdentifyFieldChange(IdentifyApplyField.TITLE, current, written))

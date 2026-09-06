@@ -48,3 +48,21 @@ fun needsGapIdentify(
 ): Boolean = gapApplyFields(artist, title, album, artworkUri).hasAny
 
 fun needsGapIdentify(song: Song): Boolean = gapApplyFields(song).hasAny
+
+/**
+ * Evaluates whether [song] has missing, placeholder, or noisy metadata specifically for the fields enabled in [fields].
+ */
+fun songHasGapsForFields(song: Song, fields: IdentifyApplyFields): Boolean {
+    if (fields.artwork && !SongPathNormalizer.hasUsableArtwork(song.artworkUri)) return true
+    if (fields.title) {
+        if (isWeakIdentityTitle(song.artist, song.title)) return true
+        val cleaned = IdentifyRanking.cleanIdentityTitle(song.title, song.artist)
+        if (cleaned.isNotBlank() && cleaned != song.title.trim()) return true
+    }
+    if (fields.artist && IdentifyRanking.isPlaceholderArtist(song.artist)) return true
+    if (fields.album && IdentifyRanking.isGenericAlbum(song.album)) return true
+    if (fields.year && song.year <= 0) return true
+    if (fields.trackNumber && song.trackNumber <= 0) return true
+    return false
+}
+

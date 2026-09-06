@@ -280,6 +280,80 @@ class IdentifyRankingTest {
     }
 
     @Test
+    fun cleanIdentityTitle_stripsArtistPrefixAndSuffix() {
+        assertEquals("Bohemian Rhapsody", IdentifyRanking.cleanIdentityTitle("Queen - Bohemian Rhapsody", "Queen"))
+        assertEquals("Bohemian Rhapsody", IdentifyRanking.cleanIdentityTitle("Queen – Bohemian Rhapsody", "Queen"))
+        assertEquals("Bohemian Rhapsody", IdentifyRanking.cleanIdentityTitle("Queen — Bohemian Rhapsody", "Queen"))
+        assertEquals("Bohemian Rhapsody", IdentifyRanking.cleanIdentityTitle("Queen : Bohemian Rhapsody", "Queen"))
+        assertEquals("Bohemian Rhapsody", IdentifyRanking.cleanIdentityTitle("Queen | Bohemian Rhapsody", "Queen"))
+        assertEquals("Bohemian Rhapsody", IdentifyRanking.cleanIdentityTitle("Queen ~ Bohemian Rhapsody", "Queen"))
+        assertEquals("Bohemian Rhapsody", IdentifyRanking.cleanIdentityTitle("Queen \"Bohemian Rhapsody\"", "Queen"))
+        assertEquals("Bohemian Rhapsody", IdentifyRanking.cleanIdentityTitle("Bohemian Rhapsody - Queen", "Queen"))
+        assertEquals("Bohemian Rhapsody", IdentifyRanking.cleanIdentityTitle("Bohemian Rhapsody (by Queen)", "Queen"))
+        assertEquals("Bohemian Rhapsody", IdentifyRanking.cleanIdentityTitle("Bohemian Rhapsody [by Queen]", "Queen"))
+        assertEquals("Bohemian Rhapsody", IdentifyRanking.cleanIdentityTitle("Bohemian Rhapsody by Queen", "Queen"))
+        assertEquals("Get Lucky", IdentifyRanking.cleanIdentityTitle("Daft Punk ft. Pharrell Williams - Get Lucky", "Daft Punk"))
+    }
+
+    @Test
+    fun cleanIdentityTitle_stripsCosmeticSpanishAndEnglishNoise() {
+        assertEquals("Song", IdentifyRanking.cleanIdentityTitle("Song (Video Oficial)"))
+        assertEquals("Song", IdentifyRanking.cleanIdentityTitle("Song (Vídeo Oficial)"))
+        assertEquals("Song", IdentifyRanking.cleanIdentityTitle("Song (Videoclip Oficial)"))
+        assertEquals("Song", IdentifyRanking.cleanIdentityTitle("Song (Videoclip)"))
+        assertEquals("Song", IdentifyRanking.cleanIdentityTitle("Song (Audio Oficial)"))
+        assertEquals("Song", IdentifyRanking.cleanIdentityTitle("Song (Audio)"))
+        assertEquals("Song", IdentifyRanking.cleanIdentityTitle("Song [Audio]"))
+        assertEquals("Song", IdentifyRanking.cleanIdentityTitle("Song (Music Video)"))
+        assertEquals("Song", IdentifyRanking.cleanIdentityTitle("Song [Music Video]"))
+        assertEquals("Song", IdentifyRanking.cleanIdentityTitle("Song (Official Video)"))
+        assertEquals("Song", IdentifyRanking.cleanIdentityTitle("Song [HD]"))
+        assertEquals("Song", IdentifyRanking.cleanIdentityTitle("Song [4K]"))
+        assertEquals("Song", IdentifyRanking.cleanIdentityTitle("Song (Video con Letra)"))
+        assertEquals("Song", IdentifyRanking.cleanIdentityTitle("Song (Video Lírico)"))
+        assertEquals("Song", IdentifyRanking.cleanIdentityTitle("Song (2011 Remaster)"))
+        assertEquals("Song", IdentifyRanking.cleanIdentityTitle("Song (2020 Remastered Version)"))
+        assertEquals("Song", IdentifyRanking.cleanIdentityTitle("Song [2015 Remaster]"))
+        assertEquals("Song", IdentifyRanking.cleanIdentityTitle("Song (Album Version)"))
+        assertEquals("Song", IdentifyRanking.cleanIdentityTitle("Song (Single Version)"))
+        assertEquals("Song", IdentifyRanking.cleanIdentityTitle("Song (Full Track)"))
+        assertEquals("Song", IdentifyRanking.cleanIdentityTitle("Song (Explicit Version)"))
+        assertEquals("Song", IdentifyRanking.cleanIdentityTitle("Song [Explicit]"))
+        assertEquals("Song", IdentifyRanking.cleanIdentityTitle("Song (Clean Version)"))
+    }
+
+    @Test
+    fun cleanIdentityTitle_stripsLeadingTrackNumbers() {
+        assertEquals("Bohemian Rhapsody", IdentifyRanking.cleanIdentityTitle("01. Bohemian Rhapsody"))
+        assertEquals("Bohemian Rhapsody", IdentifyRanking.cleanIdentityTitle("01 - Bohemian Rhapsody"))
+        assertEquals("Bohemian Rhapsody", IdentifyRanking.cleanIdentityTitle("01 Bohemian Rhapsody"))
+        assertEquals("Bohemian Rhapsody", IdentifyRanking.cleanIdentityTitle("1. Bohemian Rhapsody"))
+        assertEquals("Bohemian Rhapsody", IdentifyRanking.cleanIdentityTitle("1 - Bohemian Rhapsody"))
+        assertEquals("Bohemian Rhapsody", IdentifyRanking.cleanIdentityTitle("1-01. Bohemian Rhapsody"))
+        // Legitimate numeric song titles must NOT be stripped
+        assertEquals("1979", IdentifyRanking.cleanIdentityTitle("1979"))
+        assertEquals("21 Guns", IdentifyRanking.cleanIdentityTitle("21 Guns"))
+        assertEquals("505", IdentifyRanking.cleanIdentityTitle("505"))
+    }
+
+    @Test
+    fun cleanIdentityTitle_stripsEnclosingQuotes() {
+        assertEquals("Bohemian Rhapsody", IdentifyRanking.cleanIdentityTitle("\"Bohemian Rhapsody\""))
+        assertEquals("Bohemian Rhapsody", IdentifyRanking.cleanIdentityTitle("“Bohemian Rhapsody”"))
+        assertEquals("Bohemian Rhapsody", IdentifyRanking.cleanIdentityTitle("'Bohemian Rhapsody'"))
+        assertEquals("Bohemian Rhapsody", IdentifyRanking.cleanIdentityTitle("«Bohemian Rhapsody»"))
+    }
+
+    @Test
+    fun cleanIdentityTitle_preservesMusicalVersions() {
+        assertEquals("Creep (Live)", IdentifyRanking.cleanIdentityTitle("Creep (Live)"))
+        assertEquals("Creep (Live at Wembley)", IdentifyRanking.cleanIdentityTitle("Creep (Live at Wembley)"))
+        assertEquals("Creep (Acoustic)", IdentifyRanking.cleanIdentityTitle("Creep (Acoustic)"))
+        assertEquals("Creep (Remix)", IdentifyRanking.cleanIdentityTitle("Creep (Remix)"))
+        assertEquals("Creep (En Vivo)", IdentifyRanking.cleanIdentityTitle("Creep (En Vivo)"))
+    }
+
+    @Test
     fun deluxeSourceAlbum_agreesWithPlainCatalogAlbum() {
         val query = IdentifyRanking.Query(
             artist = "Muse",

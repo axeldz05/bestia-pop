@@ -69,4 +69,35 @@ class YouTubeAudioPreferenceTest {
         )
         assertEquals("yT_8xqE9x0w", YouTubeExtractor.resolveYouTubeQueryOrId(youtubeTrack))
     }
+
+    @Test
+    fun formatTitleAndArtist_handlesFlexibleSeparatorsAndDisambiguatesAuthor() {
+        val (t1, a1) = YouTubeExtractor.formatTitleAndArtist(
+            "Queen - Bohemian Rhapsody (Official Video)",
+            "Queen"
+        )
+        assertEquals("Bohemian Rhapsody", t1)
+        assertEquals("Queen", a1)
+
+        val (t2, a2) = YouTubeExtractor.formatTitleAndArtist(
+            "AC/DC – Thunderstruck (Official Video) [4K]",
+            "AC/DC - Topic"
+        )
+        assertEquals("Thunderstruck", t2)
+        assertEquals("AC/DC", a2)
+
+        val (t3, a3) = YouTubeExtractor.formatTitleAndArtist(
+            "Bohemian Rhapsody - Queen",
+            "QueenVEVO"
+        )
+        assertEquals("Bohemian Rhapsody", t3)
+        assertEquals("Queen", a3)
+
+        val (t4, a4) = YouTubeExtractor.formatTitleAndArtist(
+            "Radiohead : Creep",
+            "Radiohead"
+        )
+        assertEquals("Creep", t4)
+        assertEquals("Radiohead", a4)
+    }
 }

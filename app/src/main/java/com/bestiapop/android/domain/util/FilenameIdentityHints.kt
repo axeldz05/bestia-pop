@@ -61,7 +61,7 @@ fun stripLeadingTitleJunk(value: String): String {
         if (next == s) break
         s = next
     }
-    return s.trim()
+    return IdentifyRanking.stripLeadingTrackNumber(s.trim())
 }
 
 /**
@@ -137,10 +137,9 @@ fun resolveWeakIdentityHints(artist: String, title: String): FilenameMetadataHin
         return FilenameMetadataHints(null, cleanedTitle.ifBlank { null }, track)
     }
 
-    if (cleanedTitle != title.trim() && cleanedTitle.isNotEmpty()) {
-        return FilenameMetadataHints(a, cleanedTitle)
-    }
-    return FilenameMetadataHints(a, cleanedTitle.ifBlank { null })
+    val titleWithoutArtist = IdentifyRanking.cleanIdentityTitle(cleanedTitle, a)
+    val finalTitle = titleWithoutArtist.ifBlank { cleanedTitle.ifBlank { null } }
+    return FilenameMetadataHints(a, finalTitle, track)
 }
 
 /** Parse BestiaPop `Artist_Title` and common rip filename shapes. */

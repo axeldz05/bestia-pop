@@ -240,7 +240,7 @@ fun assignUniqueKnownAlbumMatches(
 }
 
 fun KnownAlbumMatch.toIdentifyCandidate(): IdentifyCandidate {
-    val identityTitle = IdentifyRanking.cleanIdentityTitle(track.title).ifBlank { track.title }
+    val identityTitle = IdentifyRanking.cleanIdentityTitle(track.title, album.artist).ifBlank { track.title }
     return IdentifyCandidate(
         track = OnlineCatalogTrack(
             id = "known:${album.key}|${track.assignmentKey}",

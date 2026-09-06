@@ -35,10 +35,23 @@ fun albumTrackSortKey(encoded: Int): Int {
     return disc * 1000 + track
 }
 
-/** Parse MMR `METADATA_KEY_CD_TRACK_NUMBER` / `DISC_NUMBER` (`"3/12"` or `"3"`). */
+private val DISC_TRACK_FORMAT = Regex("""^(\d{1,2})[-.](\d{1,2})$""")
+
+/** Parse MMR `METADATA_KEY_CD_TRACK_NUMBER` / `DISC_NUMBER` (`"3/12"`, `"3"`, `"1-03"`). */
 fun parseCdTrackNumber(cdTrack: String?, disc: String?): Int {
-    val track = cdTrack?.substringBefore('/')?.trim()?.toIntOrNull() ?: 0
-    val discNum = disc?.substringBefore('/')?.trim()?.toIntOrNull() ?: 0
+    val rawTrack = cdTrack?.substringBefore('/')?.trim().orEmpty()
+    var discNum = disc?.substringBefore('/')?.trim()?.toIntOrNull() ?: 0
+    var track = rawTrack.toIntOrNull() ?: 0
+    if (track <= 0 && rawTrack.isNotEmpty()) {
+        DISC_TRACK_FORMAT.matchEntire(rawTrack)?.let { m ->
+            val d = m.groupValues[1].toIntOrNull() ?: 0
+            val t = m.groupValues[2].toIntOrNull() ?: 0
+            if (t > 0) {
+                track = t
+                if (discNum <= 0 && d > 0) discNum = d
+            }
+        }
+    }
     return encodeAlbumTrack(track, discNum)
 }
 

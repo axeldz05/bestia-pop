@@ -144,6 +144,8 @@ interface IMusicRepository {
         fetchCatalog: Boolean = true
     ): com.bestiapop.android.domain.util.KnownAlbumTracks?
 
+    suspend fun loadLibraryKnownAlbums(): List<com.bestiapop.android.domain.util.KnownAlbumTracks> = emptyList()
+
     suspend fun getAlbumOverride(albumKey: String): AlbumOverride?
 
     fun extractAndSaveEmbeddedArtwork(audioPathOrUri: String, identifier: String): String?

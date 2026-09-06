@@ -2237,12 +2237,17 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     fun setIdentifySetupFields(fields: IdentifyApplyFields) =
         identifyCoordinator.setIdentifySetupFields(fields)
 
+    fun setIdentifySetupOnlyGaps(onlyGaps: Boolean) =
+        identifyCoordinator.setIdentifySetupOnlyGaps(onlyGaps)
+
     fun setIdentifyReviewApplyFields(fields: IdentifyApplyFields) =
         identifyCoordinator.setIdentifyReviewApplyFields(fields)
 
     fun dismissIdentifySetup() = identifyCoordinator.dismissIdentifySetup()
 
     fun confirmIdentifySetup() = identifyCoordinator.confirmIdentifySetup()
+
+    fun cancelIdentify() = identifyCoordinator.cancelIdentify()
 
     fun showIdentifyReview() = identifyCoordinator.showIdentifyReview()
 

@@ -377,6 +377,8 @@ fun MainScreen(
                 songs = setup.songs,
                 applyFields = setup.applyFields,
                 contextTitle = setup.contextTitle,
+                onlyGaps = setup.onlyGaps,
+                onOnlyGapsChanged = { viewModel.setIdentifySetupOnlyGaps(it) },
                 onFieldsChanged = { viewModel.setIdentifySetupFields(it) },
                 onConfirm = { viewModel.confirmIdentifySetup() },
                 onDismiss = { viewModel.dismissIdentifySetup() }

@@ -23,7 +23,9 @@ import com.bestiapop.android.domain.util.gapApplyFields
 import com.bestiapop.android.domain.util.knownAlbumQueryOf
 import com.bestiapop.android.domain.util.toIdentifyCandidate
 import kotlin.coroutines.cancellation.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -36,6 +38,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 
 data class IdentifyBatchSummary(
     val updated: Int,
@@ -50,13 +53,11 @@ data class IdentifyBatchSummary(
             append(if (reviewCount == 1) ", 1 para revisar" else ", $reviewCount para revisar")
         }
         if (alreadyQueued > 0) {
-            append(
-                if (alreadyQueued == 1) ", 1 ya en revisión"
-                else ", $alreadyQueued ya en revisión"
-            )
+            append(" ($alreadyQueued ya en cola)")
         }
-        if (skipped == 1) append(", 1 omitida")
-        else if (skipped > 1) append(", $skipped omitidas")
+        if (skipped > 0) {
+            append(" ($skipped omitidas)")
+        }
     }
 }
 
@@ -70,7 +71,8 @@ sealed interface ProcessIdentifyEvent {
  */
 internal class ProcessIdentifyRuntime(
     private val scope: CoroutineScope,
-    private val dependencies: Dependencies
+    private val dependencies: Dependencies,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
 ) {
     internal data class Dependencies(
         val getSong: suspend (Long) -> Song?,
@@ -106,24 +108,38 @@ internal class ProcessIdentifyRuntime(
     private val reviewBuffer = ArrayList<IdentifyProposal>()
     private var reviewBufferFields: IdentifyApplyFields? = null
 
+    private var activeWorkerJob: Job? = null
+    @Volatile
+    private var userCancelled = false
+
     fun submit(
         songs: List<Song>,
         force: Boolean = false,
         showReview: Boolean = true,
         fields: IdentifyApplyFields = IdentifyApplyFields.ALL,
         fillGapsOnly: Boolean = false
-    ): Job = scope.launch {
-        val started = enqueue(songs, force, showReview, fields, fillGapsOnly)
-        if (started) {
-            runMutex.withLock { processUntilEmpty() }
+    ): Job {
+        userCancelled = false
+        val job = scope.launch(ioDispatcher) {
+            val started = enqueue(songs, force, showReview, fields, fillGapsOnly)
+            if (started) {
+                runMutex.withLock { processUntilEmpty() }
+            }
         }
+        activeWorkerJob = job
+        return job
     }
 
-    fun resumeInterrupted(): Job = scope.launch {
-        ensureHydrated()
-        val remaining = workMutex.withLock { snapshot?.remainingSongIds.orEmpty() }
-        if (remaining.isEmpty()) return@launch
-        runMutex.withLock { processUntilEmpty() }
+    fun resumeInterrupted(): Job {
+        userCancelled = false
+        val job = scope.launch(ioDispatcher) {
+            ensureHydrated()
+            val remaining = workMutex.withLock { snapshot?.remainingSongIds.orEmpty() }
+            if (remaining.isEmpty()) return@launch
+            runMutex.withLock { processUntilEmpty() }
+        }
+        activeWorkerJob = job
+        return job
     }
 
     suspend fun awaitIdle() {
@@ -138,7 +154,7 @@ internal class ProcessIdentifyRuntime(
     }
 
     fun interruptNow() {
-        scope.launch {
+        scope.launch(ioDispatcher) {
             flushReviewBuffer()
             workMutex.withLock {
                 val current = snapshot ?: return@withLock
@@ -151,12 +167,17 @@ internal class ProcessIdentifyRuntime(
     }
 
     fun cancelUser() {
-        scope.launch {
+        userCancelled = true
+        val job = activeWorkerJob
+        activeWorkerJob = null
+        job?.cancel()
+        scope.launch(ioDispatcher) {
             flushReviewBuffer()
             workMutex.withLock {
                 snapshot = null
                 persistLocked(null, force = true)
                 _progress.value = null
+                _running.value = false
             }
         }
     }
@@ -189,9 +210,18 @@ internal class ProcessIdentifyRuntime(
                 }
                 return@withLock
             }
+            val sortedToProcess = toProcess.sortedWith(
+                compareBy<Song>(
+                    { it.folderPath.orEmpty().lowercase() },
+                    { it.album.takeUnless { a -> IdentifyRanking.isGenericAlbum(a) }.orEmpty().lowercase() },
+                    { it.artist.takeUnless { a -> IdentifyRanking.isPlaceholderArtist(a) }.orEmpty().lowercase() },
+                    { it.trackNumber.takeIf { t -> t > 0 } ?: Int.MAX_VALUE },
+                    { it.title.lowercase() }
+                )
+            )
             val current = snapshot
-            val remaining = (current?.remainingSongIds.orEmpty() + toProcess.map { it.id }).distinct()
-            val newIds = toProcess.map { it.id }
+            val remaining = (current?.remainingSongIds.orEmpty() + sortedToProcess.map { it.id }).distinct()
+            val newIds = sortedToProcess.map { it.id }
             val fillGapsIds = current?.fillGapsOnlySongIds.orEmpty() +
                 if (fillGapsOnly) newIds else emptyList()
             snapshot = IdentifyWorkSnapshot(
@@ -221,7 +251,7 @@ internal class ProcessIdentifyRuntime(
         return started
     }
 
-    private suspend fun processUntilEmpty() {
+    private suspend fun processUntilEmpty() = withContext(ioDispatcher) {
         ensureHydrated()
         var lease: AutoCloseable? = null
         _running.value = true
@@ -233,7 +263,7 @@ internal class ProcessIdentifyRuntime(
                 val inFlight = mutableSetOf<Long>()
                 val token = dependencies.listenBrainzToken()
                 repeat(IDENTIFY_PARALLEL) {
-                    launch {
+                    launch(ioDispatcher) {
                         while (true) {
                             if (!dependencies.isOnline()) {
                                 workMutex.withLock { markInterruptedLocked() }
@@ -266,11 +296,13 @@ internal class ProcessIdentifyRuntime(
         } catch (cancelled: CancellationException) {
             flushReviewBuffer()
             workMutex.withLock {
-                val current = snapshot ?: return@withLock
-                if (current.hasRemaining) {
-                    val interrupted = current.copy(interrupted = true)
-                    snapshot = interrupted
-                    persistLocked(interrupted, force = true)
+                if (!userCancelled) {
+                    val current = snapshot ?: return@withLock
+                    if (current.hasRemaining) {
+                        val interrupted = current.copy(interrupted = true)
+                        snapshot = interrupted
+                        persistLocked(interrupted, force = true)
+                    }
                 }
             }
             throw cancelled
@@ -387,7 +419,15 @@ internal class ProcessIdentifyRuntime(
         val songs = dependencies.getSongs?.invoke(remainingIds)
             ?: remainingIds.mapNotNull { id -> dependencies.getSong(id) }
         if (songs.isEmpty()) return
-        val queries = songs.map { knownAlbumQueryOf(it) }
+        val candidateSongs = songs.filter { s ->
+            (seed.folderPath.isNotBlank() && s.folderPath == seed.folderPath) ||
+                s.album.equals(albumName, ignoreCase = true) ||
+                (s.artist.equals(artist, ignoreCase = true) && !IdentifyRanking.isGenericAlbum(s.album)) ||
+                IdentifyRanking.isGenericAlbum(s.album) ||
+                IdentifyRanking.isPlaceholderArtist(s.artist)
+        }
+        if (candidateSongs.isEmpty()) return
+        val queries = candidateSongs.map { knownAlbumQueryOf(it) }
         val matches = assignUniqueKnownAlbumMatches(
             queries = queries,
             albums = listOf(album),

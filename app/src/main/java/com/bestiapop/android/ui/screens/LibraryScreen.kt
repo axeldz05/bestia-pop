@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.UnfoldLess
 import androidx.compose.material.icons.filled.UnfoldMore
 import androidx.compose.material.icons.filled.ViewAgenda
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -29,6 +30,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
@@ -51,6 +53,7 @@ import androidx.compose.ui.unit.dp
 import com.bestiapop.android.data.model.Album
 import com.bestiapop.android.data.model.Artist
 import com.bestiapop.android.data.model.GenreGroup
+import com.bestiapop.android.data.model.LibraryJobKind
 import com.bestiapop.android.data.model.Playlist
 import com.bestiapop.android.data.model.Song
 import androidx.compose.animation.AnimatedVisibility
@@ -162,6 +165,7 @@ fun LibraryScreen(
 
     // Add Music dialog state
     var showAddMusicDialog by remember { mutableStateOf(false) }
+    var showAbortIdentifyDialog by remember { mutableStateOf(false) }
 
     // Active Dialogs state
     var albumForCoverChange by remember { mutableStateOf<Album?>(null) }
@@ -533,7 +537,12 @@ fun LibraryScreen(
         }
 
         libraryJobProgress?.let { job ->
-            LibraryProgressBanner(progress = job)
+            LibraryProgressBanner(
+                progress = job,
+                onCancel = if (job.kind == LibraryJobKind.IDENTIFY) {
+                    { showAbortIdentifyDialog = true }
+                } else null
+            )
         }
         if (identifyReview.pendingCount > 0 && !identifyReview.isVisible) {
             IdentifyPendingBanner(
@@ -760,6 +769,34 @@ fun LibraryScreen(
             onCreatePlaylist = { viewModel.confirmSimilarPreviewAsPlaylist() },
             onPlay = { viewModel.playSimilarPreview() },
             onEnqueue = { viewModel.enqueueSimilarPreview() }
+        )
+    }
+
+    if (showAbortIdentifyDialog) {
+        AlertDialog(
+            onDismissRequest = { showAbortIdentifyDialog = false },
+            title = { Text("¿Abortar identificación?") },
+            text = {
+                Text("Se detendrá el proceso de identificación. Las canciones que ya fueron actualizadas conservarán sus cambios.")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showAbortIdentifyDialog = false
+                        viewModel.cancelIdentify()
+                    }
+                ) {
+                    Text(
+                        text = "Abortar",
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAbortIdentifyDialog = false }) {
+                    Text("Continuar")
+                }
+            }
         )
     }
 }

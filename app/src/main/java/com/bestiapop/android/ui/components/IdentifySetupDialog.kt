@@ -34,10 +34,12 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import com.bestiapop.android.domain.util.songHasGapsForFields
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -53,10 +55,17 @@ fun IdentifySetupDialog(
     songs: List<Song>,
     applyFields: IdentifyApplyFields,
     contextTitle: String = "",
+    onlyGaps: Boolean = false,
+    onOnlyGapsChanged: (Boolean) -> Unit = {},
     onFieldsChanged: (IdentifyApplyFields) -> Unit,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit
 ) {
+    val gapSongsCount = remember(songs, applyFields) {
+        songs.count { songHasGapsForFields(it, applyFields) }
+    }
+    val effectiveCount = if (onlyGaps) gapSongsCount else songs.size
+
     AlertDialog(
         onDismissRequest = onDismiss,
         modifier = Modifier
@@ -128,6 +137,45 @@ fun IdentifySetupDialog(
                     }
                 }
 
+                if (songs.size > 1) {
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp))
+                    Text(
+                        text = "Alcance",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        FilterChip(
+                            selected = onlyGaps,
+                            onClick = { onOnlyGapsChanged(true) },
+                            label = {
+                                Text("Solo datos faltantes ($gapSongsCount)")
+                            },
+                            modifier = Modifier.weight(1f),
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                                selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        )
+                        FilterChip(
+                            selected = !onlyGaps,
+                            onClick = { onOnlyGapsChanged(false) },
+                            label = {
+                                Text("Todas (${songs.size})")
+                            },
+                            modifier = Modifier.weight(1f),
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                                selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        )
+                    }
+                }
+
                 HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp))
 
                 // Section 2: Metadata fields toggles
@@ -183,9 +231,14 @@ fun IdentifySetupDialog(
         confirmButton = {
             Button(
                 onClick = onConfirm,
-                enabled = applyFields.hasAny && songs.isNotEmpty()
+                enabled = applyFields.hasAny && songs.isNotEmpty() && (!onlyGaps || gapSongsCount > 0)
             ) {
-                Text("Identificar")
+                val buttonText = when {
+                    songs.size <= 1 -> "Identificar"
+                    onlyGaps && gapSongsCount == 0 -> "Todo completo (0)"
+                    else -> "Identificar ($effectiveCount)"
+                }
+                Text(buttonText)
             }
         },
         dismissButton = {

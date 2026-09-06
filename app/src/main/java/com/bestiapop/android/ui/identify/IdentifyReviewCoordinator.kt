@@ -20,6 +20,7 @@ import com.bestiapop.android.domain.util.gapApplyFields
 import com.bestiapop.android.domain.util.isTrackNumberLabel
 import com.bestiapop.android.domain.util.knownAlbumQueryOf
 import com.bestiapop.android.domain.util.needsGapIdentify
+import com.bestiapop.android.domain.util.songHasGapsForFields
 import com.bestiapop.android.domain.util.toIdentifyCandidate
 import com.bestiapop.android.service.ProcessIdentifyEvent
 import com.bestiapop.android.service.ProcessIdentifyRuntime
@@ -205,6 +206,10 @@ class IdentifyReviewCoordinator internal constructor(
         _identifySetup.update { it?.copy(applyFields = fields) }
     }
 
+    fun setIdentifySetupOnlyGaps(onlyGaps: Boolean) {
+        _identifySetup.update { it?.copy(onlyGaps = onlyGaps) }
+    }
+
     fun setIdentifyReviewApplyFields(fields: IdentifyApplyFields) {
         _identifyReview.update { it.copy(applyFields = fields) }
     }
@@ -216,12 +221,27 @@ class IdentifyReviewCoordinator internal constructor(
     fun confirmIdentifySetup() {
         val current = _identifySetup.value ?: return
         _identifySetup.value = null
+        val targetSongs = if (current.onlyGaps) {
+            current.songs.filter { songHasGapsForFields(it, current.applyFields) }
+        } else {
+            current.songs
+        }
+        if (targetSongs.isEmpty()) {
+            toast("Las canciones seleccionadas ya tienen los metadatos completos")
+            return
+        }
         identifySongs(
-            songs = current.songs,
-            force = true,
+            songs = targetSongs,
+            force = !current.onlyGaps,
             showReview = true,
-            fields = current.applyFields
+            fields = current.applyFields,
+            fillGapsOnly = current.onlyGaps
         )
+    }
+
+    fun cancelIdentify() {
+        processIdentifyRuntime.cancelUser()
+        toast("Identificación cancelada")
     }
 
     private suspend fun applyPersistedIdentifyQueue(snap: PersistedIdentifyReviewQueue) {

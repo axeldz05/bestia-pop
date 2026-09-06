@@ -474,6 +474,109 @@ class ProcessIdentifyRuntimeTest {
         }
     }
 
+    @Test
+    fun enqueue_clustersSongsByFolderAndAlbum() = runBlocking {
+        val s1 = Song(id = 1L, uriString = "1", title = "Song B", artist = "Queen", album = "A Night at the Opera", folderPath = "/Music/Queen")
+        val s2 = Song(id = 2L, uriString = "2", title = "Another Song", artist = "AC/DC", album = "Back in Black", folderPath = "/Music/ACDC")
+        val s3 = Song(id = 3L, uriString = "3", title = "Song A", artist = "Queen", album = "A Night at the Opera", folderPath = "/Music/Queen")
+
+        val gate = CompletableDeferred<Unit>()
+        val fixture = fixture(
+            propose = { _, _, _ ->
+                gate.await()
+                proposal(1L, IdentifyConfidence.NONE)
+            }
+        )
+        try {
+            fixture.runtime.submit(listOf(s1, s2, s3))
+            val remaining = fixture.work.firstOrNull()?.remainingSongIds.orEmpty()
+            assertEquals(listOf(2L, 3L, 1L), remaining)
+        } finally {
+            gate.complete(Unit)
+            fixture.close()
+        }
+    }
+
+    @Test
+    fun fanOutKnownAlbum_resolvesSiblingAlbumTracksOnHighConfidence() = runBlocking {
+        val applied = mutableListOf<Long>()
+        val album = KnownAlbumTracks(
+            key = albumGroupKey("Queen", "A Night at the Opera"),
+            artist = "Queen",
+            album = "A Night at the Opera",
+            artworkUri = "file:///cover.jpg",
+            tracks = listOf(
+                KnownAlbumTrack(title = "Bohemian Rhapsody", durationMs = 354_000L, trackNumber = 11),
+                KnownAlbumTrack(title = "You're My Best Friend", durationMs = 172_000L, trackNumber = 4)
+            )
+        )
+        val s1 = Song(id = 100L, uriString = "100", title = "Bohemian Rhapsody", artist = "Queen", album = "A Night at the Opera", durationMs = 354_000L, folderPath = "/Music/Queen")
+        val s2 = Song(id = 101L, uriString = "101", title = "You're My Best Friend", artist = "Queen", album = "A Night at the Opera", durationMs = 172_000L, folderPath = "/Music/Queen")
+        val proposeCount = AtomicInteger(0)
+        val candidate = IdentifyCandidate(
+            track = OnlineCatalogTrack(
+                id = "100",
+                title = "Bohemian Rhapsody",
+                artist = "Queen",
+                album = "A Night at the Opera",
+                trackNumber = 11,
+                provider = "Deezer"
+            ),
+            score = 0.95f
+        )
+        val fixture = fixture(
+            songsById = mapOf(100L to s1, 101L to s2),
+            loadScopedAlbumTracks = { artist, _ ->
+                if (artist == "Queen") album else null
+            },
+            propose = { song, _, _ ->
+                proposeCount.incrementAndGet()
+                proposal(song.id, IdentifyConfidence.HIGH, candidate)
+            },
+            apply = { songId, _, _ ->
+                applied += songId
+                IdentifyResult.Updated(songId)
+            }
+        )
+        try {
+            fixture.runtime.submit(listOf(s1, s2)).join()
+            withTimeout(TIMEOUT_MS) { fixture.runtime.awaitIdle() }
+
+            assertTrue(applied.contains(100L))
+            assertTrue(applied.contains(101L))
+        } finally {
+            fixture.close()
+        }
+    }
+
+    @Test
+    fun cancelUser_abortsRunningJobAndClearsWork() = runBlocking {
+        val gate = CompletableDeferred<Unit>()
+        val entered = CompletableDeferred<Unit>()
+        val fixture = fixture(
+            propose = { song, _, _ ->
+                entered.complete(Unit)
+                gate.await()
+                proposal(song.id, IdentifyConfidence.HIGH)
+            }
+        )
+        try {
+            fixture.runtime.submit(listOf(song(1L), song(2L)))
+            withTimeout(TIMEOUT_MS) { entered.await() }
+            assertTrue(fixture.runtime.running.value)
+
+            fixture.runtime.cancelUser()
+            withTimeout(TIMEOUT_MS) { fixture.runtime.awaitIdle() }
+
+            assertFalse(fixture.runtime.running.value)
+            assertNull(fixture.runtime.progress.value)
+            assertTrue(fixture.work.isEmpty())
+        } finally {
+            gate.complete(Unit)
+            fixture.close()
+        }
+    }
+
     private fun fixture(
         pendingIds: Set<Long> = emptySet(),
         initialWork: IdentifyWorkSnapshot? = null,
@@ -513,7 +616,8 @@ class ProcessIdentifyRuntimeTest {
                 isOnline = isOnline,
                 acquireExecutionLease = acquireExecutionLease,
                 loadScopedAlbumTracks = loadScopedAlbumTracks
-            )
+            ),
+            ioDispatcher = Dispatchers.Unconfined
         )
         return Fixture(scope, runtime, work)
     }
@@ -536,8 +640,12 @@ class ProcessIdentifyRuntimeTest {
         album = "Unknown Album"
     )
 
-    private fun proposal(songId: Long, confidence: IdentifyConfidence): IdentifyProposal {
-        val candidate = IdentifyCandidate(
+    private fun proposal(
+        songId: Long,
+        confidence: IdentifyConfidence,
+        suggestedCandidate: IdentifyCandidate? = null
+    ): IdentifyProposal {
+        val candidate = suggestedCandidate ?: IdentifyCandidate(
             track = OnlineCatalogTrack(
                 id = "dz-$songId",
                 title = "Title $songId",

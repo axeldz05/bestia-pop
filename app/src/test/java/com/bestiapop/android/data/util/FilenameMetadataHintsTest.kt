@@ -247,6 +247,37 @@ class FilenameMetadataHintsTest {
     }
 
     @Test
+    fun resolveWeak_knownArtist_stripsArtistFromTitle() {
+        val hints1 = resolveWeakIdentityHints("Queen", "Queen - Bohemian Rhapsody")
+        assertEquals("Queen", hints1.artist)
+        assertEquals("Bohemian Rhapsody", hints1.title)
+
+        val hints2 = resolveWeakIdentityHints("Queen", "Bohemian Rhapsody - Queen")
+        assertEquals("Queen", hints2.artist)
+        assertEquals("Bohemian Rhapsody", hints2.title)
+
+        val hints3 = resolveWeakIdentityHints("Queen", "01. Bohemian Rhapsody")
+        assertEquals("Queen", hints3.artist)
+        assertEquals("Bohemian Rhapsody", hints3.title)
+    }
+
+    @Test
+    fun applyFilenameHints_stripsKnownArtistFromTitle() {
+        val tagged = AudioFileMetadata(
+            title = "Radiohead - Creep",
+            artist = "Radiohead",
+            album = "Pablo Honey",
+            genre = "Rock",
+            durationMs = 1000L,
+            artworkUri = null
+        )
+        val result = AudioFileMetadata.applyFilenameHints(tagged, "Radiohead - Creep.mp3")
+        assertEquals("Radiohead", result.artist)
+        assertEquals("Creep", result.title)
+        assertEquals("Pablo Honey", result.album)
+    }
+
+    @Test
     fun applyFilenameHints_fixesNumericArtistRip() {
         val tagged = AudioFileMetadata(
             title = "- A Game of Inches",

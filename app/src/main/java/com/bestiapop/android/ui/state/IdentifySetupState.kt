@@ -9,5 +9,6 @@ import com.bestiapop.android.data.model.Song
 data class IdentifySetupState(
     val songs: List<Song>,
     val applyFields: IdentifyApplyFields = IdentifyApplyFields.ALL,
-    val contextTitle: String = ""
+    val contextTitle: String = "",
+    val onlyGaps: Boolean = false
 )

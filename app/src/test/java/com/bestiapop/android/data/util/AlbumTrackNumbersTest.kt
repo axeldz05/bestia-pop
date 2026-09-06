@@ -42,4 +42,13 @@ class AlbumTrackNumbersTest {
         assertEquals(7, parseCdTrackNumber("7", "1"))
         assertEquals(0, parseCdTrackNumber(null, "2"))
     }
+
+    @Test
+    fun parseCdTrackNumber_discTrackPattern() {
+        assertEquals(3, parseCdTrackNumber("1-03", null))
+        assertEquals(2005, parseCdTrackNumber("2-05", null))
+        assertEquals(7, parseCdTrackNumber("1.07", null))
+        // Explicit disc overrides inferred disc if provided
+        assertEquals(3003, parseCdTrackNumber("1-03", "3"))
+    }
 }

@@ -62,22 +62,165 @@ object IdentifyRanking {
     fun stripTitleNoise(raw: String): String {
         var t = raw
         t = FEAT_PAREN.replace(t, " ")
-        t = SCORE_NOISE_PAREN.replace(t, " ")
-        t = SCORE_NOISE_SUFFIX.replace(t, " ")
-        t = PLUS_LYRICS.replace(t, " ")
-        t = TRAILING_LYRICS.replace(t, " ")
+        var prev = ""
+        while (prev != t) {
+            prev = t
+            t = SCORE_NOISE_PAREN.replace(t, " ")
+            t = SCORE_NOISE_SUFFIX.replace(t, " ")
+            t = PLUS_LYRICS.replace(t, " ")
+            t = TRAILING_LYRICS.replace(t, " ")
+            t = EMPTY_PARENS_BRACKETS.replace(t, " ")
+            t = t.replace(WHITESPACE, " ").trim()
+        }
         return TrackMatchKeys.normalize(t)
     }
 
-    /** Display/apply title: drop cosmetic mix/lyrics noise, keep live/remix/acoustic. */
-    fun cleanIdentityTitle(raw: String): String {
+    /**
+     * Display/apply title: drop artist prefixes/suffixes, leading track numbers,
+     * cosmetic mix/lyrics/video noise, while keeping live/remix/acoustic versions.
+     */
+    fun cleanIdentityTitle(raw: String, artist: String? = null): String {
         var t = raw.trim()
         if (t.isEmpty()) return t
-        t = COSMETIC_PAREN.replace(t, " ")
-        t = COSMETIC_SUFFIX.replace(t, " ")
-        t = PLUS_LYRICS.replace(t, " ")
-        t = TRAILING_LYRICS.replace(t, " ")
-        return t.replace(WHITESPACE, " ").trim()
+
+        // 1. Initial pass stripping cosmetic brackets/parentheses and suffixes
+        var prev = ""
+        while (prev != t) {
+            prev = t
+            t = COSMETIC_PAREN.replace(t, " ")
+            t = COSMETIC_SUFFIX.replace(t, " ")
+            t = PLUS_LYRICS.replace(t, " ")
+            t = TRAILING_LYRICS.replace(t, " ")
+            t = EMPTY_PARENS_BRACKETS.replace(t, " ")
+            t = t.replace(WHITESPACE, " ").trim()
+        }
+
+        // 2. Strip leading track numbers (e.g. "01. ", "01 - ", "1. ")
+        t = stripLeadingTrackNumber(t)
+
+        // 3. Strip artist name if present as prefix or suffix
+        if (!artist.isNullOrBlank() && !isPlaceholderArtist(artist)) {
+            t = stripArtistFromTitle(t, artist)
+        }
+
+        // 4. Secondary pass of track number and cosmetic noise
+        t = stripLeadingTrackNumber(t)
+        prev = ""
+        while (prev != t) {
+            prev = t
+            t = COSMETIC_PAREN.replace(t, " ")
+            t = COSMETIC_SUFFIX.replace(t, " ")
+            t = PLUS_LYRICS.replace(t, " ")
+            t = TRAILING_LYRICS.replace(t, " ")
+            t = EMPTY_PARENS_BRACKETS.replace(t, " ")
+            t = t.replace(WHITESPACE, " ").trim()
+        }
+
+        // 5. Strip enclosing quotes ("...", '...', “...”, «...»)
+        t = stripEnclosingQuotes(t)
+
+        // 6. Clean leading/trailing punctuation junk
+        t = stripPunctuationJunk(t)
+
+        return t.replace(WHITESPACE, " ").trim().ifBlank { raw.trim() }
+    }
+
+    fun stripLeadingTrackNumber(text: String): String {
+        val s = text.trim()
+        TRACK_NUMBER_PREFIX.matchEntire(s)?.let { return it.groupValues[1].trim() }
+        ZERO_PADDED_TRACK.matchEntire(s)?.let { return it.groupValues[1].trim() }
+        UNDERSCORE_TRACK.matchEntire(s)?.let { return it.groupValues[1].trim() }
+        return s
+    }
+
+    fun stripArtistFromTitle(titleText: String, artist: String): String {
+        var t = titleText.trim()
+        val normArtist = TrackMatchKeys.normalize(artist)
+        if (normArtist.isEmpty()) return t
+
+        // Check prefix separated by dash, colon, pipe, or tilde: "Artist - Title"
+        val sepMatch = ARTIST_TITLE_SEPARATOR.find(t)
+        if (sepMatch != null) {
+            val prefix = t.substring(0, sepMatch.range.first).trim()
+            val suffix = t.substring(sepMatch.range.last + 1).trim()
+            val normPrefix = TrackMatchKeys.normalize(prefix)
+            val normSuffix = TrackMatchKeys.normalize(suffix)
+
+            if (normPrefix == normArtist ||
+                normPrefix.startsWith("$normArtist ") ||
+                isArtistWithFeatures(normPrefix, normArtist)
+            ) {
+                if (suffix.isNotBlank()) t = suffix
+            } else if (normSuffix == normArtist) {
+                if (prefix.isNotBlank()) t = prefix
+            }
+        }
+
+        // Check "Artist \"Title\"" without dash
+        val quoteMatch = ARTIST_QUOTED_TITLE.matchEntire(t)
+        if (quoteMatch != null) {
+            val prefix = quoteMatch.groupValues[1].trim()
+            val body = quoteMatch.groupValues[2].trim()
+            if (TrackMatchKeys.normalize(prefix) == normArtist && body.isNotBlank()) {
+                t = body
+            }
+        }
+
+        // Check suffix "(by Artist)", "[by Artist]", "by Artist"
+        val byParenMatch = BY_ARTIST_PAREN.find(t)
+        if (byParenMatch != null) {
+            val byArt = TrackMatchKeys.normalize(byParenMatch.groupValues[1])
+            if (byArt == normArtist || byArt.contains(normArtist)) {
+                t = t.substring(0, byParenMatch.range.first).trim()
+            }
+        }
+        val bySuffixMatch = BY_ARTIST_SUFFIX.find(t)
+        if (bySuffixMatch != null) {
+            val byArt = TrackMatchKeys.normalize(bySuffixMatch.groupValues[1])
+            if (byArt == normArtist) {
+                t = t.substring(0, bySuffixMatch.range.first).trim()
+            }
+        }
+
+        return t
+    }
+
+    private fun isArtistWithFeatures(normPrefix: String, normArtist: String): Boolean {
+        if (!normPrefix.startsWith(normArtist)) return false
+        val rest = normPrefix.removePrefix(normArtist).trimStart()
+        return rest.startsWith("feat") || rest.startsWith("ft") || rest.startsWith("&") || rest.startsWith("x ")
+    }
+
+    private fun stripEnclosingQuotes(text: String): String {
+        val s = text.trim()
+        if (s.length >= 2) {
+            val first = s.first()
+            val last = s.last()
+            if ((first == '"' && last == '"') ||
+                (first == '\'' && last == '\'') ||
+                (first == '“' && last == '”') ||
+                (first == '«' && last == '»') ||
+                (first == '「' && last == '」')
+            ) {
+                return s.substring(1, s.length - 1).trim()
+            }
+        }
+        return s
+    }
+
+    private fun stripPunctuationJunk(text: String): String {
+        var s = text.trim()
+        while (s.isNotEmpty() && (s.startsWith("-") || s.startsWith("–") || s.startsWith("—") ||
+                s.startsWith(":") || s.startsWith("|") || s.startsWith("~") || s.startsWith(".") ||
+                s.startsWith(",") || s.startsWith("_") || s.startsWith("/") || s.startsWith("\\"))) {
+            s = s.drop(1).trim()
+        }
+        while (s.isNotEmpty() && (s.endsWith("-") || s.endsWith("–") || s.endsWith("—") ||
+                s.endsWith(":") || s.endsWith("|") || s.endsWith("~") || s.endsWith(",") ||
+                s.endsWith(".") || s.endsWith(";") || s.endsWith("_") || s.endsWith("/") || s.endsWith("\\"))) {
+            s = s.dropLast(1).trim()
+        }
+        return s.trim()
     }
 
     fun similarity(a: String, b: String): Float {
@@ -410,7 +553,7 @@ object IdentifyRanking {
     }
 
     fun toCandidate(track: OnlineCatalogTrack, score: Float, reasons: List<String>): IdentifyCandidate {
-        val cleaned = cleanIdentityTitle(track.title).ifBlank { track.title }
+        val cleaned = cleanIdentityTitle(track.title, track.artist).ifBlank { track.title }
         return IdentifyCandidate(
             track = if (cleaned == track.title) {
                 track
@@ -649,27 +792,38 @@ object IdentifyRanking {
         """\s*[\(\[][^)\]]*?\bfeat\.?\b[^)\]]*[\)\]]""",
         RegexOption.IGNORE_CASE
     )
+    private val COSMETIC_BODY =
+        """(?:official\s+)?(?:music\s+)?video|""" +
+            """video\s+oficial|v[ií]deo\s+oficial|videoclip(?:\s+oficial)?|video\s*clip|""" +
+            """(?:official\s+)?(?:hd|4k|uhd)\s+video|video\s+(?:hd|4k|uhd)|""" +
+            """(?:official\s+)?audio|audio\s+oficial|audio(?:\s+completo)?|full\s+(?:audio|song|track)|""" +
+            """hq\s+audio|high\s+quality(?:\s+audio)?|""" +
+            """(?:official\s+)?lyrics?\s+video|video\s+con\s+letra|video\s+l[ií]rico|with\s+lyrics?|con\s+letra|""" +
+            """lyrics?|letras?|""" +
+            """(?:official\s+)?visuali[sz]er|""" +
+            """\d{4}\s+remaster(?:ed)?(?:\s+version)?|""" +
+            """(?:digital|anniversary)?\s*remaster(?:ed)?(?:\s+\d{4})?(?:\s+version)?|""" +
+            """album\s+version|single\s+version|album\s+track|""" +
+            """original\s+mix|radio\s+edit|explicit(?:\s+version)?|clean(?:\s+version)?|""" +
+            """(?:1080p|720p|4k|hd|hq|uhd|320\s*kbps|lossless|flac|mp3)"""
+
     private val SCORE_NOISE_BODY =
-        """official\s+(audio|video|music\s+video)|lyric\s+video|lyrics?|letras?|""" +
-            """remaster(?:ed)?(?:\s+\d{4})?|live|concert|performance|session|""" +
-            """original\s+mix|radio\s+edit|explicit|visuali[sz]er|remix|bootleg|cover|karaoke|acoustic"""
+        """$COSMETIC_BODY|live|concert|performance|session|remix|bootleg|cover|karaoke|acoustic"""
+
     private val SCORE_NOISE_PAREN = Regex(
         """\s*[\(\[]\s*($SCORE_NOISE_BODY)\s*[\)\]]""",
         RegexOption.IGNORE_CASE
     )
     private val SCORE_NOISE_SUFFIX = Regex(
-        """\s*[-–—]\s*($SCORE_NOISE_BODY)\s*$""",
+        """\s*[-–—|~]\s*($SCORE_NOISE_BODY)\s*$""",
         RegexOption.IGNORE_CASE
     )
-    private val COSMETIC_BODY =
-        """official\s+(audio|video|music\s+video)|lyric\s+video|lyrics?|letras?|""" +
-            """remaster(?:ed)?(?:\s+\d{4})?|original\s+mix|radio\s+edit|explicit|visuali[sz]er"""
     private val COSMETIC_PAREN = Regex(
         """\s*[\(\[]\s*($COSMETIC_BODY)\s*[\)\]]""",
         RegexOption.IGNORE_CASE
     )
     private val COSMETIC_SUFFIX = Regex(
-        """\s*[-–—]\s*($COSMETIC_BODY)\s*$""",
+        """\s*[\-–—|~]\s*($COSMETIC_BODY)\s*$""",
         RegexOption.IGNORE_CASE
     )
     private val PLUS_LYRICS = Regex(
@@ -680,6 +834,14 @@ object IdentifyRanking {
         """\s+(?:letras?|lyrics?)\s*$""",
         RegexOption.IGNORE_CASE
     )
+    private val EMPTY_PARENS_BRACKETS = Regex("""\s*[\(\[\{【]\s*[\)\]\}】]""")
+    private val ARTIST_TITLE_SEPARATOR = Regex("""\s*[\-–—:|~]\s+|\s+[\-–—]\s*|_-_""")
+    private val ARTIST_QUOTED_TITLE = Regex("""^(.+?)\s+["“'«](.+)["”'»]$""")
+    private val BY_ARTIST_PAREN = Regex("""\s*[\(\[]\s*by\s+(.+?)\s*[\)\]]\s*$""", RegexOption.IGNORE_CASE)
+    private val BY_ARTIST_SUFFIX = Regex("""\s+by\s+(.+)$""", RegexOption.IGNORE_CASE)
+    private val TRACK_NUMBER_PREFIX = Regex("""^(?:(?:\d{1,3}[-.]\d{1,2})|\d{1,3})\s*[\.\-–—]\s*(.+)$""")
+    private val ZERO_PADDED_TRACK = Regex("""^0\d{1,2}\s+(.+)$""")
+    private val UNDERSCORE_TRACK = Regex("""^\d{1,3}_+(.+)$""")
     private val GENERIC_IDENTIFY_TITLES = setOf(
         "black hole", "castle", "computer", "d", "rose", "flashback", "sauna",
         "demo", "instrumental", "remix", "intro", "outro", "untitled", "title",

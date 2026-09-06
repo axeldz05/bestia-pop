@@ -244,6 +244,8 @@ object MetadataFetcher {
         CatalogTrackCandidate(identity = track.identity, candidates = listOf(track))
 
     private val deezerArtistCache = java.util.concurrent.ConcurrentHashMap<String, DeezerArtistHit>()
+    private val onlineCatalogCache = java.util.concurrent.ConcurrentHashMap<String, List<OnlineCatalogTrack>>()
+    private val albumSearchCache = java.util.concurrent.ConcurrentHashMap<String, List<CatalogAlbum>>()
 
     /** Deezer artist search hit (id + picture). Shared by photo URL and artist-id resolve. */
     fun searchDeezerArtist(name: String): DeezerArtistHit? {
@@ -446,6 +448,8 @@ object MetadataFetcher {
         }
         val pageLimit = limit.coerceIn(1, 100)
         val pageIndex = index.coerceAtLeast(0)
+        val cacheKey = "${cleanQ.lowercase()}|$pageLimit|$pageIndex"
+        onlineCatalogCache[cacheKey]?.let { return@withContext it }
 
         // 1. Deezer Song Search API
         val deezerUrl = endpoint(
@@ -455,7 +459,11 @@ object MetadataFetcher {
         val deezerTracks = parseDeezerSearchTracks(
             getJson(deezerUrl, userAgent = "Mozilla/5.0")?.optJSONArray("data")
         )
-        if (deezerTracks.isNotEmpty()) return@withContext deezerTracks
+        if (deezerTracks.isNotEmpty()) {
+            if (onlineCatalogCache.size > 500) onlineCatalogCache.clear()
+            onlineCatalogCache[cacheKey] = deezerTracks
+            return@withContext deezerTracks
+        }
 
         // 2. Fallback to iTunes Song Search API (no offset; skip on subsequent pages)
         if (pageIndex > 0) return@withContext emptyList()
@@ -466,10 +474,19 @@ object MetadataFetcher {
         val itunesTracks = parseItunesSongResults(
             getJson(itunesUrl, userAgent = "Mozilla/5.0")?.optJSONArray("results")
         )
-        if (itunesTracks.isNotEmpty()) return@withContext itunesTracks
+        if (itunesTracks.isNotEmpty()) {
+            if (onlineCatalogCache.size > 500) onlineCatalogCache.clear()
+            onlineCatalogCache[cacheKey] = itunesTracks
+            return@withContext itunesTracks
+        }
 
         // 3. Fallback to YouTube Search API
-        return@withContext YouTubeExtractor.searchYouTube(cleanQ)
+        val ytTracks = YouTubeExtractor.searchYouTube(cleanQ)
+        if (ytTracks.isNotEmpty()) {
+            if (onlineCatalogCache.size > 500) onlineCatalogCache.clear()
+            onlineCatalogCache[cacheKey] = ytTracks
+        }
+        return@withContext ytTracks
     }
 
     /**
@@ -610,11 +627,10 @@ object MetadataFetcher {
     suspend fun fetchFullTrackMetadata(artist: String, title: String): TrackIdentity? = withContext(Dispatchers.IO) {
         val queryText = buildQueryText(artist, title) ?: return@withContext null
         val deezer = searchDeezerTrack(queryText)
-        if (deezer != null && deezer.album.isNotBlank()) {
-            return@withContext deezer
-        }
-        val itunes = searchItunesSong(queryText) ?: return@withContext deezer
+        val itunes = searchItunesSong(queryText)
+        if (deezer == null && itunes == null) return@withContext null
         if (deezer == null) return@withContext itunes
+        if (itunes == null) return@withContext deezer
         return@withContext deezer.mergePreferring(itunes)
     }
 
@@ -681,6 +697,8 @@ object MetadataFetcher {
 
     suspend fun searchAlbums(query: String): List<CatalogAlbum> = withContext(Dispatchers.IO) {
         val cleanQ = query.trim().ifEmpty { "rock hits" }
+        val cacheKey = cleanQ.lowercase()
+        albumSearchCache[cacheKey]?.let { return@withContext it }
         val list = mutableListOf<CatalogAlbum>()
         try {
             val url = endpoint(
@@ -732,6 +750,10 @@ object MetadataFetcher {
             } catch (e: Exception) {
                 e.printStackTrace()
             }
+        }
+        if (list.isNotEmpty()) {
+            if (albumSearchCache.size > 200) albumSearchCache.clear()
+            albumSearchCache[cacheKey] = list
         }
         return@withContext list
     }

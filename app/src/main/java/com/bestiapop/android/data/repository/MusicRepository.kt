@@ -1366,21 +1366,26 @@ class MusicRepository private constructor(
 
         val enrichedRanked = if (ranked.isNotEmpty()) {
             val first = ranked.first()
-            val albumTrackNum = findTrackNumberInAlbum(
-                artist = first.artist,
-                album = first.album,
-                title = first.title,
-                durationMs = working.durationMs
-            )
-            if (albumTrackNum != null && albumTrackNum > 0 && albumTrackNum != first.track.identity.trackNumber) {
-                val updatedFirst = first.copy(
-                    track = first.track.copy(
-                        identity = first.track.identity.copy(trackNumber = albumTrackNum)
-                    )
-                )
-                listOf(updatedFirst) + ranked.drop(1)
-            } else {
+            if (first.track.identity.trackNumber > 0) {
                 ranked
+            } else {
+                val albumTrackNum = findTrackNumberInAlbum(
+                    artist = first.artist,
+                    album = first.album,
+                    title = first.title,
+                    durationMs = working.durationMs
+                )
+                if (albumTrackNum != null && albumTrackNum > 0) {
+                    listOf(
+                        first.copy(
+                            track = first.track.copy(
+                                identity = first.track.identity.copy(trackNumber = albumTrackNum)
+                            )
+                        )
+                    ) + ranked.drop(1)
+                } else {
+                    ranked
+                }
             }
         } else {
             ranked
@@ -1430,6 +1435,10 @@ class MusicRepository private constructor(
         mergeKnownAlbumTracks(artist, album, library, catalog)
     }
 
+    override suspend fun loadLibraryKnownAlbums(): List<KnownAlbumTracks> = withContext(Dispatchers.IO) {
+        knownAlbumsFromLibrary(identityLibrarySongs())
+    }
+
     private suspend fun fetchCatalogAlbumTracks(
         artist: String,
         album: String
@@ -1456,14 +1465,20 @@ class MusicRepository private constructor(
         if (album.isBlank() || IdentifyRanking.isGenericAlbum(album) || IdentifyRanking.isPlaceholderArtist(artist)) {
             return null
         }
-        val albumTracks = loadKnownAlbumTracks(artist, album, fetchCatalog = true) ?: return null
-        val cleanedTitle = IdentifyRanking.stripTitleNoise(title).lowercase()
+        val albumTracks = loadKnownAlbumTracks(artist, album, fetchCatalog = false)
+            ?: loadKnownAlbumTracks(artist, album, fetchCatalog = true)
+            ?: return null
+        val cleanedTitle = IdentifyRanking.cleanIdentityTitle(title, artist).lowercase()
+        val strippedQuery = IdentifyRanking.stripTitleNoise(cleanedTitle).lowercase()
         val match = albumTracks.tracks.firstOrNull { track ->
-            val trackCleaned = IdentifyRanking.stripTitleNoise(track.title).lowercase()
+            val trackCleaned = IdentifyRanking.cleanIdentityTitle(track.title, albumTracks.artist).lowercase()
+            val trackStripped = IdentifyRanking.stripTitleNoise(trackCleaned).lowercase()
             trackCleaned == cleanedTitle ||
-                IdentifyRanking.fieldSimilarity(trackCleaned, cleanedTitle) >= 0.85f ||
-                (durationMs > 0 && track.durationMs > 0 && kotlin.math.abs(track.durationMs - durationMs) <= 3000 &&
-                    IdentifyRanking.fieldSimilarity(trackCleaned, cleanedTitle) >= 0.6f)
+                trackStripped == strippedQuery ||
+                (trackStripped.isNotEmpty() && strippedQuery.isNotEmpty() &&
+                    IdentifyRanking.fieldSimilarity(trackStripped, strippedQuery) >= 0.80f) ||
+                (durationMs > 0 && track.durationMs > 0 && kotlin.math.abs(track.durationMs - durationMs) <= 3500 &&
+                    IdentifyRanking.fieldSimilarity(trackStripped, strippedQuery) >= 0.55f)
         }
         return match?.trackNumber?.takeIf { it > 0 }
     }
@@ -1536,9 +1551,9 @@ class MusicRepository private constructor(
                 .orEmpty()
         )
         val merged = preferred.mergePreferring(entity.toIdentity())
-        val candidateTitle = IdentifyRanking.cleanIdentityTitle(merged.title).ifBlank { merged.title }
-        val bilingualTitle = IdentifyRanking.preferBilingualTitle(candidateTitle, entity.title)
         val candidateArtist = merged.artist
+        val candidateTitle = IdentifyRanking.cleanIdentityTitle(merged.title, candidateArtist).ifBlank { merged.title }
+        val bilingualTitle = IdentifyRanking.preferBilingualTitle(candidateTitle, entity.title)
         val candidateAlbum = IdentifyRanking.fallbackAlbum(merged.artist, merged.album)
         val candidateArtwork = merged.artworkUri
         val candidateTrackNumber = merged.trackNumber
@@ -1578,18 +1593,17 @@ class MusicRepository private constructor(
             entity.artist
         }
         val finalArtwork = if (fields.artwork) (candidateArtwork ?: entity.artworkUri) else entity.artworkUri
-        val albumTrackNumber = if (fields.trackNumber) {
-            findTrackNumberInAlbum(
-                artist = finalArtist,
-                album = resolvedAlbum,
-                title = finalTitle,
-                durationMs = entity.durationMs
-            )
-        } else null
         val finalTrackNumber = if (fields.trackNumber) {
-            albumTrackNumber
-                ?: candidateTrackNumber.takeIf { it > 0 }
-                ?: entity.trackNumber
+            if (candidateTrackNumber > 0) {
+                candidateTrackNumber
+            } else {
+                findTrackNumberInAlbum(
+                    artist = finalArtist,
+                    album = resolvedAlbum,
+                    title = finalTitle,
+                    durationMs = entity.durationMs
+                ) ?: entity.trackNumber
+            }
         } else {
             entity.trackNumber
         }

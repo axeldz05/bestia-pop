@@ -257,6 +257,8 @@ private fun pickRelease(releases: JSONArray?): JSONObject? {
 
 private fun trackNumberOf(release: JSONObject?, recordingTitle: String): Int {
     val media = release?.optJSONArray("media") ?: return 0
+    val cleanedRecording = IdentifyRanking.cleanIdentityTitle(recordingTitle)
+    val strippedRecording = IdentifyRanking.stripTitleNoise(cleanedRecording)
     for (i in 0 until media.length()) {
         val medium = media.optJSONObject(i) ?: continue
         val disc = medium.optInt("position", i + 1)
@@ -266,7 +268,15 @@ private fun trackNumberOf(release: JSONObject?, recordingTitle: String): Int {
             val name = track.optString("title").trim()
             val num = track.optString("number").substringBefore('.').toIntOrNull()
                 ?: track.optInt("position", 0)
-            if (name.equals(recordingTitle, ignoreCase = true) || tracks.length() == 1) {
+            val cleanedName = IdentifyRanking.cleanIdentityTitle(name)
+            val strippedName = IdentifyRanking.stripTitleNoise(cleanedName)
+            if (name.equals(recordingTitle, ignoreCase = true) ||
+                cleanedName.equals(cleanedRecording, ignoreCase = true) ||
+                strippedName.equals(strippedRecording, ignoreCase = true) ||
+                (strippedName.isNotEmpty() && strippedRecording.isNotEmpty() &&
+                    IdentifyRanking.fieldSimilarity(strippedName, strippedRecording) >= 0.85f) ||
+                tracks.length() == 1
+            ) {
                 return encodeAlbumTrack(num, disc)
             }
         }

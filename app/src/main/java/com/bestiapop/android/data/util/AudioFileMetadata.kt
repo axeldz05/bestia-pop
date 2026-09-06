@@ -201,8 +201,9 @@ data class AudioFileMetadata(
                 (artistWeak && (metadata.title.contains(" - ") || metadata.title.contains("_-_")))
 
             if (!artistWeak && !IdentifyRanking.isGenericAlbum(metadata.album) && !titleWeak) {
-                val cleaned = stripLeadingTitleJunk(metadata.title)
-                return if (cleaned != metadata.title) {
+                val cleaned = IdentifyRanking.cleanIdentityTitle(metadata.title, metadata.artist)
+                    .ifBlank { stripLeadingTitleJunk(metadata.title) }
+                return if (cleaned != metadata.title && cleaned.isNotBlank()) {
                     metadata.withIdentity { copy(title = cleaned) }
                 } else {
                     metadata
@@ -216,8 +217,12 @@ data class AudioFileMetadata(
             }
             // Keep a real ID3 title even when artist is Unknown; filename hints are for search.
             val title = when {
-                titleWeak && !hints.title.isNullOrBlank() -> hints.title
-                else -> stripLeadingTitleJunk(metadata.title).ifBlank { metadata.title }
+                titleWeak && !hints.title.isNullOrBlank() ->
+                    IdentifyRanking.cleanIdentityTitle(hints.title, artist).ifBlank { hints.title }
+                else ->
+                    IdentifyRanking.cleanIdentityTitle(metadata.title, artist).ifBlank {
+                        stripLeadingTitleJunk(metadata.title).ifBlank { metadata.title }
+                    }
             }
             val trackNumber = metadata.trackNumber.takeIf { it > 0 }
                 ?: hints.trackNumber

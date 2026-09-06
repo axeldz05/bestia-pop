@@ -16,6 +16,7 @@ import com.bestiapop.android.data.model.TrackIdentity
 import com.bestiapop.android.data.model.TrackMeta
 import com.bestiapop.android.data.model.youtubeSearchQuery
 import com.bestiapop.android.domain.util.IdentifyRanking
+import com.bestiapop.android.domain.util.TrackMatchKeys
 import com.bestiapop.android.data.util.CrashReporter
 
 data class YouTubeStreamResult(
@@ -183,7 +184,7 @@ object YouTubeExtractor {
     private val VIDEO_PAREN = Regex("""(?i)\(Video\)""")
     private val LYRICS_BRACKET = Regex("""(?i)\[Lyrics?\]""")
     private val LYRICS_PAREN = Regex("""(?i)\(Lyrics?\)""")
-    private val HD_4K = Regex("""(?i)HD|4K""")
+    private val HD_4K = Regex("""(?i)\s*[\(\[]\s*(?:HD|4K)\s*[\)\]]|\b(?:HD|4K)\b""")
 
     private val FALLBACK_PAREN = Regex("""(?i)\(.*?(?:remaster|version|edition|deluxe|feat).*?\)""")
     private val FALLBACK_BRACKET = Regex("""(?i)\[.*?(?:remaster|version|edition|deluxe|feat).*?\]""")
@@ -200,6 +201,8 @@ object YouTubeExtractor {
         return if (matcher.find()) matcher.group(1) else null
     }
 
+    private val YOUTUBE_TITLE_SEPARATOR = Regex("""\s*[\-–—:|~]\s+|\s+[\-–—]\s*|_-_""")
+
     fun formatTitleAndArtist(rawTitle: String, rawAuthor: String): Pair<String, String> {
         var cleanTitle = rawTitle
             .replace(OFFICIAL_MUSIC_VIDEO_PAREN, "")
@@ -212,16 +215,31 @@ object YouTubeExtractor {
             .replace(HD_4K, "")
             .trim()
 
-        var artist = rawAuthor.replace(" - Topic", "").replace("VEVO", "").trim()
+        var artist = rawAuthor
+            .replace(" - Topic", "")
+            .replace("VEVO", "", ignoreCase = true)
+            .trim()
 
-        if (cleanTitle.contains(" - ")) {
-            val parts = cleanTitle.split(" - ", limit = 2)
-            if (parts.size == 2 && parts[0].trim().isNotEmpty() && parts[1].trim().isNotEmpty()) {
-                artist = parts[0].trim()
-                cleanTitle = parts[1].trim()
+        val sepMatch = YOUTUBE_TITLE_SEPARATOR.find(cleanTitle)
+        if (sepMatch != null) {
+            val part0 = cleanTitle.substring(0, sepMatch.range.first).trim()
+            val part1 = cleanTitle.substring(sepMatch.range.last + 1).trim()
+            if (part0.isNotEmpty() && part1.isNotEmpty()) {
+                val normAuthor = TrackMatchKeys.normalize(artist)
+                val normPart0 = TrackMatchKeys.normalize(part0)
+                val normPart1 = TrackMatchKeys.normalize(part1)
+
+                // Disambiguate: is part1 the artist (Title - Artist) or is part0 the artist (Artist - Title)?
+                if (normAuthor.isNotEmpty() && (normPart1 == normAuthor || normPart1.startsWith(normAuthor))) {
+                    artist = part1
+                    cleanTitle = part0
+                } else {
+                    artist = part0
+                    cleanTitle = part1
+                }
             }
         }
-        cleanTitle = IdentifyRanking.cleanIdentityTitle(cleanTitle).ifBlank { cleanTitle }
+        cleanTitle = IdentifyRanking.cleanIdentityTitle(cleanTitle, artist).ifBlank { cleanTitle }
         return Pair(cleanTitle, artist.ifEmpty { "YouTube Artist" })
     }
 

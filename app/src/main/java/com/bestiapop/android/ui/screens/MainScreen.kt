@@ -19,7 +19,7 @@ import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Wifi
+import androidx.compose.material.icons.filled.DriveFolderUpload
 import com.bestiapop.android.ui.components.VolumeBoostHud
 import com.bestiapop.android.ui.screens.discover.DiscoverScreen
 import com.bestiapop.android.ui.state.LibraryBrowseFilter
@@ -179,7 +179,7 @@ fun MainScreen(
         NavItem("Biblioteca", Icons.Default.LibraryMusic),
         NavItem("Descubrir", Icons.Default.Explore),
         NavItem("Descargas", Icons.Default.Download),
-        NavItem("WiFi Sync", Icons.Default.Wifi),
+        NavItem("Añadir", Icons.Default.DriveFolderUpload),
         NavItem("Ajustes", Icons.Default.Settings)
     )
 
@@ -246,16 +246,18 @@ fun MainScreen(
                                 if (playlistId != null) viewModel.openLocalPlaylist(playlistId)
                                 viewModel.setLibraryBrowseFilter(LibraryBrowseFilter.PLAYLISTS)
                                 clearPendingExit()
-                            },
+                            }
+                        )
+                        1 -> DiscoverScreen(viewModel = viewModel)
+                        2 -> DownloadsScreen(viewModel = viewModel)
+                        3 -> WebServerScreen(
+                            viewModel = viewModel,
                             onSelectFolderClick = onSelectFolderClick,
                             onOpenDownloads = {
                                 viewModel.setSelectedNavIndex(2)
                                 clearPendingExit()
                             }
                         )
-                        1 -> DiscoverScreen(viewModel = viewModel)
-                        2 -> DownloadsScreen(viewModel = viewModel)
-                        3 -> WebServerScreen(viewModel = viewModel)
                         4 -> SettingsScreen(
                             viewModel = viewModel,
                             appUpdateViewModel = appUpdateViewModel

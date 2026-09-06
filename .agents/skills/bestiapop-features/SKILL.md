@@ -42,12 +42,12 @@ búsqueda escrita por el usuario.
 | Paso | Dónde |
 |------|--------|
 | Search catálogo tracks | `MetadataFetcher.searchOnlineCatalog` / `YouTubeExtractor.searchYouTube` (`parseSearchContents` + `audioPreferenceScore` / `rankByAudioPreference`: prioriza Topic / Official Audio sobre music video) |
-| Géneros / charts | `MetadataFetcher.listGenres` / `searchTracksByGenre` / `fetchChartTracks` (`parseCatalogGenres` + `parseDeezerSearchTracks`); UI chips `CatalogCategory.GENRES` / `CHARTS` en `AddMusicDialog`; drill-down género → `selectGenreForInspection` (mismo BackHandler / batch que álbum) |
+| Géneros / charts | `MetadataFetcher.listGenres` / `searchTracksByGenre` / `fetchChartTracks` (`parseCatalogGenres` + `parseDeezerSearchTracks`); UI chips `CatalogCategory.GENRES` / `CHARTS` en `DiscoverScreen`; drill-down género → `selectGenreForInspection` (mismo BackHandler / batch que álbum) |
 | Query YT desde catálogo | `YouTubeExtractor.resolveYouTubeQueryOrId` (ignora ids Deezer/iTunes; usa `audioUrl` o `artist title`) |
 | Álbumes / playlists online | `MetadataFetcher.searchAlbums` / `searchPlaylists` + `fetchAlbumTrackCandidates` / `fetchPlaylistTrackCandidates` |
 | Extraer stream | `YouTubeExtractor.extractAudioStream` / `extractAudioStreamDetailed` |
 | Descargar + persistir | `DownloadAudioTrackUseCase.execute` → `IMusicRepository.downloadAndSaveOnlineTrack` (`onProgress: DownloadPhase`; persiste `OnlineCatalogTrack.trackNumber` / `TrackIdentity.trackNumber` de `fetchFullTrackMetadata`); copy/UI labels `DownloadMessages` |
-| UI diálogo | `ui/components/AddMusicDialog.kt`; estado agrupado `CatalogSearchUiState` (con `searchFilters` artista/álbum/año y UI compacta) / `CatalogCollectionUiState` vía `MusicPlayerViewModel.catalogSearch` / `catalogCollection`; consulta construida con `IdentifyCatalogQuery.build` |
+| UI catálogo / añadir | `DiscoverScreen.kt` (exploración y catálogo online) y `WebServerScreen.kt` (pestaña «Añadir» en `MainScreen`: importación de carpetas locales y descarga por enlace web); estado agrupado `CatalogSearchUiState` / `CatalogCollectionUiState` vía `MusicPlayerViewModel.catalogSearch` / `catalogCollection`; consulta construida con `IdentifyCatalogQuery.build` |
 | Centro de descargas | `DownloadsScreen` + `ActiveDownloadRow`; persistencia `ActiveDownloadsStore` / `ActiveDownloadCodec`; notif `DownloadNotificationHelper`; badge `activeDownloadBadgeCount` en tab Descargas (`MainScreen`) |
 | Orquestación | Manual: VM `runTrackedDownload` adapta a `ProcessDownloadRequest` → `ProcessDownloadRuntime.submit` desde `enqueueTrackedBatch`, `downloadSingleCandidate`, `downloadSelectedCandidatesBatch`, `downloadFromUrl`, `downloadOnlineTrack`, `downloadRemoteItem`; autosave: `ProcessSaveWhileListeningCoordinator.save`; ambos llaman `ProcessDownloadCoordinator.execute`; gate metered tras permit (`DownloadPreferencesRepository.downloadOnMeteredNetwork` default true); acciones `retryActiveDownload` / `resumeAllDownloads` / cycle/preview/play/dismiss; deep-link `requestOpenDownloads` |
 
@@ -238,9 +238,9 @@ Letras en reproducción: `PlaybackRuntime.hydrateCurrentSongLyrics` actualiza ta
 | Clear-on-play | `setClearShuffleOnManualPlay` / `setClearRepeatAllOnManualPlay` / `setClearRepeatOneOnManualPlay` / `applyManualPlayModes` |
 | Clear-on-skip | `setClearShuffleOnSkip` / `setClearRepeatOneOnSkip` / `applySkipModes` / `skipToNext` / `skipToPrevious` |
 
-## 8. WiFi Sync
+## 8. WiFi Sync y Añadir Música
 
-`WebServerService` (Ktor) + `WebServerScreen(viewModel)`.
+`WebServerService` (Ktor) + `WebServerScreen(viewModel, onSelectFolderClick, onOpenDownloads)` (pestaña «Añadir» en `MainScreen` con tabs WiFi Sync, Carpeta local y Por enlace).
 
 | Capacidad | Entry point |
 |-----------|-------------|
@@ -423,7 +423,6 @@ Origen Discover: `PlaybackRuntime.playPlayableCollection(..., origin)` lo setea 
 |-----------|----------------|-------------|
 | Diálogos / menús | Framework `onDismissRequest` | `Dialog` / `AlertDialog` / `DropdownMenu` (NP ⋮ + merge álbum en `MainScreen`) |
 | Identify review | ITEM+overview → vuelve overview (`returnIdentifyReviewOverview`); si no, oculta overlay y conserva cola (`dismissIdentifyReview`); `skipAllIdentifyReview` vacía | `IdentifyReviewScreen` `BackHandler` |
-| Add Music colección | `clearSelectedCollection` antes de cerrar | `AddMusicDialog` `BackHandler` + `onDismissRequest` |
 | Now Playing | `dismissFullPlayer` | `NowPlayingScreen` `BackHandler` |
 | Library nested | cancel addition → multi-select → álbum (`closeLibraryAlbum`, conserva artista\|género) → artista\|género → clear search | `LibraryScreen` `BackHandler` / `popLibraryNested` |
 | Playlists nested | un detalle a la vez (local / LB / CF) → lista | `PlaylistsScreen` `BackHandler` → `closePlaylistDetail` |

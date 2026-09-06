@@ -3204,66 +3204,6 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
-    fun cycleTrackCandidate(index: Int) {
-        val collection = _catalogCollection.value
-        val selectionKey = collection.selectionKey ?: return
-        val list = collection.candidates.toMutableList()
-        if (index !in list.indices) return
-        val item = list[index]
-        launchCycleYouTubeMatch(
-            query = item.youtubeSearchQuery(),
-            current = item.candidates,
-            wasPreviewing = isPreviewingCandidate(item)
-        ) { candidatesList ->
-            val nextIndex = (item.currentCandidateIndex + 1) % candidatesList.size
-            val merged = candidatesList.mapIndexed { i, t ->
-                if (i != nextIndex) t
-                else t.preferMetaFrom(item)
-            }
-            val updated = item.copy(candidates = merged, currentCandidateIndex = nextIndex)
-            list[index] = updated
-            if (updateCatalogCollection(selectionKey) { it.copy(candidates = list) }) {
-                updated.currentTrack
-            } else {
-                null
-            }
-        }
-    }
-
-    /** Cycle YouTube match for a song result in the catalog songs list ("Buscar otro"). */
-    fun cycleSongCatalogResult(index: Int) {
-        val list = catalogSearch.value.tracks.toMutableList()
-        if (index !in list.indices) return
-        val current = list[index]
-        val wasPreviewing = _catalogPreviewKey.value == catalogPreviewKeyFor(current)
-        launchCycleYouTubeMatch(
-            query = current.youtubeSearchQuery().ifBlank { current.title },
-            current = listOf(current),
-            wasPreviewing = wasPreviewing
-        ) { searchResults ->
-            if (searchResults.size == 1 && searchResults.first().id == current.id) return@launchCycleYouTubeMatch null
-
-            val currentIdx = searchResults.indexOfFirst { it.id == current.id }
-            val next = searchResults[(currentIdx + 1).coerceAtLeast(0) % searchResults.size]
-            // Keep catalog album metadata when YouTube only says "YouTube"
-            val updated = next.preferMetaFrom(current)
-            catalogSearchCoordinator.updateTracks { currentTracks ->
-                val mutable = currentTracks.toMutableList()
-                if (index in mutable.indices) {
-                    mutable[index] = updated
-                }
-                mutable
-            }
-            updated
-        }
-    }
-
-    private fun isPreviewingCandidate(item: CatalogTrackCandidate): Boolean {
-        val key = _catalogPreviewKey.value ?: return false
-        val current = item.currentTrack ?: return false
-        if (catalogPreviewKeyFor(current) == key) return true
-        return item.candidates.any { catalogPreviewKeyFor(it) == key }
-    }
 
     fun toggleTrackSelection(index: Int) {
         val collection = _catalogCollection.value

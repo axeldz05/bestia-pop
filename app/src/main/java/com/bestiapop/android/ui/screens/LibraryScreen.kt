@@ -22,7 +22,6 @@ import androidx.compose.material.icons.filled.UnfoldLess
 import androidx.compose.material.icons.filled.UnfoldMore
 import androidx.compose.material.icons.filled.ViewAgenda
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -59,11 +58,7 @@ import com.bestiapop.android.data.model.Song
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
 import com.bestiapop.android.data.preferences.FastScrollSettings
-import com.bestiapop.android.data.preferences.FastScrollSide
-import com.bestiapop.android.ui.components.FastScrollDefaults
 import com.bestiapop.android.domain.util.albumNamesMatch
 import com.bestiapop.android.ui.MusicPlayerViewModel
 import com.bestiapop.android.ui.SortDirection
@@ -100,9 +95,7 @@ fun LibraryScreen(
     viewModel: MusicPlayerViewModel,
     targetPlaylistForAddition: Playlist? = null,
     onCompletePlaylistAddition: () -> Unit = {},
-    onCancelPlaylistAddition: () -> Unit = {},
-    onSelectFolderClick: () -> Unit,
-    onOpenDownloads: () -> Unit = {}
+    onCancelPlaylistAddition: () -> Unit = {}
 ) {
     val identifyReview by viewModel.identifyReview.collectAsStateWithLifecycle()
     val catalogLoaded by viewModel.libraryProjection.catalogLoaded.collectAsStateWithLifecycle()
@@ -166,8 +159,6 @@ fun LibraryScreen(
     val isMultiSelectMode = selectedSongIds.isNotEmpty()
 
 
-    // Add Music dialog state
-    var showAddMusicDialog by remember { mutableStateOf(false) }
     var showAbortIdentifyDialog by remember { mutableStateOf(false) }
 
     // Active Dialogs state
@@ -727,51 +718,6 @@ fun LibraryScreen(
                 listStates = browseListStates,
                 onAddSongsToPlaylist = { localTargetPlaylistForAddition = it }
             )
-
-            val activeListState = when (activeFilter) {
-                LibraryBrowseFilter.SONGS -> browseListStates.songs
-                LibraryBrowseFilter.ALBUMS -> browseListStates.albums
-                LibraryBrowseFilter.ARTISTS -> browseListStates.artists
-                LibraryBrowseFilter.GENRES -> browseListStates.genres
-                LibraryBrowseFilter.PLAYLISTS -> browseListStates.playlists
-                LibraryBrowseFilter.RECENT -> browseListStates.recent
-            }
-            val isCurrentListScrolling = activeListState.isScrollInProgress
-            val shouldShowAddButton = !isPlaylistAdditionMode &&
-                !isMultiSelectMode &&
-                !hasNestedDetail &&
-                activeFilter != LibraryBrowseFilter.PLAYLISTS &&
-                !isCurrentListScrolling
-
-            val endGutter = if (fastScrollSettings.enabled && fastScrollSettings.side == FastScrollSide.RIGHT) {
-                16.dp + FastScrollDefaults.DedicatedRightGutterWidth
-            } else {
-                16.dp
-            }
-
-            androidx.compose.animation.AnimatedVisibility(
-                visible = shouldShowAddButton,
-                enter = fadeIn() + scaleIn(),
-                exit = fadeOut() + scaleOut(),
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(start = 16.dp, end = endGutter, bottom = 16.dp, top = 16.dp)
-            ) {
-                FloatingActionButton(
-                    onClick = { showAddMusicDialog = true },
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(Icons.Default.Add, contentDescription = null)
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Agregar", fontWeight = FontWeight.Bold)
-                    }
-                }
-            }
         }
     }
 
@@ -789,21 +735,6 @@ fun LibraryScreen(
             onArtworkSelected = { newUri ->
                 viewModel.setAlbumArtwork(album.name, newUri)
                 albumForCoverChange = null
-            }
-        )
-    }
-
-    if (showAddMusicDialog) {
-        com.bestiapop.android.ui.components.AddMusicDialog(
-            viewModel = viewModel,
-            onSelectFolderClick = {
-                showAddMusicDialog = false
-                onSelectFolderClick()
-            },
-            onDismiss = { showAddMusicDialog = false },
-            onOpenDownloads = {
-                showAddMusicDialog = false
-                onOpenDownloads()
             }
         )
     }

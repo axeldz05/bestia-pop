@@ -111,7 +111,7 @@ Similares multi-select: `BuildSimilarPlaylistPreviewUseCase.createPlaylistFromPl
 Flows: `playlistsFlow` (conteo reactivo exacto `songCount`), `getPlaylistSongsFlow`, `getPlaylistDetailsFlow`.
 UI: `PlaylistsScreen` (lista de playlists con `PlaylistHeader` / `CollectionHeader` estilo `AlbumHeader`, botones rápidos de reproducción y aleatorio, menú ⋮ con edición rápida inline `PlaylistFormDialog`, eliminar y encolar; tap en cabecera abre detalle). Detalle abierto = `PlaylistDetailNav` persistido (`openLocalPlaylist` / `closePlaylistDetail`); id inválido al restore → lista general. Detalle soporta duplicados sin colisión de keys en Compose (`itemsIndexed`) y reordenamiento interactivo.
 Cola: `QueueLazyList` soporta swipe right (`SwipeToDismissBox`) para quitar canciones individuales de la cola.
-Letras en reproducción: `PlaybackRuntime.hydrateCurrentSongLyrics` actualiza tanto `_currentSong` como `_currentItem`, garantizando sincronización inmediata de letras locales en `NowPlayingScreen`.
+Letras en reproducción: `PlaybackRuntime.hydrateCurrentSongLyrics` actualiza tanto `_currentSong` como `_currentItem`, garantizando sincronización inmediata de letras locales en `NowPlayingScreen`. La pantalla ofrece vista completa de letras (`NowPlayingLyricsView`) con auto-scroll sincronizado, timestamps en minutos/segundos y salto por toque a la posición exacta de reproducción (`seekToAndPlay`). La vista principal integra un selector de píldora (Portada / Letra) con swipe horizontal (`HorizontalPager`), scroll continuo hacia la cola y barra inferior colapsable (`NowPlayingDockedBar`) que retiene los controles de reproducción al navegar listas largas.
 
 ## 6. Importación / biblioteca local
 

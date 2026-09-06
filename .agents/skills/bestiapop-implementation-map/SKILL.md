@@ -51,7 +51,7 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 | Ajustes / Sonido | `ui/screens/VolumeBoostSettingsScreen.kt` (`SettingsScreen` sección `Sound`) |
 | Ajustes / Descargas | `ui/screens/DownloadSettingsScreen.kt` (`SettingsScreen` sección `Downloads`; metered + path + totales bytes; deep-link `pendingSettingsSection`) |
 | Ajustes / Archivos | `ui/screens/LibraryTagWriteSettingsScreen.kt` (`SettingsScreen` sección `LibraryTags`; auto-write toggle + batch sync) |
-| Now playing | `ui/screens/NowPlayingScreen.kt` (`BackHandler` → `onDismiss`; cola `displayQueue` vía `QueueLazyList`; ⋮ `NowPlayingActionsMenu`; Letra `NowPlayingLyricsPanel` + tap `seekToAndPlay`; remoto `NowPlayingRemoteDownloadAction`; hero `ArtworkHero`) |
+| Now playing | `ui/screens/NowPlayingScreen.kt` (`BackHandler` → `onDismiss`; `NowPlayingTabSelector` píldora Portada/Letra + `HorizontalPager`; Portada con scroll continuo a cola + `NowPlayingDockedBar` flotante; Letra a pantalla completa `NowPlayingLyricsView` con auto-scroll sincronizado, timestamps interactivos y tap `seekToAndPlay`; ⋮ `NowPlayingActionsMenu`; remoto `NowPlayingRemoteDownloadAction`; hero `ArtworkHero`; controles unificados `NowPlayingControlsRow`) |
 | Cola | `ui/screens/QueueScreen.kt` (`QueueLazyList` + `displayQueue`, drag → `moveDisplayQueueItem`, swipe right `SwipeToDismissBox` para remover de la cola) |
 | WiFi sync | `ui/screens/WebServerScreen.kt` (`WebServerScreen(viewModel)` + transferencias + botón conflictos + `rememberSongActionDialogs`) |
 | Temas | `ui/screens/ThemeSettingsScreen.kt` (hero de modo dinámico por canción con swatches en vivo; acceso a editor de temas con preview de biblioteca y lista de presets) |
@@ -77,7 +77,7 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 | Queue list / row | `ui/components/QueueLazyList.kt` (`queueRowKey` / `focusedQueueIndex`, ambos por `queueEntryId`); `ui/components/QueueItemRow.kt` (`PlayableItemRowContent`, `QueueItemRow` + drag handle); `ui/components/ReorderDragSupport.kt` (`rememberVerticalReorderDrag`) |
 | Empty / back header | `ui/components/EmptyListHint.kt` (`actionLabel` / `onAction`); `ui/components/ScreenBackHeader.kt` (`backContentDescription`, default `"Volver"`) |
 | Playback chrome | `ui/components/PlaybackUi.kt` (`playPauseVector`, `playbackProgressFraction`, `previewProgressFraction`, `previewFlags`, `PlaybackScrubber`) |
-| Control Radio | `ui/components/RadioModeControl.kt` (tap preferred; long-press `RadioMode.entries` KNOWN/NEW/BOTH + Detener; usado por `NowPlayingScreen`) |
+| Control Radio | `ui/components/RadioModeControl.kt` (tap abre menú directo con los 3 modos `RadioMode.entries` KNOWN/NEW/BOTH explicados + Detener; usado por `NowPlayingScreen`) |
 | Artwork UI | `ui/components/ArtworkThumbnail.kt` (`rememberArtworkRequest` + `Precision.INEXACT`, `isArtworkCachedInMemory`, `preloadArtwork`, `ArtworkThumbnail`, `ArtworkHero`); `ui/components/ArtworkPicker.kt` (`ArtworkPickerBlock`, `rememberImagePicker`) |
 | Play / shuffle icons | `ui/components/PlayShuffleButtons.kt` (`PlayIconButton`, `ShuffleIconButton`, `PlayShuffleIconPair`, `LabeledPlayShuffleButtons`) |
 | Collection headers | `ui/components/CollectionHeader.kt` (`CollectionHeader` base reutilizable, `AlbumHeader` para álbumes, `PlaylistHeader` para playlists con acciones rápidas de reproducción y menú de edición directa, `HeaderActionIcon`) |

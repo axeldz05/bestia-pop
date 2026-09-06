@@ -43,6 +43,10 @@ data class LibraryBrowseStack(
         artistName = pruned.artistName,
         genreName = pruned.genreName
     )
+
+    companion object {
+        val EMPTY = LibraryBrowseStack()
+    }
 }
 
 data class UiNavigationState(

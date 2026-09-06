@@ -70,8 +70,13 @@ data class CatalogCollectionUiState(
 /** Level 2: translates candidate list to PlayableItems, resolving available local tracks against the index. */
 fun List<CatalogTrackCandidate>.toPlayableItems(localLibraryIndex: Map<String, com.bestiapop.android.data.model.Song>): List<com.bestiapop.android.data.model.PlayableItem> =
     map { candidate ->
+        val track = candidate.effectiveTrack
+        val ytQuery = track.audioUrl.takeIf { it.isNotBlank() }
+            ?: track.id.takeIf { it.isNotBlank() }
+            ?: "${candidate.artist} ${candidate.title}".trim()
         com.bestiapop.android.data.model.PlayableItem.fromLibraryOrRemote(
             local = com.bestiapop.android.domain.util.TrackMatchKeys.lookupLocalSong(localLibraryIndex, candidate.identity),
-            identity = candidate.identity
+            identity = candidate.identity,
+            youtubeQueryOrId = ytQuery.takeIf { it.isNotBlank() }
         )
     }

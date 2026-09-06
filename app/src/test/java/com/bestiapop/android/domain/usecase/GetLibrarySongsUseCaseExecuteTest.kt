@@ -156,4 +156,24 @@ class GetLibrarySongsUseCaseExecuteTest {
         assertEquals(listOf("Alpha", "Beta"), result.albums.map { it.name })
         assertEquals(listOf(2L), result.list.segments.first().songIds)
     }
+
+    @Test
+    fun execute_filtersByMultipleTokensRegardlessOfWordOrder() {
+        val songs = listOf(
+            song(1, "Creep", "Radiohead", "Pablo Honey", "Rock"),
+            song(2, "Karma Police", "Radiohead", "OK Computer", "Rock"),
+            song(3, "Creep", "Stone Temple Pilots", "Core", "Grunge")
+        )
+
+        // Title and artist in inverted order
+        assertEquals(
+            listOf(1L),
+            useCase.execute(songs, "Radiohead Creep", SortOption.TITLE).map { it.id }
+        )
+        // Artist and album in different order
+        assertEquals(
+            listOf(2L),
+            useCase.execute(songs, "Computer Radiohead", SortOption.TITLE).map { it.id }
+        )
+    }
 }

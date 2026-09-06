@@ -79,6 +79,66 @@ import kotlinx.coroutines.flow.collectLatest
 
 import com.bestiapop.android.data.preferences.FastScrollSettings
 
+/** Level 2: High-level LibrarySongList accepting bundled [LibrarySongListActions]. */
+@Composable
+fun LibrarySongList(
+    list: LibraryListModel,
+    currentSongId: Long?,
+    isSelectionMode: Boolean,
+    selectedSongIds: Set<Long>,
+    collapsedAlbumNames: Set<String> = emptySet(),
+    sortOption: SortOption = SortOption.TITLE,
+    emphasizeLastPlayed: Boolean = false,
+    emptySubtitle: String? = null,
+    emptyText: String = "No se encontraron canciones",
+    loading: Boolean = false,
+    fastScrollSettings: FastScrollSettings = FastScrollSettings(),
+    actions: LibrarySongListActions,
+    onSongClick: (Song, Int) -> Unit,
+    onSongLongClick: (Song) -> Unit = actions.onToggleSelect,
+    currentSongIdFlow: StateFlow<Long?>? = null,
+    listState: LazyListState = rememberLazyListState(),
+    modifier: Modifier = Modifier
+) {
+    LibrarySongList(
+        list = list,
+        currentSongId = currentSongId,
+        isSelectionMode = isSelectionMode,
+        selectedSongIds = selectedSongIds,
+        collapsedAlbumNames = collapsedAlbumNames,
+        sortOption = sortOption,
+        emphasizeLastPlayed = emphasizeLastPlayed,
+        emptySubtitle = emptySubtitle,
+        emptyText = emptyText,
+        loading = loading,
+        fastScrollSettings = fastScrollSettings,
+        onSongClick = onSongClick,
+        onSongLongClick = onSongLongClick,
+        onToggleSelect = actions.onToggleSelect,
+        onPlayNext = actions.onPlayNext,
+        onAddToQueue = actions.onAddToQueue,
+        onStartRadio = actions.onStartRadio,
+        onAddToPlaylist = actions.onAddToPlaylist,
+        onEditMetadata = actions.onEditMetadata,
+        onEditLyrics = actions.onEditLyrics,
+        onIdentify = actions.onIdentify,
+        onDeleteSong = actions.onDeleteSong,
+        onPlayAlbum = actions.onPlayAlbum,
+        onShuffleAlbum = actions.onShuffleAlbum,
+        onToggleSelectAlbum = actions.onToggleSelectAlbum,
+        onAlbumLongClick = actions.onAlbumLongClick,
+        onToggleCollapseAlbum = actions.onToggleCollapseAlbum,
+        onEditAlbum = actions.onEditAlbum,
+        onChangeAlbumCover = actions.onChangeAlbumCover,
+        onIdentifyAlbum = actions.onIdentifyAlbum,
+        onOpenAlbum = actions.onOpenAlbum,
+        currentSongIdFlow = currentSongIdFlow,
+        listState = listState,
+        modifier = modifier
+    )
+}
+
+/** Level 1: Low-level LibrarySongList with individual primitive callbacks for custom call sites. */
 @Composable
 @Suppress("UNUSED_PARAMETER")
 fun LibrarySongList(

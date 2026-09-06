@@ -39,6 +39,7 @@ import com.bestiapop.android.data.model.*
 import com.bestiapop.android.domain.usecase.DiscoverFeed
 import com.bestiapop.android.ui.MusicPlayerViewModel
 import com.bestiapop.android.ui.components.ArtworkThumbnail
+import com.bestiapop.android.ui.components.CatalogCategoryChipsRow
 import com.bestiapop.android.ui.components.preloadArtwork
 import com.bestiapop.android.ui.components.EmptyListHint
 import com.bestiapop.android.ui.components.ScreenBackHeader
@@ -269,12 +270,12 @@ fun DiscoverScreen(
 
                 // Category Chips (when searching or active)
                 if (isSearchActive) {
-                    DiscoverCategoryChipsRow(
+                    CatalogCategoryChipsRow(
                         selectedCategory = catalogSearch.category,
                         onSelectCategory = { category ->
                             viewModel.setCatalogCategory(category)
-                            viewModel.searchCatalog(query = searchInput, saveToRecent = false)
-                        }
+                        },
+                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
                     )
                 }
 
@@ -326,7 +327,16 @@ fun DiscoverScreen(
                                 viewModel.setCatalogSearchDraft(artistName)
                                 viewModel.submitCatalogSearch(artistName)
                             },
-                            onStartRadioForArtist = { viewModel.startRadio() },
+                            onStartRadioForArtist = { artistName ->
+                                val artistSongs = viewModel.songsForArtist(viewModel.libraryProjection.songs.value, artistName)
+                                if (artistSongs.isNotEmpty()) {
+                                    viewModel.startRadio(seedSong = artistSongs.random())
+                                } else {
+                                    searchInput = artistName
+                                    viewModel.setCatalogSearchDraft(artistName)
+                                    viewModel.submitCatalogSearch(artistName)
+                                }
+                            },
                             onSelectAlbum = viewModel::selectAlbumForInspection,
                             onPlayTrack = { item ->
                                 if (item.localSong != null) {
@@ -479,36 +489,7 @@ fun DiscoverTopSearchBar(
     }
 }
 
-@Composable
-fun DiscoverCategoryChipsRow(
-    selectedCategory: CatalogCategory,
-    onSelectCategory: (CatalogCategory) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .horizontalScroll(rememberScrollState())
-            .padding(horizontal = 12.dp, vertical = 6.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        val categories = listOf(
-            CatalogCategory.SONGS to "Canciones",
-            CatalogCategory.ALBUMS to "Álbumes",
-            CatalogCategory.PLAYLISTS to "Playlists",
-            CatalogCategory.GENRES to "Géneros",
-            CatalogCategory.CHARTS to "Top / Charts"
-        )
-        categories.forEach { (cat, label) ->
-            FilterChip(
-                selected = selectedCategory == cat,
-                onClick = { onSelectCategory(cat) },
-                label = { Text(label) },
-                modifier = Modifier.height(ListDensity.filterChipHeight)
-            )
-        }
-    }
-}
+
 
 @Composable
 fun DiscoverRecentSearchesView(
@@ -2095,13 +2076,9 @@ fun DiscoverAdvancedFiltersPanel(
     onClear: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    DiscoverAdvancedFiltersPanel(
-        artist = filters.artist,
-        onArtistChange = { onFiltersChange(filters.copy(artist = it)) },
-        album = filters.album,
-        onAlbumChange = { onFiltersChange(filters.copy(album = it)) },
-        year = if (filters.year > 0) filters.year.toString() else "",
-        onYearChange = { onFiltersChange(filters.copy(year = it.toIntOrNull() ?: 0)) },
+    com.bestiapop.android.ui.components.CatalogAdvancedFiltersPanel(
+        filters = filters,
+        onFiltersChange = onFiltersChange,
         onApply = onApply,
         onClear = onClear,
         modifier = modifier
@@ -2121,62 +2098,16 @@ fun DiscoverAdvancedFiltersPanel(
     onClear: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Surface(
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-        shape = RoundedCornerShape(16.dp),
+    com.bestiapop.android.ui.components.CatalogAdvancedFiltersPanel(
+        artist = artist,
+        onArtistChange = onArtistChange,
+        album = album,
+        onAlbumChange = onAlbumChange,
+        year = year,
+        onYearChange = onYearChange,
+        onApply = onApply,
+        onClear = onClear,
         modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 4.dp)
-    ) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Text(
-                text = "Filtros de búsqueda avanzada",
-                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold)
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                OutlinedTextField(
-                    value = artist,
-                    onValueChange = onArtistChange,
-                    label = { Text("Artista") },
-                    modifier = Modifier.weight(1f),
-                    singleLine = true
-                )
-                OutlinedTextField(
-                    value = album,
-                    onValueChange = onAlbumChange,
-                    label = { Text("Álbum") },
-                    modifier = Modifier.weight(1f),
-                    singleLine = true
-                )
-                OutlinedTextField(
-                    value = year,
-                    onValueChange = onYearChange,
-                    label = { Text("Año") },
-                    modifier = Modifier.width(76.dp),
-                    singleLine = true
-                )
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End
-            ) {
-                TextButton(onClick = onClear) {
-                    Text("Limpiar")
-                }
-                Spacer(modifier = Modifier.width(8.dp))
-                Button(onClick = onApply) {
-                    Text("Aplicar")
-                }
-            }
-        }
-    }
+    )
 }
+

@@ -215,6 +215,7 @@ fun PlaylistAdditionActionBar(
     selectedCount: Int,
     onConfirmAddition: () -> Unit,
     onCancelAddition: () -> Unit,
+    onSelectAll: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     Surface(
@@ -264,6 +265,22 @@ fun PlaylistAdditionActionBar(
             }
 
             Row(verticalAlignment = Alignment.CenterVertically) {
+                if (onSelectAll != null) {
+                    TextButton(
+                        onClick = onSelectAll,
+                        contentPadding = PaddingValues(
+                            horizontal = ListDensity.rowInnerPadding,
+                            vertical = ListDensity.rowVerticalPadding
+                        )
+                    ) {
+                        Text(
+                            text = "Todo",
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(4.dp))
+                }
                 Button(
                     onClick = onConfirmAddition,
                     enabled = selectedCount > 0,

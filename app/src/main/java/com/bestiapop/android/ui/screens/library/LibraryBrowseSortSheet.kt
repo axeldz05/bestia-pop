@@ -49,6 +49,7 @@ fun LibraryBrowseSortSheet(
     sortDirection: SortDirection,
     sortEnabled: Boolean,
     albumHeadersActive: Boolean = false,
+    filters: List<LibraryBrowseFilter> = LibraryBrowseFilter.entries,
     onBrowseFilterChange: (LibraryBrowseFilter) -> Unit,
     onSortOptionChange: (SortOption) -> Unit,
     onToggleSortDirection: () -> Unit,
@@ -88,7 +89,7 @@ fun LibraryBrowseSortSheet(
                 }
             )
             Spacer(modifier = Modifier.height(8.dp))
-            LibraryBrowseFilter.entries.chunked(3).forEach { rowFilters ->
+            filters.chunked(3).forEach { rowFilters ->
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)

@@ -42,16 +42,12 @@ import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -93,6 +89,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import com.bestiapop.android.ui.components.PlaylistFormDialog
 import com.bestiapop.android.ui.components.PlaylistHeader
 import com.bestiapop.android.ui.components.RemoteTrackPlaceholderRow
+import com.bestiapop.android.domain.util.TrackMatchKeys
 import androidx.compose.runtime.LaunchedEffect
 
 @Composable
@@ -105,9 +102,13 @@ fun PlaylistsScreen(
     val playlists by viewModel.playlists.collectAsStateWithLifecycle(initialValue = emptyList())
     val visiblePlaylists = remember(playlists, searchQuery) {
         if (searchQuery.isBlank()) playlists
-        else playlists.filter { it.name.contains(searchQuery.trim(), ignoreCase = true) }
+        else {
+            val normalizedQuery = TrackMatchKeys.normalize(searchQuery.trim())
+            playlists.filter {
+                TrackMatchKeys.normalize(it.name).contains(normalizedQuery)
+            }
+        }
     }
-    val allSongs by viewModel.libraryProjection.songs.collectAsStateWithLifecycle()
     val lbSettings by viewModel.listenBrainzSettings.collectAsStateWithLifecycle()
     val lbDiscover by viewModel.lbDiscover.collectAsStateWithLifecycle()
     val lbPlaylistDetail by viewModel.lbPlaylistDetail.collectAsStateWithLifecycle()
@@ -219,13 +220,15 @@ fun PlaylistsScreen(
                         playlist = playlist,
                         songs = songsInPlaylist,
                         pendingTracks = pendingTracks,
-                        allSongs = allSongs,
                         onBack = { viewModel.closePlaylistDetail() },
                         viewModel = viewModel,
                         onAddSongsRequest = { onAddSongsRequest(it) },
                         onDeletePlaylist = { playlistToDelete = playlist },
                         onDownloadPending = { viewModel.downloadPlaylistPendingTracks(playlistId) },
-                        onEditLyrics = songDialogs.onEditLyrics
+                        onEditLyrics = songDialogs.onEditLyrics,
+                        onAddToPlaylist = songDialogs.onAddToPlaylist,
+                        onEditMetadata = songDialogs.onEdit,
+                        onIdentify = { viewModel.identifySongForReview(it) }
                     )
                 } ?: Box(
                     modifier = Modifier.fillMaxSize(),
@@ -350,13 +353,15 @@ private fun PlaylistDetailScreen(
     playlist: Playlist,
     songs: List<Song>,
     pendingTracks: List<PlaylistPendingTrack>,
-    allSongs: List<Song>,
     onBack: () -> Unit,
     viewModel: MusicPlayerViewModel,
     onAddSongsRequest: (Playlist) -> Unit,
     onDeletePlaylist: () -> Unit,
     onDownloadPending: () -> Unit,
-    onEditLyrics: (Song) -> Unit
+    onEditLyrics: (Song) -> Unit,
+    onAddToPlaylist: ((Song) -> Unit)? = null,
+    onEditMetadata: ((Song) -> Unit)? = null,
+    onIdentify: ((Song) -> Unit)? = null
 ) {
     var showEditDialog by remember { mutableStateOf(false) }
     var isReorderMode by remember { mutableStateOf(false) }
@@ -592,12 +597,16 @@ private fun PlaylistDetailScreen(
                             index = index,
                             reorderCount = localSongs.size,
                             onReorder = onReorder,
-                            onClick = { viewModel.playSong(song, localSongs.map { it.song }) },
+                            onClick = { viewModel.playCollection(localSongs.map { it.song }, startIndex = index) },
                             onPlayNext = { songActions.onPlayNext(song) },
                             onAddToQueue = { songActions.onAddToQueue(song) },
                             onStartRadio = { songActions.onStartRadio(song) },
+                            onAddToPlaylist = onAddToPlaylist?.let { { it(song) } },
+                            onEditMetadata = onEditMetadata?.let { { it(song) } },
+                            onIdentify = onIdentify?.let { { it(song) } },
                             onEditLyrics = { onEditLyrics(song) },
-                            onDelete = { viewModel.removeSongFromPlaylist(playlist.id, song.id) }
+                            onDelete = { viewModel.removeSongFromPlaylist(playlist.id, song.id) },
+                            deleteLabel = "Quitar de la playlist"
                         )
                     }
                     items(
@@ -637,101 +646,5 @@ private fun PlaylistPendingTrackRow(pending: PlaylistPendingTrack) {
         badge = "Pendiente de descarga",
         leadingIcon = Icons.Default.Download,
         highlighted = false
-    )
-}
-
-@Composable
-private fun AddSongsToPlaylistDialog(
-    playlistName: String,
-    allSongs: List<Song>,
-    existingSongIds: Set<Long>,
-    onDismiss: () -> Unit,
-    onAddSongs: (List<Song>) -> Unit
-) {
-    val availableSongs = allSongs
-    var selectedIds by remember { mutableStateOf(setOf<Long>()) }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Añadir canciones a '$playlistName'", fontWeight = FontWeight.Bold) },
-        text = {
-            if (availableSongs.isEmpty()) {
-                Text(
-                    text = "No hay canciones disponibles en la biblioteca.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.padding(vertical = 12.dp)
-                )
-            } else {
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    Text(
-                        text = "Seleccionadas: ${selectedIds.size}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(bottom = 8.dp)
-                    )
-                    LazyColumn(modifier = Modifier.height(280.dp)) {
-                        items(availableSongs, key = { it.id }) { song ->
-                            val isChecked = selectedIds.contains(song.id)
-                            val inPlaylistLabel = if (existingSongIds.contains(song.id)) " • En playlist" else ""
-                            Card(
-                                colors = CardDefaults.cardColors(
-                                    containerColor = if (isChecked) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
-                                ),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 3.dp)
-                                    .clickable {
-                                        selectedIds = if (isChecked) selectedIds - song.id else selectedIds + song.id
-                                    }
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(10.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Checkbox(
-                                        checked = isChecked,
-                                        onCheckedChange = { checked ->
-                                            selectedIds = if (checked == true) selectedIds + song.id else selectedIds - song.id
-                                        }
-                                    )
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            text = song.title,
-                                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                        Text(
-                                            text = "${song.artist} • ${song.album}$inPlaylistLabel",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    val toAdd = allSongs.filter { selectedIds.contains(it.id) }
-                    onAddSongs(toAdd)
-                },
-                enabled = selectedIds.isNotEmpty()
-            ) {
-                Text("Añadir (${selectedIds.size})")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancelar")
-            }
-        }
     )
 }

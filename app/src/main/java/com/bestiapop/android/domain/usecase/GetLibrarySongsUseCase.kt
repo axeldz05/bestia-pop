@@ -209,7 +209,7 @@ class GetLibrarySongsUseCase {
             if (ts <= 0L) continue
             stamped += if (song.lastPlayedAt == ts) song else song.copy(lastPlayedAt = ts)
         }
-        return filterAndSort(stamped, query, SortOption.TITLE, SortDirection.ASC)
+        return filterSongs(stamped, query, haystackById = null)
             .sortedByDescending { it.lastPlayedAt }
     }
 
@@ -236,9 +236,17 @@ class GetLibrarySongsUseCase {
         if (query.isBlank()) return songs
         val normalizedQuery = TrackMatchKeys.normalize(query)
         if (normalizedQuery.isEmpty()) return emptyList()
+        val queryTokens = normalizedQuery.split(' ').filter { it.isNotEmpty() }
+        if (queryTokens.isEmpty()) return emptyList()
         return songs.filter { song ->
             val haystack = haystackById?.get(song.id) ?: searchHaystack(song)
-            haystack.contains(normalizedQuery)
+            if (haystack.contains(normalizedQuery)) {
+                true
+            } else if (queryTokens.size > 1) {
+                queryTokens.all { token -> haystack.contains(token) }
+            } else {
+                false
+            }
         }
     }
 

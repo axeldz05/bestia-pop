@@ -122,8 +122,12 @@ fun LibraryScreen(
     val fastScrollSettings by viewModel.fastScrollSettings.collectAsStateWithLifecycle()
     val libraryBlobsSettings by viewModel.libraryBlobsSettings.collectAsStateWithLifecycle()
 
-    LaunchedEffect(browseFilter, libraryBlobsSettings.enabledFilters) {
-        if (targetPlaylistForAddition == null && browseFilter !in libraryBlobsSettings.enabledFilters) {
+    var localTargetPlaylistForAddition by remember { mutableStateOf<Playlist?>(null) }
+    val effectiveTargetPlaylist = targetPlaylistForAddition ?: localTargetPlaylistForAddition
+    val isPlaylistAdditionMode = effectiveTargetPlaylist != null
+
+    LaunchedEffect(browseFilter, libraryBlobsSettings.enabledFilters, isPlaylistAdditionMode) {
+        if (!isPlaylistAdditionMode && browseFilter !in libraryBlobsSettings.enabledFilters) {
             viewModel.setLibraryBrowseFilter(libraryBlobsSettings.primaryFilter)
         }
     }
@@ -141,7 +145,6 @@ fun LibraryScreen(
         keyboardController?.hide()
     }
 
-    val isPlaylistAdditionMode = targetPlaylistForAddition != null
     val activeFilter = if (isPlaylistAdditionMode) LibraryBrowseFilter.SONGS else browseFilter
     val showAlbumHeaders = libraryViewMode == LibraryViewMode.ALBUM_GROUPS &&
         activeFilter == LibraryBrowseFilter.SONGS
@@ -274,6 +277,30 @@ fun LibraryScreen(
         }
     }
 
+    val completePlaylistAddition: () -> Unit = {
+        val playlistId = effectiveTargetPlaylist?.id
+        selectedSongIds = emptySet()
+        if (targetPlaylistForAddition != null) {
+            onCompletePlaylistAddition()
+        } else {
+            localTargetPlaylistForAddition = null
+            if (playlistId != null) viewModel.openLocalPlaylist(playlistId)
+            viewModel.setLibraryBrowseFilter(LibraryBrowseFilter.PLAYLISTS)
+        }
+    }
+
+    val cancelPlaylistAddition: () -> Unit = {
+        val playlistId = effectiveTargetPlaylist?.id
+        selectedSongIds = emptySet()
+        if (targetPlaylistForAddition != null) {
+            onCancelPlaylistAddition()
+        } else {
+            localTargetPlaylistForAddition = null
+            if (playlistId != null) viewModel.openLocalPlaylist(playlistId)
+            viewModel.setLibraryBrowseFilter(LibraryBrowseFilter.PLAYLISTS)
+        }
+    }
+
     val hasNestedDetail = selectedAlbumName != null ||
         selectedArtistName != null ||
         selectedGenreName != null
@@ -287,7 +314,7 @@ fun LibraryScreen(
         when {
             // Addition first: isMultiSelectMode is just "something is ticked", so back used to wipe
             // the user's picks instead of cancelling, needing a second press to do what X does once.
-            isPlaylistAdditionMode -> onCancelPlaylistAddition()
+            isPlaylistAdditionMode -> cancelPlaylistAddition()
             isMultiSelectMode -> clearSelection()
             hasNestedDetail -> viewModel.popLibraryNested()
             searchQuery.isNotEmpty() -> collapseSearch()
@@ -427,6 +454,7 @@ fun LibraryScreen(
             sortDirection = sortDirection,
             sortEnabled = sortEnabledInSheet,
             albumHeadersActive = showAlbumHeaders,
+            filters = libraryBlobsSettings.enabledFilters,
             onBrowseFilterChange = { filter ->
                 if (!isPlaylistAdditionMode) viewModel.setLibraryBrowseFilter(filter)
             },
@@ -506,7 +534,7 @@ fun LibraryScreen(
                 }
             }
 
-            if (!searchExpanded && !isPlaylistAdditionMode) {
+            if (!searchExpanded && !isPlaylistAdditionMode && !hasNestedDetail) {
                 IconButton(onClick = { showBrowseSortSheet = true }) {
                     Icon(
                         imageVector = Icons.Default.Tune,
@@ -515,13 +543,29 @@ fun LibraryScreen(
                 }
             }
 
-            if (!searchExpanded && !isMultiSelectMode && !isPlaylistAdditionMode && !hasNestedDetail) {
-                PlayShuffleIconPair(
-                    onPlay = { viewModel.playCurrentLibraryBrowse(shuffle = false) },
-                    onShuffle = { viewModel.playCurrentLibraryBrowse(shuffle = true) },
-                    playDescription = "Reproducir todo",
-                    shuffleDescription = "Mezclar"
-                )
+            if (!searchExpanded && !isMultiSelectMode && !isPlaylistAdditionMode) {
+                if (hasNestedDetail) {
+                    val nestedSongs = libraryNestedSongs(
+                        viewModel = viewModel,
+                        songs = viewModel.libraryProjection.songs.value,
+                        selectedAlbumName = selectedAlbumName,
+                        selectedArtistName = selectedArtistName,
+                        selectedGenreName = selectedGenreName
+                    )
+                    PlayShuffleIconPair(
+                        onPlay = { viewModel.playCollection(nestedSongs, startShuffled = false) },
+                        onShuffle = { viewModel.playCollection(nestedSongs, startShuffled = true) },
+                        playDescription = "Reproducir todo",
+                        shuffleDescription = "Mezclar"
+                    )
+                } else {
+                    PlayShuffleIconPair(
+                        onPlay = { viewModel.playCurrentLibraryBrowse(shuffle = false) },
+                        onShuffle = { viewModel.playCurrentLibraryBrowse(shuffle = true) },
+                        playDescription = "Reproducir todo",
+                        shuffleDescription = "Mezclar"
+                    )
+                }
             }
         }
 
@@ -631,16 +675,20 @@ fun LibraryScreen(
 
         if (isPlaylistAdditionMode) {
             PlaylistAdditionActionBar(
-                playlistName = targetPlaylistForAddition?.name ?: "Playlist",
+                playlistName = effectiveTargetPlaylist?.name ?: "Playlist",
                 selectedCount = selectedSongIds.size,
                 onConfirmAddition = {
-                    viewModel.addSongsToPlaylist(
-                        targetPlaylistForAddition?.id ?: 0L,
-                        selectedSongIds.toList()
-                    )
-                    onCompletePlaylistAddition()
+                    val targetId = effectiveTargetPlaylist?.id ?: 0L
+                    if (targetId != 0L && selectedSongIds.isNotEmpty()) {
+                        viewModel.addSongsToPlaylist(
+                            targetId,
+                            selectedSongIds.toList()
+                        )
+                    }
+                    completePlaylistAddition()
                 },
-                onCancelAddition = onCancelPlaylistAddition
+                onCancelAddition = cancelPlaylistAddition,
+                onSelectAll = selectAllSongs
             )
         }
 
@@ -676,7 +724,8 @@ fun LibraryScreen(
                 onPlayGenre = onPlayGenreBrowse,
                 onShuffleGenre = onShuffleGenreBrowse,
                 fastScrollSettings = fastScrollSettings,
-                listStates = browseListStates
+                listStates = browseListStates,
+                onAddSongsToPlaylist = { localTargetPlaylistForAddition = it }
             )
 
             val activeListState = when (activeFilter) {
@@ -865,7 +914,8 @@ private fun LibraryBrowsePane(
     onPlayGenre: (GenreGroup) -> Unit,
     onShuffleGenre: (GenreGroup) -> Unit,
     fastScrollSettings: FastScrollSettings,
-    listStates: LibraryBrowseListStates = rememberLibraryBrowseListStates()
+    listStates: LibraryBrowseListStates = rememberLibraryBrowseListStates(),
+    onAddSongsToPlaylist: (Playlist) -> Unit = {}
 ) {
     when {
         selectedAlbumName != null || selectedArtistName != null || selectedGenreName != null -> {
@@ -977,10 +1027,7 @@ private fun LibraryBrowsePane(
                 viewModel = viewModel,
                 searchQuery = searchQuery,
                 listState = listStates.playlists,
-                onAddSongsRequest = { playlist ->
-                    viewModel.openLocalPlaylist(playlist.id)
-                    viewModel.setLibraryBrowseFilter(LibraryBrowseFilter.SONGS)
-                }
+                onAddSongsRequest = onAddSongsToPlaylist
             )
         }
     }

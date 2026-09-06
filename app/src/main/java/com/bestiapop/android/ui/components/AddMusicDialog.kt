@@ -28,6 +28,8 @@ import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.Category
+import androidx.compose.material.icons.filled.CheckBox
+import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.Error
@@ -57,6 +59,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import com.bestiapop.android.data.model.CatalogCategory
 import com.bestiapop.android.data.model.CatalogGenre
+import com.bestiapop.android.data.model.IdentifySearchFilters
 
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -120,9 +123,15 @@ fun AddMusicDialog(
 ) {
     var selectedTab by remember { mutableIntStateOf(0) }
     var linkUrlInput by remember { mutableStateOf("") }
-    var catalogSearchInput by remember { mutableStateOf("") }
-
     val catalogSearch by viewModel.catalogSearch.collectAsStateWithLifecycle()
+    var catalogSearchInput by remember { mutableStateOf(catalogSearch.searchQueryDraft) }
+
+    androidx.compose.runtime.LaunchedEffect(catalogSearch.searchQueryDraft) {
+        if (catalogSearchInput.isBlank() && catalogSearch.searchQueryDraft.isNotBlank()) {
+            catalogSearchInput = catalogSearch.searchQueryDraft
+        }
+    }
+
     val catalogCollection by viewModel.catalogCollection.collectAsStateWithLifecycle()
     val activeDownloads by viewModel.activeDownloads.collectAsStateWithLifecycle()
 
@@ -143,7 +152,7 @@ fun AddMusicDialog(
 
     fun dismissDialog() {
         viewModel.clearSelectedCollection()
-        viewModel.clearCatalogPreview()
+        viewModel.stopCatalogPreview()
         onDismiss()
     }
 
@@ -268,12 +277,8 @@ fun AddMusicDialog(
                                 catalogSearchInput = it
                                 viewModel.setCatalogSearchDraft(it)
                             },
-                            filterArtist = catalogSearch.searchFilterArtist,
-                            onFilterArtistChange = viewModel::setCatalogSearchFilterArtist,
-                            filterAlbum = catalogSearch.searchFilterAlbum,
-                            onFilterAlbumChange = viewModel::setCatalogSearchFilterAlbum,
-                            filterYear = catalogSearch.searchFilterYear,
-                            onFilterYearChange = viewModel::setCatalogSearchFilterYear,
+                            filters = catalogSearch.searchFilters,
+                            onFiltersChange = viewModel::setCatalogSearchFilters,
                             showFilters = catalogSearch.showSearchFilters,
                             onToggleFilters = { viewModel.toggleCatalogSearchFilters() },
                             onClearFilters = { viewModel.clearCatalogSearchFilters() },
@@ -304,8 +309,7 @@ fun AddMusicDialog(
                             onCycleSong = { index -> viewModel.cycleSongCatalogResult(index) },
                             onTogglePreviewPlayPause = { viewModel.togglePlayPause() },
                             onStopPreview = {
-                                if (isPlaying) viewModel.togglePlayPause()
-                                viewModel.clearCatalogPreview()
+                                viewModel.stopCatalogPreview()
                             },
                             onSelectAlbum = { album -> viewModel.selectAlbumForInspection(album) },
                             onSelectPlaylist = { playlist -> viewModel.selectPlaylistForInspection(playlist) },
@@ -315,6 +319,9 @@ fun AddMusicDialog(
                                 candidate.currentTrack?.let { viewModel.playOnlineCatalogTrackAsStream(it) }
                             },
                             onToggleSelection = { index -> viewModel.toggleTrackSelection(index) },
+                            onToggleSelectAll = { viewModel.toggleAllTrackCandidatesSelection() },
+                            onPlayCollection = { viewModel.playCatalogCandidates(activeTrackCandidates, startShuffled = false) },
+                            onShuffleCollection = { viewModel.playCatalogCandidates(activeTrackCandidates, startShuffled = true) },
                             onRetryCandidate = { index -> viewModel.downloadSingleCandidate(index) },
                             onDownloadBatch = { viewModel.downloadSelectedCandidatesBatch() },
                             onClearCollection = { viewModel.clearSelectedCollection() },
@@ -545,12 +552,8 @@ private fun ActiveDownloadsSummaryBanner(
 private fun OnlineCatalogTab(
     searchInput: String,
     onSearchInputChange: (String) -> Unit,
-    filterArtist: String,
-    onFilterArtistChange: (String) -> Unit,
-    filterAlbum: String,
-    onFilterAlbumChange: (String) -> Unit,
-    filterYear: String,
-    onFilterYearChange: (String) -> Unit,
+    filters: IdentifySearchFilters,
+    onFiltersChange: (IdentifySearchFilters) -> Unit,
     showFilters: Boolean,
     onToggleFilters: () -> Unit,
     onClearFilters: () -> Unit,
@@ -584,6 +587,9 @@ private fun OnlineCatalogTab(
     onCycleCandidate: (Int) -> Unit,
     onStreamCandidate: (com.bestiapop.android.data.model.CatalogTrackCandidate) -> Unit,
     onToggleSelection: (Int) -> Unit,
+    onToggleSelectAll: () -> Unit,
+    onPlayCollection: () -> Unit,
+    onShuffleCollection: () -> Unit,
     onRetryCandidate: (Int) -> Unit,
     onDownloadBatch: () -> Unit,
     onClearCollection: () -> Unit,
@@ -613,6 +619,9 @@ private fun OnlineCatalogTab(
             onCycleCandidate = onCycleCandidate,
             onStreamCandidate = onStreamCandidate,
             onToggleSelection = onToggleSelection,
+            onToggleSelectAll = onToggleSelectAll,
+            onPlayCollection = onPlayCollection,
+            onShuffleCollection = onShuffleCollection,
             onRetryCandidate = onRetryCandidate,
             onDownloadBatch = onDownloadBatch,
             onRetryDownload = onRetryDownload,
@@ -728,121 +737,25 @@ private fun OnlineCatalogTab(
             }
 
             AnimatedVisibility(visible = showFilters) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 6.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        OutlinedTextField(
-                            value = filterArtist,
-                            onValueChange = onFilterArtistChange,
-                            placeholder = { Text("Artista", style = MaterialTheme.typography.bodySmall) },
-                            label = { Text("Artista", style = MaterialTheme.typography.labelSmall) },
-                            singleLine = true,
-                            textStyle = MaterialTheme.typography.bodySmall,
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier
-                                .weight(1.1f)
-                                .testTag("catalog-filter-artist"),
-                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                            keyboardActions = searchActions
-                        )
-                        OutlinedTextField(
-                            value = filterAlbum,
-                            onValueChange = onFilterAlbumChange,
-                            placeholder = { Text("Álbum", style = MaterialTheme.typography.bodySmall) },
-                            label = { Text("Álbum", style = MaterialTheme.typography.labelSmall) },
-                            singleLine = true,
-                            textStyle = MaterialTheme.typography.bodySmall,
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier
-                                .weight(1.1f)
-                                .testTag("catalog-filter-album"),
-                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                            keyboardActions = searchActions
-                        )
-                        OutlinedTextField(
-                            value = filterYear,
-                            onValueChange = onFilterYearChange,
-                            placeholder = { Text("Año", style = MaterialTheme.typography.bodySmall) },
-                            label = { Text("Año", style = MaterialTheme.typography.labelSmall) },
-                            singleLine = true,
-                            textStyle = MaterialTheme.typography.bodySmall,
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier
-                                .weight(0.8f)
-                                .testTag("catalog-filter-year"),
-                            keyboardOptions = KeyboardOptions(
-                                keyboardType = KeyboardType.Number,
-                                imeAction = ImeAction.Search
-                            ),
-                            keyboardActions = searchActions
-                        )
-                        if (hasActiveFilters) {
-                            IconButton(
-                                onClick = onClearFilters,
-                                modifier = Modifier
-                                    .size(36.dp)
-                                    .testTag("catalog-filter-clear")
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Close,
-                                    contentDescription = "Limpiar filtros",
-                                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            }
-                        }
-                    }
-                }
+                CatalogAdvancedFiltersPanel(
+                    filters = filters,
+                    onFiltersChange = onFiltersChange,
+                    onApply = onSearch,
+                    onClear = onClearFilters,
+                    title = null,
+                    showActionButtons = true,
+                    modifier = Modifier.padding(top = 6.dp)
+                )
             }
 
             Spacer(modifier = Modifier.height(10.dp))
         }
 
         // Category Selection Chips
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            CatalogCategoryChip(
-                selected = category == CatalogCategory.SONGS,
-                label = "Canciones",
-                icon = Icons.Default.MusicNote,
-                onClick = { onCategorySelect(CatalogCategory.SONGS) }
-            )
-            CatalogCategoryChip(
-                selected = category == CatalogCategory.ALBUMS,
-                label = "Álbumes",
-                icon = Icons.Default.Album,
-                onClick = { onCategorySelect(CatalogCategory.ALBUMS) }
-            )
-            CatalogCategoryChip(
-                selected = category == CatalogCategory.PLAYLISTS,
-                label = "Playlists",
-                icon = Icons.AutoMirrored.Filled.QueueMusic,
-                onClick = { onCategorySelect(CatalogCategory.PLAYLISTS) }
-            )
-            CatalogCategoryChip(
-                selected = category == CatalogCategory.GENRES,
-                label = "Géneros",
-                icon = Icons.Default.Category,
-                onClick = { onCategorySelect(CatalogCategory.GENRES) }
-            )
-            CatalogCategoryChip(
-                selected = category == CatalogCategory.CHARTS,
-                label = "Charts",
-                icon = Icons.Default.Whatshot,
-                onClick = { onCategorySelect(CatalogCategory.CHARTS) }
-            )
-        }
+        CatalogCategoryChipsRow(
+            selectedCategory = category,
+            onSelectCategory = onCategorySelect
+        )
 
         Spacer(modifier = Modifier.height(12.dp))
 
@@ -979,23 +892,7 @@ private fun EmptyResultText(msg: String) {
     }
 }
 
-@Composable
-private fun CatalogCategoryChip(
-    selected: Boolean,
-    label: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    onClick: () -> Unit
-) {
-    FilterChip(
-        selected = selected,
-        onClick = onClick,
-        label = { Text(label, fontWeight = FontWeight.Bold) },
-        leadingIcon = {
-            Icon(icon, contentDescription = null, modifier = Modifier.size(16.dp))
-        },
-        shape = RoundedCornerShape(20.dp)
-    )
-}
+
 
 @Composable
 private fun CollectionTrackInspectionView(
@@ -1013,6 +910,9 @@ private fun CollectionTrackInspectionView(
     onCycleCandidate: (Int) -> Unit,
     onStreamCandidate: (com.bestiapop.android.data.model.CatalogTrackCandidate) -> Unit,
     onToggleSelection: (Int) -> Unit,
+    onToggleSelectAll: () -> Unit,
+    onPlayCollection: () -> Unit,
+    onShuffleCollection: () -> Unit,
     onRetryCandidate: (Int) -> Unit,
     onDownloadBatch: () -> Unit,
     onRetryDownload: (String) -> Unit,
@@ -1047,6 +947,14 @@ private fun CollectionTrackInspectionView(
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                 )
             }
+            if (candidates.isNotEmpty()) {
+                PlayShuffleIconPair(
+                    onPlay = onPlayCollection,
+                    onShuffle = onShuffleCollection,
+                    playDescription = "Reproducir colección",
+                    shuffleDescription = "Mezclar colección"
+                )
+            }
         }
 
         Spacer(modifier = Modifier.height(8.dp))
@@ -1056,6 +964,38 @@ private fun CollectionTrackInspectionView(
             onRetry = onRetryDownload,
             onOpenDownloads = onOpenDownloads
         )
+
+        if (!isLoading && candidates.isNotEmpty()) {
+            val allSelected = candidates.all { it.isSelected }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 4.dp, vertical = 2.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                TextButton(
+                    onClick = onToggleSelectAll,
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                ) {
+                    Icon(
+                        imageVector = if (allSelected) Icons.Default.CheckBox else Icons.Default.CheckBoxOutlineBlank,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = if (allSelected) "Deseleccionar todo" else "Seleccionar todo",
+                        style = MaterialTheme.typography.labelMedium
+                    )
+                }
+                Text(
+                    text = "$selectedCount seleccionadas",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                )
+            }
+        }
 
         if (isLoading) {
             Box(

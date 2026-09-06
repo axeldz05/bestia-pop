@@ -68,7 +68,8 @@ fun SongListItem(
     onEditMetadata: (() -> Unit)? = null,
     onEditLyrics: (() -> Unit)? = null,
     onIdentify: (() -> Unit)? = null,
-    onDelete: (() -> Unit)? = null
+    onDelete: (() -> Unit)? = null,
+    deleteLabel: String = "Eliminar"
 ) {
     val colors = playingRowColors(highlighted = isCurrentPlaying, selected = isSelected)
     val displayTitle = title ?: song.title
@@ -196,7 +197,8 @@ fun SongListItem(
                     onEditMetadata = onEditMetadata,
                     onEditLyrics = onEditLyrics,
                     onIdentify = onIdentify,
-                    onDelete = onDelete
+                    onDelete = onDelete,
+                    deleteLabel = deleteLabel
                 )
             }
         }
@@ -213,7 +215,8 @@ private fun InlineSongOptionsButton(
     onEditMetadata: (() -> Unit)?,
     onEditLyrics: (() -> Unit)?,
     onIdentify: (() -> Unit)?,
-    onDelete: (() -> Unit)?
+    onDelete: (() -> Unit)?,
+    deleteLabel: String = "Eliminar"
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
     Box {
@@ -237,7 +240,8 @@ private fun InlineSongOptionsButton(
                 onEditMetadata = onEditMetadata,
                 onEditLyrics = onEditLyrics,
                 onIdentify = onIdentify,
-                onDelete = onDelete
+                onDelete = onDelete,
+                deleteLabel = deleteLabel
             )
         }
     }
@@ -250,13 +254,14 @@ fun SongOverflowMenuItems(
     onIdentify: (() -> Unit)? = null,
     onEditMetadata: (() -> Unit)? = null,
     onEditLyrics: (() -> Unit)? = null,
-    onDelete: (() -> Unit)? = null
+    onDelete: (() -> Unit)? = null,
+    deleteLabel: String = "Eliminar"
 ) {
     optionalOverflowItem("Añadir a playlist", onAddToPlaylist, onDismiss)
     optionalOverflowItem("Identificar…", onIdentify, onDismiss)
     optionalOverflowItem("Editar información", onEditMetadata, onDismiss)
     optionalOverflowItem("Editar letra", onEditLyrics, onDismiss)
-    optionalOverflowItem("Eliminar", onDelete, onDismiss, MaterialTheme.colorScheme.error)
+    optionalOverflowItem(deleteLabel, onDelete, onDismiss, MaterialTheme.colorScheme.error)
 }
 
 @Composable
@@ -286,7 +291,8 @@ internal fun SongOptionsMenu(
     onEditMetadata: (() -> Unit)?,
     onEditLyrics: (() -> Unit)?,
     onIdentify: (() -> Unit)?,
-    onDelete: (() -> Unit)?
+    onDelete: (() -> Unit)?,
+    deleteLabel: String = "Eliminar"
 ) {
     DropdownMenu(
         expanded = true,
@@ -321,7 +327,8 @@ internal fun SongOptionsMenu(
             onIdentify = onIdentify,
             onEditMetadata = onEditMetadata,
             onEditLyrics = onEditLyrics,
-            onDelete = onDelete
+            onDelete = onDelete,
+            deleteLabel = deleteLabel
         )
     }
 }

@@ -96,11 +96,16 @@ sealed class PlayableItem : TrackMeta {
         fun fromLibraryOrRemote(
             local: Song?,
             identity: TrackIdentity,
-            recordingMbid: String? = null
+            recordingMbid: String? = null,
+            youtubeQueryOrId: String? = null
         ): PlayableItem = if (local != null) {
             local.toPlayableItem()
         } else {
-            remoteFrom(identity = identity, recordingMbid = recordingMbid)
+            remoteFrom(
+                identity = identity,
+                recordingMbid = recordingMbid,
+                youtubeQueryOrId = youtubeQueryOrId
+            )
         }
 
         /** L2: library hit → Local; else ephemeral Remote (default YT query). */
@@ -110,7 +115,8 @@ sealed class PlayableItem : TrackMeta {
             title: String,
             album: String? = null,
             artworkUri: String? = null,
-            recordingMbid: String? = null
+            recordingMbid: String? = null,
+            youtubeQueryOrId: String? = null
         ): PlayableItem = fromLibraryOrRemote(
             local = local,
             identity = TrackIdentity(
@@ -119,7 +125,8 @@ sealed class PlayableItem : TrackMeta {
                 album = album.orEmpty(),
                 artworkUri = artworkUri
             ),
-            recordingMbid = recordingMbid
+            recordingMbid = recordingMbid,
+            youtubeQueryOrId = youtubeQueryOrId
         )
     }
 }

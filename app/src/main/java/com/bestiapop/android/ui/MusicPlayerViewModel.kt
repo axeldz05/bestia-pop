@@ -1367,6 +1367,16 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         _catalogPreviewKey.value = null
     }
 
+    /** Stops active catalog preview and pauses playback if currently playing. */
+    fun stopCatalogPreview() {
+        if (_catalogPreviewKey.value != null) {
+            _catalogPreviewKey.value = null
+            if (isPlaying.value) {
+                togglePlayPause()
+            }
+        }
+    }
+
     // Unified Collection / Group Pipeline ("Everything is a Playlist")
     fun playCollection(songs: List<Song>, startIndex: Int = 0, startShuffled: Boolean = false) {
         if (songs.isEmpty()) return
@@ -1895,7 +1905,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     fun setLibraryBrowseFilter(filter: LibraryBrowseFilter) {
-        if (updateNavigation { it.copy(libraryBrowseFilter = filter) }) persistNavSnapshot()
+        if (updateNavigation { it.copy(libraryBrowseFilter = filter, libraryStack = LibraryBrowseStack.EMPTY) }) persistNavSnapshot()
     }
 
     fun openLibraryAlbum(name: String, fromNestedParent: Boolean = false) {
@@ -3264,6 +3274,19 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             list[index] = item.copy(isSelected = !item.isSelected)
             updateCatalogCollection(selectionKey) { it.copy(candidates = list) }
         }
+    }
+
+    fun setAllTrackCandidatesSelection(selected: Boolean) {
+        val collection = _catalogCollection.value
+        val selectionKey = collection.selectionKey ?: return
+        val list = collection.candidates.map { it.copy(isSelected = selected) }
+        updateCatalogCollection(selectionKey) { it.copy(candidates = list) }
+    }
+
+    fun toggleAllTrackCandidatesSelection() {
+        val collection = _catalogCollection.value
+        val allSelected = collection.candidates.isNotEmpty() && collection.candidates.all { it.isSelected }
+        setAllTrackCandidatesSelection(!allSelected)
     }
 
     fun clearSelectedCollection() {

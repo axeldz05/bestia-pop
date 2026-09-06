@@ -270,12 +270,6 @@ private fun trackNumberOf(release: JSONObject?, recordingTitle: String): Int {
                 return encodeAlbumTrack(num, disc)
             }
         }
-        if (tracks.length() > 0) {
-            val first = tracks.optJSONObject(0) ?: continue
-            val num = first.optString("number").substringBefore('.').toIntOrNull()
-                ?: first.optInt("position", 0)
-            return encodeAlbumTrack(num, disc)
-        }
     }
     return 0
 }

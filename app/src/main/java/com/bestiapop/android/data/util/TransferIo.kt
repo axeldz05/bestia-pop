@@ -15,6 +15,7 @@ internal fun copyTransferToFile(
     bufferSize: Int = DEFAULT_BUFFER_SIZE,
     syncToDisk: Boolean = false,
     checkCancelled: () -> Unit = {},
+    onChunk: ((position: Long, buffer: ByteArray, count: Int) -> Unit)? = null,
     onBytesCopied: (Long) -> Unit = {}
 ): Long = FileOutputStream(destination, append).use { output ->
     val buffer = ByteArray(bufferSize)
@@ -25,6 +26,7 @@ internal fun copyTransferToFile(
         if (count < 0) break
         checkCancelled()
         output.write(buffer, 0, count)
+        onChunk?.invoke(copied, buffer, count)
         copied += count
         onBytesCopied(copied)
     }

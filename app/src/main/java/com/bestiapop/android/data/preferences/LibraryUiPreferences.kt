@@ -1,6 +1,7 @@
 package com.bestiapop.android.data.preferences
 
 import com.bestiapop.android.data.model.Song
+import com.bestiapop.android.ui.state.LibraryBrowseFilter
 
 const val DEFAULT_SORT_OPTION_NAME = "TITLE"
 const val DEFAULT_SORT_DIRECTION_NAME = "ASC"
@@ -58,6 +59,24 @@ data class FastScrollSettings(
     val enabled: Boolean = true,
     val side: FastScrollSide = FastScrollSide.RIGHT
 )
+
+data class LibraryBlobConfig(
+    val filter: LibraryBrowseFilter,
+    val enabled: Boolean = true
+)
+
+data class LibraryBlobsSettings(
+    val items: List<LibraryBlobConfig> = defaultLibraryBlobConfigs()
+) {
+    val enabledFilters: List<LibraryBrowseFilter>
+        get() = items.filter { it.enabled }.map { it.filter }.ifEmpty { listOf(LibraryBrowseFilter.SONGS) }
+
+    val primaryFilter: LibraryBrowseFilter
+        get() = enabledFilters.first()
+}
+
+fun defaultLibraryBlobConfigs(): List<LibraryBlobConfig> =
+    LibraryBrowseFilter.entries.map { LibraryBlobConfig(it, enabled = true) }
 
 data class LibraryDisplaySettings(
     val sortOptionName: String = DEFAULT_SORT_OPTION_NAME,
@@ -224,5 +243,36 @@ object LibraryUiPreferencesCodec {
         val artist = artistName?.takeIf(artistExists)
         val genre = genreName?.takeIf(genreExists)
         return PrunedLibraryStack(albumName = album, artistName = artist, genreName = genre)
+    }
+
+    fun encodeBlobsSettings(settings: LibraryBlobsSettings): String =
+        settings.items.joinToString(separator = ",") { "${it.filter.name}:${if (it.enabled) "1" else "0"}" }
+
+    fun decodeBlobsSettings(raw: String?): LibraryBlobsSettings {
+        if (raw.isNullOrBlank()) return LibraryBlobsSettings()
+        val parsedItems = mutableListOf<LibraryBlobConfig>()
+        val seenFilters = mutableSetOf<LibraryBrowseFilter>()
+        val tokens = raw.split(",")
+        for (token in tokens) {
+            val parts = token.trim().split(":")
+            val name = parts.getOrNull(0)?.trim() ?: continue
+            val filter = LibraryBrowseFilter.entries.find { it.name.equals(name, ignoreCase = true) } ?: continue
+            if (seenFilters.add(filter)) {
+                val enabled = parts.getOrNull(1)?.trim() != "0"
+                parsedItems.add(LibraryBlobConfig(filter = filter, enabled = enabled))
+            }
+        }
+        for (filter in LibraryBrowseFilter.entries) {
+            if (seenFilters.add(filter)) {
+                parsedItems.add(LibraryBlobConfig(filter = filter, enabled = true))
+            }
+        }
+        if (parsedItems.none { it.enabled }) {
+            val first = parsedItems.firstOrNull()
+            if (first != null) {
+                parsedItems[0] = first.copy(enabled = true)
+            }
+        }
+        return LibraryBlobsSettings(items = parsedItems)
     }
 }

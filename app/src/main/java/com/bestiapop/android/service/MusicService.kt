@@ -866,7 +866,9 @@ internal class UserAgentMediaSourceFactory(
             upstreamFactory,
             ::boundGoogleVideoRequest
         )
-        return DefaultMediaSourceFactory(dataSourceFactory, extractorsFactory)
+        val cachedFactory = com.bestiapop.android.data.stream.BestiaPopMediaCache
+            .createCacheDataSourceFactory(context, dataSourceFactory)
+        return DefaultMediaSourceFactory(cachedFactory, extractorsFactory)
             .createMediaSource(mediaItem)
     }
 }

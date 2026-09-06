@@ -50,6 +50,7 @@ import com.bestiapop.android.data.model.toListenBrainzCatalogTrack
 import com.bestiapop.android.data.preferences.DiscoverSourcePreference
 import com.bestiapop.android.data.preferences.FastScrollSettings
 import com.bestiapop.android.data.preferences.FastScrollSide
+import com.bestiapop.android.data.preferences.LibraryBlobsSettings
 import com.bestiapop.android.data.preferences.UiNavSnapshot
 import com.bestiapop.android.data.preferences.ListenBrainzPreferencesRepository
 import com.bestiapop.android.data.preferences.ListenBrainzSettings
@@ -479,6 +480,20 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     fun playCurrentLibraryBrowse(shuffle: Boolean) {
         val filter = _navigation.value.libraryBrowseFilter
+        if (filter == LibraryBrowseFilter.PLAYLISTS) {
+            viewModelScope.launch {
+                val detailId = (_navigation.value.playlistDetail as? PlaylistDetailNav.Local)?.id
+                val songsToPlay = if (detailId != null) {
+                    repository.getPlaylistSongsOrdered(detailId)
+                } else {
+                    val currentPlaylists = playlists.first()
+                    currentPlaylists.flatMap { repository.getPlaylistSongsOrdered(it.id) }
+                }
+                if (songsToPlay.isEmpty()) return@launch
+                if (shuffle) shuffleCollection(songsToPlay) else playCollection(songsToPlay)
+            }
+            return
+        }
         val songs = libraryProjection.songs.value
         val queue = when (filter) {
             LibraryBrowseFilter.SONGS -> libraryProjection.songList.value.songsVisual
@@ -561,6 +576,10 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     val fastScrollSettings: StateFlow<FastScrollSettings> =
         libraryPreferences.fastScrollSettingsFlow
             .stateInUi(viewModelScope, FastScrollSettings())
+
+    val libraryBlobsSettings: StateFlow<LibraryBlobsSettings> =
+        libraryPreferences.libraryBlobsSettingsFlow
+            .stateInUi(viewModelScope, LibraryBlobsSettings())
 
     private val _discoverFeed = MutableStateFlow(DiscoverFeed())
     val discoverFeed = _discoverFeed.asStateFlow()
@@ -2851,6 +2870,16 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     fun setFastScrollSide(side: FastScrollSide) {
         viewModelScope.launch { libraryPreferences.setFastScrollSide(side) }
+    }
+
+    fun setLibraryBlobsSettings(settings: LibraryBlobsSettings) {
+        viewModelScope.launch {
+            libraryPreferences.setLibraryBlobsSettings(settings)
+            val currentFilter = _navigation.value.libraryBrowseFilter
+            if (currentFilter !in settings.enabledFilters) {
+                setLibraryBrowseFilter(settings.primaryFilter)
+            }
+        }
     }
 
     fun refreshDiscoverFeed(forceRefresh: Boolean = false) {

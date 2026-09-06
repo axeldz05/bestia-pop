@@ -1,6 +1,7 @@
 package com.bestiapop.android.data.preferences
 
 import com.bestiapop.android.data.model.Song
+import com.bestiapop.android.ui.state.LibraryBrowseFilter
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -204,5 +205,54 @@ class LibraryUiPreferencesCodecTest {
         assertNull(dropped.albumName)
         assertNull(dropped.artistName)
         assertNull(dropped.genreName)
+    }
+
+    @Test
+    fun blobsSettings_default_containsAllEntriesEnabled() {
+        val defaultSettings = LibraryBlobsSettings()
+        assertEquals(LibraryBrowseFilter.entries.size, defaultSettings.items.size)
+        assertEquals(LibraryBrowseFilter.entries, defaultSettings.enabledFilters)
+        assertEquals(LibraryBrowseFilter.SONGS, defaultSettings.primaryFilter)
+    }
+
+    @Test
+    fun blobsSettings_encodeAndDecode_roundTrip() {
+        val custom = LibraryBlobsSettings(
+            items = listOf(
+                LibraryBlobConfig(LibraryBrowseFilter.ALBUMS, enabled = true),
+                LibraryBlobConfig(LibraryBrowseFilter.SONGS, enabled = false),
+                LibraryBlobConfig(LibraryBrowseFilter.ARTISTS, enabled = true),
+                LibraryBlobConfig(LibraryBrowseFilter.GENRES, enabled = false),
+                LibraryBlobConfig(LibraryBrowseFilter.PLAYLISTS, enabled = true),
+                LibraryBlobConfig(LibraryBrowseFilter.RECENT, enabled = false)
+            )
+        )
+        val encoded = LibraryUiPreferencesCodec.encodeBlobsSettings(custom)
+        assertEquals("ALBUMS:1,SONGS:0,ARTISTS:1,GENRES:0,PLAYLISTS:1,RECENT:0", encoded)
+
+        val decoded = LibraryUiPreferencesCodec.decodeBlobsSettings(encoded)
+        assertEquals(listOf(LibraryBrowseFilter.ALBUMS, LibraryBrowseFilter.ARTISTS, LibraryBrowseFilter.PLAYLISTS), decoded.enabledFilters)
+        assertEquals(LibraryBrowseFilter.ALBUMS, decoded.primaryFilter)
+        assertEquals(custom.items, decoded.items)
+    }
+
+    @Test
+    fun blobsSettings_decode_handlesCorruptEmptyAndMissingEntries() {
+        val empty = LibraryUiPreferencesCodec.decodeBlobsSettings("")
+        assertEquals(LibraryBrowseFilter.entries, empty.enabledFilters)
+        assertEquals(LibraryBrowseFilter.SONGS, empty.primaryFilter)
+
+        val partial = LibraryUiPreferencesCodec.decodeBlobsSettings("ARTISTS:1,RECENT:0")
+        assertEquals(LibraryBrowseFilter.ARTISTS, partial.primaryFilter)
+        assertEquals(LibraryBrowseFilter.ARTISTS, partial.items[0].filter)
+        assertEquals(LibraryBrowseFilter.RECENT, partial.items[1].filter)
+        // All missing entries should be appended and enabled by default
+        assertEquals(LibraryBrowseFilter.entries.size, partial.items.size)
+        assertEquals(true, partial.items.find { it.filter == LibraryBrowseFilter.SONGS }?.enabled)
+
+        // All disabled forces first item to be enabled
+        val allDisabled = LibraryUiPreferencesCodec.decodeBlobsSettings("SONGS:0,ALBUMS:0,ARTISTS:0,GENRES:0,PLAYLISTS:0,RECENT:0")
+        assertEquals(listOf(LibraryBrowseFilter.SONGS), allDisabled.enabledFilters)
+        assertEquals(LibraryBrowseFilter.SONGS, allDisabled.primaryFilter)
     }
 }

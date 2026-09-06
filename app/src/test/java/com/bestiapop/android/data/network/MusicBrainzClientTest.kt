@@ -70,4 +70,45 @@ class MusicBrainzClientTest {
         assertEquals("ブラックホール (Black Hole)", track.title)
         assertTrue(track.audioUrl.contains("namitape"))
     }
+
+    @Test
+    fun parseSearch_unmatchedTitle_doesNotDefaultToTrackOne() {
+        val json = JSONObject(
+            """
+            {
+              "recordings": [{
+                "id": "rec-2",
+                "title": "Some Song",
+                "length": 180000,
+                "artist-credit": [{
+                  "name": "Artist",
+                  "artist": {"name": "Artist"}
+                }],
+                "releases": [{
+                  "id": "rel-1",
+                  "title": "Album",
+                  "media": [{
+                    "position": 1,
+                    "track": [{
+                      "number": "1",
+                      "title": "Intro",
+                      "length": 60000
+                    }, {
+                      "number": "2",
+                      "title": "Other Track",
+                      "length": 120000
+                    }]
+                  }]
+                }]
+              }]
+            }
+            """.trimIndent()
+        )
+
+        val tracks = parseMusicBrainzRecordingSearch(json)
+        assertEquals(1, tracks.size)
+        val track = tracks.single()
+        assertEquals(0, track.trackNumber)
+    }
 }
+

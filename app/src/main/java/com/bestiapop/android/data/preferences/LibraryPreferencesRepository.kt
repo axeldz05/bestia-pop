@@ -177,6 +177,17 @@ class LibraryPreferencesRepository(private val context: Context) {
         }
     }
 
+    val libraryBlobsSettingsFlow: Flow<LibraryBlobsSettings> = context.libraryDataStore.data.map { prefs ->
+        LibraryUiPreferencesCodec.decodeBlobsSettings(prefs[Keys.LIBRARY_BLOBS_SETTINGS])
+    }
+
+    suspend fun setLibraryBlobsSettings(settings: LibraryBlobsSettings) {
+        context.libraryDataStore.put(
+            Keys.LIBRARY_BLOBS_SETTINGS,
+            LibraryUiPreferencesCodec.encodeBlobsSettings(settings)
+        )
+    }
+
     val fastScrollSettingsFlow: Flow<FastScrollSettings> = context.libraryDataStore.data.map { prefs ->
         val enabled = prefs[Keys.FAST_SCROLL_ENABLED] ?: true
         val side = when (prefs[Keys.FAST_SCROLL_SIDE]?.uppercase()) {
@@ -214,6 +225,7 @@ class LibraryPreferencesRepository(private val context: Context) {
         val PLAYLIST_LOCAL_ID = longPreferencesKey("playlist_local_id")
         val PLAYLIST_LB_MBID = stringPreferencesKey("playlist_lb_mbid")
         val DISCOVER_SOURCE = stringPreferencesKey("discover_source_preference")
+        val LIBRARY_BLOBS_SETTINGS = stringPreferencesKey("library_blobs_settings")
         val FAST_SCROLL_ENABLED = booleanPreferencesKey("fast_scroll_enabled")
         val FAST_SCROLL_SIDE = stringPreferencesKey("fast_scroll_side")
     }

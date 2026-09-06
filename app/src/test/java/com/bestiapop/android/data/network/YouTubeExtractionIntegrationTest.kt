@@ -6,12 +6,10 @@ import okhttp3.Request
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
+import org.junit.Ignore
 import org.junit.Test
 
-import org.junit.runner.RunWith
-import org.robolectric.RobolectricTestRunner
-import org.robolectric.annotation.Config
-
+@Ignore("Live network test requiring external YouTube connectivity")
 class YouTubeExtractionIntegrationTest {
 
     @Test

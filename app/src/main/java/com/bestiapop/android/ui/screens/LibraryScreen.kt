@@ -53,7 +53,14 @@ import com.bestiapop.android.data.model.Artist
 import com.bestiapop.android.data.model.GenreGroup
 import com.bestiapop.android.data.model.Playlist
 import com.bestiapop.android.data.model.Song
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import com.bestiapop.android.data.preferences.FastScrollSettings
+import com.bestiapop.android.data.preferences.FastScrollSide
+import com.bestiapop.android.ui.components.FastScrollDefaults
 import com.bestiapop.android.domain.util.albumNamesMatch
 import com.bestiapop.android.ui.MusicPlayerViewModel
 import com.bestiapop.android.ui.SortDirection
@@ -110,6 +117,13 @@ fun LibraryScreen(
     val libraryJobProgress by viewModel.libraryJobProgress.collectAsStateWithLifecycle()
     val similarPlaylistPreview by viewModel.similarPlaylistPreview.collectAsStateWithLifecycle()
     val fastScrollSettings by viewModel.fastScrollSettings.collectAsStateWithLifecycle()
+    val libraryBlobsSettings by viewModel.libraryBlobsSettings.collectAsStateWithLifecycle()
+
+    LaunchedEffect(browseFilter, libraryBlobsSettings.enabledFilters) {
+        if (targetPlaylistForAddition == null && browseFilter !in libraryBlobsSettings.enabledFilters) {
+            viewModel.setLibraryBrowseFilter(libraryBlobsSettings.primaryFilter)
+        }
+    }
 
     var showBrowseSortSheet by remember { mutableStateOf(false) }
     var searchExpanded by remember { mutableStateOf(false) }
@@ -513,7 +527,8 @@ fun LibraryScreen(
         if (!hasNestedDetail && !isPlaylistAdditionMode && !isMultiSelectMode) {
             LibraryFilterChipRow(
                 selected = browseFilter,
-                onSelect = { viewModel.setLibraryBrowseFilter(it) }
+                onSelect = { viewModel.setLibraryBrowseFilter(it) },
+                filters = libraryBlobsSettings.enabledFilters
             )
         }
 
@@ -655,12 +670,37 @@ fun LibraryScreen(
                 listStates = browseListStates
             )
 
-            if (!isPlaylistAdditionMode) {
+            val activeListState = when (activeFilter) {
+                LibraryBrowseFilter.SONGS -> browseListStates.songs
+                LibraryBrowseFilter.ALBUMS -> browseListStates.albums
+                LibraryBrowseFilter.ARTISTS -> browseListStates.artists
+                LibraryBrowseFilter.GENRES -> browseListStates.genres
+                LibraryBrowseFilter.PLAYLISTS -> browseListStates.playlists
+                LibraryBrowseFilter.RECENT -> browseListStates.recent
+            }
+            val isCurrentListScrolling = activeListState.isScrollInProgress
+            val shouldShowAddButton = !isPlaylistAdditionMode &&
+                !isMultiSelectMode &&
+                !hasNestedDetail &&
+                activeFilter != LibraryBrowseFilter.PLAYLISTS &&
+                !isCurrentListScrolling
+
+            val endGutter = if (fastScrollSettings.enabled && fastScrollSettings.side == FastScrollSide.RIGHT) {
+                16.dp + FastScrollDefaults.DedicatedRightGutterWidth
+            } else {
+                16.dp
+            }
+
+            androidx.compose.animation.AnimatedVisibility(
+                visible = shouldShowAddButton,
+                enter = fadeIn() + scaleIn(),
+                exit = fadeOut() + scaleOut(),
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(start = 16.dp, end = endGutter, bottom = 16.dp, top = 16.dp)
+            ) {
                 FloatingActionButton(
                     onClick = { showAddMusicDialog = true },
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(16.dp),
                     containerColor = MaterialTheme.colorScheme.primary,
                     contentColor = MaterialTheme.colorScheme.onPrimary
                 ) {

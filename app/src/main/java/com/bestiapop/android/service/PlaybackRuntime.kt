@@ -86,7 +86,6 @@ import kotlinx.coroutines.withContext
 import kotlin.coroutines.ContinuationInterceptor
 import kotlin.coroutines.EmptyCoroutineContext
 
-private const val STREAM_READY_MAX_AGE_MS = 60_000L
 private const val INITIAL_PLAYBACK_WINDOW_SIZE = 30
 private const val QUEUE_APPEND_CHUNK_SIZE = 100
 
@@ -1869,7 +1868,10 @@ class PlaybackRuntime internal constructor(
             )
             ensurePreparedForPlayback()
             if (playWhenReadyIntent) {
-                ensureRemoteReadyAt(newIndex, startPlaying = true)
+                val remoteItem = playable as? PlayableItem.Remote
+                if (remoteItem != null && (remoteItem.resolved == null || remoteItem.resolved.audioUrl.isBlank())) {
+                    ensureRemoteReadyAt(newIndex, startPlaying = true)
+                }
                 prefetchAround(newIndex)
             }
             if (_radioActive.value) {
@@ -2123,11 +2125,17 @@ class PlaybackRuntime internal constructor(
         val live = _queue.value.toMutableList()
         live[index] = resolved
         _queue.value = live
-        if (index < (controller?.mediaItemCount ?: 0)) {
-            controller?.replaceMediaItem(index, resolved)
+        val player = controller
+        val isCurrentPlaying = player != null &&
+            index == player.currentMediaItemIndex &&
+            (player.isPlaying || player.playbackState == Player.STATE_BUFFERING || player.playbackState == Player.STATE_READY)
+        val urlUnchanged = original.resolved?.audioUrl?.isNotBlank() == true &&
+            original.resolved?.audioUrl == resolved.resolved?.audioUrl
+        if (index < (player?.mediaItemCount ?: 0) && (!isCurrentPlaying || !urlUnchanged)) {
+            player?.replaceMediaItem(index, resolved)
         }
         if (_currentItem.value?.queueEntryId == resolved.queueEntryId ||
-            index == controller?.currentMediaItemIndex
+            index == player?.currentMediaItemIndex
         ) {
             setCurrentItem(
                 resolved,
@@ -3102,12 +3110,11 @@ private class StreamResolverRuntimeAccess(
 ) : PlaybackRuntimeStreamAccess {
     override fun needsResolve(item: PlayableItem.Remote): Boolean {
         val resolved = item.resolved ?: return true
-        if (resolved.audioUrl.isBlank() || !resolver.isFresh(resolved)) return true
-        return clockMs() - resolved.resolvedAtEpochMs > STREAM_READY_MAX_AGE_MS
+        return resolved.audioUrl.isBlank() || !resolver.isFresh(resolved)
     }
 
     override suspend fun resolve(item: PlayableItem.Remote): PlayableItem.Remote? =
-        resolver.resolveForPlayback(item, maxCachedAgeMs = STREAM_READY_MAX_AGE_MS)
+        resolver.resolve(item)
             .getOrNull()
             ?.let { item.copy(resolved = it) }
 

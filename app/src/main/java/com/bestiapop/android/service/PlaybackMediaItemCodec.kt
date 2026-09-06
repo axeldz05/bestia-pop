@@ -217,6 +217,11 @@ object PlaybackMediaItemCodec {
         }
         val builder = MediaItem.Builder()
             .setMediaId(item.mediaId)
+            .setCustomCacheKey(
+                resolved?.videoId?.takeIf { it.isNotBlank() }
+                    ?.let(com.bestiapop.android.data.stream.BestiaPopMediaCache::cacheKey)
+                    ?: item.mediaId
+            )
             // The CDN URL intentionally has no second representation in any extras.
             .setUri(resolved?.audioUrl?.takeIf { it.isNotBlank() }?.let(Uri::parse) ?: Uri.EMPTY)
             .setMediaMetadata(metadata(item.identity, extras))

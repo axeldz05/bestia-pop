@@ -1364,14 +1364,36 @@ class MusicRepository private constructor(
             else -> false
         }
 
+        val enrichedRanked = if (ranked.isNotEmpty()) {
+            val first = ranked.first()
+            val albumTrackNum = findTrackNumberInAlbum(
+                artist = first.artist,
+                album = first.album,
+                title = first.title,
+                durationMs = working.durationMs
+            )
+            if (albumTrackNum != null && albumTrackNum > 0 && albumTrackNum != first.track.identity.trackNumber) {
+                val updatedFirst = first.copy(
+                    track = first.track.copy(
+                        identity = first.track.identity.copy(trackNumber = albumTrackNum)
+                    )
+                )
+                listOf(updatedFirst) + ranked.drop(1)
+            } else {
+                ranked
+            }
+        } else {
+            ranked
+        }
+
         IdentifyProposal(
             songId = song.id,
             queryArtist = queryArtist,
             queryTitle = if (trimmedCustom.isNotEmpty()) trimmedCustom else queryTitle,
             sourceHints = sourceHints,
-            candidates = ranked,
+            candidates = enrichedRanked,
             confidence = confidence,
-            suggested = ranked.firstOrNull(),
+            suggested = enrichedRanked.firstOrNull(),
             usedListenBrainz = usedListenBrainz,
             nextCatalogIndex = nextIndex,
             catalogMayHaveMore = mayHaveMore
@@ -1423,6 +1445,27 @@ class MusicRepository private constructor(
             artistName = chosen.artist,
             coverUrl = chosen.coverUrl
         ).map { it.toKnownAlbumTrack() }
+    }
+
+    internal suspend fun findTrackNumberInAlbum(
+        artist: String,
+        album: String,
+        title: String,
+        durationMs: Long = 0L
+    ): Int? {
+        if (album.isBlank() || IdentifyRanking.isGenericAlbum(album) || IdentifyRanking.isPlaceholderArtist(artist)) {
+            return null
+        }
+        val albumTracks = loadKnownAlbumTracks(artist, album, fetchCatalog = true) ?: return null
+        val cleanedTitle = IdentifyRanking.stripTitleNoise(title).lowercase()
+        val match = albumTracks.tracks.firstOrNull { track ->
+            val trackCleaned = IdentifyRanking.stripTitleNoise(track.title).lowercase()
+            trackCleaned == cleanedTitle ||
+                IdentifyRanking.fieldSimilarity(trackCleaned, cleanedTitle) >= 0.85f ||
+                (durationMs > 0 && track.durationMs > 0 && kotlin.math.abs(track.durationMs - durationMs) <= 3000 &&
+                    IdentifyRanking.fieldSimilarity(trackCleaned, cleanedTitle) >= 0.6f)
+        }
+        return match?.trackNumber?.takeIf { it > 0 }
     }
 
     override suspend fun applySongIdentity(
@@ -1478,7 +1521,7 @@ class MusicRepository private constructor(
         appliedIds
     }
 
-    private fun resolveAppliedIdentity(
+    private suspend fun resolveAppliedIdentity(
         entity: Song,
         candidate: IdentifyCandidate,
         fields: IdentifyApplyFields,
@@ -1535,8 +1578,18 @@ class MusicRepository private constructor(
             entity.artist
         }
         val finalArtwork = if (fields.artwork) (candidateArtwork ?: entity.artworkUri) else entity.artworkUri
-        val finalTrackNumber = if (fields.trackNumber && candidateTrackNumber > 0) {
-            candidateTrackNumber
+        val albumTrackNumber = if (fields.trackNumber) {
+            findTrackNumberInAlbum(
+                artist = finalArtist,
+                album = resolvedAlbum,
+                title = finalTitle,
+                durationMs = entity.durationMs
+            )
+        } else null
+        val finalTrackNumber = if (fields.trackNumber) {
+            albumTrackNumber
+                ?: candidateTrackNumber.takeIf { it > 0 }
+                ?: entity.trackNumber
         } else {
             entity.trackNumber
         }
@@ -2148,6 +2201,25 @@ class MusicRepository private constructor(
         var lastResponseCode = 0
         var lastHttpError: String? = null
 
+        val cachedPrefix = com.bestiapop.android.data.stream.BestiaPopMediaCache.copyCachedPrefixToFile(
+            context = context,
+            videoId = ytStream.videoId,
+            destination = file
+        )
+        if (cachedPrefix > 0L) {
+            downloadedBytes = cachedPrefix
+            val parsedUrl = currentUrl.toHttpUrlOrNull()
+            val clen = GoogleVideoRange.remainingLength(
+                parsedUrl?.host,
+                parsedUrl?.queryParameter("clen"),
+                0L
+            )
+            if (clen != null && downloadedBytes >= clen) {
+                expectedTotalBytes = clen
+                downloadSuccess = true
+            }
+        }
+
         while (attempts < MAX_DOWNLOAD_ATTEMPTS && !downloadSuccess) {
             attempts++
             lastResponseCode = 0
@@ -2203,7 +2275,17 @@ class MusicRepository private constructor(
                                 input = input,
                                 destination = file,
                                 append = resuming,
-                                bufferSize = 65536
+                                bufferSize = 65536,
+                                onChunk = { relPos, buf, len ->
+                                    com.bestiapop.android.data.stream.BestiaPopMediaCache.writeChunkToCache(
+                                        context = context,
+                                        videoId = ytStream.videoId,
+                                        position = baseBytes + relPos,
+                                        bytes = buf,
+                                        offset = 0,
+                                        length = len
+                                    )
+                                }
                             ) { copied ->
                                 downloadedBytes = baseBytes + copied
                             }

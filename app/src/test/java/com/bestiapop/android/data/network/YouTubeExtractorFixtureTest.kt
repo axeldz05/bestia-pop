@@ -85,6 +85,7 @@ class YouTubeExtractorFixtureTest {
         assertEquals(203_000L, stream.durationMs)
         assertEquals("https://media.invalid/fixture-audio.m4a", stream.audioUrl)
         assertTrue(stream.userAgent.isNotBlank())
+        org.junit.Assert.assertFalse(stream.userAgent.endsWith("gzip"))
 
         with(server.takeRequest()) {
             assertEquals("GET", method)

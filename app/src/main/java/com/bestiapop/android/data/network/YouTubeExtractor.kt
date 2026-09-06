@@ -203,6 +203,11 @@ object YouTubeExtractor {
 
     private val YOUTUBE_TITLE_SEPARATOR = Regex("""\s*[\-–—:|~]\s+|\s+[\-–—]\s*|_-_""")
 
+    private fun isTrackNumberPrefix(s: String): Boolean {
+        val trimmed = s.trim()
+        return trimmed.isNotEmpty() && (trimmed.all { it.isDigit() } || trimmed.matches(Regex("""^(?:track\s*)?\d{1,3}\.?$""", RegexOption.IGNORE_CASE)))
+    }
+
     fun formatTitleAndArtist(rawTitle: String, rawAuthor: String): Pair<String, String> {
         var cleanTitle = rawTitle
             .replace(OFFICIAL_MUSIC_VIDEO_PAREN, "")
@@ -224,16 +229,30 @@ object YouTubeExtractor {
         if (sepMatch != null) {
             val part0 = cleanTitle.substring(0, sepMatch.range.first).trim()
             val part1 = cleanTitle.substring(sepMatch.range.last + 1).trim()
+            val sepChar = sepMatch.value.trim()
+            val isWeakSeparator = sepChar == ":" || sepChar == "|" || sepChar == "~"
+
             if (part0.isNotEmpty() && part1.isNotEmpty()) {
                 val normAuthor = TrackMatchKeys.normalize(artist)
                 val normPart0 = TrackMatchKeys.normalize(part0)
                 val normPart1 = TrackMatchKeys.normalize(part1)
 
-                // Disambiguate: is part1 the artist (Title - Artist) or is part0 the artist (Artist - Title)?
-                if (normAuthor.isNotEmpty() && (normPart1 == normAuthor || normPart1.startsWith(normAuthor))) {
+                val part0MatchesAuthor = normAuthor.isNotEmpty() && (normPart0 == normAuthor || normPart0.startsWith(normAuthor))
+                val part1MatchesAuthor = normAuthor.isNotEmpty() && (normPart1 == normAuthor || normPart1.startsWith(normAuthor))
+
+                if (part1MatchesAuthor && !part0MatchesAuthor) {
+                    // "Title - Artist"
                     artist = part1
                     cleanTitle = part0
-                } else {
+                } else if (part0MatchesAuthor) {
+                    // "Artist - Title"
+                    artist = part0
+                    cleanTitle = part1
+                } else if (isTrackNumberPrefix(part0)) {
+                    // "01 - Title" -> preserve author, don't set artist = "01"
+                    cleanTitle = part1
+                } else if (!isWeakSeparator) {
+                    // Standard dash separator where neither part matches author: "Artist - Title"
                     artist = part0
                     cleanTitle = part1
                 }
@@ -725,7 +744,7 @@ object YouTubeExtractor {
                     artworkUrl = thumbUrl,
                     durationMs = durationSec * 1000L,
                     audioUrl = bestAudioUrl!!,
-                    userAgent = clientProfile.userAgent
+                    userAgent = clientProfile.userAgent.removeSuffix(" gzip").trim()
                 )
                 return Pair(streamResult, null)
             }

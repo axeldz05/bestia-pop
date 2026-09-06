@@ -99,5 +99,29 @@ class YouTubeAudioPreferenceTest {
         )
         assertEquals("Creep", t4)
         assertEquals("Radiohead", a4)
+
+        // Track number prefix must not overwrite the artist
+        val (t5, a5) = YouTubeExtractor.formatTitleAndArtist(
+            "01 - Let It Be",
+            "The Beatles - Topic"
+        )
+        assertEquals("Let It Be", t5)
+        assertEquals("The Beatles", a5)
+
+        // Subtitles with colon must not overwrite the author
+        val (t6, a6) = YouTubeExtractor.formatTitleAndArtist(
+            "Star Wars: Main Theme",
+            "John Williams"
+        )
+        assertEquals("Star Wars: Main Theme", t6)
+        assertEquals("John Williams", a6)
+
+        // Dash separator when author is channel uploader
+        val (t7, a7) = YouTubeExtractor.formatTitleAndArtist(
+            "Led Zeppelin - Stairway to Heaven",
+            "ClassicRockHits"
+        )
+        assertEquals("Stairway to Heaven", t7)
+        assertEquals("Led Zeppelin", a7)
     }
 }

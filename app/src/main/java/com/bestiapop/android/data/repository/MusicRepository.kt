@@ -2285,23 +2285,45 @@ class MusicRepository private constructor(
 
                         body.byteStream().use { input ->
                             val baseBytes = downloadedBytes
+                            val cacheBuffer = java.io.ByteArrayOutputStream(512 * 1024)
+                            var cacheBufferStartPos = baseBytes
                             copyTransferToFile(
                                 input = input,
                                 destination = file,
                                 append = resuming,
                                 bufferSize = 65536,
                                 onChunk = { relPos, buf, len ->
-                                    com.bestiapop.android.data.stream.BestiaPopMediaCache.writeChunkToCache(
-                                        context = context,
-                                        videoId = ytStream.videoId,
-                                        position = baseBytes + relPos,
-                                        bytes = buf,
-                                        offset = 0,
-                                        length = len
-                                    )
+                                    if (cacheBuffer.size() == 0) {
+                                        cacheBufferStartPos = baseBytes + relPos
+                                    }
+                                    cacheBuffer.write(buf, 0, len)
+                                    if (cacheBuffer.size() >= 512 * 1024) {
+                                        val chunkBytes = cacheBuffer.toByteArray()
+                                        com.bestiapop.android.data.stream.BestiaPopMediaCache.writeChunkToCache(
+                                            context = context,
+                                            videoId = ytStream.videoId,
+                                            position = cacheBufferStartPos,
+                                            bytes = chunkBytes,
+                                            offset = 0,
+                                            length = chunkBytes.size
+                                        )
+                                        cacheBuffer.reset()
+                                    }
                                 }
                             ) { copied ->
                                 downloadedBytes = baseBytes + copied
+                            }
+                            if (cacheBuffer.size() > 0) {
+                                val remainingBytes = cacheBuffer.toByteArray()
+                                com.bestiapop.android.data.stream.BestiaPopMediaCache.writeChunkToCache(
+                                    context = context,
+                                    videoId = ytStream.videoId,
+                                    position = cacheBufferStartPos,
+                                    bytes = remainingBytes,
+                                    offset = 0,
+                                    length = remainingBytes.size
+                                )
+                                cacheBuffer.reset()
                             }
                         }
                         // A clean EOF short of Content-Length is a truncated body, not a finished file.
@@ -2326,14 +2348,25 @@ class MusicRepository private constructor(
             }
 
             if (!downloadSuccess && attempts < MAX_DOWNLOAD_ATTEMPTS) {
-                // CDN URLs expire mid-download: without a fresh extract every retry hits the same
-                // dead URL and the whole budget is burnt for nothing.
-                if (lastResponseCode == 403 || lastResponseCode == 410) {
+                if (lastResponseCode == 416) {
+                    // HTTP 416 Range Not Satisfiable: cached/partial file offset desynced from stream.
+                    // Reset to offset 0 and clean up partial file to restart cleanly.
+                    downloadedBytes = 0L
+                    expectedTotalBytes = -1L
+                    if (file.exists()) {
+                        file.delete()
+                    }
+                } else if (lastResponseCode == 403 || lastResponseCode == 410) {
+                    // CDN URLs expire mid-download: without a fresh extract every retry hits the same
+                    // dead URL and the whole budget is burnt for nothing.
                     val refreshed = streamResolver.resolveQuery(queryOrId, forceRefresh = true).getOrNull()
                     refreshed?.let {
                         currentUrl = it.audioUrl
                         downloadedBytes = 0L
                         expectedTotalBytes = -1L
+                        if (file.exists()) {
+                            file.delete()
+                        }
                     }
                 }
                 try {

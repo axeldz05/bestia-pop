@@ -181,19 +181,19 @@ Letras en reproducción: `PlaybackRuntime.hydrateCurrentSongLyrics` actualiza ta
 
 **Invariantes:**
 - Esquema Material 3 completo y armonizado: `ThemeHarmonizer.toMaterialColorScheme` genera contenedores (`primaryContainer`, `surfaceContainer`, etc.) y garantiza ratio de contraste WCAG AA ($\ge 4.5:1$ en texto normal y $\ge 3.0:1$ en componentes gráficos) calculando automáticamente el mejor color `onPrimary`, `onSurface` y ajustando luminancia.
-- **Tema dinámico por carátula de canción:** preset `ThemePresets.DYNAMIC_THEME_ID` (`"dynamic_song"`, activo por defecto). Al estar activo, `DynamicThemeEngine.extractDynamicTheme` analiza la portada del `currentItem` / `currentSong` (bitmap liviano 64x64) en hilo IO con caché LRU (50 ítems).
-- **Confort visual y fallback congruente:** Fondo ambiental oscuro tintado con el matiz base ($S \approx 0.08, L \approx 0.055$). Si la carátula es monocromática (blanco y negro o saturación baja $S < 0.15$), se aplica un color congruente calibrado (púrpura, cian, ámbar o coral según luminancia) para evitar paletas apagadas o con contraste deficiente. Si no hay carátula o no hay reproducción, se utiliza el fallback seguro (`MidnightDark`).
+- **Tema dinámico por carátula de canción y persistencia continua:** preset `ThemePresets.DYNAMIC_THEME_ID` (`"dynamic_song"`, activo por defecto). Al estar activo, `DynamicThemeEngine.extractDynamicTheme` analiza la portada del `currentItem` / `currentSong` (bitmap liviano 64x64) en hilo IO con caché LRU (50 ítems). El último tema dinámico derivado y su URI de carátula se persisten en `ThemePreferencesRepository` (`saveDynamicTheme`) y se sincronizan de inmediato para que sobreviva a reinicios, aperturas en frío o vaciado de la cola (`dynamicThemeFlow`).
+- **Confort visual, retención y fallback congruente:** Fondo ambiental oscuro tintado con el matiz base ($S \approx 0.08, L \approx 0.055$). Si la carátula es monocromática (blanco y negro o saturación baja $S < 0.15$), se aplica un color congruente calibrado (púrpura, cian, ámbar o coral según luminancia) para evitar paletas apagadas o con contraste deficiente. Si la cola se vacía, se pausa o no hay pista en curso, se preserva el último tema dinámico en lugar de caer al fallback inicial (`MidnightDark`).
 - **Editor de temas con previsualización en vivo:** `ThemeEditorDialog` integra `ThemeLibraryPreview` mostrando la pantalla de Biblioteca con canciones reales del dispositivo o fallback de alta fidelidad, mini-reproductor y fila de canción activa. Sliders HSL, código HEX y botón «Auto-armonizar» para generar paletas coordinadas en tiempo real.
 
 | Capacidad | Entry point |
 |-----------|-------------|
-| Motor dinámico carátula | `DynamicThemeEngine.extractDynamicTheme` (`deriveThemeFromBitmap` con muestreo HSL + guardarraíles WCAG) |
+| Motor dinámico carátula | `DynamicThemeEngine.extractDynamicTheme` (`deriveThemeFromBitmap` con muestreo HSL + guardarraíles WCAG), `resolveNextTheme`, `dynamicThemeFlow` |
 | Armonizador M3 & WCAG | `ThemeHarmonizer` (`calculateContrastRatio`, `calculateLuminance`, `ensureContrast`, `toMaterialColorScheme`, `autoHarmonizePalette`) |
 | Presets | `ThemePresets` (`DynamicSong`, `MidnightDark`, `AmoledBlack`, `SunsetGold`, `CyberpunkNeon`, `CleanLight`) |
-| Prefs / persistencia | `ThemePreferencesRepository` (`selectedThemeFlow`, `enableDynamicTheme`, `selectPreset`, `saveCustomColors`) |
+| Prefs / persistencia | `ThemePreferencesRepository` (`selectedThemeFlow`, `initialTheme`, `enableDynamicTheme`, `selectPreset`, `saveCustomColors`, `saveDynamicTheme`) |
 | Editor interactivo | `ThemeEditorDialog` + `ThemeLibraryPreview` (mockup biblioteca en vivo) |
 | Settings UI | `ThemeSettingsScreen` (tarjeta dinámica interactiva con swatches en vivo + presets) |
-| State ViewModel | `MusicPlayerViewModel.configuredThemeState` (ajuste base) y `currentThemeState` (reactivo dinámico ante cambio de pista) |
+| State ViewModel | `MusicPlayerViewModel.configuredThemeState` (ajuste base) y `currentThemeState` (reactivo dinámico con memoria persistente ante cambio de pista o cola vacía) |
 
 ## 7b. Sonido: amplificar + balance estéreo
 

@@ -211,9 +211,14 @@ class IdentifyReviewStore internal constructor(
             val existingIds = current.proposals.map { it.songId }.toSet()
             val incoming = proposals.filter { it.songId !in existingIds }
             if (incoming.isEmpty() && applyFields == null) return@edit
+            val targetFields = if (current.proposals.isEmpty() && applyFields != null) {
+                applyFields
+            } else {
+                current.applyFields
+            }
             val merged = current.copy(
                 proposals = current.proposals + incoming,
-                applyFields = applyFields ?: current.applyFields
+                applyFields = targetFields
             )
             writeQueue(prefs, merged)
         }

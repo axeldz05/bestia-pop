@@ -155,6 +155,7 @@ import kotlinx.coroutines.flow.distinctUntilChangedBy
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.scan
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
@@ -220,13 +221,19 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     val currentThemeState: StateFlow<CustomTheme> = themeRepository.selectedThemeFlow
         .flatMapLatest { selectedTheme ->
             if (selectedTheme.id == ThemePresets.DYNAMIC_THEME_ID) {
-                playbackRuntime.currentItem.map { item ->
-                    DynamicThemeEngine.extractDynamicTheme(
-                        context = application,
-                        artworkUri = item?.artworkUri,
-                        isDark = selectedTheme.isDark
-                    )
-                }
+                val initialState = DynamicThemeEngine.DynamicThemeState(
+                    theme = selectedTheme,
+                    artworkUri = themeRepository.lastDynamicArtworkUri
+                )
+                DynamicThemeEngine.dynamicThemeFlow(
+                    context = application,
+                    artworkUriFlow = playbackRuntime.currentItem.map { it?.artworkUri },
+                    initialState = initialState,
+                    isDark = selectedTheme.isDark,
+                    onThemeChanged = { nextState ->
+                        themeRepository.saveDynamicTheme(nextState.theme, nextState.artworkUri)
+                    }
+                )
             } else {
                 flowOf(selectedTheme)
             }
@@ -1790,6 +1797,10 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     fun removeFromQueue(index: Int) {
         playbackRuntime.removeFromQueue(index)
+    }
+
+    fun clearQueue() {
+        playbackRuntime.clearQueue()
     }
 
     fun moveQueueItem(fromIndex: Int, toIndex: Int) {

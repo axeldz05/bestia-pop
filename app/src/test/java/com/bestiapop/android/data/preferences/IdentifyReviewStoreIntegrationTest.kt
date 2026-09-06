@@ -124,6 +124,35 @@ class IdentifyReviewStoreIntegrationTest {
         }
     }
 
+    @Test
+    fun appendProposals_preservesExistingApplyFieldsWhenQueueNotEmpty() = runTest {
+        val storage = TemporaryPreferencesDataStore(
+            ApplicationProvider.getApplicationContext(),
+            "identify-review-apply-fields"
+        )
+        try {
+            val repository = IdentifyReviewStore(storage.dataStore)
+            val initialFields = com.bestiapop.android.data.model.IdentifyApplyFields(
+                artwork = true,
+                title = false,
+                artist = true,
+                album = false,
+                year = true,
+                trackNumber = false
+            )
+            repository.appendProposals(listOf(proposal(songId = 1L)), initialFields)
+            assertEquals(initialFields, repository.load().applyFields)
+
+            val incomingFields = com.bestiapop.android.data.model.IdentifyApplyFields.ALL
+            repository.appendProposals(listOf(proposal(songId = 2L)), incomingFields)
+
+            // Must preserve initialFields because the queue already had proposals
+            assertEquals(initialFields, repository.load().applyFields)
+        } finally {
+            storage.close()
+        }
+    }
+
     private fun proposal(songId: Long): IdentifyProposal {
         val candidate = IdentifyCandidate(
             track = OnlineCatalogTrack(

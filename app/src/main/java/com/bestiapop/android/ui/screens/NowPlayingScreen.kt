@@ -58,6 +58,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -165,6 +166,12 @@ fun NowPlayingScreen(
     val pagerState = rememberPagerState(initialPage = 0, pageCount = { 2 })
     val queueListState = rememberLazyListState()
 
+    LaunchedEffect(currentItem) {
+        if (currentItem == null) {
+            onDismiss()
+        }
+    }
+
     val item = currentItem ?: return
     val baseLocalSong = (item as? PlayableItem.Local)?.song
     val localSong = when {
@@ -242,9 +249,10 @@ fun NowPlayingScreen(
         }
     }
 
-    val nestedScrollConnection = remember(dismissThresholdPx, onDismiss) {
+    val nestedScrollConnection = remember(dismissThresholdPx, onDismiss, pagerState) {
         object : NestedScrollConnection {
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                if (pagerState.currentPage != 0) return Offset.Zero
                 val delta = available.y
                 if (dragOffset > 0f) {
                     val old = dragOffset
@@ -256,20 +264,20 @@ fun NowPlayingScreen(
             }
 
             override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
+                if (pagerState.currentPage != 0) return Offset.Zero
                 if (source != NestedScrollSource.UserInput) return Offset.Zero
                 val delta = available.y
                 if (delta > 0f) {
                     dragOffset = (dragOffset + delta).coerceAtLeast(0f)
-                    if (dragOffset > dismissThresholdPx) {
-                        onDismiss()
-                    }
                     return available
                 }
                 return Offset.Zero
             }
 
             override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
-                settleSwipeDismiss()
+                if (pagerState.currentPage == 0) {
+                    settleSwipeDismiss()
+                }
                 return available
             }
         }
@@ -546,13 +554,28 @@ fun NowPlayingScreen(
                                             }
                                         }
 
-                                        if (radioActive) {
-                                            Text(
-                                                text = "Radio activa",
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = MaterialTheme.colorScheme.primary,
-                                                fontWeight = FontWeight.Medium
-                                            )
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            if (radioActive) {
+                                                Text(
+                                                    text = "Radio activa",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = MaterialTheme.colorScheme.primary,
+                                                    fontWeight = FontWeight.Medium
+                                                )
+                                                Spacer(modifier = Modifier.width(8.dp))
+                                            }
+                                            if (queueItems.isNotEmpty()) {
+                                                TextButton(
+                                                    onClick = viewModel::clearQueue,
+                                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                                                ) {
+                                                    Text(
+                                                        text = "Limpiar",
+                                                        style = MaterialTheme.typography.labelMedium,
+                                                        color = MaterialTheme.colorScheme.error
+                                                    )
+                                                }
+                                            }
                                         }
                                     }
                                 }
@@ -563,12 +586,15 @@ fun NowPlayingScreen(
                                     key = { _, qItem -> qItem.queueEntryId },
                                     contentType = { _, _ -> "queue_item" }
                                 ) { index, qItem ->
-                                    val currentIndex by rememberUpdatedState(index)
+                                    val currentQueueItems by rememberUpdatedState(queueItems)
                                     val currentOnRemove by rememberUpdatedState(viewModel::removeFromQueue)
                                     val dismissState = rememberSwipeToDismissBoxState(
                                         confirmValueChange = { value ->
                                             if (value == SwipeToDismissBoxValue.StartToEnd) {
-                                                currentOnRemove(currentIndex)
+                                                val targetIndex = currentQueueItems.indexOfFirst { it.queueEntryId == qItem.queueEntryId }
+                                                if (targetIndex >= 0) {
+                                                    currentOnRemove(targetIndex)
+                                                }
                                                 true
                                             } else {
                                                 false
@@ -1008,17 +1034,11 @@ private fun NowPlayingLyricsView(
                     }
                     val listState = rememberLazyListState()
                     var userScrolledRecent by remember { mutableStateOf(false) }
-                    var lastUserScrollEpoch by remember { mutableLongStateOf(0L) }
 
                     LaunchedEffect(listState.isScrollInProgress) {
                         if (listState.isScrollInProgress) {
                             userScrolledRecent = true
-                            lastUserScrollEpoch = System.currentTimeMillis()
-                        }
-                    }
-
-                    LaunchedEffect(lastUserScrollEpoch) {
-                        if (lastUserScrollEpoch > 0) {
+                        } else if (userScrolledRecent) {
                             kotlinx.coroutines.delay(3500)
                             userScrolledRecent = false
                         }

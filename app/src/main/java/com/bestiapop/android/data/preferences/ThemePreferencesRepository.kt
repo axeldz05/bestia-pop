@@ -28,31 +28,26 @@ class ThemePreferencesRepository internal constructor(
 
     val initialTheme: CustomTheme = run {
         val themeId = syncPrefs?.getString("selected_theme_id", null) ?: ThemePresets.DYNAMIC_THEME_ID
-        if (themeId == "custom") {
-            val customColors = ColorSchemeData(
-                primary = syncPrefs?.getLong("custom_primary", ThemePresets.MidnightDark.colors.primary)
-                    ?: ThemePresets.MidnightDark.colors.primary,
-                onPrimary = syncPrefs?.getLong("custom_on_primary", ThemePresets.MidnightDark.colors.onPrimary)
-                    ?: ThemePresets.MidnightDark.colors.onPrimary,
-                secondary = syncPrefs?.getLong("custom_secondary", ThemePresets.MidnightDark.colors.secondary)
-                    ?: ThemePresets.MidnightDark.colors.secondary,
-                background = syncPrefs?.getLong("custom_background", ThemePresets.MidnightDark.colors.background)
-                    ?: ThemePresets.MidnightDark.colors.background,
-                surface = syncPrefs?.getLong("custom_surface", ThemePresets.MidnightDark.colors.surface)
-                    ?: ThemePresets.MidnightDark.colors.surface,
-                surfaceVariant = syncPrefs?.getLong("custom_surface_variant", ThemePresets.MidnightDark.colors.surfaceVariant)
-                    ?: ThemePresets.MidnightDark.colors.surfaceVariant,
-                accent = syncPrefs?.getLong("custom_accent", ThemePresets.MidnightDark.colors.accent)
-                    ?: ThemePresets.MidnightDark.colors.accent
-            )
-            CustomTheme(
-                id = "custom",
-                name = "Custom Preset",
-                colors = customColors,
-                isDark = true
-            )
-        } else {
-            ThemePresets.getById(themeId)
+        when (themeId) {
+            "custom" -> {
+                val customColors = readColors(syncPrefs, "custom") ?: ThemePresets.MidnightDark.colors
+                CustomTheme(
+                    id = "custom",
+                    name = "Custom Preset",
+                    colors = customColors,
+                    isDark = true
+                )
+            }
+            ThemePresets.DYNAMIC_THEME_ID -> {
+                val dynamicColors = readColors(syncPrefs, "dynamic") ?: ThemePresets.MidnightDark.colors
+                CustomTheme(
+                    id = ThemePresets.DYNAMIC_THEME_ID,
+                    name = "Dinámico por Canción",
+                    colors = dynamicColors,
+                    isDark = true
+                )
+            }
+            else -> ThemePresets.getById(themeId)
         }
     }
 
@@ -65,52 +60,133 @@ class ThemePreferencesRepository internal constructor(
         val CUSTOM_SURFACE = longPreferencesKey("custom_surface")
         val CUSTOM_SURFACE_VARIANT = longPreferencesKey("custom_surface_variant")
         val CUSTOM_ACCENT = longPreferencesKey("custom_accent")
+
+        val DYNAMIC_PRIMARY = longPreferencesKey("dynamic_primary")
+        val DYNAMIC_ON_PRIMARY = longPreferencesKey("dynamic_on_primary")
+        val DYNAMIC_SECONDARY = longPreferencesKey("dynamic_secondary")
+        val DYNAMIC_BACKGROUND = longPreferencesKey("dynamic_background")
+        val DYNAMIC_SURFACE = longPreferencesKey("dynamic_surface")
+        val DYNAMIC_SURFACE_VARIANT = longPreferencesKey("dynamic_surface_variant")
+        val DYNAMIC_ACCENT = longPreferencesKey("dynamic_accent")
+        val DYNAMIC_ARTWORK_URI = stringPreferencesKey("dynamic_artwork_uri")
+    }
+
+    val lastDynamicArtworkUri: String?
+        get() = syncPrefs?.getString("dynamic_artwork_uri", null)
+
+    val dynamicArtworkUriFlow: Flow<String?> = dataStore.data.map { prefs ->
+        prefs[Keys.DYNAMIC_ARTWORK_URI]
     }
 
     val selectedThemeFlow: Flow<CustomTheme> = dataStore.data.map { prefs ->
         val themeId = prefs[Keys.SELECTED_THEME_ID] ?: ThemePresets.DYNAMIC_THEME_ID
 
-        val resolved = if (themeId == "custom") {
-            val customColors = ColorSchemeData(
-                primary = prefs[Keys.CUSTOM_PRIMARY] ?: ThemePresets.MidnightDark.colors.primary,
-                onPrimary = prefs[Keys.CUSTOM_ON_PRIMARY] ?: ThemePresets.MidnightDark.colors.onPrimary,
-                secondary = prefs[Keys.CUSTOM_SECONDARY] ?: ThemePresets.MidnightDark.colors.secondary,
-                background = prefs[Keys.CUSTOM_BACKGROUND] ?: ThemePresets.MidnightDark.colors.background,
-                surface = prefs[Keys.CUSTOM_SURFACE] ?: ThemePresets.MidnightDark.colors.surface,
-                surfaceVariant = prefs[Keys.CUSTOM_SURFACE_VARIANT] ?: ThemePresets.MidnightDark.colors.surfaceVariant,
-                accent = prefs[Keys.CUSTOM_ACCENT] ?: ThemePresets.MidnightDark.colors.accent
-            )
-            CustomTheme(
-                id = "custom",
-                name = "Custom Preset",
-                colors = customColors,
-                isDark = true
-            )
-        } else {
-            ThemePresets.getById(themeId)
+        val resolved = when (themeId) {
+            "custom" -> {
+                val customColors = readColors(prefs, "custom") ?: ThemePresets.MidnightDark.colors
+                CustomTheme(
+                    id = "custom",
+                    name = "Custom Preset",
+                    colors = customColors,
+                    isDark = true
+                )
+            }
+            ThemePresets.DYNAMIC_THEME_ID -> {
+                val dynamicColors = readColors(prefs, "dynamic") ?: ThemePresets.MidnightDark.colors
+                CustomTheme(
+                    id = ThemePresets.DYNAMIC_THEME_ID,
+                    name = "Dinámico por Canción",
+                    colors = dynamicColors,
+                    isDark = true
+                )
+            }
+            else -> ThemePresets.getById(themeId)
         }
         syncMirror(resolved)
         resolved
+    }
+
+    private fun readColors(prefs: Preferences, prefix: String): ColorSchemeData? {
+        val primary = prefs[longPreferencesKey("${prefix}_primary")] ?: return null
+        val onPrimary = prefs[longPreferencesKey("${prefix}_on_primary")] ?: return null
+        val secondary = prefs[longPreferencesKey("${prefix}_secondary")] ?: return null
+        val background = prefs[longPreferencesKey("${prefix}_background")] ?: return null
+        val surface = prefs[longPreferencesKey("${prefix}_surface")] ?: return null
+        val surfaceVariant = prefs[longPreferencesKey("${prefix}_surface_variant")] ?: return null
+        val accent = prefs[longPreferencesKey("${prefix}_accent")] ?: return null
+        return ColorSchemeData(
+            primary = primary,
+            onPrimary = onPrimary,
+            secondary = secondary,
+            background = background,
+            surface = surface,
+            surfaceVariant = surfaceVariant,
+            accent = accent
+        )
+    }
+
+    private fun readColors(sync: android.content.SharedPreferences?, prefix: String): ColorSchemeData? {
+        if (sync == null || !sync.contains("${prefix}_primary")) return null
+        return ColorSchemeData(
+            primary = sync.getLong("${prefix}_primary", ThemePresets.MidnightDark.colors.primary),
+            onPrimary = sync.getLong("${prefix}_on_primary", ThemePresets.MidnightDark.colors.onPrimary),
+            secondary = sync.getLong("${prefix}_secondary", ThemePresets.MidnightDark.colors.secondary),
+            background = sync.getLong("${prefix}_background", ThemePresets.MidnightDark.colors.background),
+            surface = sync.getLong("${prefix}_surface", ThemePresets.MidnightDark.colors.surface),
+            surfaceVariant = sync.getLong("${prefix}_surface_variant", ThemePresets.MidnightDark.colors.surfaceVariant),
+            accent = sync.getLong("${prefix}_accent", ThemePresets.MidnightDark.colors.accent)
+        )
+    }
+
+    private fun putColors(editor: android.content.SharedPreferences.Editor, prefix: String, colors: ColorSchemeData) {
+        editor.putLong("${prefix}_primary", colors.primary)
+        editor.putLong("${prefix}_on_primary", colors.onPrimary)
+        editor.putLong("${prefix}_secondary", colors.secondary)
+        editor.putLong("${prefix}_background", colors.background)
+        editor.putLong("${prefix}_surface", colors.surface)
+        editor.putLong("${prefix}_surface_variant", colors.surfaceVariant)
+        editor.putLong("${prefix}_accent", colors.accent)
+    }
+
+    private fun putColors(prefs: androidx.datastore.preferences.core.MutablePreferences, prefix: String, colors: ColorSchemeData) {
+        prefs[longPreferencesKey("${prefix}_primary")] = colors.primary
+        prefs[longPreferencesKey("${prefix}_on_primary")] = colors.onPrimary
+        prefs[longPreferencesKey("${prefix}_secondary")] = colors.secondary
+        prefs[longPreferencesKey("${prefix}_background")] = colors.background
+        prefs[longPreferencesKey("${prefix}_surface")] = colors.surface
+        prefs[longPreferencesKey("${prefix}_surface_variant")] = colors.surfaceVariant
+        prefs[longPreferencesKey("${prefix}_accent")] = colors.accent
     }
 
     private fun syncMirror(theme: CustomTheme) {
         syncPrefs?.edit()?.let { editor ->
             editor.putString("selected_theme_id", theme.id)
             if (theme.id == "custom") {
-                editor.putLong("custom_primary", theme.colors.primary)
-                editor.putLong("custom_on_primary", theme.colors.onPrimary)
-                editor.putLong("custom_secondary", theme.colors.secondary)
-                editor.putLong("custom_background", theme.colors.background)
-                editor.putLong("custom_surface", theme.colors.surface)
-                editor.putLong("custom_surface_variant", theme.colors.surfaceVariant)
-                editor.putLong("custom_accent", theme.colors.accent)
+                putColors(editor, "custom", theme.colors)
+            } else if (theme.id == ThemePresets.DYNAMIC_THEME_ID) {
+                putColors(editor, "dynamic", theme.colors)
             }
             editor.apply()
         }
     }
 
     suspend fun selectPreset(themeId: String) {
-        syncMirror(ThemePresets.getById(themeId))
+        val theme = if (themeId == ThemePresets.DYNAMIC_THEME_ID) {
+            val savedDynamic = readColors(syncPrefs, "dynamic")
+            if (savedDynamic != null) {
+                CustomTheme(
+                    id = ThemePresets.DYNAMIC_THEME_ID,
+                    name = "Dinámico por Canción",
+                    colors = savedDynamic,
+                    isDark = true
+                )
+            } else {
+                ThemePresets.getById(themeId)
+            }
+        } else {
+            ThemePresets.getById(themeId)
+        }
+        syncMirror(theme)
         dataStore.put(Keys.SELECTED_THEME_ID, themeId)
     }
 
@@ -128,13 +204,19 @@ class ThemePreferencesRepository internal constructor(
         syncMirror(customTheme)
         dataStore.edit { prefs ->
             prefs[Keys.SELECTED_THEME_ID] = "custom"
-            prefs[Keys.CUSTOM_PRIMARY] = colors.primary
-            prefs[Keys.CUSTOM_ON_PRIMARY] = colors.onPrimary
-            prefs[Keys.CUSTOM_SECONDARY] = colors.secondary
-            prefs[Keys.CUSTOM_BACKGROUND] = colors.background
-            prefs[Keys.CUSTOM_SURFACE] = colors.surface
-            prefs[Keys.CUSTOM_SURFACE_VARIANT] = colors.surfaceVariant
-            prefs[Keys.CUSTOM_ACCENT] = colors.accent
+            putColors(prefs, "custom", colors)
+        }
+    }
+
+    suspend fun saveDynamicTheme(theme: CustomTheme, artworkUri: String? = null) {
+        syncPrefs?.edit()?.let { editor ->
+            putColors(editor, "dynamic", theme.colors)
+            artworkUri?.let { editor.putString("dynamic_artwork_uri", it) }
+            editor.apply()
+        }
+        dataStore.edit { prefs ->
+            putColors(prefs, "dynamic", theme.colors)
+            artworkUri?.let { prefs[Keys.DYNAMIC_ARTWORK_URI] = it }
         }
     }
 }

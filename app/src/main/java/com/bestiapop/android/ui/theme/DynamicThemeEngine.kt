@@ -18,6 +18,12 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChangedBy
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.scan
+
 /**
  * Engine that extracts harmonious, high-contrast, visually comfortable color palettes
  * from song album artwork.
@@ -39,16 +45,26 @@ object DynamicThemeEngine {
     private val themeCache = LruCache<String, CustomTheme>(CACHE_MAX_SIZE)
 
     /**
-     * Extracts a dynamic [CustomTheme] from the given [artworkUri].
+     * Level 2 data bundle: captures dynamic theme and the artwork URI it was derived from.
+     */
+    data class DynamicThemeState(
+        val theme: CustomTheme,
+        val artworkUri: String? = null
+    )
+
+    /**
+     * Level 1 primitive: Extracts a dynamic [CustomTheme] from the given [artworkUri].
      * Returns a cached theme if available, or derives a new one in [Dispatchers.IO].
+     * If [artworkUri] is null/blank or fails to load, gracefully returns [fallback] or [fallbackTheme].
      */
     suspend fun extractDynamicTheme(
         context: Context,
         artworkUri: String?,
-        isDark: Boolean = true
+        isDark: Boolean = true,
+        fallback: CustomTheme? = null
     ): CustomTheme {
         if (artworkUri.isNullOrBlank()) {
-            return fallbackTheme(isDark)
+            return fallback ?: fallbackTheme(isDark)
         }
 
         val cacheKey = "${artworkUri}_${if (isDark) "dark" else "light"}"
@@ -59,13 +75,63 @@ object DynamicThemeEngine {
             if (bitmap != null) {
                 deriveThemeFromBitmap(bitmap, artworkUri, isDark)
             } else {
-                fallbackTheme(isDark)
+                fallback ?: fallbackTheme(isDark)
             }
         }
 
         themeCache.put(cacheKey, theme)
         return theme
     }
+
+    /**
+     * Level 2 compressed wrapper: Resolves transition to next dynamic theme state.
+     * If [artworkUri] is non-blank and differs from [currentState], derives a new theme.
+     * If [artworkUri] is null/blank or fails to load, gracefully retains [currentState.theme].
+     */
+    suspend fun resolveNextTheme(
+        context: Context,
+        artworkUri: String?,
+        currentState: DynamicThemeState,
+        isDark: Boolean = true
+    ): DynamicThemeState {
+        val trimmedUri = artworkUri?.takeIf { it.isNotBlank() }
+        if (trimmedUri == null || trimmedUri == currentState.artworkUri) {
+            return currentState
+        }
+        val newTheme = extractDynamicTheme(
+            context = context,
+            artworkUri = trimmedUri,
+            isDark = isDark,
+            fallback = currentState.theme
+        )
+        return DynamicThemeState(theme = newTheme, artworkUri = trimmedUri)
+    }
+
+    /**
+     * Level 3 high-level utility: Emits a reactive flow of [CustomTheme] that tracks
+     * artwork changes, retains the last dynamic theme across empty queue / null items,
+     * and triggers [onThemeChanged] whenever a new dynamic theme is derived for persistence.
+     */
+    fun dynamicThemeFlow(
+        context: Context,
+        artworkUriFlow: Flow<String?>,
+        initialState: DynamicThemeState,
+        isDark: Boolean = true,
+        onThemeChanged: (suspend (DynamicThemeState) -> Unit)? = null
+    ): Flow<CustomTheme> = artworkUriFlow
+        .scan(initialState) { state, currentUri ->
+            resolveNextTheme(
+                context = context,
+                artworkUri = currentUri,
+                currentState = state,
+                isDark = isDark
+            )
+        }
+        .distinctUntilChangedBy { it.theme.colors }
+        .onEach { state ->
+            onThemeChanged?.invoke(state)
+        }
+        .map { it.theme }
 
     private suspend fun loadThumbnailBitmap(context: Context, uri: String): Bitmap? {
         return try {

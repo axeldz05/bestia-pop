@@ -1703,6 +1703,30 @@ class PlaybackRuntimeContinuityTest {
         }
     }
 
+    @Test
+    fun clearQueue_pausesPlaybackAndEmptiesQueueWithoutAutoPlay() = runBlocking {
+        val fixture = fixture(
+            attachController = true,
+            startTicker = true
+        )
+        try {
+            val items = listOf(PlayableItem.Local(song(1, "A")), PlayableItem.Local(song(2, "B")))
+            fixture.runtime.addPlayableBatch(items)
+            fixture.runtime.skipToQueueIndex(0)
+            assertEquals(2, fixture.runtime.queue.value.size)
+            assertEquals("A", fixture.runtime.currentItem.value?.title)
+
+            fixture.runtime.clearQueue()
+
+            assertTrue(fixture.runtime.queue.value.isEmpty())
+            assertEquals(null, fixture.runtime.currentItem.value)
+            assertFalse(fixture.runtime.isPlaying.value)
+            assertFalse(fixture.runtime.radioActive.value)
+        } finally {
+            fixture.close()
+        }
+    }
+
     private fun fixture(
         streamAccess: PlaybackRuntimeStreamAccess = FakeStreamAccess(),
         persistence: PlaybackRuntimePersistence = FakePersistence(),

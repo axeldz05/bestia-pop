@@ -108,7 +108,7 @@ internal class ProcessIdentifyRuntime(
     private val reviewBuffer = ArrayList<IdentifyProposal>()
     private var reviewBufferFields: IdentifyApplyFields? = null
 
-    private var activeWorkerJob: Job? = null
+    private val activeWorkerJobs = java.util.concurrent.CopyOnWriteArrayList<Job>()
     @Volatile
     private var userCancelled = false
 
@@ -126,7 +126,8 @@ internal class ProcessIdentifyRuntime(
                 runMutex.withLock { processUntilEmpty() }
             }
         }
-        activeWorkerJob = job
+        activeWorkerJobs.add(job)
+        job.invokeOnCompletion { activeWorkerJobs.remove(job) }
         return job
     }
 
@@ -138,7 +139,8 @@ internal class ProcessIdentifyRuntime(
             if (remaining.isEmpty()) return@launch
             runMutex.withLock { processUntilEmpty() }
         }
-        activeWorkerJob = job
+        activeWorkerJobs.add(job)
+        job.invokeOnCompletion { activeWorkerJobs.remove(job) }
         return job
     }
 
@@ -168,9 +170,9 @@ internal class ProcessIdentifyRuntime(
 
     fun cancelUser() {
         userCancelled = true
-        val job = activeWorkerJob
-        activeWorkerJob = null
-        job?.cancel()
+        val jobsToCancel = ArrayList(activeWorkerJobs)
+        activeWorkerJobs.clear()
+        jobsToCancel.forEach { it.cancel() }
         scope.launch(ioDispatcher) {
             flushReviewBuffer()
             workMutex.withLock {
@@ -292,6 +294,8 @@ internal class ProcessIdentifyRuntime(
             val current = workMutex.withLock { snapshot }
             if (current == null || !current.hasRemaining) {
                 finishBatch(current)
+            } else {
+                workMutex.withLock { markInterruptedLocked() }
             }
         } catch (cancelled: CancellationException) {
             flushReviewBuffer()
@@ -366,14 +370,14 @@ internal class ProcessIdentifyRuntime(
                         )
                     }
                     else -> {
-                        bufferReview(reviewProposal, reviewFields)
+                        bufferReview(reviewProposal, baseline.applyFields)
                         deltaReview = 1
                         deltaMedium = 1
                     }
                 }
             }
             else -> {
-                bufferReview(reviewProposal, reviewFields)
+                bufferReview(reviewProposal, baseline.applyFields)
                 deltaReview = 1
                 when (proposal.confidence) {
                     IdentifyConfidence.MEDIUM -> deltaMedium = 1
@@ -481,7 +485,7 @@ internal class ProcessIdentifyRuntime(
                         processedCount = current.processedCount + appliedIds.size,
                         updated = current.updated + appliedIds.size
                     )
-                    persistLocked(snapshot)
+                    persistLocked(snapshot, force = true)
                 }
             }
         }
@@ -497,7 +501,7 @@ internal class ProcessIdentifyRuntime(
             val next = transform(current).copy(
                 remainingSongIds = remaining,
                 processedCount = current.processedCount + 1,
-                interrupted = false
+                interrupted = current.interrupted
             )
             snapshot = next
             persistLocked(next)
@@ -553,7 +557,9 @@ internal class ProcessIdentifyRuntime(
     private suspend fun bufferReview(proposal: IdentifyProposal, fields: IdentifyApplyFields) {
         val flush = workMutex.withLock {
             reviewBuffer += proposal
-            reviewBufferFields = fields
+            if (reviewBufferFields == null) {
+                reviewBufferFields = fields
+            }
             if (reviewBuffer.size >= PERSIST_EVERY) {
                 takeReviewBufferLocked()
             } else {

@@ -14,6 +14,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -60,8 +61,17 @@ fun QueueScreen(
             Text(
                 text = "Cola de Reproducción (${queue.size})",
                 style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
-                color = MaterialTheme.colorScheme.onBackground
+                color = MaterialTheme.colorScheme.onBackground,
+                modifier = Modifier.weight(1f)
             )
+            if (queue.isNotEmpty()) {
+                TextButton(onClick = viewModel::clearQueue) {
+                    Text(
+                        text = "Limpiar",
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
         }
 
         Spacer(modifier = Modifier.height(16.dp))

@@ -90,6 +90,45 @@ class ThemePreferencesRepositoryTest {
         }
     }
 
+    @Test
+    fun dynamicTheme_persistsColorsAndArtworkUriAfterColdStart() = runTest {
+        val storage = temporaryDataStore()
+        try {
+            val colors = ColorSchemeData(
+                primary = 0xFF556677,
+                onPrimary = 0xFFFFFFFF,
+                secondary = 0xFF8899AA,
+                background = 0xFF101010,
+                surface = 0xFF202020,
+                surfaceVariant = 0xFF303030,
+                accent = 0xFF00FFCC
+            )
+            val dynamicTheme = com.bestiapop.android.data.model.CustomTheme(
+                id = ThemePresets.DYNAMIC_THEME_ID,
+                name = "Dinámico por Canción",
+                colors = colors,
+                isDark = true
+            )
+            val repository = ThemePreferencesRepository(storage.dataStore)
+            repository.enableDynamicTheme()
+            repository.saveDynamicTheme(dynamicTheme, artworkUri = "content://media/art/123")
+
+            val current = repository.selectedThemeFlow.first()
+            assertEquals(ThemePresets.DYNAMIC_THEME_ID, current.id)
+            assertEquals(colors, current.colors)
+
+            storage.restart()
+
+            val restored = ThemePreferencesRepository(storage.dataStore)
+            val restoredTheme = restored.selectedThemeFlow.first()
+            assertEquals(ThemePresets.DYNAMIC_THEME_ID, restoredTheme.id)
+            assertEquals(colors, restoredTheme.colors)
+            assertEquals("content://media/art/123", restored.dynamicArtworkUriFlow.first())
+        } finally {
+            storage.close()
+        }
+    }
+
     private fun temporaryDataStore() = TemporaryPreferencesDataStore(
         ApplicationProvider.getApplicationContext(),
         "theme-preferences"

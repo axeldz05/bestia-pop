@@ -61,4 +61,118 @@ class DynamicThemeEngineTest {
         val contrast = ThemeHarmonizer.calculateContrastRatio(primaryColor, bgColor)
         assertTrue("Safe fallback contrast must be >= 4.5:1, was $contrast", contrast >= 4.5f)
     }
+
+    @Test
+    fun extractDynamicTheme_blankOrNullUriReturnsProvidedFallback() = kotlinx.coroutines.test.runTest {
+        val context: android.content.Context = androidx.test.core.app.ApplicationProvider.getApplicationContext()
+        val customFallback = com.bestiapop.android.data.model.CustomTheme(
+            id = ThemePresets.DYNAMIC_THEME_ID,
+            name = "Custom Fallback",
+            colors = com.bestiapop.android.data.model.ColorSchemeData(
+                primary = 0xFF123456,
+                onPrimary = 0xFFFFFFFF,
+                secondary = 0xFF654321,
+                background = 0xFF111111,
+                surface = 0xFF222222,
+                surfaceVariant = 0xFF333333,
+                accent = 0xFFAABBCC
+            ),
+            isDark = true
+        )
+
+        val themeForNull = DynamicThemeEngine.extractDynamicTheme(
+            context = context,
+            artworkUri = null,
+            fallback = customFallback
+        )
+        assertEquals(customFallback, themeForNull)
+
+        val themeForBlank = DynamicThemeEngine.extractDynamicTheme(
+            context = context,
+            artworkUri = "   ",
+            fallback = customFallback
+        )
+        assertEquals(customFallback, themeForBlank)
+    }
+
+    @Test
+    fun resolveNextTheme_retainsCurrentStateWhenUriIsNullEmptyOrUnchanged() = kotlinx.coroutines.test.runTest {
+        val context: android.content.Context = androidx.test.core.app.ApplicationProvider.getApplicationContext()
+        val customFallback = com.bestiapop.android.data.model.CustomTheme(
+            id = ThemePresets.DYNAMIC_THEME_ID,
+            name = "Saved Dynamic",
+            colors = com.bestiapop.android.data.model.ColorSchemeData(
+                primary = 0xFF990000,
+                onPrimary = 0xFFFFFFFF,
+                secondary = 0xFFCC0000,
+                background = 0xFF050505,
+                surface = 0xFF151515,
+                surfaceVariant = 0xFF252525,
+                accent = 0xFFFF0055
+            ),
+            isDark = true
+        )
+        val initialState = DynamicThemeEngine.DynamicThemeState(
+            theme = customFallback,
+            artworkUri = "mock://initial_album"
+        )
+
+        // Null uri (e.g. queue cleared) -> retains current state
+        val stateAfterNull = DynamicThemeEngine.resolveNextTheme(
+            context = context,
+            artworkUri = null,
+            currentState = initialState
+        )
+        assertEquals(initialState, stateAfterNull)
+
+        // Same uri -> retains current state
+        val stateAfterSame = DynamicThemeEngine.resolveNextTheme(
+            context = context,
+            artworkUri = "mock://initial_album",
+            currentState = initialState
+        )
+        assertEquals(initialState, stateAfterSame)
+    }
+
+    @Test
+    fun dynamicThemeFlow_preservesThemeWhenQueueIsCleared() = kotlinx.coroutines.test.runTest {
+        val context: android.content.Context = androidx.test.core.app.ApplicationProvider.getApplicationContext()
+        val customColors = com.bestiapop.android.data.model.ColorSchemeData(
+            primary = 0xFF445566,
+            onPrimary = 0xFFFFFFFF,
+            secondary = 0xFF778899,
+            background = 0xFF010101,
+            surface = 0xFF111111,
+            surfaceVariant = 0xFF212121,
+            accent = 0xFF00EEDD
+        )
+        val initialTheme = com.bestiapop.android.data.model.CustomTheme(
+            id = ThemePresets.DYNAMIC_THEME_ID,
+            name = "Initial Dynamic",
+            colors = customColors,
+            isDark = true
+        )
+        val initialState = DynamicThemeEngine.DynamicThemeState(
+            theme = initialTheme,
+            artworkUri = "mock://song1"
+        )
+
+        // Simulate playback events: queue cleared (null), empty item (blank), same song (mock://song1)
+        val artworkUriFlow = kotlinx.coroutines.flow.flowOf(null, "", "mock://song1", null)
+        val collectedThemes = mutableListOf<com.bestiapop.android.data.model.CustomTheme>()
+
+        DynamicThemeEngine.dynamicThemeFlow(
+            context = context,
+            artworkUriFlow = artworkUriFlow,
+            initialState = initialState
+        ).collect { theme ->
+            collectedThemes.add(theme)
+        }
+
+        // All emissions must preserve the initialTheme's colors and never revert to fallback
+        assertTrue(collectedThemes.isNotEmpty())
+        for (theme in collectedThemes) {
+            assertEquals(initialTheme.colors, theme.colors)
+        }
+    }
 }

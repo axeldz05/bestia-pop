@@ -577,6 +577,54 @@ class ProcessIdentifyRuntimeTest {
         }
     }
 
+    @Test
+    fun fillGapsOnly_flushesReviewWithBaselineApplyFields() = runBlocking {
+        var flushedFields: IdentifyApplyFields? = null
+        val customFields = IdentifyApplyFields(
+            artwork = true,
+            title = true,
+            artist = true,
+            album = true,
+            year = true,
+            trackNumber = true
+        )
+        val fixture = fixture(
+            songsById = mapOf(1L to song(1L).copy(title = "Existing Title", artist = "Existing Artist")),
+            propose = { song, _, _ -> proposal(song.id, IdentifyConfidence.MEDIUM) },
+            appendReview = { _, fields -> flushedFields = fields }
+        )
+        try {
+            fixture.runtime.submit(
+                songs = listOf(song(1L)),
+                fields = customFields,
+                fillGapsOnly = true
+            ).join()
+            withTimeout(TIMEOUT_MS) { fixture.runtime.awaitIdle() }
+
+            assertEquals(customFields, flushedFields)
+        } finally {
+            fixture.close()
+        }
+    }
+
+    @Test
+    fun offlineBailout_marksSnapshotInterrupted() = runBlocking {
+        var online = false
+        val fixture = fixture(
+            isOnline = { online },
+            propose = { song, _, _ -> proposal(song.id, IdentifyConfidence.MEDIUM) }
+        )
+        try {
+            fixture.runtime.submit(listOf(song(1L), song(2L))).join()
+            withTimeout(TIMEOUT_MS) { fixture.runtime.awaitIdle() }
+
+            val saved = fixture.work.lastOrNull()
+            assertTrue("Snapshot should be saved with interrupted=true", saved?.interrupted == true)
+        } finally {
+            fixture.close()
+        }
+    }
+
     private fun fixture(
         pendingIds: Set<Long> = emptySet(),
         initialWork: IdentifyWorkSnapshot? = null,

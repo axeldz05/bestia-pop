@@ -184,6 +184,9 @@ internal interface PlaybackControllerFacade {
     fun addMediaItems(index: Int, items: List<PlayableItem>)
     fun removeMediaItem(index: Int)
     fun removeMediaItems(fromIndex: Int, toIndex: Int)
+    fun clearMediaItems() {
+        if (mediaItemCount > 0) removeMediaItems(0, mediaItemCount)
+    }
     fun moveMediaItem(fromIndex: Int, toIndex: Int)
     fun prepare()
     fun play()
@@ -1656,17 +1659,19 @@ class PlaybackRuntime internal constructor(
         val currentIndex = currentQueueIndex().coerceIn(old.indices)
         val live = old.toMutableList().apply { removeAt(index) }
         _queue.value = live
-        mutateMaterializedTimeline { it.removeMediaItem(index) }
         if (live.isEmpty()) {
+            stopRadio()
             playWhenReadyIntent = false
             cancelPendingPlayIntent()
             controller?.pause()
+            mutateMaterializedTimeline { it.removeMediaItem(index) }
             lastMediaItemIndex = -1
             _playbackPositionMs.value = 0L
             clearDiscoverPlaybackOrigin()
             setCurrentItem(null, persistLastPlayed = false)
             timelineMaterialized = false
         } else {
+            mutateMaterializedTimeline { it.removeMediaItem(index) }
             val nextIndex = when {
                 index < currentIndex -> currentIndex - 1
                 index == currentIndex -> index.coerceAtMost(live.lastIndex)
@@ -1679,7 +1684,26 @@ class PlaybackRuntime internal constructor(
             }
         }
         persistPlaybackSession(force = true)
-        restartAsyncPlaybackWork()
+        if (live.isNotEmpty()) {
+            restartAsyncPlaybackWork()
+        }
+        releaseControllerIfIdle()
+    }
+
+    fun clearQueue() {
+        invalidatePlaybackWork(clearRejectedEntries = false)
+        stopRadio()
+        playWhenReadyIntent = false
+        cancelPendingPlayIntent()
+        controller?.pause()
+        _queue.value = emptyList()
+        mutateMaterializedTimeline { it.clearMediaItems() }
+        lastMediaItemIndex = -1
+        _playbackPositionMs.value = 0L
+        clearDiscoverPlaybackOrigin()
+        setCurrentItem(null, persistLastPlayed = false)
+        timelineMaterialized = false
+        persistPlaybackSession(force = true)
         releaseControllerIfIdle()
     }
 
@@ -2522,6 +2546,7 @@ class PlaybackRuntime internal constructor(
 
     private fun maybeAutoStartRadioOnQueueEnd() {
         if (_repeatMode.value != RepeatMode.OFF || _radioLoading.value) return
+        if (_queue.value.isEmpty() || !playWhenReadyIntent) return
         val seed = _currentItem.value ?: return
         if (seed.artist.isBlank() || seed.title.isBlank()) return
         startRadio(auto = true)
@@ -3315,6 +3340,7 @@ private class MediaControllerFacade(
     override fun removeMediaItem(index: Int) = controller.removeMediaItem(index)
     override fun removeMediaItems(fromIndex: Int, toIndex: Int) =
         controller.removeMediaItems(fromIndex, toIndex)
+    override fun clearMediaItems() = controller.clearMediaItems()
 
     override fun moveMediaItem(fromIndex: Int, toIndex: Int) =
         controller.moveMediaItem(fromIndex, toIndex)

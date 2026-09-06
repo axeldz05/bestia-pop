@@ -54,8 +54,10 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 | Now playing | `ui/screens/NowPlayingScreen.kt` (`BackHandler` → `onDismiss`; cola `displayQueue` vía `QueueLazyList`; ⋮ `NowPlayingActionsMenu`; Letra `NowPlayingLyricsPanel` + tap `seekToAndPlay`; remoto `NowPlayingRemoteDownloadAction`; hero `ArtworkHero`) |
 | Cola | `ui/screens/QueueScreen.kt` (`QueueLazyList` + `displayQueue`, drag → `moveDisplayQueueItem`, swipe right `SwipeToDismissBox` para remover de la cola) |
 | WiFi sync | `ui/screens/WebServerScreen.kt` (`WebServerScreen(viewModel)` + transferencias + botón conflictos + `rememberSongActionDialogs`) |
-| Descargas | `ui/screens/DownloadsScreen.kt` (banner `backgroundExecutionStatus`; `DownloadsHeader` resume/clear; path + `ActiveDownloadRow`) |
-| Temas | `ui/screens/ThemeSettingsScreen.kt` |
+| Temas | `ui/screens/ThemeSettingsScreen.kt` (hero de modo dinámico por canción con swatches en vivo; acceso a editor de temas con preview de biblioteca y lista de presets) |
+| Theme harmonizer | `ui/theme/ThemeHarmonizer.kt` (WCAG 2.1 contraste y luminancia, conversiones HSL, generación completa ColorScheme Material 3 y auto-armonización) |
+| Dynamic theme engine | `ui/theme/DynamicThemeEngine.kt` (extracción de paleta desde carátulas, tintado ambiental, guardarraíles de contraste y fallback congruente con LRU cache) |
+| Theme editor & preview | `ui/components/ThemeEditorDialog.kt` (personalización HSL, código HEX y verificación WCAG) + `ui/components/ThemeLibraryPreview.kt` (mockup interactivo en vivo de Biblioteca) |
 
 ## UI — components / state / theme
 

@@ -136,8 +136,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import com.bestiapop.android.ui.theme.DynamicThemeEngine
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -191,7 +195,7 @@ enum class SortDirection {
 }
 
 @OptIn(UnstableApi::class)
-@kotlin.OptIn(FlowPreview::class)
+@kotlin.OptIn(FlowPreview::class, ExperimentalCoroutinesApi::class)
 class MusicPlayerViewModel(application: Application) : AndroidViewModel(application) {
 
     private val app = application as BestiaPopApplication
@@ -210,7 +214,23 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private val connectivityObserver = ConnectivityObserver(application)
 
     // Theme state
+    val configuredThemeState: StateFlow<CustomTheme> = themeRepository.selectedThemeFlow
+        .stateIn(viewModelScope, SharingStarted.Lazily, themeRepository.initialTheme)
+
     val currentThemeState: StateFlow<CustomTheme> = themeRepository.selectedThemeFlow
+        .flatMapLatest { selectedTheme ->
+            if (selectedTheme.id == ThemePresets.DYNAMIC_THEME_ID) {
+                playbackRuntime.currentItem.map { item ->
+                    DynamicThemeEngine.extractDynamicTheme(
+                        context = application,
+                        artworkUri = item?.artworkUri,
+                        isDark = selectedTheme.isDark
+                    )
+                }
+            } else {
+                flowOf(selectedTheme)
+            }
+        }
         .stateIn(viewModelScope, SharingStarted.Lazily, themeRepository.initialTheme)
 
     // ListenBrainz state
@@ -256,7 +276,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     val streamSkipGraceSeconds: StateFlow<Int> =
         playbackPref(DEFAULT_STREAM_SKIP_GRACE_SECONDS) { it.streamSkipGraceSeconds }
     val openNowPlayingOnPlay: StateFlow<Boolean> = playbackPref(true) { it.openNowPlayingOnPlay }
-    val crossfadeEnabled: StateFlow<Boolean> = playbackPref(true) { it.crossfadeEnabled }
+    val crossfadeEnabled: StateFlow<Boolean> = playbackPref(false) { it.crossfadeEnabled }
     val crossfadeDurationSeconds: StateFlow<Int> =
         playbackPref(DEFAULT_CROSSFADE_DURATION_SECONDS) { it.crossfadeDurationSeconds }
 
@@ -2393,6 +2413,12 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     fun selectThemePreset(presetId: String) {
         viewModelScope.launch {
             themeRepository.selectPreset(presetId)
+        }
+    }
+
+    fun enableDynamicTheme() {
+        viewModelScope.launch {
+            themeRepository.enableDynamicTheme()
         }
     }
 

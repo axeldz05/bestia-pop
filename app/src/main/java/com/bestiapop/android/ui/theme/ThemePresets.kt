@@ -84,42 +84,23 @@ object ThemePresets {
         isDark = false
     )
 
+    const val DYNAMIC_THEME_ID = "dynamic_song"
+
+    val DynamicSong = CustomTheme(
+        id = DYNAMIC_THEME_ID,
+        name = "Dinámico por Canción",
+        colors = MidnightDark.colors,
+        isDark = true
+    )
+
     val allPresets = listOf(MidnightDark, AmoledBlack, SunsetGold, CyberpunkNeon, CleanLight)
 
     fun getById(id: String): CustomTheme {
+        if (id == DYNAMIC_THEME_ID) return DynamicSong
         return allPresets.find { it.id == id } ?: MidnightDark
     }
 
     fun CustomTheme.toMaterialColorScheme(): ColorScheme {
-        val p = Color(colors.primary)
-        val onP = Color(colors.onPrimary)
-        val sec = Color(colors.secondary)
-        val bg = Color(colors.background)
-        val surf = Color(colors.surface)
-        val surfVar = Color(colors.surfaceVariant)
-
-        return if (isDark) {
-            darkColorScheme(
-                primary = p,
-                onPrimary = onP,
-                secondary = sec,
-                background = bg,
-                surface = surf,
-                surfaceVariant = surfVar,
-                onBackground = Color(0xFFF0F0F0),
-                onSurface = Color(0xFFE8E8E8)
-            )
-        } else {
-            lightColorScheme(
-                primary = p,
-                onPrimary = onP,
-                secondary = sec,
-                background = bg,
-                surface = surf,
-                surfaceVariant = surfVar,
-                onBackground = Color(0xFF1C1C1E),
-                onSurface = Color(0xFF2C2C2E)
-            )
-        }
+        return ThemeHarmonizer.toMaterialColorScheme(colors, isDark)
     }
 }

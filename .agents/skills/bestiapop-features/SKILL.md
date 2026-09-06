@@ -25,7 +25,7 @@ Cada feature lista **invariantes** + **entry points**. Si el código diverge, ac
 | Tap en Cola / NP | `skipToQueueIndex(index)` | display == físico (`PlaybackRuntime.displayQueue`); **no** rota ni apaga shuffle. `PlaybackSelectionIntentGate` + job process-scoped hacen latest-tap-wins; antes de aplicar recalcula por `queueEntryId`. Compose usa ese mismo id como key/foco/scroll, así duplicados exactos siguen siendo slots distintos. Si un Remote falla, `PlaybackFallbackPlanner.circularPlan` prueba la cola circularmente e incluye Local |
 | Reordenar álbum al identificar | Actualización de biblioteca en `PlaybackRuntime` detecta si la cola activa es de un único álbum (sin shuffle); si cambian números de pista, reordena la cola con `applyQueueReorder` y `compareSongsWithinAlbum` preservando la canción en reproducción |
 | Abrir reproductor al reproducir | `PlaybackSettings.openNowPlayingOnPlay` (on por defecto; Ajustes → Reproducción). Al iniciar reproducción, `MusicPlayerViewModel.openNowPlayingEvents` dispara `openFullPlayer` en `MainScreen` |
-| Transición entre canciones (Crossfade) | `PlaybackSettings.crossfadeEnabled` (on por defecto) y `crossfadeDurationSeconds` (default 3s, rango 1-10s; Ajustes → Reproducción). `MusicService` realiza interpolación suave de volumen al finalizar la pista y al arrancar la siguiente pista, con reset inmediato en pausas y saltos manuales |
+| Transición entre canciones (Crossfade) | `PlaybackSettings.crossfadeEnabled` (off por defecto) y `crossfadeDurationSeconds` (default 3s, rango 1-10s; Ajustes → Reproducción). `MusicService` realiza interpolación suave de volumen al finalizar la pista y al arrancar la siguiente pista, con reset inmediato en pausas y saltos manuales |
 
 Archivos: `ui/MusicPlayerViewModel.kt` (façade pública); `service/PlaybackRuntime.kt` (`playPlayableCollection` / `toggleShuffle` / `displayQueue` / `moveQueueItem` / `skipToQueueIndex`); `data/playback/PlaybackQueueOrder.kt` (`shufflePlayOrder`); `data/playback/PlaybackQueueSlots.kt`; `data/playback/PlaybackFallbackPlanner.kt`; `data/playback/PlaybackSelectionIntentGate.kt`; `service/MusicService.kt` (`applyIdentityShuffleOrderIfEnabled`, `ACTION_SET_SHUFFLE_ORDER`, `updateCrossfadeLoop`); `ui/components/PlayShuffleButtons.kt`.
 
@@ -179,8 +179,21 @@ Letras en reproducción: `PlaybackRuntime.hydrateCurrentSongLyrics` actualiza ta
 
 ## 7. Temas
 
-`ThemePreferencesRepository` + `ThemePresets` + `ThemeSettingsScreen` + `CustomTheme` / `ColorSchemeData`.
-State: `currentThemeState`.
+**Invariantes:**
+- Esquema Material 3 completo y armonizado: `ThemeHarmonizer.toMaterialColorScheme` genera contenedores (`primaryContainer`, `surfaceContainer`, etc.) y garantiza ratio de contraste WCAG AA ($\ge 4.5:1$ en texto normal y $\ge 3.0:1$ en componentes gráficos) calculando automáticamente el mejor color `onPrimary`, `onSurface` y ajustando luminancia.
+- **Tema dinámico por carátula de canción:** preset `ThemePresets.DYNAMIC_THEME_ID` (`"dynamic_song"`, activo por defecto). Al estar activo, `DynamicThemeEngine.extractDynamicTheme` analiza la portada del `currentItem` / `currentSong` (bitmap liviano 64x64) en hilo IO con caché LRU (50 ítems).
+- **Confort visual y fallback congruente:** Fondo ambiental oscuro tintado con el matiz base ($S \approx 0.08, L \approx 0.055$). Si la carátula es monocromática (blanco y negro o saturación baja $S < 0.15$), se aplica un color congruente calibrado (púrpura, cian, ámbar o coral según luminancia) para evitar paletas apagadas o con contraste deficiente. Si no hay carátula o no hay reproducción, se utiliza el fallback seguro (`MidnightDark`).
+- **Editor de temas con previsualización en vivo:** `ThemeEditorDialog` integra `ThemeLibraryPreview` mostrando la pantalla de Biblioteca con canciones reales del dispositivo o fallback de alta fidelidad, mini-reproductor y fila de canción activa. Sliders HSL, código HEX y botón «Auto-armonizar» para generar paletas coordinadas en tiempo real.
+
+| Capacidad | Entry point |
+|-----------|-------------|
+| Motor dinámico carátula | `DynamicThemeEngine.extractDynamicTheme` (`deriveThemeFromBitmap` con muestreo HSL + guardarraíles WCAG) |
+| Armonizador M3 & WCAG | `ThemeHarmonizer` (`calculateContrastRatio`, `calculateLuminance`, `ensureContrast`, `toMaterialColorScheme`, `autoHarmonizePalette`) |
+| Presets | `ThemePresets` (`DynamicSong`, `MidnightDark`, `AmoledBlack`, `SunsetGold`, `CyberpunkNeon`, `CleanLight`) |
+| Prefs / persistencia | `ThemePreferencesRepository` (`selectedThemeFlow`, `enableDynamicTheme`, `selectPreset`, `saveCustomColors`) |
+| Editor interactivo | `ThemeEditorDialog` + `ThemeLibraryPreview` (mockup biblioteca en vivo) |
+| Settings UI | `ThemeSettingsScreen` (tarjeta dinámica interactiva con swatches en vivo + presets) |
+| State ViewModel | `MusicPlayerViewModel.configuredThemeState` (ajuste base) y `currentThemeState` (reactivo dinámico ante cambio de pista) |
 
 ## 7b. Sonido: amplificar + balance estéreo
 

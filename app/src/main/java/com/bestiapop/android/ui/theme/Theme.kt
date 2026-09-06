@@ -10,20 +10,39 @@ import com.bestiapop.android.ui.theme.ThemePresets.toMaterialColorScheme
 
 @Composable
 fun BestiaPopTheme(
-    customTheme: CustomTheme = ThemePresets.MidnightDark,
+    customTheme: CustomTheme = ThemePresets.DynamicSong,
     content: @Composable () -> Unit
 ) {
     val targetScheme = customTheme.toMaterialColorScheme()
 
+    val animSpec = tween<Color>(350)
+
     val animatedColorScheme = targetScheme.copy(
-        primary = animateColorAsState(targetScheme.primary, tween(400), label = "primary").value,
-        onPrimary = animateColorAsState(targetScheme.onPrimary, tween(400), label = "onPrimary").value,
-        secondary = animateColorAsState(targetScheme.secondary, tween(400), label = "secondary").value,
-        background = animateColorAsState(targetScheme.background, tween(400), label = "bg").value,
-        surface = animateColorAsState(targetScheme.surface, tween(400), label = "surf").value,
-        surfaceVariant = animateColorAsState(targetScheme.surfaceVariant, tween(400), label = "surfVar").value,
-        onBackground = animateColorAsState(targetScheme.onBackground, tween(400), label = "onBg").value,
-        onSurface = animateColorAsState(targetScheme.onSurface, tween(400), label = "onSurf").value
+        primary = animateColorAsState(targetScheme.primary, animSpec, label = "primary").value,
+        onPrimary = animateColorAsState(targetScheme.onPrimary, animSpec, label = "onPrimary").value,
+        primaryContainer = animateColorAsState(targetScheme.primaryContainer, animSpec, label = "primaryContainer").value,
+        onPrimaryContainer = animateColorAsState(targetScheme.onPrimaryContainer, animSpec, label = "onPrimaryContainer").value,
+        secondary = animateColorAsState(targetScheme.secondary, animSpec, label = "secondary").value,
+        onSecondary = animateColorAsState(targetScheme.onSecondary, animSpec, label = "onSecondary").value,
+        secondaryContainer = animateColorAsState(targetScheme.secondaryContainer, animSpec, label = "secondaryContainer").value,
+        onSecondaryContainer = animateColorAsState(targetScheme.onSecondaryContainer, animSpec, label = "onSecondaryContainer").value,
+        tertiary = animateColorAsState(targetScheme.tertiary, animSpec, label = "tertiary").value,
+        onTertiary = animateColorAsState(targetScheme.onTertiary, animSpec, label = "onTertiary").value,
+        tertiaryContainer = animateColorAsState(targetScheme.tertiaryContainer, animSpec, label = "tertiaryContainer").value,
+        onTertiaryContainer = animateColorAsState(targetScheme.onTertiaryContainer, animSpec, label = "onTertiaryContainer").value,
+        background = animateColorAsState(targetScheme.background, animSpec, label = "bg").value,
+        onBackground = animateColorAsState(targetScheme.onBackground, animSpec, label = "onBg").value,
+        surface = animateColorAsState(targetScheme.surface, animSpec, label = "surf").value,
+        onSurface = animateColorAsState(targetScheme.onSurface, animSpec, label = "onSurf").value,
+        surfaceVariant = animateColorAsState(targetScheme.surfaceVariant, animSpec, label = "surfVar").value,
+        onSurfaceVariant = animateColorAsState(targetScheme.onSurfaceVariant, animSpec, label = "onSurfVar").value,
+        surfaceContainerLowest = animateColorAsState(targetScheme.surfaceContainerLowest, animSpec, label = "surfLowest").value,
+        surfaceContainerLow = animateColorAsState(targetScheme.surfaceContainerLow, animSpec, label = "surfLow").value,
+        surfaceContainer = animateColorAsState(targetScheme.surfaceContainer, animSpec, label = "surfContainer").value,
+        surfaceContainerHigh = animateColorAsState(targetScheme.surfaceContainerHigh, animSpec, label = "surfHigh").value,
+        surfaceContainerHighest = animateColorAsState(targetScheme.surfaceContainerHighest, animSpec, label = "surfHighest").value,
+        outline = animateColorAsState(targetScheme.outline, animSpec, label = "outline").value,
+        outlineVariant = animateColorAsState(targetScheme.outlineVariant, animSpec, label = "outlineVar").value
     )
 
     MaterialTheme(

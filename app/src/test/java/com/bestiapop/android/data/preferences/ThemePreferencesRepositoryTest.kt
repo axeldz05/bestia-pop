@@ -71,6 +71,25 @@ class ThemePreferencesRepositoryTest {
         }
     }
 
+    @Test
+    fun dynamicTheme_reappearsAfterColdStart() = runTest {
+        val storage = temporaryDataStore()
+        try {
+            val repository = ThemePreferencesRepository(storage.dataStore)
+            repository.enableDynamicTheme()
+            assertEquals(ThemePresets.DYNAMIC_THEME_ID, repository.selectedThemeFlow.first().id)
+
+            storage.restart()
+
+            val restored = ThemePreferencesRepository(storage.dataStore)
+                .selectedThemeFlow
+                .first()
+            assertEquals(ThemePresets.DYNAMIC_THEME_ID, restored.id)
+        } finally {
+            storage.close()
+        }
+    }
+
     private fun temporaryDataStore() = TemporaryPreferencesDataStore(
         ApplicationProvider.getApplicationContext(),
         "theme-preferences"

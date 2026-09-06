@@ -46,7 +46,7 @@ data class PlaybackSettings(
      */
     val streamSkipGraceSeconds: Int = DEFAULT_STREAM_SKIP_GRACE_SECONDS,
     val openNowPlayingOnPlay: Boolean = true,
-    val crossfadeEnabled: Boolean = true,
+    val crossfadeEnabled: Boolean = false,
     val crossfadeDurationSeconds: Int = DEFAULT_CROSSFADE_DURATION_SECONDS
 )
 
@@ -201,7 +201,7 @@ class PlaybackPreferencesRepository internal constructor(
                 prefs[Keys.STREAM_SKIP_GRACE_SECONDS] ?: DEFAULT_STREAM_SKIP_GRACE_SECONDS
             ),
             openNowPlayingOnPlay = prefs[Keys.OPEN_NOW_PLAYING_ON_PLAY] ?: true,
-            crossfadeEnabled = prefs[Keys.CROSSFADE_ENABLED] ?: true,
+            crossfadeEnabled = prefs[Keys.CROSSFADE_ENABLED] ?: false,
             crossfadeDurationSeconds = clampCrossfadeDurationSeconds(
                 prefs[Keys.CROSSFADE_DURATION_SECONDS] ?: DEFAULT_CROSSFADE_DURATION_SECONDS
             )

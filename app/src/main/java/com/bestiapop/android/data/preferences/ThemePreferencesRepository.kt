@@ -27,7 +27,7 @@ class ThemePreferencesRepository internal constructor(
     private val syncPrefs = context?.getSharedPreferences("theme_settings_sync", Context.MODE_PRIVATE)
 
     val initialTheme: CustomTheme = run {
-        val themeId = syncPrefs?.getString("selected_theme_id", null) ?: ThemePresets.MidnightDark.id
+        val themeId = syncPrefs?.getString("selected_theme_id", null) ?: ThemePresets.DYNAMIC_THEME_ID
         if (themeId == "custom") {
             val customColors = ColorSchemeData(
                 primary = syncPrefs?.getLong("custom_primary", ThemePresets.MidnightDark.colors.primary)
@@ -68,7 +68,7 @@ class ThemePreferencesRepository internal constructor(
     }
 
     val selectedThemeFlow: Flow<CustomTheme> = dataStore.data.map { prefs ->
-        val themeId = prefs[Keys.SELECTED_THEME_ID] ?: ThemePresets.MidnightDark.id
+        val themeId = prefs[Keys.SELECTED_THEME_ID] ?: ThemePresets.DYNAMIC_THEME_ID
 
         val resolved = if (themeId == "custom") {
             val customColors = ColorSchemeData(
@@ -112,6 +112,10 @@ class ThemePreferencesRepository internal constructor(
     suspend fun selectPreset(themeId: String) {
         syncMirror(ThemePresets.getById(themeId))
         dataStore.put(Keys.SELECTED_THEME_ID, themeId)
+    }
+
+    suspend fun enableDynamicTheme() {
+        selectPreset(ThemePresets.DYNAMIC_THEME_ID)
     }
 
     suspend fun saveCustomColors(colors: ColorSchemeData) {

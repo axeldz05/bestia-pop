@@ -43,6 +43,8 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import com.bestiapop.android.data.model.DownloadMessages
+import com.bestiapop.android.data.model.PlaylistMessages
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -81,14 +83,19 @@ import com.bestiapop.android.ui.components.EmptyListHint
 import com.bestiapop.android.ui.components.PlayShuffleIconPair
 import com.bestiapop.android.ui.components.ScreenBackHeader
 import com.bestiapop.android.ui.components.SongListItem
+import com.bestiapop.android.ui.components.SongItemActions
 import com.bestiapop.android.ui.components.SongQueueActions
 import com.bestiapop.android.ui.components.isCurrentPlaying
 import com.bestiapop.android.ui.components.rememberSongQueueActions
 import com.bestiapop.android.ui.screens.library.rememberSongActionDialogs
 import androidx.compose.foundation.lazy.itemsIndexed
+import com.bestiapop.android.ui.components.DownloadMissingTracksButton
 import com.bestiapop.android.ui.components.PlaylistFormDialog
 import com.bestiapop.android.ui.components.PlaylistHeader
+import com.bestiapop.android.ui.components.PlaylistHeaderActions
 import com.bestiapop.android.ui.components.RemoteTrackPlaceholderRow
+import com.bestiapop.android.ui.components.findUiDownloadByTrack
+import com.bestiapop.android.ui.screens.library.SongActionDialogsController
 import com.bestiapop.android.domain.util.TrackMatchKeys
 import androidx.compose.runtime.LaunchedEffect
 
@@ -109,15 +116,8 @@ fun PlaylistsScreen(
             }
         }
     }
-    val lbSettings by viewModel.listenBrainzSettings.collectAsStateWithLifecycle()
-    val lbDiscover by viewModel.lbDiscover.collectAsStateWithLifecycle()
-    val lbPlaylistDetail by viewModel.lbPlaylistDetail.collectAsStateWithLifecycle()
-    val cfRecommendationsState by viewModel.cfRecommendations.collectAsStateWithLifecycle()
     val navigation by viewModel.navigation.collectAsStateWithLifecycle()
     val playlistDetail = navigation.playlistDetail
-    val lbDiscoverPlaylists = lbDiscover.data
-    val selectedLbPlaylist = lbPlaylistDetail.data
-    val cfRecommendations = cfRecommendationsState.data
 
     var showCreateDialog by remember { mutableStateOf(false) }
     var playlistToDelete by remember { mutableStateOf<Playlist?>(null) }
@@ -131,6 +131,18 @@ fun PlaylistsScreen(
     val hasNestedBack = selectedPlaylistId != null
     BackHandler(enabled = hasNestedBack) {
         viewModel.closePlaylistDetail()
+    }
+
+    val playlistActions = remember(viewModel) {
+        PlaylistHeaderActions(
+            onPlay = { viewModel.playPlaylist(it.id, startShuffled = false) },
+            onShuffle = { viewModel.playPlaylist(it.id, startShuffled = true) },
+            onOpen = { viewModel.openLocalPlaylist(it.id) },
+            onEdit = { playlistToEdit = it },
+            onDelete = { playlistToDelete = it },
+            onPlayNext = { viewModel.playPlaylistNext(it.id) },
+            onAddToQueue = { viewModel.enqueuePlaylist(it.id) }
+        )
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -174,15 +186,7 @@ fun PlaylistsScreen(
                         items(visiblePlaylists, key = { it.id }) { playlist ->
                             PlaylistHeader(
                                 playlist = playlist,
-                                onPlayPlaylist = { viewModel.playPlaylist(playlist.id, startShuffled = false) },
-                                onShufflePlaylist = { viewModel.playPlaylist(playlist.id, startShuffled = true) },
-                                onOpenPlaylist = {
-                                    viewModel.openLocalPlaylist(playlist.id)
-                                },
-                                onEditPlaylist = { playlistToEdit = playlist },
-                                onDeletePlaylist = { playlistToDelete = playlist },
-                                onPlayNext = { viewModel.playPlaylistNext(playlist.id) },
-                                onAddToQueue = { viewModel.enqueuePlaylist(playlist.id) }
+                                actions = playlistActions
                             )
                         }
                     }
@@ -225,10 +229,7 @@ fun PlaylistsScreen(
                         onAddSongsRequest = { onAddSongsRequest(it) },
                         onDeletePlaylist = { playlistToDelete = playlist },
                         onDownloadPending = { viewModel.downloadPlaylistPendingTracks(playlistId) },
-                        onEditLyrics = songDialogs.onEditLyrics,
-                        onAddToPlaylist = songDialogs.onAddToPlaylist,
-                        onEditMetadata = songDialogs.onEdit,
-                        onIdentify = { viewModel.identifySongForReview(it) }
+                        dialogs = songDialogs
                     )
                 } ?: Box(
                     modifier = Modifier.fillMaxSize(),
@@ -242,12 +243,12 @@ fun PlaylistsScreen(
         // Create Playlist Dialog
         if (showCreateDialog) {
             PlaylistFormDialog(
-                title = "Nueva Playlist",
+                title = PlaylistMessages.newPlaylist,
                 initialName = "",
                 initialDescription = "",
                 initialCoverUri = null,
                 confirmText = "Crear",
-                confirmAndOpenText = "Crear y entrar",
+                confirmAndOpenText = PlaylistMessages.createAndOpen,
                 onDismiss = { showCreateDialog = false },
                 onSave = { name, desc, coverUri ->
                     viewModel.createPlaylist(name, desc, coverUri)
@@ -266,7 +267,7 @@ fun PlaylistsScreen(
         if (playlistToEdit != null) {
             val target = playlistToEdit!!
             PlaylistFormDialog(
-                title = "Editar Playlist",
+                title = PlaylistMessages.editPlaylist,
                 initialName = target.name,
                 initialDescription = target.description ?: "",
                 initialCoverUri = target.coverUri,
@@ -284,8 +285,8 @@ fun PlaylistsScreen(
             val target = playlistToDelete!!
             AlertDialog(
                 onDismissRequest = { playlistToDelete = null },
-                title = { Text("Eliminar Playlist", fontWeight = FontWeight.Bold) },
-                text = { Text("¿Estás seguro de que deseas eliminar '${target.name}'? Esta acción no se puede deshacer.") },
+                title = { Text(PlaylistMessages.deletePlaylist, fontWeight = FontWeight.Bold) },
+                text = { Text(PlaylistMessages.deletePlaylistConfirm(target.name)) },
                 confirmButton = {
                     Button(
                         onClick = {
@@ -307,47 +308,43 @@ fun PlaylistsScreen(
     }
 }
 
-@Composable
-fun PlaylistSurfaceCard(
-    title: String,
-    onClick: () -> Unit,
-    leading: @Composable () -> Unit,
-    lines: @Composable ColumnScope.() -> Unit,
-    trailing: @Composable RowScope.() -> Unit = {}
-) {
-    Surface(
-        color = MaterialTheme.colorScheme.surface,
-        shape = RoundedCornerShape(14.dp),
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-    ) {
-        Row(
-            modifier = Modifier.padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            leading()
-            Spacer(modifier = Modifier.width(14.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                lines()
-            }
-            trailing()
-        }
-    }
-}
-
 private data class DisplayPlaylistTrack(
     val entryId: String,
     val song: Song
 )
 
+/**
+ * Level 2: Playlist detail screen accepting bundled dialog actions.
+ */
+@Composable
+private fun PlaylistDetailScreen(
+    playlist: Playlist,
+    songs: List<Song>,
+    pendingTracks: List<PlaylistPendingTrack>,
+    onBack: () -> Unit,
+    viewModel: MusicPlayerViewModel,
+    onAddSongsRequest: (Playlist) -> Unit,
+    onDeletePlaylist: () -> Unit,
+    onDownloadPending: () -> Unit,
+    dialogs: SongActionDialogsController
+) = PlaylistDetailScreen(
+    playlist = playlist,
+    songs = songs,
+    pendingTracks = pendingTracks,
+    onBack = onBack,
+    viewModel = viewModel,
+    onAddSongsRequest = onAddSongsRequest,
+    onDeletePlaylist = onDeletePlaylist,
+    onDownloadPending = onDownloadPending,
+    onEditLyrics = dialogs.onEditLyrics,
+    onAddToPlaylist = dialogs.onAddToPlaylist,
+    onEditMetadata = dialogs.onEdit,
+    onIdentify = dialogs.onIdentify
+)
+
+/**
+ * Level 1: Playlist detail screen with individual primitive callbacks.
+ */
 @Composable
 private fun PlaylistDetailScreen(
     playlist: Playlist,
@@ -391,8 +388,20 @@ private fun PlaylistDetailScreen(
 
     val totalCount = localSongs.size + pendingTracks.size
     val songActions = rememberSongQueueActions(viewModel)
+    val playlistSongActions = remember(songActions, onAddToPlaylist, onEditMetadata, onIdentify, onEditLyrics, playlist.id) {
+        SongItemActions.from(
+            queueActions = songActions,
+            onAddToPlaylist = onAddToPlaylist,
+            onEditMetadata = onEditMetadata,
+            onEditLyrics = onEditLyrics,
+            onIdentify = onIdentify,
+            onDelete = { viewModel.removeSongFromPlaylist(playlist.id, it.id) },
+            deleteLabel = PlaylistMessages.removeFromPlaylist
+        )
+    }
     val currentSong by viewModel.currentSong.collectAsStateWithLifecycle()
     val currentItem by viewModel.currentItem.collectAsStateWithLifecycle()
+    val activeDownloads by viewModel.activeDownloads.collectAsStateWithLifecycle()
     val detailListState = rememberSaveable(playlist.id, saver = LazyListState.Saver) { LazyListState() }
 
     Surface(
@@ -480,7 +489,7 @@ private fun PlaylistDetailScreen(
                         text = if (pendingTracks.isEmpty()) {
                             "${localSongs.size} canciones"
                         } else {
-                            "${localSongs.size} descargadas · ${pendingTracks.size} pendientes"
+                            DownloadMessages.playlistCounts(localSongs.size, pendingTracks.size)
                         },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
@@ -494,7 +503,7 @@ private fun PlaylistDetailScreen(
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 PlayShuffleIconPair(
                     onPlay = {
@@ -504,30 +513,9 @@ private fun PlaylistDetailScreen(
                         if (localSongs.isNotEmpty()) viewModel.shuffleCollection(localSongs.map { it.song })
                     },
                     playDescription = "Reproducir",
-                    shuffleDescription = "Aleatorio",
-                    modifier = Modifier.weight(1f)
+                    shuffleDescription = "Aleatorio"
                 )
-                if (localSongs.size > 1) {
-                    Button(
-                        onClick = { isReorderMode = !isReorderMode },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (isReorderMode) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.secondaryContainer,
-                            contentColor = if (isReorderMode) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSecondaryContainer
-                        ),
-                        shape = RoundedCornerShape(12.dp),
-                        contentPadding = PaddingValues(
-                            horizontal = 10.dp,
-                            vertical = 8.dp
-                        )
-                    ) {
-                        Icon(
-                            imageVector = if (isReorderMode) Icons.Default.Check else Icons.Default.SwapVert,
-                            contentDescription = null
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(if (isReorderMode) "Listo" else "Mover canciones", maxLines = 1, softWrap = false)
-                    }
-                }
+                Spacer(modifier = Modifier.weight(1f))
                 Button(
                     onClick = { onAddSongsRequest(playlist) },
                     colors = ButtonDefaults.buttonColors(
@@ -548,15 +536,11 @@ private fun PlaylistDetailScreen(
 
             if (pendingTracks.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(8.dp))
-                OutlinedButton(
+                DownloadMissingTracksButton(
                     onClick = onDownloadPending,
-                    shape = RoundedCornerShape(12.dp),
+                    count = pendingTracks.size,
                     modifier = Modifier.fillMaxWidth()
-                ) {
-                    Icon(imageVector = Icons.Default.Download, contentDescription = null)
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Descargar ${pendingTracks.size} pendientes")
-                }
+                )
             }
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -569,7 +553,7 @@ private fun PlaylistDetailScreen(
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(
-                            text = "Esta playlist está vacía",
+                            text = PlaylistMessages.emptyPlaylist,
                             style = MaterialTheme.typography.titleSmall,
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                         )
@@ -591,22 +575,14 @@ private fun PlaylistDetailScreen(
                         val song = item.song
                         SongListItem(
                             song = song,
+                            actions = playlistSongActions,
                             artworkUri = viewModel.resolveAlbumArtwork(song),
                             isCurrentPlaying = isCurrentPlaying(currentItem ?: currentSong?.toPlayable(), song),
                             isReorderMode = isReorderMode,
                             index = index,
                             reorderCount = localSongs.size,
                             onReorder = onReorder,
-                            onClick = { viewModel.playCollection(localSongs.map { it.song }, startIndex = index) },
-                            onPlayNext = { songActions.onPlayNext(song) },
-                            onAddToQueue = { songActions.onAddToQueue(song) },
-                            onStartRadio = { songActions.onStartRadio(song) },
-                            onAddToPlaylist = onAddToPlaylist?.let { { it(song) } },
-                            onEditMetadata = onEditMetadata?.let { { it(song) } },
-                            onIdentify = onIdentify?.let { { it(song) } },
-                            onEditLyrics = { onEditLyrics(song) },
-                            onDelete = { viewModel.removeSongFromPlaylist(playlist.id, song.id) },
-                            deleteLabel = "Quitar de la playlist"
+                            onClick = { viewModel.playCollection(localSongs.map { it.song }, startIndex = index) }
                         )
                     }
                     items(
@@ -614,7 +590,10 @@ private fun PlaylistDetailScreen(
                         key = { "pending-${it.id}" },
                         contentType = { "pending" }
                     ) { pending ->
-                        PlaylistPendingTrackRow(pending = pending)
+                        PlaylistPendingTrackRow(
+                            pending = pending,
+                            download = activeDownloads.findUiDownloadByTrack(pending.artist, pending.title)
+                        )
                     }
                 }
             }
@@ -639,12 +618,16 @@ private fun PlaylistDetailScreen(
 }
 
 @Composable
-private fun PlaylistPendingTrackRow(pending: PlaylistPendingTrack) {
+private fun PlaylistPendingTrackRow(
+    pending: PlaylistPendingTrack,
+    download: com.bestiapop.android.data.model.ActiveDownload? = null
+) {
     RemoteTrackPlaceholderRow(
         title = pending.title,
         artist = pending.artist,
-        badge = "Pendiente de descarga",
+        badge = DownloadMessages.pendingDownloadBadge,
         leadingIcon = Icons.Default.Download,
-        highlighted = false
+        highlighted = false,
+        download = download
     )
 }

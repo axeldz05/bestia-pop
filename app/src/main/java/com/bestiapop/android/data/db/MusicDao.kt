@@ -38,6 +38,9 @@ interface MusicDao {
     @Query("SELECT * FROM songs WHERE album = 'YouTube Music'")
     suspend fun getLegacyYouTubeMusicSongs(): List<Song>
 
+    @Query("SELECT * FROM songs WHERE durationMs <= 0")
+    suspend fun getSongsWithNonPositiveDuration(): List<Song>
+
     @Query("SELECT * FROM songs WHERE uriString = :uri LIMIT 1")
     suspend fun getSongByUri(uri: String): Song?
 
@@ -115,6 +118,9 @@ interface MusicDao {
         year: Int,
         trackNumber: Int
     )
+
+    @Query("UPDATE songs SET trackNumber = :trackNumber WHERE id = :songId")
+    suspend fun updateTrackNumber(songId: Long, trackNumber: Int)
 
     @Query(
         """
@@ -352,4 +358,105 @@ interface MusicDao {
 
     @Query("DELETE FROM playlist_pending_tracks WHERE id = :id")
     suspend fun deletePlaylistPendingTrackById(id: Long)
+
+    // --- Normalized Artists & Genres (3FN) ---
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertArtist(artist: ArtistEntity): Long
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertArtists(artists: List<ArtistEntity>)
+
+    @Query("SELECT * FROM artists WHERE normalizedName = :normalizedName LIMIT 1")
+    suspend fun getArtistByNormalizedName(normalizedName: String): ArtistEntity?
+
+    @Query("SELECT * FROM artists ORDER BY name COLLATE NOCASE ASC")
+    fun getAllArtistsFlow(): Flow<List<ArtistEntity>>
+
+    @Query("SELECT * FROM artists ORDER BY name COLLATE NOCASE ASC")
+    suspend fun getAllArtists(): List<ArtistEntity>
+
+    @Query("SELECT photoUri FROM artists WHERE normalizedName = :normalizedName LIMIT 1")
+    suspend fun getArtistPhotoUri(normalizedName: String): String?
+
+    @Query("UPDATE artists SET photoUri = :photoUri WHERE normalizedName = :normalizedName")
+    suspend fun setArtistPhotoUri(normalizedName: String, photoUri: String?)
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertGenre(genre: GenreEntity): Long
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertGenres(genres: List<GenreEntity>)
+
+    @Query("SELECT * FROM genres WHERE normalizedName = :normalizedName LIMIT 1")
+    suspend fun getGenreByNormalizedName(normalizedName: String): GenreEntity?
+
+    @Query("SELECT * FROM genres ORDER BY name COLLATE NOCASE ASC")
+    fun getAllGenresFlow(): Flow<List<GenreEntity>>
+
+    @Query("SELECT * FROM genres ORDER BY name COLLATE NOCASE ASC")
+    suspend fun getAllGenres(): List<GenreEntity>
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertSongArtistCrossRefs(refs: List<SongArtistCrossRef>)
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertSongGenreCrossRefs(refs: List<SongGenreCrossRef>)
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertAlbumArtistCrossRefs(refs: List<AlbumArtistCrossRef>)
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertAlbumGenreCrossRefs(refs: List<AlbumGenreCrossRef>)
+
+    @Query("DELETE FROM song_artist_cross_ref WHERE songId = :songId")
+    suspend fun deleteSongArtistCrossRefs(songId: Long)
+
+    @Query("DELETE FROM song_genre_cross_ref WHERE songId = :songId")
+    suspend fun deleteSongGenreCrossRefs(songId: Long)
+
+    @Query("DELETE FROM album_artist_cross_ref WHERE albumKey = :albumKey")
+    suspend fun deleteAlbumArtistCrossRefs(albumKey: String)
+
+    @Query("DELETE FROM album_genre_cross_ref WHERE albumKey = :albumKey")
+    suspend fun deleteAlbumGenreCrossRefs(albumKey: String)
+
+    @Query(
+        """
+        SELECT s.id, s.uriString, s.title, s.artist, s.album, s.genre, s.durationMs, s.year, s.trackNumber,
+               s.artworkUri, CAST(NULL AS TEXT) AS lyrics, s.folderPath, s.dateAdded,
+               0 AS lastPlayedAt
+        FROM songs s
+        JOIN song_artist_cross_ref x ON s.id = x.songId
+        JOIN artists a ON x.artistId = a.id
+        WHERE a.normalizedName = :normalizedArtistName
+        ORDER BY x.isPrimary DESC, x.position ASC, s.title ASC
+        """
+    )
+    suspend fun getSongsForArtistNormalized(normalizedArtistName: String): List<Song>
+
+    @Query(
+        """
+        SELECT s.id, s.uriString, s.title, s.artist, s.album, s.genre, s.durationMs, s.year, s.trackNumber,
+               s.artworkUri, CAST(NULL AS TEXT) AS lyrics, s.folderPath, s.dateAdded,
+               0 AS lastPlayedAt
+        FROM songs s
+        JOIN song_genre_cross_ref x ON s.id = x.songId
+        JOIN genres g ON x.genreId = g.id
+        WHERE g.normalizedName = :normalizedGenreName
+        ORDER BY s.title ASC
+        """
+    )
+    suspend fun getSongsForGenreNormalized(normalizedGenreName: String): List<Song>
+
+    @Query(
+        """
+        SELECT DISTINCT s.album
+        FROM songs s
+        JOIN song_artist_cross_ref x ON s.id = x.songId
+        JOIN artists a ON x.artistId = a.id
+        WHERE a.normalizedName = :normalizedArtistName AND s.album IS NOT NULL AND TRIM(s.album) != ''
+        """
+    )
+    suspend fun getAlbumsForArtistNormalized(normalizedArtistName: String): List<String>
 }

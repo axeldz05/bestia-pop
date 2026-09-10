@@ -6,6 +6,7 @@ import com.bestiapop.android.data.listenbrainz.LbRadioRecording
 import com.bestiapop.android.data.listenbrainz.LbRecordingMetadata
 import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.data.model.Song
+import com.bestiapop.android.data.network.ListenBrainzClient
 import com.bestiapop.android.domain.util.TrackMatchKeys
 import com.bestiapop.android.domain.util.matchKey
 import kotlinx.coroutines.sync.Mutex
@@ -32,6 +33,23 @@ class ListenBrainzRadio(
     private val clockMs: () -> Long = { System.currentTimeMillis() },
     private val artistMbidTtlMs: Long = ARTIST_MBID_TTL_MS
 ) {
+
+    constructor(
+        clockMs: () -> Long = { System.currentTimeMillis() },
+        artistMbidTtlMs: Long = ARTIST_MBID_TTL_MS
+    ) : this(
+        lookupMetadata = { artist, recording, token ->
+            ListenBrainzClient.lookupRecordingMetadata(artist, recording, token)
+        },
+        fetchLbRadio = { artistMbid, token, mode ->
+            ListenBrainzClient.fetchLbRadioArtist(artistMbid, token, mode = mode)
+        },
+        fetchRecordingMetadata = { mbids, token ->
+            ListenBrainzClient.fetchRecordingMetadata(mbids, token)
+        },
+        clockMs = clockMs,
+        artistMbidTtlMs = artistMbidTtlMs
+    )
 
     private val artistMbidCache = HashMap<String, CachedArtistMbid>()
     private val recordingMetaCache = HashMap<String, LbRecordingMetadata>()

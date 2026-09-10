@@ -173,6 +173,7 @@ internal interface PlaybackControllerFacade {
     val isPlaying: Boolean
     val playWhenReady: Boolean
     val playbackState: Int
+    val hasPlayerError: Boolean get() = false
     var repeatMode: Int
     var shuffleModeEnabled: Boolean
 
@@ -560,6 +561,7 @@ class PlaybackRuntime internal constructor(
                                     hint = PlaybackChangeHint.METADATA_UPDATE
                                 )
                             }
+                            syncChangedTimelineItems(oldQueue, updated)
                         }
                     }
                     maybeSeedIdlePlayer()
@@ -667,6 +669,13 @@ class PlaybackRuntime internal constructor(
         }
     }
 
+    internal fun onPlaybackStartedFromService() {
+        if (controller == null) {
+            playWhenReadyIntent = true
+            ensureControllerConnection()
+        }
+    }
+
     private fun handleControllerDisconnected(disconnected: PlaybackControllerFacade) {
         if (controller !== disconnected) return
         controller = null
@@ -681,10 +690,34 @@ class PlaybackRuntime internal constructor(
         ensureControllerConnection()
     }
 
+    fun onTaskRemovedNotEngaged() {
+        PlaybackDiagnostics.warn(
+            PlaybackDiagnostics.TAG_RUNTIME,
+            "PlaybackRuntime.onTaskRemovedNotEngaged: task removed while not engaged, releasing controller"
+        )
+        warmingUp.set(false)
+        uiAttachments.set(0)
+        playWhenReadyIntent = false
+        _isPlaying.value = false
+        cancelPendingPlayIntent()
+        controllerReconnectJob?.cancel()
+        controllerReconnectJob = null
+        controllerFuture?.let { future ->
+            controllerFuture = null
+            future.cancel()
+        }
+        tickerJob?.cancel()
+        tickerJob = null
+        val owned = controller
+        controller = null
+        timelineMaterialized = false
+        liveSessionHydrated = false
+        owned?.release()
+    }
+
     private fun shouldRetainController(): Boolean =
         warmingUp.get() ||
                 uiAttachments.get() > 0 ||
-                _queue.value.isNotEmpty() ||
                 playWhenReadyIntent ||
                 _isPlaying.value
 
@@ -700,7 +733,7 @@ class PlaybackRuntime internal constructor(
         }
         PlaybackDiagnostics.warn(
             PlaybackDiagnostics.TAG_RUNTIME,
-            "PlaybackRuntime.releaseControllerIfIdle: RELEASING controller (idle, no UI, no queue/playback)"
+            "PlaybackRuntime.releaseControllerIfIdle: RELEASING controller (idle, no UI, no playback)"
         )
         controllerReconnectJob?.cancel()
         controllerReconnectJob = null
@@ -1492,7 +1525,7 @@ class PlaybackRuntime internal constructor(
         val position = _playbackPositionMs.value.coerceAtLeast(0L)
         playWhenReadyIntent = true
         pendingPlayIntentEpoch = null
-        if (!hasMaterializedTimeline() || player.mediaItemCount != items.size) {
+        if (!hasMaterializedTimeline() || player.mediaItemCount != items.size || player.hasPlayerError) {
             reloadPlayerTimeline(
                 items = items,
                 startIndex = index,
@@ -1504,6 +1537,9 @@ class PlaybackRuntime internal constructor(
         if (player.currentMediaItemIndex != index) {
             player.pause()
             player.seekTo(index, position)
+        }
+        if (player.playbackState == Player.STATE_IDLE || player.playbackState == Player.STATE_ENDED) {
+            player.prepare()
         }
         player.play()
         val remote = items[index] as? PlayableItem.Remote
@@ -1648,7 +1684,15 @@ class PlaybackRuntime internal constructor(
         }
         if (changed) {
             _queue.value = newQ
+            syncChangedTimelineItems(q, newQ)
         }
+    }
+
+    fun removeFromQueue(queueEntryId: String): Boolean {
+        val index = _queue.value.indexOfFirst { it.queueEntryId == queueEntryId }
+        if (index !in _queue.value.indices) return false
+        removeFromQueue(index)
+        return true
     }
 
     fun removeFromQueue(index: Int) {
@@ -1741,6 +1785,7 @@ class PlaybackRuntime internal constructor(
         queueSelectionJob = scope.launch {
             beginResolving()
             try {
+                val online = dependencies.isOnline()
                 for (step in PlaybackFallbackPlanner.circularPlan(snapshot, start)) {
                     if (!selectionGate.isCurrent(token) ||
                         !isPlaybackGenerationCurrent(generation)
@@ -1761,7 +1806,11 @@ class PlaybackRuntime internal constructor(
                         }
 
                         is PlayableItem.Remote -> {
-                            val ready = if (dependencies.streamAccess.needsResolve(live)) {
+                            val needsResolve = dependencies.streamAccess.needsResolve(live)
+                            if (needsResolve && !online) {
+                                continue
+                            }
+                            val ready = if (needsResolve) {
                                 dependencies.streamAccess.resolve(live)
                             } else {
                                 live
@@ -1790,7 +1839,12 @@ class PlaybackRuntime internal constructor(
                 if (selectionGate.isCurrent(token) &&
                     isPlaybackGenerationCurrent(generation)
                 ) {
-                    _events.tryEmit("No se pudo resolver el audio online")
+                    val message = if (!online) {
+                        "Sin conexión a internet"
+                    } else {
+                        "No se pudo resolver el audio online"
+                    }
+                    _events.tryEmit(message)
                 }
             } finally {
                 if (pendingPlayIntentEpoch == playIntent) pendingPlayIntentEpoch = null
@@ -1852,6 +1906,58 @@ class PlaybackRuntime internal constructor(
                 newIndex == 0 &&
                 queueSize > 1
 
+        if (wrappedShuffleCycle) {
+            val previous = _currentItem.value
+            (previous as? PlayableItem.Remote)?.let { outgoing ->
+                maybeSaveWhileListening(
+                    outgoing,
+                    SaveWhileListeningEvent.AUTOMATIC_TRANSITION,
+                    _playbackPositionMs.value
+                )
+            }
+            _playbackPositionMs.value = 0L
+            invalidatePlaybackWork(clearRejectedEntries = false)
+
+            val avoid = _queue.value.getOrNull(lastMediaItemIndex)?.queueEntryId
+            val reshuffled = PlaybackQueueOrder.reshuffleItemsAvoidingKey(
+                items = _queue.value,
+                avoidKey = avoid,
+                keySelector = { it.queueEntryId }
+            )
+            _queue.value = reshuffled
+            suppressShuffleWrapDetection = true
+            try {
+                reloadPlayerTimeline(
+                    reshuffled,
+                    0,
+                    0L,
+                    startPlaying = playWhenReadyIntent
+                )
+                setCurrentItem(
+                    reshuffled[0],
+                    persistLastPlayed = false,
+                    hint = PlaybackChangeHint.NEW_PLAYBACK
+                )
+                lastMediaItemIndex = 0
+            } finally {
+                suppressShuffleWrapDetection = false
+            }
+            ensurePreparedForPlayback()
+            if (playWhenReadyIntent) {
+                val remoteItem = reshuffled[0] as? PlayableItem.Remote
+                if (remoteItem != null && (remoteItem.resolved == null || remoteItem.resolved.audioUrl.isBlank())) {
+                    ensureRemoteReadyAt(0, startPlaying = true)
+                }
+                prefetchAround(0)
+            }
+            if (_radioActive.value) {
+                rememberRadioPlayed(reshuffled[0])
+                if (playWhenReadyIntent) maybeRefillRadio(0)
+            }
+            persistPlaybackSession(force = true)
+            return
+        }
+
         if (incoming != null) {
             val previous = _currentItem.value
             val playable = _queue.value.firstOrNull {
@@ -1905,34 +2011,7 @@ class PlaybackRuntime internal constructor(
         } else {
             dependencies.listenTracker.onTrackChanged(null, PlaybackChangeHint.METADATA_UPDATE)
         }
-
-        if (wrappedShuffleCycle) {
-            val avoid = _queue.value.getOrNull(lastMediaItemIndex)?.queueEntryId
-            val reshuffled = _queue.value.shuffled().toMutableList()
-            if (avoid != null && reshuffled.size > 1 && reshuffled.first().queueEntryId == avoid) {
-                val swap = reshuffled.indexOfFirst { it.queueEntryId != avoid }.takeIf { it > 0 } ?: 1
-                val first = reshuffled[0]
-                reshuffled[0] = reshuffled[swap]
-                reshuffled[swap] = first
-            }
-            _queue.value = reshuffled
-            suppressShuffleWrapDetection = true
-            try {
-                reloadPlayerTimeline(
-                    reshuffled,
-                    0,
-                    0L,
-                    startPlaying = playWhenReadyIntent
-                )
-                setCurrentItem(reshuffled[0], persistLastPlayed = false)
-                lastMediaItemIndex = 0
-            } finally {
-                suppressShuffleWrapDetection = false
-            }
-            persistPlaybackSession(force = true)
-        } else {
-            lastMediaItemIndex = newIndex
-        }
+        lastMediaItemIndex = newIndex
     }
 
     private fun ensureRemoteReadyAt(index: Int, startPlaying: Boolean) {
@@ -2178,7 +2257,10 @@ class PlaybackRuntime internal constructor(
             PlaybackDiagnostics.TAG_RUNTIME,
             "PlaybackRuntime.handlePlayerError: index=$index, item='${queued?.title}', isRemote=${queued is PlayableItem.Remote}, playWhenReadyIntent=$playWhenReadyIntent"
         )
-        if (!playWhenReadyIntent) return
+        if (!playWhenReadyIntent) {
+            _isPlaying.value = false
+            return
+        }
         val remote = queued as? PlayableItem.Remote
         if (remote == null) {
             recoverAfterUnplayable(
@@ -2308,7 +2390,7 @@ class PlaybackRuntime internal constructor(
         if (player.mediaItemCount == 0) return
         val remote = _queue.value.getOrNull(player.currentMediaItemIndex) as? PlayableItem.Remote
         if (remote != null && (remote.resolved == null || remote.resolved.audioUrl.isBlank())) return
-        if (player.playbackState == Player.STATE_IDLE || player.playbackState == Player.STATE_ENDED) {
+        if (player.playbackState == Player.STATE_IDLE || player.playbackState == Player.STATE_ENDED || player.hasPlayerError) {
             player.prepare()
         }
     }
@@ -2734,13 +2816,16 @@ class PlaybackRuntime internal constructor(
         if (useWindow) {
             val generation = playbackGeneration
             queueAppendJob = scope.launch(Dispatchers.Default) {
+                var addedAny = false
                 if (windowEnd < items.size) {
                     val tail = items.subList(windowEnd, items.size)
                     for (chunk in tail.chunked(QUEUE_APPEND_CHUNK_SIZE)) {
                         if (!isActive || !isPlaybackGenerationCurrent(generation)) break
+                        kotlinx.coroutines.delay(40L)
                         withContext(Dispatchers.Main.immediate) {
                             if (hasMaterializedTimeline() && isPlaybackGenerationCurrent(generation)) {
-                                mutateMaterializedTimeline { it.addMediaItems(chunk) }
+                                mutateMaterializedTimeline(syncShuffle = false) { it.addMediaItems(chunk) }
+                                addedAny = true
                             }
                         }
                     }
@@ -2750,11 +2835,20 @@ class PlaybackRuntime internal constructor(
                     var insertIndex = 0
                     for (chunk in head.chunked(QUEUE_APPEND_CHUNK_SIZE)) {
                         if (!isActive || !isPlaybackGenerationCurrent(generation)) break
+                        kotlinx.coroutines.delay(40L)
                         withContext(Dispatchers.Main.immediate) {
                             if (hasMaterializedTimeline() && isPlaybackGenerationCurrent(generation)) {
-                                mutateMaterializedTimeline { it.addMediaItems(insertIndex, chunk) }
+                                mutateMaterializedTimeline(syncShuffle = false) { it.addMediaItems(insertIndex, chunk) }
                                 insertIndex += chunk.size
+                                addedAny = true
                             }
+                        }
+                    }
+                }
+                if (addedAny && isActive && isPlaybackGenerationCurrent(generation)) {
+                    withContext(Dispatchers.Main.immediate) {
+                        if (hasMaterializedTimeline() && isPlaybackGenerationCurrent(generation)) {
+                            syncShuffleToPlayer()
                         }
                     }
                 }
@@ -2766,6 +2860,7 @@ class PlaybackRuntime internal constructor(
         timelineMaterialized && (controller?.mediaItemCount ?: 0) > 0
 
     private fun mutateMaterializedTimeline(
+        syncShuffle: Boolean = true,
         mutation: (PlaybackControllerFacade) -> Unit
     ) {
         val player = controller ?: return
@@ -2778,7 +2873,19 @@ class PlaybackRuntime internal constructor(
         }
         // Media3 regenerates ShuffleOrder after playlist mutations. Logical shuffle is already
         // represented by the physical queue, so restore identity traversal after every mutation.
-        syncShuffleToPlayer()
+        if (syncShuffle) {
+            syncShuffleToPlayer()
+        }
+    }
+
+    private fun syncChangedTimelineItems(oldQueue: List<PlayableItem>, newQueue: List<PlayableItem>) {
+        mutateMaterializedTimeline { player ->
+            newQueue.forEachIndexed { index, item ->
+                if (item !== oldQueue.getOrNull(index)) {
+                    player.replaceMediaItem(index, item)
+                }
+            }
+        }
     }
 
     private fun rebuildPlayerQueueAroundCurrent(newOrder: List<PlayableItem>): Boolean {
@@ -3260,6 +3367,7 @@ private class MediaControllerFacade(
     override val isPlaying: Boolean get() = controller.isPlaying
     override val playWhenReady: Boolean get() = controller.playWhenReady
     override val playbackState: Int get() = controller.playbackState
+    override val hasPlayerError: Boolean get() = controller.playerError != null
     override var repeatMode: Int
         get() = controller.repeatMode
         set(value) {

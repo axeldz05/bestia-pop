@@ -34,6 +34,8 @@ data class Song(
     val lastPlayedAt: Long = 0
 ) : TrackMeta {
     companion object {
+        const val UNKNOWN_ARTIST = "Unknown Artist"
+        const val UNKNOWN_ALBUM = "Unknown Album"
         const val UNKNOWN_GENRE = "Unknown Genre"
     }
 }

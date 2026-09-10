@@ -358,6 +358,40 @@ object ListenBrainzClient {
         }
     }
 
+    data class CfRecordingWithMetadata(
+        val recording: CfRecommendedRecording,
+        val metadata: LbRecordingMetadata?
+    )
+
+    /**
+     * Level 2: Fetches CF recording recommendations for a user and batches metadata retrieval for returned MBIDs.
+     */
+    suspend fun fetchCfRecordingsWithMetadata(
+        username: String,
+        token: String? = null,
+        count: Int = 50,
+        offset: Int = 0,
+        artistType: String = "top"
+    ): LbApiResult<List<CfRecordingWithMetadata>> = withContext(Dispatchers.IO) {
+        val cfResult = fetchCfRecordingRecommendations(username, token, count, offset, artistType)
+        val payload = when (cfResult) {
+            is LbApiResult.Success -> cfResult.data
+            is LbApiResult.Failure -> return@withContext cfResult
+        }
+        if (payload.recordings.isEmpty()) {
+            return@withContext LbApiResult.Success(emptyList())
+        }
+        val mbids = payload.recordings.map { it.recordingMbid }
+        val metaByMbid = when (val metaResult = fetchRecordingMetadata(mbids, token)) {
+            is LbApiResult.Success -> metaResult.data
+            is LbApiResult.Failure -> emptyMap()
+        }
+        val combined = payload.recordings.map { rec ->
+            CfRecordingWithMetadata(rec, metaByMbid[rec.recordingMbid])
+        }
+        LbApiResult.Success(combined)
+    }
+
     private data class CachedStatsEntry<T>(
         val timestampMs: Long,
         val data: List<T>

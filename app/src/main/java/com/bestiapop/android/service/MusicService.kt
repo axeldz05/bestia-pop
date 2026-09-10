@@ -15,6 +15,7 @@ import android.os.Bundle
 import android.os.PowerManager
 import android.os.SystemClock
 import androidx.annotation.OptIn
+import androidx.core.app.ServiceCompat
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -227,6 +228,7 @@ class MusicService : MediaLibraryService() {
                         pauseGraceJob?.cancel()
                         pauseGraceJob = null
                         lastPausedAtElapsedRealtime = 0L
+                        (application as? BestiaPopApplication)?.playbackRuntime?.onPlaybackStartedFromService()
                     } else {
                         releaseTransientWakeLock()
                         if (p.mediaItemCount > 0 && p.playbackState != Player.STATE_ENDED) {
@@ -239,6 +241,9 @@ class MusicService : MediaLibraryService() {
                                     "MusicService: Pause grace period expired. Refreshing foreground status."
                                 )
                                 triggerNotificationUpdate()
+                                if (!isPlaybackEngaged()) {
+                                    stopServiceAndClearForeground("pause grace period expired")
+                                }
                             }
                         } else {
                             pauseGraceJob?.cancel()
@@ -260,6 +265,7 @@ class MusicService : MediaLibraryService() {
                     if (isPlaying) {
                         foregroundPromoteRetryAttempts = 0
                         releaseTransientWakeLock()
+                        (application as? BestiaPopApplication)?.playbackRuntime?.onPlaybackStartedFromService()
                     }
                     persistPlaybackEngaged(isPlaybackEngaged())
                     updateWakeMode()
@@ -279,7 +285,17 @@ class MusicService : MediaLibraryService() {
                         "ExoPlayer.onMediaItemTransition: mediaId='${mediaItem?.mediaId}', title='${mediaItem?.mediaMetadata?.title}', reason=$reasonStr"
                     )
                     if (latestPlaybackSettings.crossfadeEnabled) {
-                        p.volume = 0f
+                        if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO ||
+                            reason == Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT
+                        ) {
+                            p.volume = 0f
+                        } else {
+                            p.volume = calculateCrossfadeVolume(
+                                positionMs = p.currentPosition,
+                                durationMs = p.duration,
+                                crossfadeDurationSeconds = latestPlaybackSettings.crossfadeDurationSeconds
+                            )
+                        }
                     }
                     updateWakeMode()
                     updateCrossfadeLoop()
@@ -351,6 +367,14 @@ class MusicService : MediaLibraryService() {
         if (!p.isPlaying) {
             crossfadeJob?.cancel()
             crossfadeJob = null
+            val targetVolume = calculateCrossfadeVolume(
+                positionMs = p.currentPosition,
+                durationMs = p.duration,
+                crossfadeDurationSeconds = latestPlaybackSettings.crossfadeDurationSeconds
+            )
+            if (kotlin.math.abs(p.volume - targetVolume) > 0.01f) {
+                p.volume = targetVolume
+            }
             return
         }
         if (crossfadeJob?.isActive == true) return
@@ -441,10 +465,11 @@ class MusicService : MediaLibraryService() {
         )
         super.onStartCommand(intent, flags, startId)
         maybeNotifyBackgroundRestriction("onStartCommand")
-        if (shouldResumeAfterStickyRestart(intent == null, wasPlaybackEngaged())) {
+        val engaged = wasPlaybackEngaged()
+        if (shouldResumeAfterStickyRestart(intent == null, engaged)) {
             (application as BestiaPopApplication).playbackRuntime.requestResumeAfterServiceRestart()
         }
-        return START_STICKY
+        return if (engaged) START_STICKY else START_NOT_STICKY
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? {
@@ -498,8 +523,27 @@ class MusicService : MediaLibraryService() {
             PlaybackDiagnostics.log(PlaybackDiagnostics.TAG_SERVICE, "MusicService: Retaining playback service after task removed.")
             return
         }
-        PlaybackDiagnostics.warn(PlaybackDiagnostics.TAG_SERVICE, "MusicService: Stopping service after task removed (not engaged).")
+        stopServiceAndClearForeground("task removed (not engaged)")
+    }
+
+    private fun stopServiceAndClearForeground(reason: String) {
+        PlaybackDiagnostics.warn(
+            PlaybackDiagnostics.TAG_SERVICE,
+            "MusicService: Stopping service ($reason)."
+        )
+        pauseGraceJob?.cancel()
+        pauseGraceJob = null
+        lastPausedAtElapsedRealtime = 0L
+        (application as? BestiaPopApplication)?.playbackRuntime?.onTaskRemovedNotEngaged()
+        try {
+            ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
+            val notificationManager = getSystemService(NotificationManager::class.java)
+            notificationManager?.cancel(PLAYBACK_NOTIFICATION_ID)
+            notificationManager?.cancel(RESTRICTION_NOTIFICATION_ID)
+        } catch (_: Exception) {
+        }
         pauseAllPlayersAndStopSelf()
+        stopSelf()
     }
 
     override fun onDestroy() {
@@ -616,6 +660,7 @@ class MusicService : MediaLibraryService() {
     private fun mainActivityPendingIntent(): PendingIntent {
         val intent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra(EXTRA_OPEN_NOW_PLAYING, true)
         }
         return PendingIntent.getActivity(
             this,
@@ -764,6 +809,7 @@ class MusicService : MediaLibraryService() {
     companion object {
         const val PLAYBACK_CHANNEL_ID = "playback_channel"
         const val PLAYBACK_NOTIFICATION_ID = 1001
+        const val EXTRA_OPEN_NOW_PLAYING = "com.bestiapop.android.OPEN_NOW_PLAYING"
         const val ACTION_SET_SHUFFLE_ORDER = "com.bestiapop.android.SET_SHUFFLE_ORDER"
         const val EXTRA_SHUFFLE_ORDER = "shuffle_order"
         const val PAUSE_GRACE_PERIOD_MS = 10 * 60 * 1000L

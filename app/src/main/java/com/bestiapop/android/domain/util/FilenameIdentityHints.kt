@@ -17,10 +17,18 @@ data class FilenameMetadataHints(
 private val TRACK_NUM_ONLY = Regex("""^\d{1,3}$""")
 private val DISC_TRACK = Regex("""^\d{1,2}[-.]\d{1,2}\.?$""")
 private val SPACED_DASH = Regex("""\s+[-–—]\s+""")
-private val TRACK_DASH_TITLE = Regex("""^(\d{1,3})(?:[-.]\d{1,2})?\s+-\s+(.+)$""")
-private val TRACK_DOT_TITLE = Regex("""^(\d{1,3})\.\s*(.+)$""")
-private val TRACK_UNDERSCORE_TITLE = Regex("""^(\d{1,3})_(.+)$""")
 private val DISC_TRACK_FILE = Regex("""^(\d{1,2})[-.](\d{1,2})\.?\s*(.+)$""")
+private data class TrackFilenamePattern(val regex: Regex, val trackGroup: Int, val phraseGroup: Int)
+
+private val FILENAME_TRACK_PATTERNS = listOf(
+    TrackFilenamePattern(DISC_TRACK_FILE, trackGroup = 2, phraseGroup = 3),
+    TrackFilenamePattern(Regex("""^(\d{1,3})(?:[-.]\d{1,2})?\s+-\s+(.+)$"""), trackGroup = 1, phraseGroup = 2),
+    TrackFilenamePattern(Regex("""^(\d{1,3})\.\s*(.+)$"""), trackGroup = 1, phraseGroup = 2),
+    TrackFilenamePattern(Regex("""^(\d{1,3})_(.+)$"""), trackGroup = 1, phraseGroup = 2),
+    TrackFilenamePattern(Regex("""^(\d{1,3})\s+([^\d\s].*)$"""), trackGroup = 1, phraseGroup = 2),
+    TrackFilenamePattern(Regex("""^(.+?)\s*[\(\[]\s*(\d{1,3})\s*[\)\]]$"""), trackGroup = 2, phraseGroup = 1),
+    TrackFilenamePattern(Regex("""^(.+?)\s*[-_]\s*(\d{1,3})$"""), trackGroup = 2, phraseGroup = 1)
+)
 private val HOLE_RUN = Regex("""_{2,}""")
 private val WHITESPACE = Regex("""\s+""")
 private val CONTRACTION = Regex(
@@ -131,10 +139,7 @@ fun resolveWeakIdentityHints(artist: String, title: String): FilenameMetadataHin
     val artistWeak = IdentifyRanking.isPlaceholderArtist(a)
 
     if (artistWeak) {
-        splitArtistTitleDash(cleanedTitle)?.let { (art, tit) ->
-            return FilenameMetadataHints(art, tit, track)
-        }
-        return FilenameMetadataHints(null, cleanedTitle.ifBlank { null }, track)
+        return hintsFromPhraseAndTrack(cleanedTitle, track)
     }
 
     val titleWithoutArtist = IdentifyRanking.cleanIdentityTitle(cleanedTitle, a)
@@ -148,30 +153,12 @@ fun parseFilenameMetadataHints(nameWithoutExtension: String): FilenameMetadataHi
     if (raw.isEmpty()) return FilenameMetadataHints(null, null)
 
     val dashed = raw.replace("_-_", " - ")
-
-    DISC_TRACK_FILE.matchEntire(dashed)?.let { m ->
-        return hintsFromTrackRest(m.groupValues[2].toIntOrNull(), m.groupValues[3])
-    }
-    TRACK_DASH_TITLE.matchEntire(dashed)?.let { m ->
-        return hintsFromTrackRest(m.groupValues[1].toIntOrNull(), m.groupValues[2])
-    }
-    TRACK_DOT_TITLE.matchEntire(dashed)?.let { m ->
-        return hintsFromTrackRest(m.groupValues[1].toIntOrNull(), m.groupValues[2])
-    }
-    TRACK_UNDERSCORE_TITLE.matchEntire(raw)?.let { m ->
-        return hintsFromTrackRest(m.groupValues[1].toIntOrNull(), m.groupValues[2])
-    }
-
-    splitArtistTitleDash(dashed)?.let { (a, t) ->
-        return FilenameMetadataHints(a, t)
-    }
-
-    splitSingleUnderscoreArtistTitle(raw)?.let { (a, t) ->
-        return FilenameMetadataHints(a, t)
-    }
-
-    return FilenameMetadataHints(null, tidyFilenamePhrase(raw).ifBlank { null })
+    val (phrase, track) = extractTrackAndPhrase(dashed) ?: (raw to null)
+    return hintsFromPhraseAndTrack(phrase, track)
 }
+
+fun parseFilenameTrackNumber(nameWithoutExtension: String): Int? =
+    parseFilenameMetadataHints(nameWithoutExtension).trackNumber
 
 /**
  * When `{artist}_{title}` downloads collapse spaces to `_`, recover artist/title by
@@ -223,19 +210,29 @@ private fun titleTailAfterArtist(tidyPhrase: String, artist: String): String? {
     return tokens.drop(used).joinToString(" ").ifBlank { null }
 }
 
-private fun hintsFromTrackRest(track: Int?, rest: String): FilenameMetadataHints {
-    val restDashed = rest.replace("_-_", " - ").trim()
-    val spaced = if (SPACED_DASH.containsMatchIn(restDashed)) {
-        restDashed.split(SPACED_DASH)
-            .joinToString(" - ") { tidyFilenamePhrase(it) }
-    } else {
-        tidyFilenamePhrase(restDashed)
+private fun extractTrackAndPhrase(value: String): Pair<String, Int>? {
+    for (pattern in FILENAME_TRACK_PATTERNS) {
+        val m = pattern.regex.matchEntire(value) ?: continue
+        val track = m.groupValues[pattern.trackGroup].toIntOrNull()
+        if (track != null && track in 1..999) {
+            return m.groupValues[pattern.phraseGroup] to track
+        }
     }
-    val cleaned = spaced.ifBlank { null }
-    splitArtistTitleDash(spaced)?.let { (a, t) ->
+    return null
+}
+
+/**
+ * Splits artist and title from a phrase, checking spaced dashes first,
+ * then a single BestiaPop underscore.
+ */
+fun splitArtistAndTitle(phrase: String): Pair<String, String>? =
+    splitArtistTitleDash(phrase) ?: splitSingleUnderscoreArtistTitle(phrase)
+
+private fun hintsFromPhraseAndTrack(phrase: String, track: Int?): FilenameMetadataHints {
+    splitArtistAndTitle(phrase)?.let { (a, t) ->
         return FilenameMetadataHints(a, t, track)
     }
-    return FilenameMetadataHints(null, cleaned, track)
+    return FilenameMetadataHints(null, tidyFilenamePhrase(phrase).ifBlank { null }, track)
 }
 
 /**

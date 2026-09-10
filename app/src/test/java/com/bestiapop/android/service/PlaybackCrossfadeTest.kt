@@ -53,4 +53,12 @@ class PlaybackCrossfadeTest {
         assertEquals(1f, calculateCrossfadeVolume(0L, -1L, 3), 0.001f)
         assertEquals(1f, calculateCrossfadeVolume(-10L, 100_000L, 3), 0.001f)
     }
+
+    @Test
+    fun calculateCrossfadeVolume_bypassesCrossfadeForVeryShortTracks() {
+        val shortDuration = 1200L
+        assertEquals(1f, calculateCrossfadeVolume(0L, shortDuration, 3), 0.001f)
+        assertEquals(1f, calculateCrossfadeVolume(600L, shortDuration, 3), 0.001f)
+        assertEquals(1f, calculateCrossfadeVolume(1199L, shortDuration, 3), 0.001f)
+    }
 }

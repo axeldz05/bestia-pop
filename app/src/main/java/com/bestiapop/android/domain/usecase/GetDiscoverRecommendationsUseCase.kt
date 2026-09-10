@@ -73,19 +73,14 @@ class GetDiscoverRecommendationsUseCase {
                 val cfDeferred = async {
                     if (tracks.isEmpty()) {
                         try {
-                            val cfResult = ListenBrainzClient.fetchCfRecordingRecommendations(
+                            val cfResult = ListenBrainzClient.fetchCfRecordingsWithMetadata(
                                 username = lbUser!!,
                                 token = lbToken,
                                 count = 25
                             )
-                            if (cfResult is LbApiResult.Success && cfResult.data.recordings.isNotEmpty()) {
-                                val mbids = cfResult.data.recordings.map { it.recordingMbid }
-                                val metaResult = ListenBrainzClient.fetchRecordingMetadata(mbids, lbToken)
-                                if (metaResult is LbApiResult.Success) {
-                                    return@async cfResult.data.recordings.mapNotNull { rec ->
-                                        val meta = metaResult.data[rec.recordingMbid] ?: return@mapNotNull null
-                                        meta.identity.toListenBrainzCatalogTrack(rec.recordingMbid)
-                                    }
+                            if (cfResult is LbApiResult.Success) {
+                                return@async cfResult.data.mapNotNull { (rec, meta) ->
+                                    meta?.identity?.toListenBrainzCatalogTrack(rec.recordingMbid)
                                 }
                             }
                         } catch (e: Exception) {
@@ -233,30 +228,22 @@ class GetDiscoverRecommendationsUseCase {
             var finalSource = sourceLabel
 
             if (finalRecTracks.isEmpty() && librarySongs.isNotEmpty()) {
-                finalRecTracks = librarySongs.asSequence()
-                    .filter { it.title.isNotBlank() && it.artist.isNotBlank() }
-                    .shuffled()
-                    .take(16)
+                finalRecTracks = CollectionUtils.recommendLocalTracks(librarySongs, playStats, limit = 16)
                     .map { it.toIdentity().toCatalogTrack(provider = "Local") }
-                    .toList()
                 finalSource = "Biblioteca local"
             }
 
             if (finalRecAlbums.isEmpty() && librarySongs.isNotEmpty()) {
-                finalRecAlbums = librarySongs.asSequence()
-                    .filter { it.album.isNotBlank() && !IdentifyRanking.isGenericAlbum(it.album) }
-                    .distinctBy { "${it.artist}|${it.album}" }
-                    .take(12)
-                    .map { song ->
+                finalRecAlbums = CollectionUtils.recommendLocalAlbums(librarySongs, playStats, limit = 12)
+                    .map { album ->
                         CatalogAlbum(
-                            id = "${song.artist}|${song.album}",
-                            title = song.album,
-                            artist = song.artist,
-                            coverUrl = song.artworkUri,
+                            id = album.key,
+                            title = album.title,
+                            artist = album.artist,
+                            coverUrl = album.artworkUri,
                             trackCount = 0
                         )
                     }
-                    .toList()
             }
 
             DiscoverFeed(

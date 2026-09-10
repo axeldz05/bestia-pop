@@ -198,11 +198,12 @@ object MetadataFetcher {
         for (i in 0 until data.length()) {
             val obj = data.getJSONObject(i)
             val identity = obj.toDeezerTrackIdentity() ?: continue
+            val isrc = obj.optString("isrc").trim().takeIf { it.isNotBlank() }
             tracks.add(
                 OnlineCatalogTrack(
                     identity = identity,
                     id = obj.optString("id").ifBlank { "${identity.youtubeSearchQuery()}#$i" },
-                    audioUrl = identity.youtubeSearchQuery(),
+                    audioUrl = isrc ?: identity.youtubeSearchQuery(),
                     provider = provider,
                     year = parseReleaseYear(obj.optJSONObject("album")?.optString("release_date"))
                 )
@@ -814,11 +815,12 @@ object MetadataFetcher {
                     )?.let { base ->
                         base.copy(artworkUri = albumCoverUrl ?: base.artworkUri)
                     } ?: continue
+                    val isrc = obj.optString("isrc").trim().takeIf { it.isNotBlank() }
                     resultCandidates.add(
                         toCatalogCandidate(
                             identity.toCatalogTrack(
                                 provider = "YouTube",
-                                audioUrl = identity.youtubeSearchQuery()
+                                audioUrl = isrc ?: identity.youtubeSearchQuery()
                             )
                         )
                     )
@@ -882,11 +884,12 @@ object MetadataFetcher {
                         defaultTitle = "Pista ${i + 1}",
                         defaultAlbum = playlistTitle
                     ) ?: continue
+                    val isrc = obj.optString("isrc").trim().takeIf { it.isNotBlank() }
                     resultCandidates.add(
                         toCatalogCandidate(
                             identity.toCatalogTrack(
                                 provider = "YouTube",
-                                audioUrl = identity.youtubeSearchQuery()
+                                audioUrl = isrc ?: identity.youtubeSearchQuery()
                             )
                         )
                     )

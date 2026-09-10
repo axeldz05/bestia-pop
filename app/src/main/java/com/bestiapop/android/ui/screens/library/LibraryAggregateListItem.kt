@@ -19,9 +19,18 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.runtime.Immutable
 import com.bestiapop.android.ui.components.ArtworkThumbnail
 import com.bestiapop.android.ui.components.PlayShuffleIconPair
 import com.bestiapop.android.ui.theme.ListDensity
+
+/** Generic actions for aggregate browse rows (artists, genres, etc.) */
+@Immutable
+data class AggregateBrowseActions<T>(
+    val onClick: (T) -> Unit,
+    val onPlay: (T) -> Unit,
+    val onShuffle: (T) -> Unit
+)
 
 /** Shared row chrome for artist / genre browse aggregates. */
 @Composable

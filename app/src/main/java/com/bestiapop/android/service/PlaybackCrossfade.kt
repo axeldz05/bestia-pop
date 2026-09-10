@@ -13,7 +13,7 @@ fun calculateCrossfadeVolume(
     durationMs: Long,
     crossfadeDurationSeconds: Int
 ): Float {
-    if (durationMs <= 0L || positionMs < 0L) return 1f
+    if (durationMs < 1500L || positionMs < 0L) return 1f
     val fadeMs = (crossfadeDurationSeconds * 1000L).coerceIn(500L, 10000L)
     val effectiveFadeMs = minOf(fadeMs, durationMs / 3).coerceAtLeast(500L)
 

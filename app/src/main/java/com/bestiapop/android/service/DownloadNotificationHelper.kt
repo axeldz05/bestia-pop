@@ -75,7 +75,7 @@ class DownloadNotificationHelper(private val context: Context) {
     fun buildStarting(ongoing: Boolean): Notification {
         return NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.stat_sys_download)
-            .setContentTitle("Preparando descargas…")
+            .setContentTitle(DownloadMessages.preparingDownloads)
             .setContentText(DownloadMessages.queued)
             .setOngoing(ongoing)
             .setOnlyAlertOnce(true)

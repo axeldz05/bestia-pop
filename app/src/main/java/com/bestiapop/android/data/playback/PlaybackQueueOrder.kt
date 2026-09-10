@@ -88,6 +88,46 @@ object PlaybackQueueOrder {
         return (0 until size).shuffled(random)
     }
 
+    /**
+     * Level 2: Full reshuffle of items, guaranteeing that if size > 1 and distinct elements exist,
+     * the new first item does not equal [avoidItem].
+     */
+    fun <T> reshuffleItemsAvoidingFirst(
+        items: List<T>,
+        avoidItem: T? = null,
+        random: Random = Random.Default
+    ): List<T> {
+        if (items.size <= 1) return items
+        val reshuffled = items.shuffled(random).toMutableList()
+        if (avoidItem != null && reshuffled.first() == avoidItem) {
+            val swap = reshuffled.indexOfFirst { it != avoidItem }.takeIf { it > 0 } ?: 1
+            val first = reshuffled[0]
+            reshuffled[0] = reshuffled[swap]
+            reshuffled[swap] = first
+        }
+        return reshuffled
+    }
+
+    /**
+     * Level 2: Full reshuffle of items by key, avoiding starting with an item whose key matches [avoidKey].
+     */
+    fun <T, K> reshuffleItemsAvoidingKey(
+        items: List<T>,
+        avoidKey: K?,
+        keySelector: (T) -> K,
+        random: Random = Random.Default
+    ): List<T> {
+        if (items.size <= 1) return items
+        val reshuffled = items.shuffled(random).toMutableList()
+        if (avoidKey != null && keySelector(reshuffled.first()) == avoidKey) {
+            val swap = reshuffled.indexOfFirst { keySelector(it) != avoidKey }.takeIf { it > 0 } ?: 1
+            val first = reshuffled[0]
+            reshuffled[0] = reshuffled[swap]
+            reshuffled[swap] = first
+        }
+        return reshuffled
+    }
+
     fun <T> applyPlayOrder(items: List<T>, playOrder: List<Int>?): List<T> {
         val order = validPlayOrderOrNull(playOrder, items.size) ?: return items
         return order.map { items[it] }

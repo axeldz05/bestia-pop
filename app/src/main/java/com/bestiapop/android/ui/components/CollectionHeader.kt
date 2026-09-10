@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -34,6 +35,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TriStateCheckbox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -46,35 +48,57 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.bestiapop.android.data.model.Album
 import com.bestiapop.android.data.model.Playlist
 import com.bestiapop.android.ui.screens.library.AlbumEditCoverMenuItems
 import com.bestiapop.android.ui.screens.library.AlbumHeaderSelectionState
 import com.bestiapop.android.ui.theme.ListDensity
 
 /**
- * Compact circular action button for collection headers (36dp box, 20dp icon).
+ * Level 1: Clickable circular box container with standard 36dp touch target and clipping.
+ */
+@Composable
+fun CircleActionBox(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    boxSize: Dp = 36.dp,
+    content: @Composable BoxScope.() -> Unit
+) {
+    Box(
+        modifier = modifier
+            .size(boxSize)
+            .clip(CircleShape)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+        content = content
+    )
+}
+
+/**
+ * Level 2: Compact circular action button for collection headers and action bars.
  */
 @Composable
 fun HeaderActionIcon(
     onClick: () -> Unit,
     icon: ImageVector,
-    contentDescription: String,
+    contentDescription: String?,
     modifier: Modifier = Modifier,
-    tint: Color = MaterialTheme.colorScheme.onSurfaceVariant
+    tint: Color = MaterialTheme.colorScheme.onSurfaceVariant,
+    iconSize: Dp = 20.dp,
+    boxSize: Dp = 36.dp
 ) {
-    Box(
-        modifier = modifier
-            .size(36.dp)
-            .clip(CircleShape)
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center
+    CircleActionBox(
+        onClick = onClick,
+        modifier = modifier,
+        boxSize = boxSize
     ) {
         Icon(
             imageVector = icon,
             contentDescription = contentDescription,
             tint = tint,
-            modifier = Modifier.size(20.dp)
+            modifier = Modifier.size(iconSize)
         )
     }
 }
@@ -206,7 +230,94 @@ fun CollectionHeader(
 }
 
 /**
- * Album header row with album metadata, cover editing options, and play/shuffle actions.
+ * Level 2: Bundled action callbacks for [AlbumHeader].
+ */
+@Immutable
+data class AlbumHeaderActions(
+    val onPlay: () -> Unit,
+    val onShuffle: () -> Unit,
+    val onOpen: () -> Unit = {},
+    val onEdit: () -> Unit = {},
+    val onChangeCover: () -> Unit = {},
+    val onIdentify: (() -> Unit)? = null,
+    val onToggleSelect: () -> Unit = {},
+    val onLongClick: () -> Unit = {},
+    val onToggleCollapse: () -> Unit = {}
+)
+
+/**
+ * Level 2: Album header row with bundled actions and Album model.
+ */
+@Composable
+fun AlbumHeader(
+    album: Album,
+    actions: AlbumHeaderActions,
+    modifier: Modifier = Modifier,
+    sortHint: String? = null,
+    isCollapsed: Boolean = false,
+    isSelectionMode: Boolean = false,
+    selectionState: AlbumHeaderSelectionState = AlbumHeaderSelectionState.NONE,
+    showCollapseToggle: Boolean = true
+) {
+    AlbumHeader(
+        title = album.displayName,
+        artistName = album.artist,
+        artworkUri = album.artworkUri,
+        songCount = album.songCount,
+        actions = actions,
+        modifier = modifier,
+        sortHint = sortHint,
+        isCollapsed = isCollapsed,
+        isSelectionMode = isSelectionMode,
+        selectionState = selectionState,
+        showCollapseToggle = showCollapseToggle
+    )
+}
+
+/**
+ * Level 2: Album header row with bundled actions.
+ */
+@Composable
+fun AlbumHeader(
+    title: String,
+    artistName: String,
+    artworkUri: String?,
+    songCount: Int,
+    actions: AlbumHeaderActions,
+    modifier: Modifier = Modifier,
+    subtitle: String = "$artistName • $songCount canciones",
+    sortHint: String? = null,
+    isCollapsed: Boolean = false,
+    isSelectionMode: Boolean = false,
+    selectionState: AlbumHeaderSelectionState = AlbumHeaderSelectionState.NONE,
+    showCollapseToggle: Boolean = true
+) {
+    AlbumHeader(
+        title = title,
+        artistName = artistName,
+        artworkUri = artworkUri,
+        songCount = songCount,
+        subtitle = subtitle,
+        sortHint = sortHint,
+        isCollapsed = isCollapsed,
+        isSelectionMode = isSelectionMode,
+        selectionState = selectionState,
+        showCollapseToggle = showCollapseToggle,
+        onPlayAlbum = actions.onPlay,
+        onShuffleAlbum = actions.onShuffle,
+        onToggleSelect = actions.onToggleSelect,
+        onLongClick = actions.onLongClick,
+        onToggleCollapse = actions.onToggleCollapse,
+        onEditAlbum = actions.onEdit,
+        onChangeAlbumCover = actions.onChangeCover,
+        onIdentifyAlbum = actions.onIdentify,
+        onOpenAlbum = actions.onOpen,
+        modifier = modifier
+    )
+}
+
+/**
+ * Level 1: Album header row with individual primitive callbacks.
  */
 @Composable
 fun AlbumHeader(
@@ -228,7 +339,8 @@ fun AlbumHeader(
     onEditAlbum: () -> Unit = {},
     onChangeAlbumCover: () -> Unit = {},
     onIdentifyAlbum: (() -> Unit)? = null,
-    onOpenAlbum: () -> Unit = {}
+    onOpenAlbum: () -> Unit = {},
+    modifier: Modifier = Modifier
 ) {
     val toggleState = when (selectionState) {
         AlbumHeaderSelectionState.NONE -> ToggleableState.Off
@@ -279,8 +391,43 @@ fun AlbumHeader(
 }
 
 /**
- * Playlist header row with playlist metadata, quick play/shuffle, 3-dots menu for quick
- * edit/delete/queue, and click handling to open the playlist detail view.
+ * Level 2: Bundled action callbacks for [PlaylistHeader].
+ */
+@Immutable
+data class PlaylistHeaderActions(
+    val onPlay: (Playlist) -> Unit,
+    val onShuffle: (Playlist) -> Unit,
+    val onOpen: (Playlist) -> Unit,
+    val onEdit: (Playlist) -> Unit,
+    val onDelete: (Playlist) -> Unit,
+    val onPlayNext: ((Playlist) -> Unit)? = null,
+    val onAddToQueue: ((Playlist) -> Unit)? = null
+)
+
+/**
+ * Level 2: Playlist header row with bundled actions.
+ */
+@Composable
+fun PlaylistHeader(
+    playlist: Playlist,
+    actions: PlaylistHeaderActions,
+    modifier: Modifier = Modifier
+) {
+    PlaylistHeader(
+        playlist = playlist,
+        onPlayPlaylist = { actions.onPlay(playlist) },
+        onShufflePlaylist = { actions.onShuffle(playlist) },
+        onOpenPlaylist = { actions.onOpen(playlist) },
+        onEditPlaylist = { actions.onEdit(playlist) },
+        onDeletePlaylist = { actions.onDelete(playlist) },
+        onPlayNext = actions.onPlayNext?.let { action -> { action(playlist) } },
+        onAddToQueue = actions.onAddToQueue?.let { action -> { action(playlist) } },
+        modifier = modifier
+    )
+}
+
+/**
+ * Level 1: Playlist header row with individual primitive callbacks.
  */
 @Composable
 fun PlaylistHeader(

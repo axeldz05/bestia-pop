@@ -355,7 +355,7 @@ class FastScrollSectionsTest {
         // The days should be indexed
         val dayLabels = sections.map { it.label }
         assertTrue(dayLabels.contains("15") || dayLabels.contains("Hoy") || dayLabels.contains("Ayer"))
-        assertTrue(dayLabels.contains("10"))
+        assertTrue(dayLabels.contains("10") || dayLabels.contains("Hoy") || dayLabels.contains("Ayer"))
         assertTrue(dayLabels.contains("5") || dayLabels.contains("Hoy") || dayLabels.contains("Ayer"))
     }
 

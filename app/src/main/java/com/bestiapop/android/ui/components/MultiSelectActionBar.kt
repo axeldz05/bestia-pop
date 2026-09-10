@@ -31,6 +31,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Immutable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -41,6 +42,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.bestiapop.android.data.model.PlaylistMessages
 import com.bestiapop.android.ui.theme.ListDensity
 
 private val ActionIconSize = 22.dp
@@ -48,6 +50,45 @@ private val ChromeIconButtonSize = 32.dp
 private val ActionSlotWidth = 64.dp
 private val SimilarActionSlotWidth = 72.dp
 
+/**
+ * Level 2: Bundled action callbacks for [MultiSelectActionBar].
+ */
+@Immutable
+data class MultiSelectActions(
+    val onPlaySelected: () -> Unit,
+    val onEnqueueSelected: () -> Unit,
+    val onAddToPlaylist: () -> Unit,
+    val onIdentifySelected: () -> Unit,
+    val onSimilarSelected: () -> Unit,
+    val onDeleteSelected: () -> Unit,
+    val onSelectAll: () -> Unit,
+    val onClearSelection: () -> Unit
+)
+
+/**
+ * Level 2: Multi-select action bar with bundled actions.
+ */
+@Composable
+fun MultiSelectActionBar(
+    selectedCount: Int,
+    actions: MultiSelectActions,
+    modifier: Modifier = Modifier
+) = MultiSelectActionBar(
+    selectedCount = selectedCount,
+    onPlaySelected = actions.onPlaySelected,
+    onEnqueueSelected = actions.onEnqueueSelected,
+    onAddToPlaylist = actions.onAddToPlaylist,
+    onIdentifySelected = actions.onIdentifySelected,
+    onSimilarSelected = actions.onSimilarSelected,
+    onDeleteSelected = actions.onDeleteSelected,
+    onSelectAll = actions.onSelectAll,
+    onClearSelection = actions.onClearSelection,
+    modifier = modifier
+)
+
+/**
+ * Level 1: Multi-select action bar with individual primitive callbacks.
+ */
 @Composable
 fun MultiSelectActionBar(
     selectedCount: Int,
@@ -143,7 +184,7 @@ fun MultiSelectActionBar(
                 MultiSelectAction(
                     icon = Icons.AutoMirrored.Filled.PlaylistAdd,
                     label = "Lista",
-                    description = "Agregar a playlist",
+                    description = PlaylistMessages.addToPlaylist,
                     onClick = onAddToPlaylist,
                     modifier = Modifier.width(ActionSlotWidth)
                 )
@@ -302,7 +343,7 @@ fun PlaylistAdditionActionBar(
                             .size(ActionIconSize)
                     )
                     Text(
-                        text = "Añadir a $playlistName",
+                        text = PlaylistMessages.addToPlaylistNamed(playlistName),
                         fontWeight = FontWeight.Bold,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis

@@ -1494,6 +1494,7 @@ class PlaybackRuntimeContinuityTest {
             libraryUpdates = MutableStateFlow(listOf(first, current, third))
         )
         try {
+            fixture.runtime.attachUi()
             assertEquals(0, fixture.controller.timelineMutationCount)
             assertEquals("Current", fixture.runtime.currentItem.value?.title)
 
@@ -1693,13 +1694,32 @@ class PlaybackRuntimeContinuityTest {
 
             active.runtime.togglePlayPause()
             assertFalse(active.runtime.tickerActiveForTest)
-            assertEquals(0, active.controller.releaseCount.get())
-
-            active.runtime.removeFromQueue(0)
+            // When paused with UI detached, controller releases even if queue is not empty,
+            // allowing the app/service to terminate cleanly when idle.
             assertEquals(1, active.controller.releaseCount.get())
             assertFalse(active.runtime.controllerConnectedForTest)
+            assertEquals(1, active.runtime.queue.value.size)
         } finally {
             active.close()
+        }
+    }
+
+    @Test
+    fun onTaskRemovedNotEngaged_releasesControllerAndCancelsPendingPlay() {
+        val fixture = fixture(startTicker = true)
+        try {
+            fixture.runtime.attachUi()
+            fixture.runtime.playPlayableCollection(
+                listOf(PlayableItem.Local(song(1, "Test"))),
+                rotate = false
+            )
+            fixture.runtime.togglePlayPause()
+            fixture.runtime.onTaskRemovedNotEngaged()
+            assertEquals(1, fixture.controller.releaseCount.get())
+            assertFalse(fixture.runtime.controllerConnectedForTest)
+            assertFalse(fixture.runtime.isPlaying.value)
+        } finally {
+            fixture.close()
         }
     }
 
@@ -1722,6 +1742,63 @@ class PlaybackRuntimeContinuityTest {
             assertEquals(null, fixture.runtime.currentItem.value)
             assertFalse(fixture.runtime.isPlaying.value)
             assertFalse(fixture.runtime.radioActive.value)
+        } finally {
+            fixture.close()
+        }
+    }
+
+    @Test
+    fun updateAlbumArtworkInQueue_updatesMaterializedTimelineMediaItems() = runBlocking {
+        val controller = FakeController()
+        val fixture = fixture(controller = controller, attachController = true)
+        try {
+            val song1 = song(1, "Song 1").copy(album = "Album A")
+            val song2 = song(2, "Song 2").copy(album = "Album B")
+            fixture.runtime.addPlayableBatch(listOf(PlayableItem.Local(song1), PlayableItem.Local(song2)))
+            fixture.runtime.skipToQueueIndex(0)
+
+            val newArtUri = "content://media/art/123"
+            fixture.runtime.updateAlbumArtworkInQueue("Album A", newArtUri)
+
+            val updatedQueueItem = fixture.runtime.queue.value[0] as PlayableItem.Local
+            assertEquals(newArtUri, updatedQueueItem.resolvedArtworkUri)
+            val updatedTimelineItem = controller.items()[0] as PlayableItem.Local
+            assertEquals(newArtUri, updatedTimelineItem.resolvedArtworkUri)
+            assertTrue(controller.operations.contains("replaceMediaItem"))
+        } finally {
+            fixture.close()
+        }
+    }
+
+    @Test
+    fun skipToQueueIndex_offline_skipsUnresolvedRemoteWithoutResolving() = runBlocking {
+        var resolveCalled = false
+        val streamAccess = object : PlaybackRuntimeStreamAccess {
+            override fun needsResolve(item: PlayableItem.Remote): Boolean = true
+            override suspend fun resolve(item: PlayableItem.Remote): PlayableItem.Remote? {
+                resolveCalled = true
+                return null
+            }
+            override suspend fun invalidate(item: PlayableItem.Remote) = Unit
+        }
+        val fixture = fixture(
+            streamAccess = streamAccess,
+            isOnline = { false },
+            attachController = true
+        )
+        try {
+            val events = mutableListOf<String>()
+            val eventJob = fixture.scope.launch {
+                fixture.runtime.events.collect { events.add(it) }
+            }
+
+            val remoteItem = remote("yt123", "Remote 1")
+            fixture.runtime.addPlayableBatch(listOf(remoteItem))
+            fixture.runtime.skipToQueueIndex(0)
+
+            assertFalse("Online resolver should not be called when offline", resolveCalled)
+            assertEquals(listOf("Sin conexión a internet"), events)
+            eventJob.cancel()
         } finally {
             fixture.close()
         }
@@ -1750,7 +1827,8 @@ class PlaybackRuntimeContinuityTest {
         dispatcher: CoroutineDispatcher = Dispatchers.Unconfined,
         clockMs: (() -> Long)? = null,
         loadSongById: suspend (Long) -> Song? = { null },
-        ioDispatcher: CoroutineDispatcher = dispatcher
+        ioDispatcher: CoroutineDispatcher = dispatcher,
+        isOnline: () -> Boolean = { true }
     ): Fixture {
         val scope = CoroutineScope(SupervisorJob() + dispatcher)
         val clock = AtomicLong(10_000L)
@@ -1767,7 +1845,7 @@ class PlaybackRuntimeContinuityTest {
                 streamAccess = streamAccess,
                 saveDownloads = saveDownloads,
                 radioSuggester = radioSuggester,
-                isOnline = { true },
+                isOnline = isOnline,
                 clockMs = clockMs ?: clock::get,
                 elapsedRealtimeMs = clock::get,
                 controllerReconnectBackoffMs = controllerReconnectBackoffMs,

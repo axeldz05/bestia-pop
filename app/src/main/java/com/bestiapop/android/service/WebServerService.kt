@@ -7,8 +7,10 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.IBinder
+import android.os.PowerManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
@@ -336,6 +338,8 @@ class WebServerService : Service() {
 
     private val serviceScope = CoroutineScope(Dispatchers.IO + Job())
     private var server: EmbeddedServer<*, *>? = null
+    private var wifiLock: WifiManager.WifiLock? = null
+    private var wakeLock: PowerManager.WakeLock? = null
 
     companion object {
         private const val TAG = "WebServerService"
@@ -384,7 +388,59 @@ class WebServerService : Service() {
     override fun onCreate() {
         super.onCreate()
         startForegroundServiceNotification()
+        acquireLocks()
         startServer()
+    }
+
+    private fun acquireLocks() {
+        try {
+            val wifiManager = applicationContext.getSystemService(WifiManager::class.java)
+            if (wifiLock == null) {
+                val mode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    WifiManager.WIFI_MODE_FULL_HIGH_PERF
+                } else {
+                    @Suppress("DEPRECATION")
+                    WifiManager.WIFI_MODE_FULL
+                }
+                wifiLock = wifiManager?.createWifiLock(mode, "BestiaPop:WifiSyncLock")?.apply {
+                    setReferenceCounted(false)
+                    acquire()
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to acquire WifiLock: ${e.message}")
+        }
+
+        try {
+            val powerManager = getSystemService(PowerManager::class.java)
+            if (wakeLock == null) {
+                wakeLock = powerManager?.newWakeLock(
+                    PowerManager.PARTIAL_WAKE_LOCK,
+                    "BestiaPop:WifiSyncWakeLock"
+                )?.apply {
+                    setReferenceCounted(false)
+                    acquire()
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to acquire WakeLock: ${e.message}")
+        }
+    }
+
+    private fun releaseLocks() {
+        try {
+            if (wifiLock?.isHeld == true) {
+                wifiLock?.release()
+            }
+        } catch (_: Exception) {}
+        wifiLock = null
+
+        try {
+            if (wakeLock?.isHeld == true) {
+                wakeLock?.release()
+            }
+        } catch (_: Exception) {}
+        wakeLock = null
     }
 
     private fun startForegroundServiceNotification() {
@@ -499,6 +555,7 @@ class WebServerService : Service() {
                 "fgs_type" to fgsType.toString()
             )
         )
+        releaseLocks()
         _serverState.value = null
         _transfers.update(::markWifiTransfersTimedOut)
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
@@ -698,7 +755,7 @@ class WebServerService : Service() {
 
                     function sanitizeFileName(rawName) {
                         const fileName = rawName.split('/').pop().split('\\').pop();
-                        return fileName.replace(/[\/\\:*?"<>|\s]/g, '_');
+                        return fileName.replace(/[\/\\:*?"<>|]/g, '_');
                     }
 
                     function isAudioFile(filename) {
@@ -937,6 +994,7 @@ class WebServerService : Service() {
     }
 
     override fun onDestroy() {
+        releaseLocks()
         server?.stop(1000, 2000)
         serviceScope.cancel()
         _serverState.value = null

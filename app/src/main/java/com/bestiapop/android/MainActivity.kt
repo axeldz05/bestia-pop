@@ -21,6 +21,7 @@ import androidx.core.content.ContextCompat
 import com.bestiapop.android.data.util.PlaybackDiagnostics
 import com.bestiapop.android.service.DownloadNotificationHelper
 import com.bestiapop.android.service.IdentifyNotificationHelper
+import com.bestiapop.android.service.MusicService
 import com.bestiapop.android.ui.MusicPlayerViewModel
 import com.bestiapop.android.ui.screens.MainScreen
 import com.bestiapop.android.ui.theme.BestiaPopTheme
@@ -170,6 +171,10 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handleOpenTabIntent(intent: Intent?) {
+        if (intent?.getBooleanExtra(MusicService.EXTRA_OPEN_NOW_PLAYING, false) == true) {
+            viewModel.requestOpenNowPlaying()
+            intent.removeExtra(MusicService.EXTRA_OPEN_NOW_PLAYING)
+        }
         val tab = intent?.getStringExtra(DownloadNotificationHelper.EXTRA_OPEN_TAB)
             ?: intent?.getStringExtra(IdentifyNotificationHelper.EXTRA_OPEN_TAB)
         when (tab) {

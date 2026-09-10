@@ -64,7 +64,7 @@ fun DownloadSuccessReadyLabel(label: String = "Listo") {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Icon(
             imageVector = Icons.Default.CheckCircle,
-            contentDescription = "Descargado",
+            contentDescription = DownloadMessages.downloadedShort,
             tint = MaterialTheme.colorScheme.primary,
             modifier = Modifier.size(22.dp)
         )
@@ -109,14 +109,14 @@ fun RetryCycleDismissActions(
 ) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         DownloadOutlinedActionButton(
-            label = "Reintentar",
+            label = DownloadMessages.retry,
             onClick = onRetry,
-            contentDescription = "Reintentar"
+            contentDescription = DownloadMessages.retry
         )
         IconButton(onClick = onCycle) {
             Icon(
                 Icons.Default.Search,
-                contentDescription = "Buscar otro",
+                contentDescription = DownloadMessages.searchAnother,
                 tint = MaterialTheme.colorScheme.primary
             )
         }
@@ -124,7 +124,7 @@ fun RetryCycleDismissActions(
             IconButton(onClick = onDismiss) {
                 Icon(
                     Icons.Default.Close,
-                    contentDescription = "Descartar",
+                    contentDescription = DownloadMessages.dismiss,
                     tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                 )
             }
@@ -219,7 +219,7 @@ private fun DownloadInFlightActions(
         IconButton(onClick = onDismiss) {
             Icon(
                 imageVector = Icons.Default.Close,
-                contentDescription = "Cancelar descarga",
+                contentDescription = DownloadMessages.cancelDownload,
                 tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
             )
         }
@@ -251,7 +251,7 @@ fun DownloadStateTrailing(
                 onDismiss = onDismiss
             )
             onRetry != null -> DownloadOutlinedActionButton(
-                label = "Reintentar",
+                label = DownloadMessages.retry,
                 onClick = onRetry
             )
         }
@@ -283,7 +283,7 @@ fun DownloadStateTrailing(
             onDownload != null -> IconButton(onClick = onDownload) {
                 Icon(
                     imageVector = Icons.Default.Download,
-                    contentDescription = "Descargar",
+                    contentDescription = DownloadMessages.downloadAction,
                     tint = MaterialTheme.colorScheme.primary
                 )
             }
@@ -295,7 +295,7 @@ fun DownloadStateTrailing(
                 IconButton(onClick = onDownload) {
                     Icon(
                         imageVector = Icons.Default.Download,
-                        contentDescription = "Descargar",
+                        contentDescription = DownloadMessages.downloadAction,
                         tint = MaterialTheme.colorScheme.primary
                     )
                 }
@@ -303,3 +303,50 @@ fun DownloadStateTrailing(
         }
     }
 }
+
+/**
+ * Level 1: Low-level outlined button for downloading missing tracks with custom label and icon.
+ */
+@Composable
+fun DownloadMissingTracksButton(
+    onClick: () -> Unit,
+    label: String,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    icon: androidx.compose.ui.graphics.vector.ImageVector = Icons.Default.Download
+) {
+    OutlinedButton(
+        onClick = onClick,
+        enabled = enabled,
+        shape = RoundedCornerShape(12.dp),
+        modifier = modifier
+    ) {
+        Icon(imageVector = icon, contentDescription = null)
+        Spacer(modifier = Modifier.width(4.dp))
+        Text(
+            text = label,
+            maxLines = 1,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+        )
+    }
+}
+
+/**
+ * Level 2: Standard "Descargar faltantes" button optionally displaying pending count.
+ */
+@Composable
+fun DownloadMissingTracksButton(
+    onClick: () -> Unit,
+    count: Int? = null,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true
+) {
+    val label = if (count != null && count > 0) "Descargar faltantes ($count)" else "Descargar faltantes"
+    DownloadMissingTracksButton(
+        onClick = onClick,
+        label = label,
+        modifier = modifier,
+        enabled = enabled
+    )
+}
+

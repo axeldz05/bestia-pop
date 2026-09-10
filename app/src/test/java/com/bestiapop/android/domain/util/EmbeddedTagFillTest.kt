@@ -112,4 +112,56 @@ class EmbeddedTagFillTest {
         assertEquals("Roadhouse Blues", filled.title)
         assertEquals("Unknown Album", filled.album)
     }
+
+    @Test
+    fun genericBonusTrack_withSpuriousArtistMatch_isResetToUnknown() {
+        val misassigned = Song(
+            id = 20L,
+            uriString = "/storage/emulated/0/Download/bonus.mp3",
+            folderPath = "/storage/emulated/0/Download",
+            title = "Bonus",
+            artist = "Ciro y los Persas",
+            album = "Naranja Persa 2",
+            artworkUri = "https://catalog.example/ciro_art.jpg"
+        )
+        val meta = AudioFileMetadata(
+            title = "bonus",
+            artist = "Unknown Artist",
+            album = "Unknown Album",
+            genre = "Music",
+            durationMs = 180_000L,
+            artworkUri = null
+        )
+        val filled = fillSongGapsFromFileTags(misassigned, meta, emptyList())
+        assertEquals(Song.UNKNOWN_ARTIST, filled.artist)
+        assertEquals(Song.UNKNOWN_ALBUM, filled.album)
+        assertEquals(null, filled.artworkUri)
+    }
+
+    @Test
+    fun genericBonusTrack_withDiskTags_restoresRealArtist() {
+        val misassigned = Song(
+            id = 21L,
+            uriString = "/storage/emulated/0/Download/track_01.mp3",
+            folderPath = "/storage/emulated/0/Download",
+            title = "Track",
+            artist = "Ciro y los Persas",
+            album = "Naranja Persa 2",
+            artworkUri = "https://catalog.example/ciro_art.jpg"
+        )
+        val meta = AudioFileMetadata(
+            title = "Actual Song Title",
+            artist = "Gorillaz",
+            album = "Demon Days",
+            genre = "Alternative",
+            durationMs = 210_000L,
+            artworkUri = "file:///albumart.jpg"
+        )
+        val filled = fillSongGapsFromFileTags(misassigned, meta, emptyList())
+        assertEquals("Gorillaz", filled.artist)
+        assertEquals("Demon Days", filled.album)
+        assertEquals("Actual Song Title", filled.title)
+        assertEquals("file:///albumart.jpg", filled.artworkUri)
+    }
 }
+

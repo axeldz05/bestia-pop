@@ -18,23 +18,15 @@ import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.data.preferences.FastScrollSettings
 import com.bestiapop.android.ui.MusicPlayerViewModel
 import com.bestiapop.android.ui.SortOption
+import com.bestiapop.android.ui.components.SongItemActions
 import com.bestiapop.android.ui.state.LibraryListModel
 import kotlinx.coroutines.flow.StateFlow
 
-/** Shared song/album action callbacks for [LibrarySongList]. */
+/** Shared album group action callbacks for [LibrarySongList]. */
 @Immutable
-data class LibrarySongListActions(
-    val onPlayNext: (Song) -> Unit,
-    val onAddToQueue: (Song) -> Unit,
-    val onStartRadio: (Song) -> Unit,
-    val onAddToPlaylist: (Song) -> Unit,
-    val onEditMetadata: (Song) -> Unit,
-    val onEditLyrics: (Song) -> Unit,
-    val onIdentify: (Song) -> Unit = {},
-    val onDeleteSong: (Song) -> Unit,
+data class LibraryAlbumGroupActions(
     val onPlayAlbum: (String, List<Long>) -> Unit,
     val onShuffleAlbum: (String, List<Long>) -> Unit,
-    val onToggleSelect: (Song) -> Unit = {},
     val onToggleSelectAlbum: (List<Long>) -> Unit = {},
     val onAlbumLongClick: (List<Long>) -> Unit = {},
     val onToggleCollapseAlbum: (String) -> Unit = {},
@@ -43,6 +35,81 @@ data class LibrarySongListActions(
     val onIdentifyAlbum: (String) -> Unit = {},
     val onOpenAlbum: (String) -> Unit = {}
 )
+
+/** Shared song/album action callbacks for [LibrarySongList]. */
+@Immutable
+data class LibrarySongListActions(
+    val songActions: SongItemActions,
+    val albumActions: LibraryAlbumGroupActions,
+    val onToggleSelect: (Song) -> Unit = {}
+) {
+    val onPlayNext: (Song) -> Unit get() = { song -> songActions.onPlayNext?.invoke(song) }
+    val onAddToQueue: (Song) -> Unit get() = { song -> songActions.onAddToQueue?.invoke(song) }
+    val onStartRadio: (Song) -> Unit get() = { song -> songActions.onStartRadio?.invoke(song) }
+    val onAddToPlaylist: (Song) -> Unit get() = { song -> songActions.onAddToPlaylist?.invoke(song) }
+    val onEditMetadata: (Song) -> Unit get() = { song -> songActions.onEditMetadata?.invoke(song) }
+    val onEditLyrics: (Song) -> Unit get() = { song -> songActions.onEditLyrics?.invoke(song) }
+    val onIdentify: (Song) -> Unit get() = { song -> songActions.onIdentify?.invoke(song) }
+    val onDeleteSong: (Song) -> Unit get() = { song -> songActions.onDelete?.invoke(song) }
+
+    val onPlayAlbum: (String, List<Long>) -> Unit get() = albumActions.onPlayAlbum
+    val onShuffleAlbum: (String, List<Long>) -> Unit get() = albumActions.onShuffleAlbum
+    val onToggleSelectAlbum: (List<Long>) -> Unit get() = albumActions.onToggleSelectAlbum
+    val onAlbumLongClick: (List<Long>) -> Unit get() = albumActions.onAlbumLongClick
+    val onToggleCollapseAlbum: (String) -> Unit get() = albumActions.onToggleCollapseAlbum
+    val onEditAlbum: (String) -> Unit get() = albumActions.onEditAlbum
+    val onChangeAlbumCover: (String) -> Unit get() = albumActions.onChangeAlbumCover
+    val onIdentifyAlbum: (String) -> Unit get() = albumActions.onIdentifyAlbum
+    val onOpenAlbum: (String) -> Unit get() = albumActions.onOpenAlbum
+
+    /** Level 1: Flat parameter constructor for backward compatibility and continuous granularity. */
+    constructor(
+        onPlayNext: (Song) -> Unit,
+        onAddToQueue: (Song) -> Unit,
+        onStartRadio: (Song) -> Unit,
+        onAddToPlaylist: (Song) -> Unit,
+        onEditMetadata: (Song) -> Unit,
+        onEditLyrics: (Song) -> Unit,
+        onIdentify: (Song) -> Unit = {},
+        onDeleteSong: (Song) -> Unit,
+        onPlayAlbum: (String, List<Long>) -> Unit,
+        onShuffleAlbum: (String, List<Long>) -> Unit,
+        onToggleSelect: (Song) -> Unit = {},
+        onToggleSelectAlbum: (List<Long>) -> Unit = {},
+        onAlbumLongClick: (List<Long>) -> Unit = {},
+        onToggleCollapseAlbum: (String) -> Unit = {},
+        onEditAlbum: (String) -> Unit = {},
+        onChangeAlbumCover: (String) -> Unit = {},
+        onIdentifyAlbum: (String) -> Unit = {},
+        onOpenAlbum: (String) -> Unit = {}
+    ) : this(
+        songActions = SongItemActions(
+            onPlayNext = onPlayNext,
+            onAddToQueue = onAddToQueue,
+            onStartRadio = onStartRadio,
+            onAddToPlaylist = onAddToPlaylist,
+            onEditMetadata = onEditMetadata,
+            onEditLyrics = onEditLyrics,
+            onIdentify = onIdentify,
+            onDelete = onDeleteSong
+        ),
+        albumActions = LibraryAlbumGroupActions(
+            onPlayAlbum = onPlayAlbum,
+            onShuffleAlbum = onShuffleAlbum,
+            onToggleSelectAlbum = onToggleSelectAlbum,
+            onAlbumLongClick = onAlbumLongClick,
+            onToggleCollapseAlbum = onToggleCollapseAlbum,
+            onEditAlbum = onEditAlbum,
+            onChangeAlbumCover = onChangeAlbumCover,
+            onIdentifyAlbum = onIdentifyAlbum,
+            onOpenAlbum = onOpenAlbum
+        ),
+        onToggleSelect = onToggleSelect
+    )
+}
+
+/** Projects [LibrarySongListActions] into row-level [SongItemActions] for a specific song. */
+fun LibrarySongListActions.toSongItemActions(song: Song): SongItemActions = songActions
 
 /**
  * L3: fills common [LibrarySongList] args from [actions]; callers only pass deltas.
@@ -95,7 +162,8 @@ class SongActionDialogsController(
     val onAddToPlaylist: (Song) -> Unit,
     val onAddManyToPlaylist: (List<Song>) -> Unit = { songs -> songs.firstOrNull()?.let(onAddToPlaylist) },
     val onDelete: (Song) -> Unit,
-    val onDeleteMany: (List<Song>) -> Unit
+    val onDeleteMany: (List<Song>) -> Unit,
+    val onIdentify: (Song) -> Unit = {}
 )
 
 /**
@@ -108,7 +176,8 @@ fun rememberSongActionDialogs(
     onAfterPlaylistAdd: () -> Unit = {},
     onAfterDelete: (List<Song>) -> Unit = {},
     playlistSongIds: (Song) -> List<Long> = { listOf(it.id) },
-    onSelectPlaylist: ((Playlist, Song) -> Unit)? = null
+    onSelectPlaylist: ((Playlist, Song) -> Unit)? = null,
+    onIdentify: ((Song) -> Unit)? = null
 ): SongActionDialogsController {
     var editingSong by remember { mutableStateOf<Song?>(null) }
     var editingLyricsSong by remember { mutableStateOf<Song?>(null) }
@@ -132,14 +201,15 @@ fun rememberSongActionDialogs(
         onSelectPlaylist = onSelectPlaylist
     )
 
-    return remember {
+    return remember(viewModel, onIdentify) {
         SongActionDialogsController(
             onEdit = { editingSong = it },
             onEditLyrics = { editingLyricsSong = it },
             onAddToPlaylist = { songsForPlaylistAddition = listOf(it) },
             onAddManyToPlaylist = { songsForPlaylistAddition = it },
             onDelete = { songsForDeletion = listOf(it) },
-            onDeleteMany = { songsForDeletion = it }
+            onDeleteMany = { songsForDeletion = it },
+            onIdentify = onIdentify ?: { viewModel.identifySongForReview(it) }
         )
     }
 }

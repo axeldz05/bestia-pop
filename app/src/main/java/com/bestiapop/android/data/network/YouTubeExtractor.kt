@@ -169,6 +169,10 @@ object YouTubeExtractor {
     private val COVER_OR_NOISE_TITLE = Regex(
         """(?i)\b(?:cover|karaoke|react(?:ion)?s?|mashup)\b"""
     )
+    private val ISRC_REGEX = Regex("""^[A-Z]{2}[A-Z0-9]{3}\d{7}$""")
+    private val SNIPPET_OR_PART_TITLE = Regex(
+        """(?i)\b(?:(?:best|end|intro|first|second)\s+part|looped?|loop|parts?|snippet|shorts?|clip|preview|sample|edit|sped\s*up|slowed(?:\s*\+\s*reverb)?|nightcore|reverb|8d\s*audio|ringtone)\b"""
+    )
 
     private val YOUTUBE_ID_EXACT_PATTERN = Pattern.compile("^[a-zA-Z0-9_-]{11}$")
     private val YOUTUBE_URL_PATTERN = Pattern.compile(
@@ -265,23 +269,72 @@ object YouTubeExtractor {
     /**
      * Higher = better match for downloading/streaming the song itself (not a music video).
      * Uses raw YouTube title/channel before [formatTitleAndArtist] stripping.
+     * Incorporates expected duration, title and artist when available to penalize snippets/loops.
      */
-    internal fun audioPreferenceScore(rawTitle: String, rawAuthor: String): Int {
+    internal fun audioPreferenceScore(
+        rawTitle: String,
+        rawAuthor: String,
+        candidateDurationMs: Long = 0L,
+        expectedDurationMs: Long = 0L,
+        expectedTitle: String? = null,
+        expectedArtist: String? = null
+    ): Int {
         val title = rawTitle.lowercase()
         val author = rawAuthor.lowercase()
         var score = 0
+
+        val isSnippetOrPart = SNIPPET_OR_PART_TITLE.containsMatchIn(title)
+        if (isSnippetOrPart) {
+            score -= 150
+        }
 
         // YouTube Music auto-generated uploads are typically album/single audio only.
         if (author.endsWith(" - topic") || author.contains(" - topic")) score += 100
 
         if (AUDIO_ONLY_TITLE.containsMatchIn(title)) score += 80
-        if (LYRICS_TITLE.containsMatchIn(title) && !MUSIC_VIDEO_TITLE.containsMatchIn(title)) score += 40
-        if (VISUALIZER_TITLE.containsMatchIn(title)) score += 25
+        // Lyrics bonus only for full non-snippet videos
+        if (LYRICS_TITLE.containsMatchIn(title) && !MUSIC_VIDEO_TITLE.containsMatchIn(title) && !isSnippetOrPart) {
+            score += 35
+        }
+        if (VISUALIZER_TITLE.containsMatchIn(title) && !isSnippetOrPart) score += 25
 
         if (MUSIC_VIDEO_TITLE.containsMatchIn(title)) score -= 80
         if (author.contains("vevo")) score -= 25
         if (LIVE_TITLE.containsMatchIn(title)) score -= 45
         if (COVER_OR_NOISE_TITLE.containsMatchIn(title)) score -= 50
+
+        // Multi-signal: Duration comparison
+        if (expectedDurationMs > 0L && candidateDurationMs > 0L) {
+            val diffMs = kotlin.math.abs(candidateDurationMs - expectedDurationMs)
+            if (candidateDurationMs < expectedDurationMs * 0.70) {
+                // Fragment, snippet, or short cut (e.g. 143s vs 282s)
+                score -= 180
+            } else if (candidateDurationMs > expectedDurationMs * 1.50) {
+                // Extended / 1-hour loop / full album
+                score -= 100
+            } else if (diffMs <= 6_000L) {
+                score += 60
+            } else if (diffMs <= 18_000L) {
+                score += 30
+            }
+        }
+
+        // Multi-signal: Expected title & artist similarity
+        if (!expectedTitle.isNullOrBlank()) {
+            val qNorm = TrackMatchKeys.normalize(expectedTitle)
+            val tNorm = TrackMatchKeys.normalize(rawTitle)
+            val titleSim = IdentifyRanking.titleFieldSimilarity(qNorm, tNorm)
+            if (titleSim >= 0.70f) {
+                score += (titleSim * 50).toInt()
+            }
+        }
+        if (!expectedArtist.isNullOrBlank()) {
+            val aNorm = TrackMatchKeys.normalize(expectedArtist)
+            val authorNorm = TrackMatchKeys.normalize(rawAuthor)
+            if (authorNorm.contains(aNorm) || IdentifyRanking.fieldSimilarity(aNorm, authorNorm) >= 0.70f) {
+                score += 40
+            }
+        }
 
         return score
     }
@@ -290,12 +343,25 @@ object YouTubeExtractor {
     internal fun <T> rankByAudioPreference(
         items: List<T>,
         rawTitle: (T) -> String,
-        rawAuthor: (T) -> String
+        rawAuthor: (T) -> String,
+        durationMsOf: ((T) -> Long)? = null,
+        expectedDurationMs: Long = 0L,
+        expectedTitle: String? = null,
+        expectedArtist: String? = null
     ): List<T> {
         if (items.size <= 1) return items
         return items
             .mapIndexed { index, item ->
-                Triple(audioPreferenceScore(rawTitle(item), rawAuthor(item)), index, item)
+                val candDur = durationMsOf?.invoke(item) ?: 0L
+                val s = audioPreferenceScore(
+                    rawTitle = rawTitle(item),
+                    rawAuthor = rawAuthor(item),
+                    candidateDurationMs = candDur,
+                    expectedDurationMs = expectedDurationMs,
+                    expectedTitle = expectedTitle,
+                    expectedArtist = expectedArtist
+                )
+                Triple(s, index, item)
             }
             .sortedWith(compareByDescending<Triple<Int, Int, T>> { it.first }.thenBy { it.second })
             .map { it.third }
@@ -317,12 +383,28 @@ object YouTubeExtractor {
         return track.youtubeSearchQuery().ifBlank { track.id }
     }
 
-    internal fun parseSearchContents(contents: JSONArray): List<OnlineCatalogTrack> {
+    internal fun parseSearchContents(
+        contents: JSONArray,
+        expectedDurationMs: Long = 0L,
+        expectedTitle: String? = null,
+        expectedArtist: String? = null
+    ): List<OnlineCatalogTrack> {
         data class ParsedHit(
             val rawTitle: String,
             val rawAuthor: String,
             val track: OnlineCatalogTrack
         )
+
+        fun rank(hits: List<ParsedHit>): List<OnlineCatalogTrack> =
+            rankByAudioPreference(
+                items = hits,
+                rawTitle = { it.rawTitle },
+                rawAuthor = { it.rawAuthor },
+                durationMsOf = { it.track.durationMs },
+                expectedDurationMs = expectedDurationMs,
+                expectedTitle = expectedTitle,
+                expectedArtist = expectedArtist
+            ).map { it.track }
 
         val hits = mutableListOf<ParsedHit>()
         for (i in 0 until contents.length()) {
@@ -377,17 +459,22 @@ object YouTubeExtractor {
                     )
                 )
                 if (hits.size >= 25) {
-                    return rankByAudioPreference(hits, { it.rawTitle }, { it.rawAuthor }).map { it.track }
+                    return rank(hits)
                 }
             }
             if (hits.isNotEmpty()) {
-                return rankByAudioPreference(hits, { it.rawTitle }, { it.rawAuthor }).map { it.track }
+                return rank(hits)
             }
         }
-        return rankByAudioPreference(hits, { it.rawTitle }, { it.rawAuthor }).map { it.track }
+        return rank(hits)
     }
 
-    suspend fun searchYouTube(query: String): List<OnlineCatalogTrack> = withContext(Dispatchers.IO) {
+    suspend fun searchYouTube(
+        query: String,
+        expectedDurationMs: Long = 0L,
+        expectedTitle: String? = null,
+        expectedArtist: String? = null
+    ): List<OnlineCatalogTrack> = withContext(Dispatchers.IO) {
         val results = mutableListOf<OnlineCatalogTrack>()
         val trimmed = query.trim()
         if (trimmed.isEmpty()) return@withContext results
@@ -432,7 +519,16 @@ object YouTubeExtractor {
                             ?.optJSONObject("sectionListRenderer")
                             ?.optJSONArray("contents")
 
-                    if (contents != null) results.addAll(parseSearchContents(contents))
+                    if (contents != null) {
+                        results.addAll(
+                            parseSearchContents(
+                                contents,
+                                expectedDurationMs = expectedDurationMs,
+                                expectedTitle = expectedTitle,
+                                expectedArtist = expectedArtist
+                            )
+                        )
+                    }
                 }
             }
         } catch (e: Exception) {
@@ -464,7 +560,16 @@ object YouTubeExtractor {
                                 ?.optJSONObject("sectionListRenderer")
                                 ?.optJSONArray("contents")
 
-                            if (contents != null) results.addAll(parseSearchContents(contents))
+                            if (contents != null) {
+                                results.addAll(
+                                    parseSearchContents(
+                                        contents,
+                                        expectedDurationMs = expectedDurationMs,
+                                        expectedTitle = expectedTitle,
+                                        expectedArtist = expectedArtist
+                                    )
+                                )
+                            }
                         }
                     }
                 }
@@ -491,12 +596,30 @@ object YouTubeExtractor {
         }
     }
 
-    suspend fun extractAudioStream(urlOrQuery: String): YouTubeStreamResult? {
-        val res = extractAudioStreamDetailed(urlOrQuery)
+    suspend fun extractAudioStream(
+        urlOrQuery: String,
+        expectedDurationMs: Long = 0L,
+        expectedTitle: String? = null,
+        expectedArtist: String? = null,
+        fallbackQuery: String? = null
+    ): YouTubeStreamResult? {
+        val res = extractAudioStreamDetailed(
+            urlOrQuery = urlOrQuery,
+            expectedDurationMs = expectedDurationMs,
+            expectedTitle = expectedTitle,
+            expectedArtist = expectedArtist,
+            fallbackQuery = fallbackQuery
+        )
         return if (res is YouTubeExtractResult.Success) res.result else null
     }
 
-    suspend fun extractAudioStreamDetailed(urlOrQuery: String): YouTubeExtractResult = withContext(Dispatchers.IO) {
+    suspend fun extractAudioStreamDetailed(
+        urlOrQuery: String,
+        expectedDurationMs: Long = 0L,
+        expectedTitle: String? = null,
+        expectedArtist: String? = null,
+        fallbackQuery: String? = null
+    ): YouTubeExtractResult = withContext(Dispatchers.IO) {
         val trimmed = urlOrQuery.trim()
 
         val isUrl = trimmed.startsWith("http://") || trimmed.startsWith("https://")
@@ -510,20 +633,48 @@ object YouTubeExtractor {
         }
 
         if (videoId == null) {
-            val searchResults = searchYouTube(trimmed)
-            if (searchResults.isNotEmpty()) {
-                videoId = searchResults.first().id
-            } else {
-                // Fallback query: Limpiar paréntesis, "Remastered", "Deluxe", "feat.", y caracteres especiales
-                val cleanedQuery = trimmed
-                    .replace(FALLBACK_PAREN, "")
-                    .replace(FALLBACK_BRACKET, "")
-                    .replace(NON_ALPHANUM_SPACE, " ")
-                    .trim()
-                if (cleanedQuery.isNotBlank() && cleanedQuery != trimmed) {
-                    val fallbackResults = searchYouTube(cleanedQuery)
-                    if (fallbackResults.isNotEmpty()) {
-                        videoId = fallbackResults.first().id
+            val isIsrc = ISRC_REGEX.matches(trimmed)
+            if (isIsrc) {
+                val isrcResults = searchYouTube(
+                    query = trimmed,
+                    expectedDurationMs = expectedDurationMs,
+                    expectedTitle = expectedTitle,
+                    expectedArtist = expectedArtist
+                )
+                if (isrcResults.isNotEmpty()) {
+                    videoId = isrcResults.first().id
+                }
+            }
+
+            if (videoId == null) {
+                val primaryQuery = if (isIsrc && !fallbackQuery.isNullOrBlank()) fallbackQuery else trimmed
+                val searchResults = searchYouTube(
+                    query = primaryQuery,
+                    expectedDurationMs = expectedDurationMs,
+                    expectedTitle = expectedTitle,
+                    expectedArtist = expectedArtist
+                )
+                if (searchResults.isNotEmpty()) {
+                    videoId = searchResults.first().id
+                } else {
+                    // Fallback query: Limpiar paréntesis, "Remastered", "Deluxe", "feat.", y caracteres especiales
+                    val candidateFallback = fallbackQuery?.takeIf { it != primaryQuery } ?: run {
+                        primaryQuery
+                            .replace(FALLBACK_PAREN, "")
+                            .replace(FALLBACK_BRACKET, "")
+                            .replace(NON_ALPHANUM_SPACE, " ")
+                            .trim()
+                    }
+                    if (candidateFallback.isNotBlank() && candidateFallback != primaryQuery) {
+                        val fallbackResults = searchYouTube(
+                            query = candidateFallback,
+                            expectedDurationMs = expectedDurationMs,
+                            expectedTitle = expectedTitle,
+                            expectedArtist = expectedArtist
+                        )
+                        if (fallbackResults.isNotEmpty()) {
+                            videoId = fallbackResults.first().id
+                        }
                     }
                 }
             }

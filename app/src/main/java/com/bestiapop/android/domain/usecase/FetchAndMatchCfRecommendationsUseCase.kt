@@ -6,6 +6,7 @@ import com.bestiapop.android.data.listenbrainz.LbRecordingMetadata
 import com.bestiapop.android.data.listenbrainz.MatchedCfRecommendations
 import com.bestiapop.android.data.listenbrainz.toMatchedRemote
 import com.bestiapop.android.data.model.Song
+import com.bestiapop.android.data.network.ListenBrainzClient
 import com.bestiapop.android.domain.util.TrackMatchKeys
 
 /**
@@ -24,6 +25,11 @@ class FetchAndMatchCfRecommendationsUseCase(
         token: String?
     ) -> LbApiResult<Map<String, LbRecordingMetadata>>
 ) {
+
+    constructor() : this(
+        fetchCf = ListenBrainzClient::fetchCfRecordingRecommendations,
+        fetchRecordingMetadata = ListenBrainzClient::fetchRecordingMetadata
+    )
 
     suspend fun execute(
         username: String,

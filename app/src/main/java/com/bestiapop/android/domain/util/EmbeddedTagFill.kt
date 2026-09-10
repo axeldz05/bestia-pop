@@ -32,7 +32,16 @@ fun fillSongGapsFromFileTags(
     val albumGeneric = IdentifyRanking.isGenericAlbum(song.album)
     val fileArtistOk = !IdentifyRanking.isPlaceholderArtist(meta.artist)
     val fileAlbumOk = !IdentifyRanking.isGenericAlbum(meta.album)
-    val knownSplit = if (wasPlaceholder && !fileArtistOk) {
+
+    val genericTitle = IdentifyRanking.isGenericIdentifyTitle(song.title)
+    val spuriousArtistMatch = genericTitle && !wasPlaceholder && (
+        (fileArtistOk && IdentifyRanking.fieldSimilarity(song.artist, meta.artist) < IdentifyRanking.MEDIUM_SCORE) ||
+        (!fileArtistOk && !song.folderPath.contains(song.artist, ignoreCase = true) && !albumNamesMatch(song.album, meta.album))
+    )
+    val needsArtistReset = wasPlaceholder || spuriousArtistMatch
+    val needsAlbumReset = albumGeneric || spuriousArtistMatch
+
+    val knownSplit = if (needsArtistReset && !fileArtistOk) {
         val phrases = listOf(meta.title, song.title)
             .map { it.trim() }
             .filter { it.isNotEmpty() && !looksLikeStoragePath(it) }
@@ -46,12 +55,17 @@ fun fillSongGapsFromFileTags(
     val splitTitle = knownSplit?.title?.takeIf { it.isNotBlank() }
 
     val proposedArtist = when {
-        wasPlaceholder && fileArtistOk -> meta.artist
-        wasPlaceholder && splitArtist != null -> splitArtist
+        needsArtistReset && fileArtistOk -> meta.artist
+        needsArtistReset && splitArtist != null -> splitArtist
+        spuriousArtistMatch -> Song.UNKNOWN_ARTIST
         else -> song.artist
     }
-    val proposedAlbum = if (albumGeneric && fileAlbumOk) meta.album else song.album
-    val resolvedAlbum = if (albumGeneric && fileAlbumOk) {
+    val proposedAlbum = when {
+        needsAlbumReset && fileAlbumOk -> meta.album
+        spuriousArtistMatch -> Song.UNKNOWN_ALBUM
+        else -> song.album
+    }
+    val resolvedAlbum = if (needsAlbumReset && fileAlbumOk) {
         pickPersistedAlbumName(
             library = library,
             proposedAlbum = proposedAlbum,
@@ -60,17 +74,18 @@ fun fillSongGapsFromFileTags(
             isGeneric = IdentifyRanking::isGenericAlbum
         )
     } else {
-        song.album
+        proposedAlbum
     }
     val bucketArtists = library.mapNotNull { sibling ->
         sibling.artist.takeIf { albumNamesMatch(sibling.album, resolvedAlbum) }
-    } + song.artist
-    val resolvedArtist = if (wasPlaceholder && !IdentifyRanking.isPlaceholderArtist(proposedArtist)) {
+    } + proposedArtist
+    val resolvedArtist = if (needsArtistReset && !IdentifyRanking.isPlaceholderArtist(proposedArtist)) {
         pickPersistedArtistName(bucketArtists, proposedArtist)
     } else {
-        song.artist
+        proposedArtist
     }
     val resolvedTitle = when {
+        spuriousArtistMatch && meta.title.isNotBlank() && !IdentifyRanking.isGenericIdentifyTitle(meta.title) -> meta.title
         wasPlaceholder && fileArtistOk && meta.title.isNotBlank() ->
             IdentifyRanking.preferBilingualTitle(meta.title, song.title)
         wasPlaceholder && splitTitle != null -> splitTitle
@@ -78,7 +93,7 @@ fun fillSongGapsFromFileTags(
         else -> song.title
     }
     val resolvedGenre = if (
-        (wasPlaceholder || albumGeneric) &&
+        (needsArtistReset || needsAlbumReset) &&
         isPlaceholderGenre(song.genre) &&
         !isPlaceholderGenre(meta.genre)
     ) {
@@ -94,13 +109,14 @@ fun fillSongGapsFromFileTags(
     }
     val fileArt = meta.artworkUri.takeIf { SongPathNormalizer.hasUsableArtwork(it) }
     val resolvedArtwork = when {
+        spuriousArtistMatch -> fileArt
         wasPlaceholder && isRemoteCatalogArtwork(song.artworkUri) && fileArt != null -> fileArt
         !SongPathNormalizer.hasUsableArtwork(song.artworkUri) && fileArt != null -> fileArt
         else -> song.artworkUri
     }
     val fileLyrics = meta.lyrics?.trim()?.takeIf { it.isNotEmpty() }
     val resolvedLyrics = when {
-        wasPlaceholder && fileLyrics != null -> fileLyrics
+        needsArtistReset && fileLyrics != null -> fileLyrics
         song.lyrics.isNullOrBlank() && fileLyrics != null -> fileLyrics
         else -> song.lyrics
     }

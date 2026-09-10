@@ -46,6 +46,8 @@ interface IMusicRepository {
     suspend fun saveUploadedSong(song: Song): Long
     suspend fun deleteSongsFromApp(songs: List<Song>)
     suspend fun deleteSongsFromDevice(songs: List<Song>)
+    /** Prunes corrupted or zero-duration songs from database. Returns deleted songs. */
+    suspend fun pruneUnplayableCorruptSongs(): List<Song>
     suspend fun enhanceSongMetadataAndLyrics(song: Song)
     /**
      * Ranked online candidates for a library song.
@@ -233,4 +235,8 @@ interface IMusicRepository {
     ): List<Song>
 
     suspend fun removeSavedAlbumFromLibrary(albumName: String, artistName: String): Int
+
+    suspend fun getSongsForArtist(artistName: String): List<Song> = emptyList()
+    suspend fun getSongsForGenre(genreName: String): List<Song> = emptyList()
+    suspend fun getAlbumsForArtist(artistName: String): List<String> = emptyList()
 }

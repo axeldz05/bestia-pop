@@ -194,17 +194,26 @@ data class AudioFileMetadata(
                 mergeIdentityHints(fromTags, fromFile)
             }
             val artistWeak = IdentifyRanking.isPlaceholderArtist(metadata.artist)
+            val artistInTitle = !artistWeak && (
+                metadata.title.startsWith("${metadata.artist} - ", ignoreCase = true) ||
+                metadata.title.startsWith("${metadata.artist}_-_", ignoreCase = true)
+            )
             val titleWeak = tagTitleIsFilename ||
                 metadata.title.trimStart().let { it.startsWith("-") || it.startsWith("_") } ||
                 looksLikeStoragePath(metadata.title) ||
                 isTrackNumberLabel(metadata.title.trim()) ||
+                artistInTitle ||
                 (artistWeak && (metadata.title.contains(" - ") || metadata.title.contains("_-_")))
 
-            if (!artistWeak && !IdentifyRanking.isGenericAlbum(metadata.album) && !titleWeak) {
-                val cleaned = IdentifyRanking.cleanIdentityTitle(metadata.title, metadata.artist)
-                    .ifBlank { stripLeadingTitleJunk(metadata.title) }
-                return if (cleaned != metadata.title && cleaned.isNotBlank()) {
-                    metadata.withIdentity { copy(title = cleaned) }
+            val trackNumber = metadata.trackNumber.takeIf { it > 0 }
+                ?: hints.trackNumber
+                ?: metadata.trackNumber
+
+            if (!artistWeak && !titleWeak) {
+                // Real ID3 tags exist. Do not mutate valid tags (Tauon principle).
+                // Only fill trackNumber if missing in tags.
+                return if (trackNumber != metadata.trackNumber) {
+                    metadata.withIdentity { copy(trackNumber = trackNumber) }
                 } else {
                     metadata
                 }
@@ -224,9 +233,6 @@ data class AudioFileMetadata(
                         stripLeadingTitleJunk(metadata.title).ifBlank { metadata.title }
                     }
             }
-            val trackNumber = metadata.trackNumber.takeIf { it > 0 }
-                ?: hints.trackNumber
-                ?: metadata.trackNumber
             return metadata.withIdentity {
                 copy(artist = artist, title = title, trackNumber = trackNumber)
             }

@@ -41,12 +41,16 @@ import com.bestiapop.android.data.model.DiscoverPlaybackOrigin
 import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.data.model.toDiscoverOrigin
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.ui.text.font.FontWeight
+import com.bestiapop.android.ui.components.DownloadMissingTracksButton
 import com.bestiapop.android.ui.components.LabeledPlayShuffleButtons
 import com.bestiapop.android.ui.components.MatchedTrackLazyColumn
 import com.bestiapop.android.ui.components.ScreenBackHeader
+import com.bestiapop.android.ui.components.SongItemActions
 import com.bestiapop.android.ui.components.SongQueueActions
 import com.bestiapop.android.ui.components.toListItem
-import com.bestiapop.android.ui.screens.PlaylistSurfaceCard
 import com.bestiapop.android.ui.state.LoadPhase
 import com.bestiapop.android.ui.state.LoadableUiState
 import java.text.DateFormat
@@ -98,6 +102,42 @@ internal fun MatchedPlaylistDetailScaffold(
                 }
                 else -> content()
             }
+        }
+    }
+}
+
+@Composable
+fun PlaylistSurfaceCard(
+    title: String,
+    onClick: () -> Unit,
+    leading: @Composable () -> Unit,
+    lines: @Composable ColumnScope.() -> Unit,
+    trailing: @Composable RowScope.() -> Unit = {}
+) {
+    Surface(
+        color = MaterialTheme.colorScheme.surface,
+        shape = RoundedCornerShape(14.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            leading()
+            Spacer(modifier = Modifier.width(14.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                lines()
+            }
+            trailing()
         }
     }
 }
@@ -161,7 +201,11 @@ data class DiscoverMatchedTrackActions(
     val onRetryDownload: (String) -> Unit,
     val onCancelDownload: (String) -> Unit,
     val queueActions: SongQueueActions,
-    val onEditLyrics: (Song) -> Unit
+    val onEditLyrics: (Song) -> Unit,
+    val songActions: SongItemActions = SongItemActions.from(
+        queueActions = queueActions,
+        onEditLyrics = onEditLyrics
+    )
 )
 
 /**
@@ -226,8 +270,7 @@ internal fun MatchedPlaylistContent(
             onDownloadRemote = actions.onDownloadRemote,
             onRetryDownload = actions.onRetryDownload,
             onCancelDownload = actions.onCancelDownload,
-            queueActions = actions.queueActions,
-            onEditLyrics = actions.onEditLyrics
+            songActions = actions.songActions
         )
     }
 }
@@ -275,7 +318,8 @@ internal fun CfRecommendationsDetailScreen(
     onRetryDownload: (String) -> Unit,
     onCancelDownload: (String) -> Unit,
     queueActions: SongQueueActions,
-    onEditLyrics: (Song) -> Unit
+    onEditLyrics: (Song) -> Unit,
+    songItemActions: SongItemActions? = null
 ) = CfRecommendationsDetailScreen(
     state = state,
     onBack = onBack,
@@ -289,7 +333,11 @@ internal fun CfRecommendationsDetailScreen(
         onRetryDownload = onRetryDownload,
         onCancelDownload = onCancelDownload,
         queueActions = queueActions,
-        onEditLyrics = onEditLyrics
+        onEditLyrics = onEditLyrics,
+        songActions = songItemActions ?: SongItemActions.from(
+            queueActions = queueActions,
+            onEditLyrics = onEditLyrics
+        )
     )
 )
 
@@ -413,19 +461,10 @@ internal fun LbPlaylistDetailScreen(
                             Text("Guardar", maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                         if (hasUnmatched) {
-                            OutlinedButton(
+                            DownloadMissingTracksButton(
                                 onClick = onImportWithDownloads,
-                                shape = RoundedCornerShape(12.dp),
                                 modifier = Modifier.weight(1f)
-                            ) {
-                                Icon(imageVector = Icons.Default.Download, contentDescription = null)
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(
-                                    "Descargar faltantes",
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
+                            )
                         }
                     }
                 }
@@ -450,7 +489,8 @@ internal fun LbPlaylistDetailScreen(
     onRetryDownload: (String) -> Unit,
     onCancelDownload: (String) -> Unit,
     queueActions: SongQueueActions,
-    onEditLyrics: (Song) -> Unit
+    onEditLyrics: (Song) -> Unit,
+    songItemActions: SongItemActions? = null
 ) = LbPlaylistDetailScreen(
     state = state,
     onBack = onBack,
@@ -466,7 +506,11 @@ internal fun LbPlaylistDetailScreen(
         onRetryDownload = onRetryDownload,
         onCancelDownload = onCancelDownload,
         queueActions = queueActions,
-        onEditLyrics = onEditLyrics
+        onEditLyrics = onEditLyrics,
+        songActions = songItemActions ?: SongItemActions.from(
+            queueActions = queueActions,
+            onEditLyrics = onEditLyrics
+        )
     )
 )
 
@@ -492,7 +536,8 @@ fun DiscoverPlaylistDetailHost(
     onShuffleMatched: (List<PlayableItem>, DiscoverPlaybackOrigin) -> Unit,
     onSaveLbAsLocal: ((Long) -> Unit) -> Unit,
     onOpenLocalPlaylist: (Long) -> Unit,
-    onImportLbWithDownloads: () -> Unit
+    onImportLbWithDownloads: () -> Unit,
+    songItemActions: SongItemActions? = null
 ) {
     val makeActions: ((Int) -> Unit) -> DiscoverMatchedTrackActions = { onPlayAt ->
         DiscoverMatchedTrackActions(
@@ -503,7 +548,11 @@ fun DiscoverPlaylistDetailHost(
             onRetryDownload = onRetryDownload,
             onCancelDownload = onCancelDownload,
             queueActions = songActions,
-            onEditLyrics = onEditLyrics
+            onEditLyrics = onEditLyrics,
+            songActions = songItemActions ?: SongItemActions.from(
+                queueActions = songActions,
+                onEditLyrics = onEditLyrics
+            )
         )
     }
 

@@ -75,4 +75,29 @@ object DownloadMessages {
 
     const val blockedOnMetered =
         "Descarga bloqueada: estás en datos móviles. Activá «Descargar con datos móviles» en Ajustes → Descargas."
+
+    const val noPendingTracks = "No hay canciones pendientes"
+    fun playlistSaved(matchedCount: Int, pending: Int = 0): String = if (pending > 0) {
+        "Playlist guardada ($matchedCount en lib · $pending pendientes)"
+    } else {
+        "Playlist guardada ($matchedCount canciones)"
+    }
+    const val radioNeedsSeed = "Necesitás una canción con artista y título para Radio"
+    const val albumsMerged = "Álbumes unidos"
+    const val albumSaved = "Álbum guardado en la biblioteca"
+    const val selectAtLeastOneSong = "Seleccioná al menos una canción"
+    const val alreadyDownloadedSong = "Canción ya descargada en la biblioteca"
+    const val alreadyDownloadedAlbum = "El álbum ya está descargado en tu biblioteca"
+    const val cancelDownload = "Cancelar descarga"
+    const val downloadAction = "Descargar"
+    const val downloadNow = "Descargar ahora"
+    const val downloadAndAdd = "Descargar MP3 y Agregar"
+    const val preparingDownloads = "Preparando descargas…"
+    const val pendingDownloadBadge = "Pendiente de descarga"
+    const val searchAnother = "Buscar otro"
+    const val dismiss = "Descartar"
+    const val retry = "Reintentar"
+
+    fun playlistCounts(downloaded: Int, pending: Int) = "$downloaded descargadas · $pending pendientes"
+    fun completed(title: String? = null): String = if (title.isNullOrBlank()) completed else songAdded(title)
 }

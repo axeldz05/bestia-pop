@@ -360,4 +360,44 @@ class FilenameMetadataHintsTest {
         )
         assertNull(hints)
     }
+
+    @Test
+    fun parse_suffixTrackNumberPatterns() {
+        val hintsParen = parseFilenameMetadataHints("Aoi, Koi, Daidaiiro No Hi (02)")
+        assertEquals("Aoi, Koi, Daidaiiro No Hi", hintsParen.title)
+        assertEquals(2, hintsParen.trackNumber)
+
+        val hintsDash = parseFilenameMetadataHints("Kakuiumono - 03")
+        assertEquals("Kakuiumono", hintsDash.title)
+        assertEquals(3, hintsDash.trackNumber)
+
+        val hintsUnderscore = parseFilenameMetadataHints("World is Yours _ 01")
+        assertEquals("World is Yours", hintsUnderscore.title)
+        assertEquals(1, hintsUnderscore.trackNumber)
+    }
+
+    @Test
+    fun parse_spaceSeparatedPrefixTrackNumber() {
+        val hints = parseFilenameMetadataHints("02 Aoi, Koi, Daidaiiro No Hi")
+        assertEquals("Aoi, Koi, Daidaiiro No Hi", hints.title)
+        assertEquals(2, hints.trackNumber)
+    }
+
+    @Test
+    fun applyFilenameHints_doesNotMutateValidId3Title_fillsTrackNumber() {
+        val tagged = AudioFileMetadata(
+            title = "Aoi, Koi, Daidaiiro No Hi",
+            artist = "MASS OF THE FERMENTING DREGS",
+            album = "World is Yours",
+            genre = "Rock",
+            durationMs = 282_000L,
+            artworkUri = null,
+            trackNumber = 0
+        )
+        val result = AudioFileMetadata.applyFilenameHints(tagged, "02 - Aoi, Koi, Daidaiiro No Hi")
+        assertEquals("Aoi, Koi, Daidaiiro No Hi", result.title)
+        assertEquals("MASS OF THE FERMENTING DREGS", result.artist)
+        assertEquals("World is Yours", result.album)
+        assertEquals(2, result.trackNumber)
+    }
 }

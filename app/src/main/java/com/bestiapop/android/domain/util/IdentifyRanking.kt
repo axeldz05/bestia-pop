@@ -845,7 +845,7 @@ object IdentifyRanking {
     private val GENERIC_IDENTIFY_TITLES = setOf(
         "black hole", "castle", "computer", "d", "rose", "flashback", "sauna",
         "demo", "instrumental", "remix", "intro", "outro", "untitled", "title",
-        "theme", "ost", "soundtrack"
+        "theme", "ost", "soundtrack", "bonus", "bonus track", "track", "pista"
     )
     private val WHITESPACE = Regex("""\s+""")
     private val STRONG_MARKER_REGEX = Regex(

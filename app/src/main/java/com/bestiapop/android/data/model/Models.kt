@@ -295,6 +295,20 @@ data class OnlineCatalogTrack(
             userAgent = userAgent,
             year = year
         )
+
+        /** L2: minimal catalog track for direct link / URL downloads. */
+        fun fromUrl(
+            url: String,
+            provider: String = "YouTube",
+            title: String = "",
+            artist: String = ""
+        ): OnlineCatalogTrack = invoke(
+            id = url,
+            title = title,
+            artist = artist,
+            audioUrl = url,
+            provider = provider
+        )
     }
 }
 

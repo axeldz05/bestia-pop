@@ -431,11 +431,13 @@ class IdentifyReviewCoordinator internal constructor(
             repository.loadKnownAlbumTracks(artist, album, fetchCatalog = false)
         }
         val libraryMatches = if (libraryKnown != null) {
-            assignUniqueKnownAlbumMatches(
-                queries = queries,
-                albums = listOf(libraryKnown),
-                scoped = true
-            )
+            withContext(Dispatchers.Default) {
+                assignUniqueKnownAlbumMatches(
+                    queries = queries,
+                    albums = listOf(libraryKnown),
+                    scoped = true
+                )
+            }
         } else {
             emptyMap()
         }
@@ -446,13 +448,15 @@ class IdentifyReviewCoordinator internal constructor(
             val catalogKnown = withContext(Dispatchers.IO) {
                 repository.loadKnownAlbumTracks(artist, album, fetchCatalog = true)
             } ?: return applyKnownAlbumMatches(remaining, libraryMatches)
-            assignUniqueKnownAlbumMatches(
-                queries = unmatched.map {
-                    knownAlbumQueryOf(it.song, queryTitle = it.proposal.queryTitle)
-                },
-                albums = listOf(catalogKnown),
-                scoped = true
-            )
+            withContext(Dispatchers.Default) {
+                assignUniqueKnownAlbumMatches(
+                    queries = unmatched.map {
+                        knownAlbumQueryOf(it.song, queryTitle = it.proposal.queryTitle)
+                    },
+                    albums = listOf(catalogKnown),
+                    scoped = true
+                )
+            }
         }
         return applyKnownAlbumMatches(remaining, libraryMatches + catalogMatches)
     }

@@ -223,6 +223,11 @@ internal class BestiaPopMediaLibraryCallback(
         controller: MediaSession.ControllerInfo,
         isForPlayback: Boolean
     ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> = serviceFuture {
+        val playbackSettings = application.playbackRuntime.playbackSettings.value
+        val shouldAutoPlay = !isForPlayback || playbackSettings.autoplayOnLaunch || application.playbackRuntime.isPlaying.value
+        if (isForPlayback && !shouldAutoPlay) {
+            throw UnsupportedOperationException("Playback resumption for auto-playback is disabled")
+        }
         val snapshot = if (isForPlayback) {
             application.playbackRuntime.restoreSystemPlaybackSnapshot()
         } else {

@@ -40,6 +40,8 @@ import com.bestiapop.android.domain.usecase.DiscoverFeed
 import com.bestiapop.android.ui.MusicPlayerViewModel
 import com.bestiapop.android.ui.components.ArtworkThumbnail
 import com.bestiapop.android.ui.components.CatalogCategoryChipsRow
+import com.bestiapop.android.ui.components.CircleActionBox
+import com.bestiapop.android.ui.components.HeaderActionIcon
 import com.bestiapop.android.ui.components.preloadArtwork
 import com.bestiapop.android.ui.components.EmptyListHint
 import com.bestiapop.android.ui.components.ScreenBackHeader
@@ -54,6 +56,8 @@ import com.bestiapop.android.domain.usecase.RelatedTrackItem
 import com.bestiapop.android.domain.usecase.TopRelatedFeed
 import com.bestiapop.android.ui.components.artistAlbumLabel
 import com.bestiapop.android.ui.screens.library.rememberSongActionDialogs
+import com.bestiapop.android.ui.components.SongItemActions
+import com.bestiapop.android.ui.components.SongQueueActions
 import com.bestiapop.android.ui.components.rememberSongQueueActions
 import com.bestiapop.android.ui.state.PlaylistDetailNav
 import com.bestiapop.android.ui.state.CatalogCollectionKind
@@ -93,6 +97,9 @@ fun DiscoverScreen(
     val playlists by viewModel.playlists.collectAsStateWithLifecycle(emptyList())
     val songActions = rememberSongQueueActions(viewModel)
     val songDialogs = rememberSongActionDialogs(viewModel = viewModel, playlists = playlists)
+    val songItemActions = remember(songActions, songDialogs) {
+        SongItemActions.from(songActions, songDialogs)
+    }
 
     var searchInput by remember { mutableStateOf(catalogSearch.searchQueryDraft) }
     var isSearchFocused by remember { mutableStateOf(false) }
@@ -172,14 +179,13 @@ fun DiscoverScreen(
                         viewModel.playCatalogCandidates(activeCandidates, startIndex = 0, startShuffled = true)
                     },
                     onSaveAlbum = {
-                        val album = CatalogAlbum(
-                            id = catalogCollection.selectionKey.orEmpty(),
-                            title = selectedCollectionTitle,
-                            artist = activeCandidates.firstOrNull()?.artist.orEmpty(),
+                        viewModel.saveAlbumToLibrary(
+                            albumTitle = selectedCollectionTitle,
+                            artistName = activeCandidates.firstOrNull()?.artist.orEmpty(),
                             coverUrl = catalogCollection.coverUrl,
-                            trackCount = activeCandidates.size
+                            candidates = activeCandidates,
+                            albumId = catalogCollection.selectionKey.orEmpty()
                         )
-                        viewModel.saveAlbumToLibrary(album, activeCandidates)
                     },
                     onDownloadAll = {
                         viewModel.downloadSelectedCandidatesBatch()
@@ -234,7 +240,8 @@ fun DiscoverScreen(
                 },
                 onImportLbWithDownloads = {
                     viewModel.importListenBrainzPlaylistWithDownloads()
-                }
+                },
+                songItemActions = songItemActions
             )
         } else {
             val isSearchActive = searchInput.isNotBlank() || catalogSearch.hasActiveFilters || catalogSearch.isSearching
@@ -584,20 +591,15 @@ internal fun DiscoverActionIcon(
     iconSize: Dp = 20.dp,
     boxSize: Dp = 36.dp
 ) {
-    Box(
-        modifier = modifier
-            .size(boxSize)
-            .clip(CircleShape)
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = contentDescription,
-            tint = tint,
-            modifier = Modifier.size(iconSize)
-        )
-    }
+    HeaderActionIcon(
+        onClick = onClick,
+        icon = icon,
+        contentDescription = contentDescription,
+        modifier = modifier,
+        tint = tint,
+        iconSize = iconSize,
+        boxSize = boxSize
+    )
 }
 
 @Composable
@@ -608,12 +610,10 @@ internal fun DiscoverStatusActionIcon(
     iconSize: Dp = 20.dp,
     boxSize: Dp = 36.dp
 ) {
-    Box(
-        modifier = modifier
-            .size(boxSize)
-            .clip(CircleShape)
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center
+    CircleActionBox(
+        onClick = onClick,
+        modifier = modifier,
+        boxSize = boxSize
     ) {
         ItemLibraryStatusIcon(status = status, size = iconSize)
     }

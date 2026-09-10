@@ -16,6 +16,7 @@ import com.bestiapop.android.data.preferences.IdentifyWorkStore
 import com.bestiapop.android.data.preferences.ListenBrainzPreferencesRepository
 import com.bestiapop.android.data.repository.MusicRepository
 import com.bestiapop.android.data.util.CrashReporter
+import com.bestiapop.android.domain.usecase.IdentifyPipeline
 import com.bestiapop.android.domain.util.IdentifyRanking
 import com.bestiapop.android.domain.util.KnownAlbumTracks
 import com.bestiapop.android.domain.util.assignUniqueKnownAlbumMatches
@@ -347,7 +348,6 @@ internal class ProcessIdentifyRuntime(
         val fillGaps = songId in baseline.fillGapsOnlySongIds
         val gapFields = if (fillGaps) gapApplyFields(song) else null
         val applyFields = gapFields ?: baseline.applyFields.copy(title = false)
-        val reviewFields = gapFields ?: baseline.applyFields
         val reviewProposal = if (fillGaps) proposal.copy(fillGapsOnly = true) else proposal
         var deltaUpdated = 0
         var deltaSkipped = 0
@@ -356,9 +356,10 @@ internal class ProcessIdentifyRuntime(
         var deltaNone = 0
         var deltaLbHits = if (proposal.usedListenBrainz) 1 else 0
         var deltaReview = 0
+        val gate = IdentifyPipeline.evaluateReviewGate(proposal)
         when {
             proposal.alreadyIdentified -> deltaSkipped = 1
-            proposal.confidence == IdentifyConfidence.HIGH && proposal.suggested != null -> {
+            !gate.requiresReview && proposal.suggested != null -> {
                 when (dependencies.apply(song.id, proposal, applyFields)) {
                     is IdentifyResult.Updated -> {
                         deltaUpdated = 1

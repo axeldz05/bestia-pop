@@ -32,18 +32,136 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.runtime.Immutable
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.bestiapop.android.data.model.PlaylistMessages
 import com.bestiapop.android.data.model.Song
+import com.bestiapop.android.ui.screens.library.SongActionDialogsController
 import com.bestiapop.android.ui.theme.ListDensity
 import java.util.Locale
+
+/**
+ * Level 2: Bundled actions for a song row item.
+ * Encapsulates playback/queue actions as well as metadata/playlist/deletion callbacks.
+ */
+@Immutable
+data class SongItemActions(
+    val onPlayNext: ((Song) -> Unit)? = null,
+    val onAddToQueue: ((Song) -> Unit)? = null,
+    val onStartRadio: ((Song) -> Unit)? = null,
+    val onAddToPlaylist: ((Song) -> Unit)? = null,
+    val onEditMetadata: ((Song) -> Unit)? = null,
+    val onEditLyrics: ((Song) -> Unit)? = null,
+    val onIdentify: ((Song) -> Unit)? = null,
+    val onDelete: ((Song) -> Unit)? = null,
+    val deleteLabel: String = "Eliminar"
+) {
+    companion object {
+        fun from(
+            queueActions: SongQueueActions,
+            onAddToPlaylist: ((Song) -> Unit)? = null,
+            onEditMetadata: ((Song) -> Unit)? = null,
+            onEditLyrics: ((Song) -> Unit)? = null,
+            onIdentify: ((Song) -> Unit)? = null,
+            onDelete: ((Song) -> Unit)? = null,
+            deleteLabel: String = "Eliminar"
+        ): SongItemActions = SongItemActions(
+            onPlayNext = queueActions.onPlayNext,
+            onAddToQueue = queueActions.onAddToQueue,
+            onStartRadio = queueActions.onStartRadio,
+            onAddToPlaylist = onAddToPlaylist,
+            onEditMetadata = onEditMetadata,
+            onEditLyrics = onEditLyrics,
+            onIdentify = onIdentify,
+            onDelete = onDelete,
+            deleteLabel = deleteLabel
+        )
+
+        fun from(
+            queueActions: SongQueueActions,
+            dialogs: SongActionDialogsController,
+            onIdentify: ((Song) -> Unit)? = dialogs.onIdentify,
+            onDelete: ((Song) -> Unit)? = dialogs.onDelete,
+            deleteLabel: String = "Eliminar"
+        ): SongItemActions = SongItemActions(
+            onPlayNext = queueActions.onPlayNext,
+            onAddToQueue = queueActions.onAddToQueue,
+            onStartRadio = queueActions.onStartRadio,
+            onAddToPlaylist = dialogs.onAddToPlaylist,
+            onEditMetadata = dialogs.onEdit,
+            onEditLyrics = dialogs.onEditLyrics,
+            onIdentify = onIdentify,
+            onDelete = onDelete,
+            deleteLabel = deleteLabel
+        )
+
+    }
+}
+
+/**
+ * Level 2: Bundled song actions overload for [SongListItem].
+ */
+@Composable
+fun SongListItem(
+    song: Song,
+    actions: SongItemActions,
+    modifier: Modifier = Modifier,
+    isCurrentPlaying: Boolean = false,
+    isSelectionMode: Boolean = false,
+    isSelected: Boolean = false,
+    isReorderMode: Boolean = false,
+    index: Int = 0,
+    reorderCount: Int = 0,
+    onReorder: ((from: Int, to: Int) -> Unit)? = null,
+    secondaryInfo: String? = null,
+    title: String? = null,
+    subtitle: String? = null,
+    trailing: String? = null,
+    trailingIsSortKey: Boolean = false,
+    artworkUri: String? = song.artworkUri,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit = {},
+    onToggleSelect: () -> Unit = {},
+    onOptionsClick: (() -> Unit)? = null
+) = SongListItem(
+    song = song,
+    modifier = modifier,
+    isCurrentPlaying = isCurrentPlaying,
+    isSelectionMode = isSelectionMode,
+    isSelected = isSelected,
+    isReorderMode = isReorderMode,
+    index = index,
+    reorderCount = reorderCount,
+    onReorder = onReorder,
+    secondaryInfo = secondaryInfo,
+    title = title,
+    subtitle = subtitle,
+    trailing = trailing,
+    trailingIsSortKey = trailingIsSortKey,
+    artworkUri = artworkUri,
+    onClick = onClick,
+    onLongClick = onLongClick,
+    onToggleSelect = onToggleSelect,
+    onOptionsClick = onOptionsClick,
+    onPlayNext = { actions.onPlayNext?.invoke(song) },
+    onAddToQueue = { actions.onAddToQueue?.invoke(song) },
+    onStartRadio = actions.onStartRadio?.let { cb -> { cb(song) } },
+    onAddToPlaylist = actions.onAddToPlaylist?.let { cb -> { cb(song) } },
+    onEditMetadata = actions.onEditMetadata?.let { cb -> { cb(song) } },
+    onEditLyrics = actions.onEditLyrics?.let { cb -> { cb(song) } },
+    onIdentify = actions.onIdentify?.let { cb -> { cb(song) } },
+    onDelete = actions.onDelete?.let { cb -> { cb(song) } },
+    deleteLabel = actions.deleteLabel
+)
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun SongListItem(
     song: Song,
+    modifier: Modifier = Modifier,
     isCurrentPlaying: Boolean = false,
     isSelectionMode: Boolean = false,
     isSelected: Boolean = false,
@@ -88,7 +206,7 @@ fun SongListItem(
     val handleModifier = drag.handleModifier
 
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .then(rowDragModifier)
             .padding(
@@ -257,7 +375,7 @@ fun SongOverflowMenuItems(
     onDelete: (() -> Unit)? = null,
     deleteLabel: String = "Eliminar"
 ) {
-    optionalOverflowItem("Añadir a playlist", onAddToPlaylist, onDismiss)
+    optionalOverflowItem(PlaylistMessages.addToPlaylist, onAddToPlaylist, onDismiss)
     optionalOverflowItem("Identificar…", onIdentify, onDismiss)
     optionalOverflowItem("Editar información", onEditMetadata, onDismiss)
     optionalOverflowItem("Editar letra", onEditLyrics, onDismiss)
@@ -281,8 +399,59 @@ private fun optionalOverflowItem(
     )
 }
 
+/**
+ * Level 2: Bundled options menu for a song item using [SongItemActions].
+ */
 @Composable
-internal fun SongOptionsMenu(
+fun SongOptionsMenu(
+    song: Song,
+    actions: SongItemActions,
+    onDismiss: () -> Unit
+) = SongOptionsMenu(
+    onDismiss = onDismiss,
+    onPlayNext = { actions.onPlayNext?.invoke(song) },
+    onAddToQueue = { actions.onAddToQueue?.invoke(song) },
+    onStartRadio = actions.onStartRadio?.let { cb -> { cb(song) } },
+    onAddToPlaylist = actions.onAddToPlaylist?.let { cb -> { cb(song) } },
+    onEditMetadata = actions.onEditMetadata?.let { cb -> { cb(song) } },
+    onEditLyrics = actions.onEditLyrics?.let { cb -> { cb(song) } },
+    onIdentify = actions.onIdentify?.let { cb -> { cb(song) } },
+    onDelete = actions.onDelete?.let { cb -> { cb(song) } },
+    deleteLabel = actions.deleteLabel
+)
+
+/**
+ * Level 2: Convenience overload when song is optional or captured in actions.
+ */
+@Composable
+fun SongOptionsMenu(
+    actions: SongItemActions,
+    onDismiss: () -> Unit,
+    song: Song? = null
+) {
+    if (song != null) {
+        SongOptionsMenu(song = song, actions = actions, onDismiss = onDismiss)
+    } else {
+        SongOptionsMenu(
+            onDismiss = onDismiss,
+            onPlayNext = {},
+            onAddToQueue = {},
+            onStartRadio = null,
+            onAddToPlaylist = null,
+            onEditMetadata = null,
+            onEditLyrics = null,
+            onIdentify = null,
+            onDelete = null,
+            deleteLabel = actions.deleteLabel
+        )
+    }
+}
+
+/**
+ * Level 1: Primitive callback options menu for a song item.
+ */
+@Composable
+fun SongOptionsMenu(
     onDismiss: () -> Unit,
     onPlayNext: () -> Unit,
     onAddToQueue: () -> Unit,

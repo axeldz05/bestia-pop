@@ -65,9 +65,12 @@ import com.bestiapop.android.ui.SortDirection
 import com.bestiapop.android.ui.SortOption
 import com.bestiapop.android.ui.components.PlayShuffleIconPair
 import com.bestiapop.android.ui.components.MultiSelectActionBar
+import com.bestiapop.android.ui.components.MultiSelectActions
 import com.bestiapop.android.ui.components.PlaylistAdditionActionBar
 import com.bestiapop.android.ui.components.SimilarPlaylistPreviewDialog
 import com.bestiapop.android.ui.components.rememberSongQueueActions
+import com.bestiapop.android.ui.screens.library.AlbumBrowseActions
+import com.bestiapop.android.ui.screens.library.AggregateBrowseActions
 import com.bestiapop.android.ui.screens.library.AlbumEditDialogsHost
 import com.bestiapop.android.ui.screens.library.IdentifyPendingBanner
 import com.bestiapop.android.ui.screens.library.LibraryAlbumBrowseList
@@ -325,64 +328,29 @@ fun LibraryScreen(
         }
     }
 
-    val playOrShuffleAlbum: (Album, Boolean) -> Unit = remember(viewModel) {
-        { album, shuffle ->
-            val albumSongs = viewModel.songsForAlbum(viewModel.libraryProjection.songs.value, album.name)
-            viewModel.playCollection(albumSongs, startShuffled = shuffle)
-        }
+    val albumBrowseActions = remember(viewModel) {
+        AlbumBrowseActions(
+            onAlbumClick = { album -> viewModel.openLibraryAlbum(album.name, fromNestedParent = false) },
+            onPlayAlbum = { album -> viewModel.playAlbum(album, startShuffled = false) },
+            onShuffleAlbum = { album -> viewModel.playAlbum(album, startShuffled = true) },
+            onEditAlbum = { album -> albumForEdit = album },
+            onChangeAlbumCover = { album -> albumForCoverChange = album },
+            onIdentifyAlbum = { album -> viewModel.identifyAlbum(album) }
+        )
     }
-    val playOrShuffleArtist: (String, Boolean) -> Unit = remember(viewModel) {
-        { artistName, shuffle ->
-            val artistSongs = viewModel.songsForArtist(viewModel.libraryProjection.songs.value, artistName)
-            viewModel.playCollection(artistSongs, startShuffled = shuffle)
-        }
+    val artistBrowseActions = remember(viewModel) {
+        AggregateBrowseActions<Artist>(
+            onClick = { artist -> viewModel.openLibraryArtist(artist.name) },
+            onPlay = { artist -> viewModel.playArtist(artist.name, startShuffled = false) },
+            onShuffle = { artist -> viewModel.playArtist(artist.name, startShuffled = true) }
+        )
     }
-    val playOrShuffleGenre: (String, Boolean) -> Unit = remember(viewModel) {
-        { genreName, shuffle ->
-            val genreSongs = viewModel.songsForGenre(viewModel.libraryProjection.songs.value, genreName)
-            viewModel.playCollection(genreSongs, startShuffled = shuffle)
-        }
-    }
-    val onShuffleAlbumBrowse = remember(playOrShuffleAlbum) {
-        { album: Album -> playOrShuffleAlbum(album, true) }
-    }
-    val onOpenAlbumBrowse = remember {
-        { album: Album -> viewModel.openLibraryAlbum(album.name, fromNestedParent = false) }
-    }
-    val onEditAlbumBrowse = remember {
-        { album: Album -> albumForEdit = album }
-    }
-    val onChangeAlbumCoverBrowse = remember {
-        { album: Album -> albumForCoverChange = album }
-    }
-    val onIdentifyAlbumBrowse = remember(viewModel) {
-        { album: Album ->
-            val albumSongs = viewModel.songsForAlbum(viewModel.libraryProjection.songs.value, album.name)
-            if (albumSongs.isNotEmpty()) {
-                viewModel.openIdentifySetup(
-                    albumSongs,
-                    contextTitle = "Álbum: ${album.displayName}"
-                )
-            }
-        }
-    }
-    val onArtistClickBrowse = remember {
-        { artist: Artist -> viewModel.openLibraryArtist(artist.name) }
-    }
-    val onPlayArtistBrowse = remember(playOrShuffleArtist) {
-        { artist: Artist -> playOrShuffleArtist(artist.name, false) }
-    }
-    val onShuffleArtistBrowse = remember(playOrShuffleArtist) {
-        { artist: Artist -> playOrShuffleArtist(artist.name, true) }
-    }
-    val onGenreClickBrowse = remember {
-        { genre: GenreGroup -> viewModel.openLibraryGenre(genre.name) }
-    }
-    val onPlayGenreBrowse = remember(playOrShuffleGenre) {
-        { genre: GenreGroup -> playOrShuffleGenre(genre.name, false) }
-    }
-    val onShuffleGenreBrowse = remember(playOrShuffleGenre) {
-        { genre: GenreGroup -> playOrShuffleGenre(genre.name, true) }
+    val genreBrowseActions = remember(viewModel) {
+        AggregateBrowseActions<GenreGroup>(
+            onClick = { genre -> viewModel.openLibraryGenre(genre.name) },
+            onPlay = { genre -> viewModel.playGenre(genre.name, startShuffled = false) },
+            onShuffle = { genre -> viewModel.playGenre(genre.name, startShuffled = true) }
+        )
     }
 
     val songActions = rememberSongQueueActions(viewModel)
@@ -392,7 +360,7 @@ fun LibraryScreen(
     val onAddToPlaylist = songDialogs.onAddToPlaylist
     val onEditMetadata = songDialogs.onEdit
     val onEditLyrics = songDialogs.onEditLyrics
-    val onIdentify = remember<(Song) -> Unit> { { viewModel.identifySongForReview(it) } }
+    val onIdentify = songDialogs.onIdentify
     val onDeleteSong = songDialogs.onDelete
     val onPlayAlbum = remember<(String, List<Long>) -> Unit>(songList) {
         { _, albumIds ->
@@ -630,37 +598,42 @@ fun LibraryScreen(
             // Resolved against the *unfiltered* library, so searching narrows what you can tick
             // without losing what you already ticked, and the actions still cover all of it.
             val selectedSongs = viewModel.songsForIds(selectedSongIds)
+            val multiSelectActions = remember(viewModel, selectedSongs, songDialogs) {
+                MultiSelectActions(
+                    onPlaySelected = {
+                        viewModel.playCollection(selectedSongs)
+                        clearSelection()
+                    },
+                    onEnqueueSelected = {
+                        viewModel.enqueueCollection(selectedSongs)
+                        clearSelection()
+                    },
+                    onAddToPlaylist = {
+                        if (selectedSongs.isNotEmpty()) {
+                            songDialogs.onAddManyToPlaylist(selectedSongs)
+                        }
+                    },
+                    onIdentifySelected = {
+                        viewModel.openIdentifySetup(
+                            selectedSongs,
+                            contextTitle = "${selectedSongs.size} canciones seleccionadas"
+                        )
+                        clearSelection()
+                    },
+                    onSimilarSelected = {
+                        viewModel.previewSimilarFromSelection(selectedSongs)
+                        clearSelection()
+                    },
+                    onDeleteSelected = {
+                        songDialogs.onDeleteMany(selectedSongs)
+                    },
+                    onSelectAll = selectAllSongs,
+                    onClearSelection = clearSelection
+                )
+            }
             MultiSelectActionBar(
                 selectedCount = selectedSongs.size,
-                onPlaySelected = {
-                    viewModel.playCollection(selectedSongs)
-                    clearSelection()
-                },
-                onEnqueueSelected = {
-                    viewModel.enqueueCollection(selectedSongs)
-                    clearSelection()
-                },
-                onAddToPlaylist = {
-                    if (selectedSongs.isNotEmpty()) {
-                        songDialogs.onAddManyToPlaylist(selectedSongs)
-                    }
-                },
-                onIdentifySelected = {
-                    viewModel.openIdentifySetup(
-                        selectedSongs,
-                        contextTitle = "${selectedSongs.size} canciones seleccionadas"
-                    )
-                    clearSelection()
-                },
-                onSimilarSelected = {
-                    viewModel.previewSimilarFromSelection(selectedSongs)
-                    clearSelection()
-                },
-                onDeleteSelected = {
-                    songDialogs.onDeleteMany(selectedSongs)
-                },
-                onSelectAll = selectAllSongs,
-                onClearSelection = clearSelection
+                actions = multiSelectActions
             )
         }
 
@@ -702,18 +675,9 @@ fun LibraryScreen(
                 actions = songListActions,
                 onToggleSelect = toggleSelectSong,
                 searchQuery = searchQuery,
-                onPlayAlbum = playOrShuffleAlbum,
-                onShuffleAlbum = onShuffleAlbumBrowse,
-                onOpenAlbum = onOpenAlbumBrowse,
-                onEditAlbum = onEditAlbumBrowse,
-                onChangeAlbumCover = onChangeAlbumCoverBrowse,
-                onIdentifyAlbum = onIdentifyAlbumBrowse,
-                onArtistClick = onArtistClickBrowse,
-                onPlayArtist = onPlayArtistBrowse,
-                onShuffleArtist = onShuffleArtistBrowse,
-                onGenreClick = onGenreClickBrowse,
-                onPlayGenre = onPlayGenreBrowse,
-                onShuffleGenre = onShuffleGenreBrowse,
+                albumBrowseActions = albumBrowseActions,
+                artistBrowseActions = artistBrowseActions,
+                genreBrowseActions = genreBrowseActions,
                 fastScrollSettings = fastScrollSettings,
                 listStates = browseListStates,
                 onAddSongsToPlaylist = { localTargetPlaylistForAddition = it }
@@ -832,18 +796,9 @@ private fun LibraryBrowsePane(
     actions: LibrarySongListActions,
     onToggleSelect: (Song) -> Unit,
     searchQuery: String,
-    onPlayAlbum: (Album, Boolean) -> Unit,
-    onShuffleAlbum: (Album) -> Unit,
-    onOpenAlbum: (Album) -> Unit,
-    onEditAlbum: (Album) -> Unit,
-    onChangeAlbumCover: (Album) -> Unit,
-    onIdentifyAlbum: (Album) -> Unit,
-    onArtistClick: (Artist) -> Unit,
-    onPlayArtist: (Artist) -> Unit,
-    onShuffleArtist: (Artist) -> Unit,
-    onGenreClick: (GenreGroup) -> Unit,
-    onPlayGenre: (GenreGroup) -> Unit,
-    onShuffleGenre: (GenreGroup) -> Unit,
+    albumBrowseActions: AlbumBrowseActions,
+    artistBrowseActions: AggregateBrowseActions<Artist>,
+    genreBrowseActions: AggregateBrowseActions<GenreGroup>,
     fastScrollSettings: FastScrollSettings,
     listStates: LibraryBrowseListStates = rememberLibraryBrowseListStates(),
     onAddSongsToPlaylist: (Playlist) -> Unit = {}
@@ -918,12 +873,7 @@ private fun LibraryBrowsePane(
             LibraryAlbumsTab(
                 viewModel = viewModel,
                 sortOption = sortOption,
-                onAlbumClick = onOpenAlbum,
-                onPlayAlbum = { onPlayAlbum(it, false) },
-                onShuffleAlbum = onShuffleAlbum,
-                onEditAlbum = onEditAlbum,
-                onChangeAlbumCover = onChangeAlbumCover,
-                onIdentifyAlbum = onIdentifyAlbum,
+                actions = albumBrowseActions,
                 fastScrollSettings = fastScrollSettings,
                 listState = listStates.albums
             )
@@ -933,9 +883,7 @@ private fun LibraryBrowsePane(
             LibraryArtistsTab(
                 viewModel = viewModel,
                 sortOption = sortOption,
-                onArtistClick = onArtistClick,
-                onPlayArtist = onPlayArtist,
-                onShuffleArtist = onShuffleArtist,
+                actions = artistBrowseActions,
                 fastScrollSettings = fastScrollSettings,
                 listState = listStates.artists
             )
@@ -945,9 +893,7 @@ private fun LibraryBrowsePane(
             LibraryGenresTab(
                 viewModel = viewModel,
                 sortOption = sortOption,
-                onGenreClick = onGenreClick,
-                onPlayGenre = onPlayGenre,
-                onShuffleGenre = onShuffleGenre,
+                actions = genreBrowseActions,
                 fastScrollSettings = fastScrollSettings,
                 listState = listStates.genres
             )
@@ -1090,25 +1036,15 @@ private fun NestedLibraryBrowse(
 private fun LibraryAlbumsTab(
     viewModel: MusicPlayerViewModel,
     sortOption: SortOption,
-    listState: LazyListState,
-    onAlbumClick: (Album) -> Unit,
-    onPlayAlbum: (Album) -> Unit,
-    onShuffleAlbum: (Album) -> Unit,
-    onEditAlbum: (Album) -> Unit,
-    onChangeAlbumCover: (Album) -> Unit,
-    onIdentifyAlbum: (Album) -> Unit,
-    fastScrollSettings: FastScrollSettings
+    actions: AlbumBrowseActions,
+    fastScrollSettings: FastScrollSettings,
+    listState: LazyListState
 ) {
     val albums by viewModel.libraryProjection.albums.collectAsStateWithLifecycle()
     LibraryAlbumBrowseList(
         albums = albums,
+        actions = actions,
         sortOption = sortOption,
-        onAlbumClick = onAlbumClick,
-        onPlayAlbum = onPlayAlbum,
-        onShuffleAlbum = onShuffleAlbum,
-        onEditAlbum = onEditAlbum,
-        onChangeAlbumCover = onChangeAlbumCover,
-        onIdentifyAlbum = onIdentifyAlbum,
         fastScrollSettings = fastScrollSettings,
         listState = listState
     )
@@ -1166,19 +1102,15 @@ private fun LibraryRecentTab(
 private fun LibraryArtistsTab(
     viewModel: MusicPlayerViewModel,
     sortOption: SortOption,
-    listState: LazyListState,
-    onArtistClick: (Artist) -> Unit,
-    onPlayArtist: (Artist) -> Unit,
-    onShuffleArtist: (Artist) -> Unit,
-    fastScrollSettings: FastScrollSettings
+    actions: AggregateBrowseActions<Artist>,
+    fastScrollSettings: FastScrollSettings,
+    listState: LazyListState
 ) {
     val artists by viewModel.libraryProjection.artists.collectAsStateWithLifecycle()
     LibraryArtistList(
         artists = artists,
+        actions = actions,
         sortOption = sortOption,
-        onArtistClick = onArtistClick,
-        onPlayArtist = onPlayArtist,
-        onShuffleArtist = onShuffleArtist,
         fastScrollSettings = fastScrollSettings,
         listState = listState
     )
@@ -1188,19 +1120,15 @@ private fun LibraryArtistsTab(
 private fun LibraryGenresTab(
     viewModel: MusicPlayerViewModel,
     sortOption: SortOption,
-    listState: LazyListState,
-    onGenreClick: (GenreGroup) -> Unit,
-    onPlayGenre: (GenreGroup) -> Unit,
-    onShuffleGenre: (GenreGroup) -> Unit,
-    fastScrollSettings: FastScrollSettings
+    actions: AggregateBrowseActions<GenreGroup>,
+    fastScrollSettings: FastScrollSettings,
+    listState: LazyListState
 ) {
     val genres by viewModel.libraryProjection.genres.collectAsStateWithLifecycle()
     LibraryGenreList(
         genres = genres,
+        actions = actions,
         sortOption = sortOption,
-        onGenreClick = onGenreClick,
-        onPlayGenre = onPlayGenre,
-        onShuffleGenre = onShuffleGenre,
         fastScrollSettings = fastScrollSettings,
         listState = listState
     )

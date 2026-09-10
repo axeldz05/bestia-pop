@@ -209,4 +209,43 @@ class IdentifyKnownAlbumsTest {
         assertEquals("Astros", query.title)
         assertEquals(5, query.trackNumber)
     }
+
+    @Test
+    fun bonusAndGenericTitles_rejectedFromKnownAlbumMatching() {
+        val albumWithBonus = KnownAlbumTracks(
+            key = albumGroupKey("Ciro y Los Persas", "Espejos"),
+            artist = "Ciro y Los Persas",
+            album = "Espejos",
+            artworkUri = "file:///espejos.jpg",
+            tracks = listOf(
+                KnownAlbumTrack("Antes y Después", durationMs = 210_000L, trackNumber = 1),
+                KnownAlbumTrack("Bonus Track", durationMs = 180_000L, trackNumber = 4)
+            )
+        )
+        // Generic title "Bonus" or "Bonus Track" must not match
+        assertNull(
+            matchSongToKnownAlbum(
+                KnownAlbumQuery(songId = 30, title = "Bonus", durationMs = 180_000L),
+                albumWithBonus
+            )
+        )
+        assertNull(
+            matchSongToKnownAlbum(
+                KnownAlbumQuery(songId = 31, title = "Bonus Track", durationMs = 180_000L),
+                albumWithBonus
+            )
+        )
+        // Different artist must not match
+        assertNull(
+            matchSongToKnownAlbum(
+                KnownAlbumQuery(
+                    songId = 32,
+                    artist = "Babasónicos",
+                    title = "Antes y Después",
+                    durationMs = 210_000L
+                ),
+                albumWithBonus
+            )
+        )
+    }
 }

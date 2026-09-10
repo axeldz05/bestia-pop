@@ -81,6 +81,7 @@ fun QueueScreen(
             isCurrentPlaying = { index, _ -> index == currentQueueIndex },
             onSkipTo = viewModel::skipToQueueIndex,
             onRemove = viewModel::removeFromQueue,
+            onRemoveEntry = viewModel::removeFromQueue,
             listState = listState,
             emptyTitle = "La cola está vacía",
             emptySubtitle = "Reproducí una canción o seleccioná 'Añadir a la cola' desde la biblioteca.",

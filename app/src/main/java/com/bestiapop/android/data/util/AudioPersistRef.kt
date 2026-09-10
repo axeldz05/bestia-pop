@@ -28,6 +28,19 @@ data class AudioPersistRef(
                 return AudioPersistRef(uriString = uri, folderPath = data)
             }
 
+            if (resolved != null && resolved.startsWith("/")) {
+                val parent = File(resolved).parent.orEmpty()
+                val folderOk = folder.startsWith("/") &&
+                    !folder.contains("://") &&
+                    !looksLikeCacheDir(folder)
+                if (File(resolved).exists()) {
+                    return AudioPersistRef(
+                        uriString = resolved,
+                        folderPath = if (folderOk) folder else parent
+                    )
+                }
+            }
+
             if (uri.startsWith("content://", ignoreCase = true)) {
                 return AudioPersistRef(uriString = uri, folderPath = folder)
             }

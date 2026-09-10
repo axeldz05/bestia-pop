@@ -7,6 +7,7 @@ import com.bestiapop.android.data.model.GenreGroup
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.domain.util.IdentifyQueryVariants
 import com.bestiapop.android.domain.util.IdentifyRanking
+import com.bestiapop.android.domain.util.MetadataSplitter
 import com.bestiapop.android.domain.util.NaturalTextOrder
 import com.bestiapop.android.domain.util.sortedWithNaturalOrder
 import com.bestiapop.android.domain.util.TrackMatchKeys
@@ -441,7 +442,28 @@ class GetLibrarySongsUseCase {
             return cached.artists
         }
         val ascending = sortDirection == SortDirection.ASC
-        val artists = songs.groupBy { it.artist }.map { (artistName, artistSongs) ->
+        val candidateArtists = HashSet<String>(songs.size).apply {
+            for (song in songs) {
+                val a = song.artist.trim()
+                if (a.isNotEmpty() && !IdentifyRanking.isPlaceholderArtist(a)) {
+                    val featHead = a.substringBefore(" feat.").substringBefore(" ft.").substringBefore(";").trim()
+                    if (featHead.isNotEmpty()) add(featHead)
+                    add(a)
+                }
+            }
+        }
+        val artistToSongs = LinkedHashMap<String, MutableList<Song>>()
+        for (song in songs) {
+            val tokens = MetadataSplitter.splitArtists(song.artist, candidateArtists)
+            if (tokens.isEmpty()) {
+                artistToSongs.getOrPut("Unknown Artist") { mutableListOf() }.add(song)
+            } else {
+                for (token in tokens) {
+                    artistToSongs.getOrPut(token) { mutableListOf() }.add(song)
+                }
+            }
+        }
+        val artists = artistToSongs.map { (artistName, artistSongs) ->
             val studio = studioAlbumKeysByArtist(artistSongs, IdentifyRanking::isGenericAlbum)
             val distinctAlbumKeys = HashSet<String>(artistSongs.size)
             for (song in artistSongs) {
@@ -498,7 +520,18 @@ class GetLibrarySongsUseCase {
             return cached.genres
         }
         val ascending = sortDirection == SortDirection.ASC
-        val groups = songs.groupBy { genreKey(it) }.map { (name, genreSongs) ->
+        val genreToSongs = LinkedHashMap<String, MutableList<Song>>()
+        for (song in songs) {
+            val tokens = MetadataSplitter.splitGenres(song.genre)
+            if (tokens.isEmpty()) {
+                genreToSongs.getOrPut(Song.UNKNOWN_GENRE) { mutableListOf() }.add(song)
+            } else {
+                for (token in tokens) {
+                    genreToSongs.getOrPut(token) { mutableListOf() }.add(song)
+                }
+            }
+        }
+        val groups = genreToSongs.map { (name, genreSongs) ->
             GenreGroup(
                 name = name,
                 songCount = genreSongs.size,
@@ -536,8 +569,31 @@ class GetLibrarySongsUseCase {
             sortedWithNaturalOrder(ascending, stringKey)
         }
 
+    fun songsForArtist(songs: List<Song>, artistName: String): List<Song> {
+        val candidateArtists = HashSet<String>(songs.size).apply {
+            for (s in songs) {
+                val a = s.artist.trim()
+                if (a.isNotEmpty()) {
+                    val featHead = a.substringBefore(" feat.").substringBefore(" ft.").substringBefore(";").trim()
+                    if (featHead.isNotEmpty()) add(featHead)
+                    add(a)
+                }
+            }
+        }
+        return songs.filter { song ->
+            MetadataSplitter.splitArtists(song.artist, candidateArtists).any { it.equals(artistName, ignoreCase = true) }
+        }
+    }
+
     fun songsMatchingGenre(songs: List<Song>, genreName: String): List<Song> =
-        songs.filter { genreKey(it).equals(genreName, ignoreCase = true) }
+        songs.filter { song ->
+            val tokens = MetadataSplitter.splitGenres(song.genre)
+            if (tokens.isEmpty()) {
+                genreName.equals(Song.UNKNOWN_GENRE, ignoreCase = true)
+            } else {
+                tokens.any { it.equals(genreName, ignoreCase = true) }
+            }
+        }
 
     /**
      * Flattens the songs represented by the current browse projection (play-all / shuffle).

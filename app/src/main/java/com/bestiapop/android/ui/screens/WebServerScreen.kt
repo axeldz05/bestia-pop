@@ -87,6 +87,7 @@ import com.bestiapop.android.service.WebServerService
 import com.bestiapop.android.ui.MusicPlayerViewModel
 import com.bestiapop.android.ui.components.ArtworkThumbnail
 import com.bestiapop.android.ui.components.SongListItem
+import com.bestiapop.android.ui.components.SongItemActions
 import com.bestiapop.android.ui.components.TrackTextColumn
 import com.bestiapop.android.ui.components.rememberSongQueueActions
 import com.bestiapop.android.ui.screens.library.SongActionDialogsController
@@ -274,6 +275,10 @@ fun WifiSyncTabContent(
     songActions: com.bestiapop.android.ui.components.SongQueueActions,
     songDialogs: SongActionDialogsController
 ) {
+    val webServerSongActions = remember(songActions, songDialogs) {
+        SongItemActions.from(songActions, songDialogs)
+    }
+
     Column(
         modifier = Modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally
@@ -474,16 +479,9 @@ fun WifiSyncTabContent(
                 if (transfer.state == WifiTransferState.DONE && doneSong != null) {
                     SongListItem(
                         song = doneSong,
+                        actions = webServerSongActions,
                         isCurrentPlaying = currentSongId == doneSong.id,
-                        onClick = { onPlaySong(doneSong) },
-                        onPlayNext = { songActions.onPlayNext(doneSong) },
-                        onAddToQueue = { songActions.onAddToQueue(doneSong) },
-                        onStartRadio = { songActions.onStartRadio(doneSong) },
-                        onAddToPlaylist = { songDialogs.onAddToPlaylist(doneSong) },
-                        onEditMetadata = { songDialogs.onEdit(doneSong) },
-                        onEditLyrics = { songDialogs.onEditLyrics(doneSong) },
-                        onIdentify = { /* Handled through songsById */ },
-                        onDelete = { songDialogs.onDelete(doneSong) }
+                        onClick = { onPlaySong(doneSong) }
                     )
                 } else {
                     WifiTransferProgressRow(
@@ -778,7 +776,7 @@ fun LinkDownloaderTabContent(
                 ) {
                     Icon(imageVector = Icons.Default.CloudDownload, contentDescription = null)
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Descargar MP3 y Agregar", fontWeight = FontWeight.Bold)
+                    Text(DownloadMessages.downloadAndAdd, fontWeight = FontWeight.Bold)
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))

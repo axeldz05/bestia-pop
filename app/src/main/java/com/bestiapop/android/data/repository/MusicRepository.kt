@@ -63,6 +63,13 @@ import com.bestiapop.android.domain.repository.LibraryScanProgress
 import com.bestiapop.android.domain.util.FilenameMetadataHints
 import com.bestiapop.android.domain.util.IdentifyCatalogQuery
 import com.bestiapop.android.domain.util.IdentifyRanking
+import com.bestiapop.android.domain.util.MetadataSplitter
+import com.bestiapop.android.data.db.ArtistEntity
+import com.bestiapop.android.data.db.GenreEntity
+import com.bestiapop.android.data.db.SongArtistCrossRef
+import com.bestiapop.android.data.db.SongGenreCrossRef
+import com.bestiapop.android.data.db.AlbumArtistCrossRef
+import com.bestiapop.android.data.db.AlbumGenreCrossRef
 import com.bestiapop.android.domain.util.KnownAlbumTrack
 import com.bestiapop.android.domain.util.KnownAlbumTracks
 import com.bestiapop.android.domain.util.albumGroupKey
@@ -77,19 +84,15 @@ import com.bestiapop.android.domain.util.fillSongGapsFromFileTags
 import com.bestiapop.android.domain.util.needsGapIdentify
 import com.bestiapop.android.domain.util.TrackMatchKeys
 import com.bestiapop.android.domain.util.identifySearchTexts
+import com.bestiapop.android.domain.usecase.IdentifyPipeline
 import com.bestiapop.android.domain.util.libraryAlbumKeysInBucket
-import com.bestiapop.android.domain.util.mergeIdentityHints
-import com.bestiapop.android.domain.util.parseFilenameMetadataHints
-import com.bestiapop.android.domain.util.splitUsingKnownArtists
 import com.bestiapop.android.domain.util.pickPersistedAlbumName
 import com.bestiapop.android.domain.util.pickPersistedArtistName
 import com.bestiapop.android.domain.util.albumIdentityKey
 import com.bestiapop.android.domain.util.albumNamesMatch
 import com.bestiapop.android.domain.util.studioAlbumKeysByArtist
-import com.bestiapop.android.domain.util.resolveWeakIdentityHints
 import com.bestiapop.android.domain.util.isTrackNumberLabel
 import com.bestiapop.android.domain.util.stripLeadingTitleJunk
-import com.bestiapop.android.domain.util.tidyFilenamePhrase
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -530,6 +533,10 @@ class MusicRepository private constructor(
                     continue
                 }
                 val dataPath = song.folderPath.trim()
+                val resolvedData = SongPathNormalizer.resolveFilePath(song.uriString, dataPath)?.lowercase()
+                if (resolvedData != null && existingPaths.contains(resolvedData)) {
+                    continue
+                }
                 if (dataPath.isNotEmpty() && existingPaths.contains(dataPath.lowercase())) {
                     continue
                 }
@@ -541,6 +548,7 @@ class MusicRepository private constructor(
                 scanned.add(song.copy(uriString = ref.uriString, folderPath = ref.folderPath))
                 if (key.isNotEmpty()) existingKeys.add(key)
                 if (dataPath.isNotEmpty()) existingPaths.add(dataPath.lowercase())
+                if (resolvedData != null) existingPaths.add(resolvedData)
                 existingPaths.add(ref.uriString.lowercase())
             }
         }
@@ -550,6 +558,7 @@ class MusicRepository private constructor(
 
     override suspend fun resyncAppManagedMusic(onProgress: LibraryScanProgress?): List<Song> =
         withContext(Dispatchers.IO) {
+            pruneUnplayableCorruptSongs()
             val managed = audioStore.listManaged()
             if (managed.isEmpty()) return@withContext emptyList()
 
@@ -646,6 +655,7 @@ class MusicRepository private constructor(
         existingPaths = existing.flatMap { song ->
             listOfNotNull(
                 SongPathNormalizer.resolveFilePath(song.uriString, song.folderPath),
+                song.folderPath.takeIf { it.isNotBlank() && it.startsWith("/") },
                 song.uriString.takeIf { it.isNotBlank() }
             )
         }.map { it.lowercase() }.toHashSet()
@@ -655,9 +665,11 @@ class MusicRepository private constructor(
         if (scanned.isEmpty()) return emptyList()
         musicDao.insertSongs(scanned)
         invalidateIdentityLibrary()
-        return scanned.map { it.uriString }
+        val inserted = scanned.map { it.uriString }
             .chunked(IDENTITY_SONG_ID_CHUNK)
             .flatMap { chunk -> musicDao.getSongsByUris(chunk) }
+        syncSongsRelations(inserted)
+        return inserted
     }
 
     private data class IndexSource(
@@ -743,13 +755,20 @@ class MusicRepository private constructor(
     ): Boolean {
         val ref = audioStore.canonicalize(source.sourcePath, source.folderHint)
         val pathKey = ref.uriString.lowercase()
+        val sourceKey = source.sourcePath.lowercase()
+        val resolvedSource = SongPathNormalizer.resolveFilePath(source.sourcePath, source.folderHint)
+            ?.takeIf { it.isNotBlank() && it.startsWith("/") }
+            ?.lowercase()
         val reserved = mutex.withLock {
             if (dedup.existingPaths.contains(pathKey) ||
-                dedup.existingPaths.contains(source.sourcePath.lowercase())
+                dedup.existingPaths.contains(sourceKey) ||
+                (resolvedSource != null && dedup.existingPaths.contains(resolvedSource))
             ) {
                 false
             } else {
                 dedup.existingPaths.add(pathKey)
+                dedup.existingPaths.add(sourceKey)
+                if (resolvedSource != null) dedup.existingPaths.add(resolvedSource)
                 true
             }
         }
@@ -766,10 +785,16 @@ class MusicRepository private constructor(
                     durationMs = metadata.durationMs,
                     filePath = ref.uriString,
                     fileName = source.fileName,
-                    allowUnknownDuration = true
+                    allowUnknownDuration = true,
+                    artist = metadata.artist,
+                    title = metadata.title
                 )
             ) {
-                mutex.withLock { dedup.existingPaths.remove(pathKey) }
+                mutex.withLock {
+                    dedup.existingPaths.remove(pathKey)
+                    dedup.existingPaths.remove(sourceKey)
+                    if (resolvedSource != null) dedup.existingPaths.remove(resolvedSource)
+                }
                 return false
             }
             val key = TrackMatchKeys.matchKey(metadata.artist, metadata.title)
@@ -781,6 +806,8 @@ class MusicRepository private constructor(
             mutex.withLock {
                 if (key.isNotEmpty() && dedup.existingKeys.contains(key)) {
                     dedup.existingPaths.remove(pathKey)
+                    dedup.existingPaths.remove(sourceKey)
+                    if (resolvedSource != null) dedup.existingPaths.remove(resolvedSource)
                     return false
                 }
                 scanned.add(
@@ -794,7 +821,11 @@ class MusicRepository private constructor(
             }
             true
         } catch (e: Exception) {
-            mutex.withLock { dedup.existingPaths.remove(pathKey) }
+            mutex.withLock {
+                dedup.existingPaths.remove(pathKey)
+                dedup.existingPaths.remove(sourceKey)
+                if (resolvedSource != null) dedup.existingPaths.remove(resolvedSource)
+            }
             e.printStackTrace()
             com.bestiapop.android.data.util.CrashReporter.recordNonFatal(
                 e,
@@ -845,13 +876,20 @@ class MusicRepository private constructor(
         durationMs: Long,
         filePath: String,
         fileName: String = "",
-        allowUnknownDuration: Boolean = false
+        allowUnknownDuration: Boolean = false,
+        artist: String = "",
+        title: String = ""
     ): Boolean {
-        // Minimum duration 30s; unknown duration (0) allowed for explicit folder / app-dir reindex.
-        if (durationMs < 30_000) {
+        // Files with non-positive duration and no recognizable identity (placeholder artist + track number title)
+        // are corrupt or truncated and cannot be played.
+        if (durationMs <= 0L) {
             val nameForExt = fileName.ifBlank { filePath.substringAfterLast('/') }
-            val unknownOk = allowUnknownDuration && durationMs == 0L && isAudioFile(nameForExt)
+            val unknownOk = allowUnknownDuration && isAudioFile(nameForExt) && hasUsableIdentity(artist, title)
             if (!unknownOk) return false
+        } else if (durationMs < 30_000) {
+            val nameForExt = fileName.ifBlank { filePath.substringAfterLast('/') }
+            val shortOk = allowUnknownDuration && isAudioFile(nameForExt)
+            if (!shortOk) return false
         }
 
         // Exclude WhatsApp, Telegram, Notifications, Ringtones, Voice Notes folders
@@ -932,37 +970,51 @@ class MusicRepository private constructor(
     override suspend fun saveUploadedSong(song: Song): Long = withContext(Dispatchers.IO) {
         val ref = audioStore.canonicalize(song.uriString, song.folderPath)
         val normalized = song.copy(uriString = ref.uriString, folderPath = ref.folderPath)
-        val key = TrackMatchKeys.matchKey(normalized.artist, normalized.title)
+        val trackNum = if (normalized.trackNumber > 0) {
+            normalized.trackNumber
+        } else {
+            resolveTrackNumberFallback(normalized.artist, normalized.title)
+        }
+        val songWithTrack = if (trackNum != normalized.trackNumber) {
+            normalized.copy(trackNumber = trackNum)
+        } else {
+            normalized
+        }
+        val key = TrackMatchKeys.matchKey(songWithTrack.artist, songWithTrack.title)
         if (key.isNotEmpty()) {
-            val existing = lookupSongByArtistTitle(normalized.artist, normalized.title)
+            val existing = lookupSongByArtistTitle(songWithTrack.artist, songWithTrack.title)
             if (existing != null) {
                 val oldRef = audioStore.canonicalize(existing.uriString, existing.folderPath)
-                if (oldRef.uriString != normalized.uriString &&
-                    !SongPathNormalizer.pathsReferToSameFile(oldRef.uriString, normalized.uriString)
+                if (oldRef.uriString != songWithTrack.uriString &&
+                    !SongPathNormalizer.pathsReferToSameFile(oldRef.uriString, songWithTrack.uriString)
                 ) {
                     audioStore.delete(oldRef)
                 }
+                val existingTrack = if (songWithTrack.trackNumber > 0) {
+                    songWithTrack.trackNumber
+                } else if (existing.trackNumber > 0) {
+                    existing.trackNumber
+                } else {
+                    resolveTrackNumberFallback(existing.artist, existing.title)
+                }
                 val updated = existing.copy(
-                    uriString = normalized.uriString,
-                    title = normalized.title,
-                    artist = normalized.artist,
-                    album = normalized.album,
-                    genre = normalized.genre,
-                    durationMs = normalized.durationMs,
-                    artworkUri = normalized.artworkUri ?: existing.artworkUri,
-                    folderPath = normalized.folderPath.ifBlank { existing.folderPath },
-                    trackNumber = if (normalized.trackNumber > 0) {
-                        normalized.trackNumber
-                    } else {
-                        existing.trackNumber
-                    }
+                    uriString = songWithTrack.uriString,
+                    title = songWithTrack.title,
+                    artist = songWithTrack.artist,
+                    album = songWithTrack.album,
+                    genre = songWithTrack.genre,
+                    durationMs = songWithTrack.durationMs,
+                    artworkUri = songWithTrack.artworkUri ?: existing.artworkUri,
+                    folderPath = songWithTrack.folderPath.ifBlank { existing.folderPath },
+                    trackNumber = existingTrack
                 )
                 musicDao.updateSong(updated)
+                syncSongsRelations(listOf(updated))
                 rememberIdentitySong(updated)
                 return@withContext existing.id
             }
         }
-        insertOrUpdateByUri(normalized)
+        insertOrUpdateByUri(songWithTrack)
     }
 
     /**
@@ -973,6 +1025,7 @@ class MusicRepository private constructor(
         val insertedId = musicDao.insertSong(song)
         if (insertedId != -1L) {
             invalidateIdentityLibrary()
+            syncSongsRelations(listOf(song.copy(id = insertedId)))
             return insertedId
         }
         val existing = musicDao.getSongByUri(song.uriString) ?: return -1L
@@ -984,12 +1037,22 @@ class MusicRepository private constructor(
             artworkUri = song.artworkUri ?: existing.artworkUri
         )
         musicDao.updateSong(updated)
+        syncSongsRelations(listOf(updated))
         rememberIdentitySong(updated)
         return existing.id
     }
 
     override suspend fun deleteSongsFromApp(songs: List<Song>) = withContext(Dispatchers.IO) {
         deleteSongRows(songs)
+    }
+
+    override suspend fun pruneUnplayableCorruptSongs(): List<Song> = withContext(Dispatchers.IO) {
+        val corrupted = musicDao.getSongsWithNonPositiveDuration()
+        val toDelete = corrupted.filterNot { hasUsableIdentity(it.artist, it.title) }
+        if (toDelete.isNotEmpty()) {
+            deleteSongRows(toDelete)
+        }
+        toDelete
     }
 
     /** Single exit for row removal so no caller can forget the cross-ref cleanup (no FK/cascade). */
@@ -1000,6 +1063,10 @@ class MusicRepository private constructor(
             ids.chunked(IDENTITY_SONG_ID_CHUNK).forEach { chunk ->
                 musicDao.deletePlayStatsForSongs(chunk)
                 musicDao.deletePlaylistRefsForSongs(chunk)
+                chunk.forEach { sId ->
+                    musicDao.deleteSongArtistCrossRefs(sId)
+                    musicDao.deleteSongGenreCrossRefs(sId)
+                }
                 musicDao.deleteSongsByIds(chunk)
             }
         }
@@ -1034,6 +1101,7 @@ class MusicRepository private constructor(
                     musicDao.updateMetadataAndLyrics(patch.songId, patch.artworkUri, patch.lyrics)
                 }
                 patch.durationMs?.let { musicDao.updateSongDuration(patch.songId, it) }
+                patch.trackNumber?.let { musicDao.updateTrackNumber(patch.songId, it) }
             }
             val albumStamps = LinkedHashMap<String, String>()
             for (patch in patches) {
@@ -1055,6 +1123,7 @@ class MusicRepository private constructor(
         val lyrics: String?,
         val metadataChanged: Boolean,
         val durationMs: Long?,
+        val trackNumber: Int?,
         val albumStamp: Pair<String, String>?,
         val tagSong: Song?
     )
@@ -1064,7 +1133,8 @@ class MusicRepository private constructor(
         val hasUsableArt = hasUsableArtwork(persisted.artworkUri)
         val hasLyrics = !persisted.lyrics.isNullOrEmpty()
         val hasDuration = persisted.durationMs > 0
-        if (hasUsableArt && hasLyrics && hasDuration) return null
+        val hasTrackNumber = persisted.trackNumber > 0
+        if (hasUsableArt && hasLyrics && hasDuration && hasTrackNumber) return null
 
         val albumName = if (persisted.album.isBlank()) "Unknown Album" else persisted.album
         val existingAlbumArt = musicDao.getArtworkForAlbum(albumName)
@@ -1087,9 +1157,17 @@ class MusicRepository private constructor(
             lyricsStr = metadataSource.fetchLyrics(persisted.artist, persisted.title)
         }
 
+        var trackNumber: Int? = null
+        if (!hasTrackNumber && hasUsableIdentity(persisted.artist, persisted.title)) {
+            val resolvedTrack = resolveTrackNumberFallback(persisted.artist, persisted.title)
+            if (resolvedTrack > 0) {
+                trackNumber = resolvedTrack
+            }
+        }
+
         val metadataChanged = artUrl != persisted.artworkUri || lyricsStr != persisted.lyrics
-        val tagSong = if (metadataChanged && artUrl != persisted.artworkUri) {
-            persisted.copy(artworkUri = artUrl, lyrics = lyricsStr)
+        val tagSong = if ((metadataChanged || trackNumber != null) && (artUrl != persisted.artworkUri || trackNumber != null)) {
+            persisted.copy(artworkUri = artUrl, lyrics = lyricsStr, trackNumber = trackNumber ?: persisted.trackNumber)
         } else {
             null
         }
@@ -1113,13 +1191,14 @@ class MusicRepository private constructor(
             if (calculatedDur > 0) durationMs = calculatedDur
         }
 
-        if (!metadataChanged && durationMs == null && albumStamp == null) return null
+        if (!metadataChanged && durationMs == null && albumStamp == null && trackNumber == null) return null
         return EnhancePatch(
             songId = persisted.id,
             artworkUri = artUrl,
             lyrics = lyricsStr,
             metadataChanged = metadataChanged,
             durationMs = durationMs,
+            trackNumber = trackNumber,
             albumStamp = albumStamp,
             tagSong = tagSong
         )
@@ -1146,66 +1225,15 @@ class MusicRepository private constructor(
             )
         }
 
-        val path = SongPathNormalizer.resolveFilePath(song.uriString, song.folderPath)
-        val baseName = path
-            ?.substringAfterLast('/')
-            ?.substringBeforeLast('.')
-            ?: song.uriString.substringAfterLast('/').substringBeforeLast('.')
-        val fileHints = if (looksLikeStoragePath(baseName)) {
-            FilenameMetadataHints(artist = null, title = null)
-        } else {
-            parseFilenameMetadataHints(baseName)
-        }
-        val hints = mergeIdentityHints(
-            resolveWeakIdentityHints(song.artist, song.title),
-            fileHints
-        )
-        val knownSplit = if (IdentifyRanking.isPlaceholderArtist(song.artist)) {
-            val libraryArtists = identityLibrarySongs().map { it.artist }
-            val phrases = listOfNotNull(
-                hints.title,
-                song.title.takeUnless { looksLikeStoragePath(it) },
-                fileHints.title,
-                baseName.takeUnless { looksLikeStoragePath(it) }
-            )
-            phrases.firstNotNullOfOrNull { splitUsingKnownArtists(it, libraryArtists) }
-        } else {
-            null
-        }
-        val mergedHints = if (knownSplit?.artist != null) {
-            mergeIdentityHints(knownSplit, hints)
-        } else {
-            hints
-        }
-        val working = if (isExpand) song else persistWeakIdentityCleanup(song, mergedHints)
-        val filenameArtist = mergedHints.artist?.takeUnless { looksLikeStoragePath(it) }
-        val filenameTitle = mergedHints.title?.takeUnless { looksLikeStoragePath(it) }
-
-        var queryArtist = working.artist
-        var queryTitle = working.title
-        if (IdentifyRanking.isPlaceholderArtist(queryArtist)) {
-            // Drop track-number / Unknown artists from the search string; title-only works better.
-            queryArtist = mergedHints.artist?.takeIf { it.isNotBlank() }.orEmpty()
-            if (!mergedHints.title.isNullOrBlank()) queryTitle = mergedHints.title
-        } else if (!mergedHints.title.isNullOrBlank() &&
-            (queryTitle.trimStart().startsWith("-") || looksLikeStoragePath(queryTitle))
-        ) {
-            queryTitle = mergedHints.title
-        }
-        queryArtist = tidyFilenamePhrase(queryArtist)
-        queryTitle = tidyFilenamePhrase(queryTitle).ifBlank { queryTitle }
-
-        val tagHints = listOfNotNull(
-            working.artist.takeUnless { IdentifyRanking.isPlaceholderArtist(it) },
-            working.title.takeUnless { it.isBlank() || looksLikeStoragePath(it) },
-            working.album.takeUnless { IdentifyRanking.isGenericAlbum(it) }
-        ).joinToString(" · ").ifBlank { null }
-        val filenameHint = listOfNotNull(
-            filenameArtist?.takeIf { it.isNotBlank() },
-            filenameTitle?.takeIf { it.isNotBlank() }
-        ).takeIf { it.size == 2 }?.joinToString(" · ")
-            ?: filenameTitle?.takeIf { it.isNotBlank() }
-        val sourceHints = tagHints ?: filenameHint
+        val stage1 = IdentifyPipeline.parseLocalFile(song)
+        val baseName = stage1.baseName
+        val stage2 = IdentifyPipeline.narrowArtist(stage1, identityLibrarySongs().map { it.artist })
+        val working = if (isExpand) song else persistWeakIdentityCleanup(song, stage2.mergedHints)
+        val filenameArtist = stage2.filenameArtist
+        val filenameTitle = stage2.filenameTitle
+        val queryArtist = stage2.queryArtist
+        val queryTitle = stage2.queryTitle
+        val sourceHints = stage2.sourceHints
 
         val trimmedCustom = customQuery?.trim().orEmpty()
         val artistPlaceholder = queryArtist.isBlank() ||
@@ -1223,7 +1251,7 @@ class MusicRepository private constructor(
         }
         val isRefineSearch = trimmedCustom.isNotEmpty() || normalizedFilters.hasAny || isExpand
         if (!isRefineSearch) {
-            matchKnownAlbumFromLibrary(working, queryTitle)?.let { candidate ->
+            matchKnownAlbumFromLibrary(working, queryArtist, queryTitle)?.let { candidate ->
                 return@withContext IdentifyProposal(
                     songId = song.id,
                     queryArtist = queryArtist,
@@ -1363,32 +1391,22 @@ class MusicRepository private constructor(
             ranked.isNotEmpty() -> true
             else -> false
         }
+        val enrichedRanked = IdentifyPipeline.enrichTrackNumberIfMissing(ranked) { first ->
+            findTrackNumberInAlbum(
+                artist = first.artist,
+                album = first.album,
+                title = first.title,
+                durationMs = working.durationMs
+            )
+        }
 
-        val enrichedRanked = if (ranked.isNotEmpty()) {
-            val first = ranked.first()
-            if (first.track.identity.trackNumber > 0) {
-                ranked
-            } else {
-                val albumTrackNum = findTrackNumberInAlbum(
-                    artist = first.artist,
-                    album = first.album,
-                    title = first.title,
-                    durationMs = working.durationMs
-                )
-                if (albumTrackNum != null && albumTrackNum > 0) {
-                    listOf(
-                        first.copy(
-                            track = first.track.copy(
-                                identity = first.track.identity.copy(trackNumber = albumTrackNum)
-                            )
-                        )
-                    ) + ranked.drop(1)
-                } else {
-                    ranked
-                }
+        if (confidence == IdentifyConfidence.HIGH && enrichedRanked.isNotEmpty()) {
+            val best = enrichedRanked.first()
+            if (best.artist.isNotBlank() && best.album.isNotBlank() && !IdentifyRanking.isGenericAlbum(best.album)) {
+                try {
+                    loadKnownAlbumTracks(best.artist, best.album, fetchCatalog = true)
+                } catch (_: Exception) {}
             }
-        } else {
-            ranked
         }
 
         IdentifyProposal(
@@ -1407,11 +1425,12 @@ class MusicRepository private constructor(
 
     private suspend fun matchKnownAlbumFromLibrary(
         song: Song,
+        queryArtist: String,
         queryTitle: String
     ): IdentifyCandidate? {
         val albums = knownAlbumsFromLibrary(identityLibrarySongs(), excludeSongIds = setOf(song.id))
         if (albums.isEmpty()) return null
-        val query = knownAlbumQueryOf(song, queryTitle = queryTitle)
+        val query = knownAlbumQueryOf(song, queryArtist = queryArtist, queryTitle = queryTitle)
         return assignUniqueKnownAlbumMatches(listOf(query), albums, scoped = false)[song.id]
             ?.toIdentifyCandidate()
     }
@@ -1526,6 +1545,7 @@ class MusicRepository private constructor(
                 )
             }
         }
+        syncSongsRelations(resolved)
         rememberIdentitySongs(resolved)
         val appliedIds = resolved.mapTo(LinkedHashSet(resolved.size)) { it.id }
         if (tagWritePreferences.settingsFlow.first().autoWriteTagsEnabled) {
@@ -1623,11 +1643,11 @@ class MusicRepository private constructor(
     override suspend fun identifySongMetadata(song: Song): IdentifyResult = withContext(Dispatchers.IO) {
         val proposal = proposeSongIdentity(song)
         if (proposal.alreadyIdentified) return@withContext IdentifyResult.Skipped
-        val suggested = proposal.suggested
-        if (proposal.confidence == IdentifyConfidence.HIGH && suggested != null) {
+        val reviewGate = IdentifyPipeline.evaluateReviewGate(proposal)
+        if (!reviewGate.requiresReview && proposal.suggested != null) {
             return@withContext applySongIdentity(
                 song.id,
-                suggested,
+                proposal.suggested,
                 IdentifyApplyFields.ALL.copy(title = false)
             )
         }
@@ -1849,6 +1869,7 @@ class MusicRepository private constructor(
         )
         val updated = musicDao.getSongById(songId)
         if (updated != null) {
+            syncSongsRelations(listOf(updated))
             rememberIdentitySong(updated)
             maybeWriteTags(updated)
         }
@@ -2560,28 +2581,44 @@ class MusicRepository private constructor(
             val songs = musicDao.getIdentitySongs()
             if (songs.isEmpty()) return@withContext
             val planned = songs.map { song ->
-                song to audioStore.canonicalize(song.uriString, song.folderPath)
+                val ref = audioStore.canonicalize(song.uriString, song.folderPath)
+                val resolvedPath = SongPathNormalizer.resolveFilePath(song.uriString, song.folderPath)
+                    ?.takeIf { it.isNotBlank() && it.startsWith("/") }
+                    ?.lowercase()
+                val dedupKey = resolvedPath ?: ref.uriString.lowercase()
+                Triple(song, ref, dedupKey)
             }
-            val groups = planned.groupBy { it.second.uriString }
+            val groups = planned.groupBy { it.third }
             db.withTransaction {
                 for ((_, members) in groups) {
                     if (members.size == 1) {
-                        val (song, ref) = members[0]
+                        val (song, ref, _) = members[0]
                         if (song.uriString != ref.uriString || song.folderPath != ref.folderPath) {
                             musicDao.updateSongUri(song.id, ref.uriString, ref.folderPath)
                         }
                         continue
                     }
-                    val keepPair = members.firstOrNull { it.first.uriString == it.second.uriString }
-                        ?: members.minBy { it.first.id }
-                    val keep = keepPair.first
-                    val keepRef = keepPair.second
+                    val keepTriple = members.maxWithOrNull(
+                        compareBy<Triple<Song, AudioPersistRef, String>> { !it.first.artworkUri.isNullOrBlank() }
+                            .thenBy { it.first.durationMs > 0L }
+                            .thenBy { it.second.uriString.startsWith("/") }
+                            .thenByDescending { it.first.id }
+                    ) ?: members.first()
+                    val keep = keepTriple.first
+                    val keepRef = keepTriple.second
+                    var targetDuration = keep.durationMs
+                    for ((drop, _, _) in members) {
+                        if (drop.id == keep.id) continue
+                        if (targetDuration <= 0L && drop.durationMs > 0L) {
+                            targetDuration = drop.durationMs
+                        }
+                        remapPlaylistsThenDelete(dropId = drop.id, keepId = keep.id)
+                    }
                     if (keep.uriString != keepRef.uriString || keep.folderPath != keepRef.folderPath) {
                         musicDao.updateSongUri(keep.id, keepRef.uriString, keepRef.folderPath)
                     }
-                    for ((drop, _) in members) {
-                        if (drop.id == keep.id) continue
-                        remapPlaylistsThenDelete(dropId = drop.id, keepId = keep.id)
+                    if (targetDuration > 0L && targetDuration != keep.durationMs) {
+                        musicDao.updateSongDuration(keep.id, targetDuration)
                     }
                 }
             }
@@ -2653,7 +2690,8 @@ class MusicRepository private constructor(
             if (songs.isEmpty()) return@withContext emptyList()
             val candidates = songs.filter { song ->
                 IdentifyRanking.isPlaceholderArtist(song.artist) ||
-                        IdentifyRanking.isGenericAlbum(song.album)
+                        IdentifyRanking.isGenericAlbum(song.album) ||
+                        IdentifyRanking.isGenericIdentifyTitle(song.title)
             }
             if (candidates.isEmpty()) return@withContext emptyList()
             val library = identityLibrarySongs()
@@ -2782,6 +2820,10 @@ class MusicRepository private constructor(
                 title == "Enlace YouTube" ||
                 title == "Descarga"
 
+    private fun hasUsableIdentity(artist: String, title: String): Boolean =
+        !IdentifyRanking.isPlaceholderArtist(artist) ||
+            (!isTrackNumberLabel(title) && !isPlaceholderTitle(title))
+
     override suspend fun saveAlbumTracksToLibrary(
         albumTitle: String,
         artistName: String,
@@ -2825,6 +2867,9 @@ class MusicRepository private constructor(
 
         if (songsToInsert.isNotEmpty()) {
             musicDao.insertSongs(songsToInsert)
+            val inserted = musicDao.getSavedRemoteAlbumSongs(albumClean, artistClean)
+            syncSongsRelations(inserted)
+            return@withContext inserted
         }
 
         musicDao.getSavedRemoteAlbumSongs(albumClean, artistClean)
@@ -2834,6 +2879,134 @@ class MusicRepository private constructor(
         withContext(Dispatchers.IO) {
             musicDao.deleteSavedRemoteAlbum(albumName.trim(), artistName.trim())
         }
+
+    override suspend fun getSongsForArtist(artistName: String): List<Song> = withContext(Dispatchers.IO) {
+        val norm = MetadataSplitter.normalizeKey(artistName)
+        if (norm.isBlank()) emptyList()
+        else musicDao.getSongsForArtistNormalized(norm)
+    }
+
+    override suspend fun getSongsForGenre(genreName: String): List<Song> = withContext(Dispatchers.IO) {
+        val norm = MetadataSplitter.normalizeKey(genreName)
+        if (norm.isBlank()) emptyList()
+        else musicDao.getSongsForGenreNormalized(norm)
+    }
+
+    override suspend fun getAlbumsForArtist(artistName: String): List<String> = withContext(Dispatchers.IO) {
+        val norm = MetadataSplitter.normalizeKey(artistName)
+        if (norm.isBlank()) emptyList()
+        else musicDao.getAlbumsForArtistNormalized(norm)
+    }
+
+    private suspend fun resolveTrackNumberFallback(artist: String, title: String): Int {
+        if (!hasUsableIdentity(artist, title)) return 0
+        return try {
+            val fetched = metadataSource.fetchFullTrackMetadata(artist, title)
+            fetched?.trackNumber?.takeIf { it > 0 } ?: 0
+        } catch (e: Exception) {
+            0
+        }
+    }
+
+    private suspend fun syncSongsRelations(songs: List<Song>) {
+        if (songs.isEmpty()) return
+        val candidateArtists = HashSet<String>(songs.size).apply {
+            for (s in songs) {
+                val a = s.artist.trim()
+                if (a.isNotEmpty() && !IdentifyRanking.isPlaceholderArtist(a)) {
+                    val featHead = a.substringBefore(" feat.").substringBefore(" ft.").substringBefore(";").trim()
+                    if (featHead.isNotEmpty()) add(featHead)
+                    add(a)
+                }
+            }
+        }
+        for (song in songs) {
+            val songId = song.id
+            if (songId <= 0L) continue
+
+            // 1. Artists
+            val artistTokens = MetadataSplitter.splitArtists(song.artist, candidateArtists)
+            val artistIds = mutableListOf<Long>()
+            for (token in artistTokens) {
+                val norm = MetadataSplitter.normalizeKey(token)
+                val existing = musicDao.getArtistByNormalizedName(norm)
+                val id = if (existing != null) {
+                    existing.id
+                } else {
+                    val inserted = musicDao.insertArtist(
+                        ArtistEntity(name = token, normalizedName = norm)
+                    )
+                    if (inserted != -1L) inserted else (musicDao.getArtistByNormalizedName(norm)?.id ?: continue)
+                }
+                artistIds.add(id)
+            }
+            musicDao.deleteSongArtistCrossRefs(songId)
+            if (artistIds.isNotEmpty()) {
+                musicDao.insertSongArtistCrossRefs(
+                    artistIds.mapIndexed { idx, aId ->
+                        SongArtistCrossRef(
+                            songId = songId,
+                            artistId = aId,
+                            isPrimary = idx == 0,
+                            position = idx
+                        )
+                    }
+                )
+            }
+
+            // 2. Genres
+            val genreTokens = MetadataSplitter.splitGenres(song.genre)
+            val genreIds = mutableListOf<Long>()
+            for (token in genreTokens) {
+                val norm = MetadataSplitter.normalizeKey(token)
+                val existing = musicDao.getGenreByNormalizedName(norm)
+                val id = if (existing != null) {
+                    existing.id
+                } else {
+                    val inserted = musicDao.insertGenre(
+                        GenreEntity(name = token, normalizedName = norm)
+                    )
+                    if (inserted != -1L) inserted else (musicDao.getGenreByNormalizedName(norm)?.id ?: continue)
+                }
+                genreIds.add(id)
+            }
+            musicDao.deleteSongGenreCrossRefs(songId)
+            if (genreIds.isNotEmpty()) {
+                musicDao.insertSongGenreCrossRefs(
+                    genreIds.map { gId ->
+                        SongGenreCrossRef(
+                            songId = songId,
+                            genreId = gId
+                        )
+                    }
+                )
+            }
+
+            // 3. Album Relations
+            val albumKey = albumIdentityKey(song.album)
+            if (albumKey.isNotBlank()) {
+                if (artistIds.isNotEmpty()) {
+                    val albumArtistRefs = artistIds.map { aId ->
+                        AlbumArtistCrossRef(
+                            albumKey = albumKey,
+                            artistId = aId
+                        )
+                    }
+                    musicDao.insertAlbumArtistCrossRefs(albumArtistRefs)
+                }
+
+                if (genreIds.isNotEmpty()) {
+                    val albumGenreRefs = genreIds.map { gId ->
+                        AlbumGenreCrossRef(
+                            albumKey = albumKey,
+                            genreId = gId
+                        )
+                    }
+                    musicDao.insertAlbumGenreCrossRefs(albumGenreRefs)
+                }
+            }
+        }
+    }
 
     private companion object {
         const val MAX_DOWNLOAD_ATTEMPTS = 5

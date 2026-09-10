@@ -1,5 +1,7 @@
 package com.bestiapop.android.ui.state
 
+import com.bestiapop.android.data.model.DownloadMessages
+
 enum class ItemLibraryStatus {
     NOT_IN_LIBRARY,
     SAVED_REMOTE,
@@ -11,14 +13,14 @@ enum class ItemLibraryStatus {
 
     val albumMessage: String
         get() = when (this) {
-            DOWNLOADED -> "El álbum ya está descargado en tu biblioteca"
+            DOWNLOADED -> DownloadMessages.alreadyDownloadedAlbum
             SAVED_REMOTE -> "El álbum ya está guardado en tu biblioteca"
             NOT_IN_LIBRARY -> ""
         }
 
     val trackMessage: String
         get() = when (this) {
-            DOWNLOADED -> "Canción ya descargada en la biblioteca"
+            DOWNLOADED -> DownloadMessages.alreadyDownloadedSong
             SAVED_REMOTE -> "Canción guardada en la biblioteca"
             NOT_IN_LIBRARY -> ""
         }

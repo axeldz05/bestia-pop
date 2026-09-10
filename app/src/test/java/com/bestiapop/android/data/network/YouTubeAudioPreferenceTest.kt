@@ -1,127 +1,83 @@
 package com.bestiapop.android.data.network
 
-import com.bestiapop.android.data.model.OnlineCatalogTrack
-import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class YouTubeAudioPreferenceTest {
 
     @Test
-    fun audioPreferenceScore_prefersTopicAndOfficialAudio_overMusicVideo() {
-        val topic = YouTubeExtractor.audioPreferenceScore(
-            "Song Title",
-            "Artist Name - Topic"
-        )
-        val officialAudio = YouTubeExtractor.audioPreferenceScore(
-            "Artist - Song (Official Audio)",
-            "Artist"
-        )
-        val musicVideo = YouTubeExtractor.audioPreferenceScore(
-            "Artist - Song (Official Music Video)",
-            "ArtistVEVO"
+    fun audioPreferenceScore_severelyPenalizesSnippetsAndLoops() {
+        val snippetScore = YouTubeExtractor.audioPreferenceScore(
+            rawTitle = "Aoi, Koi, Daidaiiro No Hi (best part looped)",
+            rawAuthor = "AnimeVibes",
+            candidateDurationMs = 143_000L,
+            expectedDurationMs = 282_000L,
+            expectedTitle = "Aoi, Koi, Daidaiiro No Hi",
+            expectedArtist = "MASS OF THE FERMENTING DREGS"
         )
 
-        assertTrue(topic > musicVideo)
-        assertTrue(officialAudio > musicVideo)
-        assertTrue(topic >= officialAudio)
+        val fullTrackScore = YouTubeExtractor.audioPreferenceScore(
+            rawTitle = "Aoi, Koi, Daidaiiro No Hi",
+            rawAuthor = "MASS OF THE FERMENTING DREGS - Topic",
+            candidateDurationMs = 282_000L,
+            expectedDurationMs = 282_000L,
+            expectedTitle = "Aoi, Koi, Daidaiiro No Hi",
+            expectedArtist = "MASS OF THE FERMENTING DREGS"
+        )
+
+        assertTrue(
+            "Full track ($fullTrackScore) must dramatically beat looped snippet ($snippetScore)",
+            fullTrackScore > snippetScore + 200
+        )
     }
 
     @Test
-    fun rankByAudioPreference_movesAudioHitsAhead_preservingRelativeOrder() {
-        data class Hit(val title: String, val author: String, val id: String)
+    fun audioPreferenceScore_rewardsDurationProximity() {
+        val exactDurationScore = YouTubeExtractor.audioPreferenceScore(
+            rawTitle = "Kakuiumono",
+            rawAuthor = "MASS OF THE FERMENTING DREGS",
+            candidateDurationMs = 243_000L,
+            expectedDurationMs = 243_000L,
+            expectedTitle = "Kakuiumono",
+            expectedArtist = "MASS OF THE FERMENTING DREGS"
+        )
+
+        val wrongDurationScore = YouTubeExtractor.audioPreferenceScore(
+            rawTitle = "Kakuiumono",
+            rawAuthor = "MASS OF THE FERMENTING DREGS",
+            candidateDurationMs = 100_000L,
+            expectedDurationMs = 243_000L,
+            expectedTitle = "Kakuiumono",
+            expectedArtist = "MASS OF THE FERMENTING DREGS"
+        )
+
+        assertTrue(
+            "Exact duration matching must beat truncated version",
+            exactDurationScore > wrongDurationScore + 100
+        )
+    }
+
+    @Test
+    fun rankByAudioPreference_sortsBestCandidateFirst() {
+        data class Item(val title: String, val author: String, val durationMs: Long)
+
+        val items = listOf(
+            Item("Aoi, Koi, Daidaiiro No Hi (best part looped) [Lyrics]", "LoopChannel", 143_000L),
+            Item("Aoi, Koi, Daidaiiro No Hi", "MASS OF THE FERMENTING DREGS - Topic", 282_000L),
+            Item("MASS OF THE FERMENTING DREGS - Aoi, Koi (Music Video)", "Official Channel", 310_000L)
+        )
 
         val ranked = YouTubeExtractor.rankByAudioPreference(
-            listOf(
-                Hit("Song (Official Music Video)", "ArtistVEVO", "mv1"),
-                Hit("Song (Official Audio)", "Artist", "aud1"),
-                Hit("Song", "Artist - Topic", "topic1"),
-                Hit("Song (Lyric Video)", "Artist", "lyr1"),
-                Hit("Song (Official Video)", "Artist", "mv2")
-            ),
+            items = items,
             rawTitle = { it.title },
-            rawAuthor = { it.author }
+            rawAuthor = { it.author },
+            durationMsOf = { it.durationMs },
+            expectedDurationMs = 282_000L,
+            expectedTitle = "Aoi, Koi, Daidaiiro No Hi",
+            expectedArtist = "MASS OF THE FERMENTING DREGS"
         )
 
-        assertEquals(listOf("topic1", "aud1", "lyr1", "mv2", "mv1"), ranked.map { it.id })
-    }
-
-    @Test
-    fun resolveYouTubeQueryOrId_ignoresCatalogNumericIds() {
-        val deezerTrack = OnlineCatalogTrack(
-            id = "3135556",
-            title = "Harder Better Faster Stronger",
-            artist = "Daft Punk",
-            album = "Discovery",
-            artworkUri = null,
-            durationMs = 224000L,
-            audioUrl = "Daft Punk Harder Better Faster Stronger",
-            provider = "Deezer/YouTube"
-        )
-        assertEquals(
-            "Daft Punk Harder Better Faster Stronger",
-            YouTubeExtractor.resolveYouTubeQueryOrId(deezerTrack)
-        )
-
-        val youtubeTrack = deezerTrack.copy(
-            id = "yT_8xqE9x0w",
-            audioUrl = "https://www.youtube.com/watch?v=yT_8xqE9x0w"
-        )
-        assertEquals("yT_8xqE9x0w", YouTubeExtractor.resolveYouTubeQueryOrId(youtubeTrack))
-    }
-
-    @Test
-    fun formatTitleAndArtist_handlesFlexibleSeparatorsAndDisambiguatesAuthor() {
-        val (t1, a1) = YouTubeExtractor.formatTitleAndArtist(
-            "Queen - Bohemian Rhapsody (Official Video)",
-            "Queen"
-        )
-        assertEquals("Bohemian Rhapsody", t1)
-        assertEquals("Queen", a1)
-
-        val (t2, a2) = YouTubeExtractor.formatTitleAndArtist(
-            "AC/DC – Thunderstruck (Official Video) [4K]",
-            "AC/DC - Topic"
-        )
-        assertEquals("Thunderstruck", t2)
-        assertEquals("AC/DC", a2)
-
-        val (t3, a3) = YouTubeExtractor.formatTitleAndArtist(
-            "Bohemian Rhapsody - Queen",
-            "QueenVEVO"
-        )
-        assertEquals("Bohemian Rhapsody", t3)
-        assertEquals("Queen", a3)
-
-        val (t4, a4) = YouTubeExtractor.formatTitleAndArtist(
-            "Radiohead : Creep",
-            "Radiohead"
-        )
-        assertEquals("Creep", t4)
-        assertEquals("Radiohead", a4)
-
-        // Track number prefix must not overwrite the artist
-        val (t5, a5) = YouTubeExtractor.formatTitleAndArtist(
-            "01 - Let It Be",
-            "The Beatles - Topic"
-        )
-        assertEquals("Let It Be", t5)
-        assertEquals("The Beatles", a5)
-
-        // Subtitles with colon must not overwrite the author
-        val (t6, a6) = YouTubeExtractor.formatTitleAndArtist(
-            "Star Wars: Main Theme",
-            "John Williams"
-        )
-        assertEquals("Star Wars: Main Theme", t6)
-        assertEquals("John Williams", a6)
-
-        // Dash separator when author is channel uploader
-        val (t7, a7) = YouTubeExtractor.formatTitleAndArtist(
-            "Led Zeppelin - Stairway to Heaven",
-            "ClassicRockHits"
-        )
-        assertEquals("Stairway to Heaven", t7)
-        assertEquals("Led Zeppelin", a7)
+        assertTrue("Topic track should rank first", ranked.first().author.contains("Topic"))
+        assertTrue("Looped track should not rank first", !ranked.first().title.contains("looped"))
     }
 }

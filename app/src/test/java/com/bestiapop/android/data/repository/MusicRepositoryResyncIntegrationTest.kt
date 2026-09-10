@@ -45,4 +45,52 @@ class MusicRepositoryResyncIntegrationTest {
         assertEquals("Fixture Artist", persisted.artist)
         assertEquals("Recovered", persisted.title)
     }
+
+    @Test
+    fun resyncAppManagedMusic_ignoresCorruptTrackNumberZeroDurationFiles() = runTest {
+        files.create("08.______.mp3", byteArrayOf(1, 2, 3))
+        val repository = MusicRepository(
+            context = ApplicationProvider.getApplicationContext(),
+            database = database.database,
+            audioStore = TemporaryRepositoryFileStore(files.root),
+            metadataSource = NoNetworkRepositoryMetadata,
+            downloadRetryDelay = {}
+        )
+
+        val count = repository.resyncAppManagedMusic()
+        assertEquals(0, count.size)
+        assertEquals(0, database.musicDao.getAllSongs().size)
+    }
+
+    @Test
+    fun pruneUnplayableCorruptSongs_removesZeroDurationZombieTrack() = runTest {
+        val repository = MusicRepository(
+            context = ApplicationProvider.getApplicationContext(),
+            database = database.database,
+            audioStore = TemporaryRepositoryFileStore(files.root),
+            metadataSource = NoNetworkRepositoryMetadata,
+            downloadRetryDelay = {}
+        )
+        val corruptSong = com.bestiapop.android.data.model.Song(
+            id = 0,
+            title = "08",
+            artist = "Unknown Artist",
+            album = "Unknown Album",
+            genre = "Unknown",
+            durationMs = 0L,
+            artworkUri = null,
+            uriString = "/storage/emulated/0/Music/BestiaPop/08.______.mp3",
+            folderPath = "/storage/emulated/0/Music/BestiaPop",
+            trackNumber = 8,
+            year = 0,
+            dateAdded = 1000L
+        )
+        database.musicDao.insertSong(corruptSong)
+        assertEquals(1, database.musicDao.getAllSongs().size)
+
+        val pruned = repository.pruneUnplayableCorruptSongs()
+        assertEquals(1, pruned.size)
+        assertEquals("08", pruned.single().title)
+        assertEquals(0, database.musicDao.getAllSongs().size)
+    }
 }

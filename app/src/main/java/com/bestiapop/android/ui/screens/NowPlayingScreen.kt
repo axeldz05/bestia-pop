@@ -55,11 +55,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.SwipeToDismissBox
-import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -108,6 +105,7 @@ import com.bestiapop.android.data.util.SyncedLyrics
 import com.bestiapop.android.domain.radio.RadioMode
 import com.bestiapop.android.ui.MusicPlayerViewModel
 import com.bestiapop.android.ui.components.ArtworkHero
+import com.bestiapop.android.ui.components.DismissibleQueueItemRow
 import com.bestiapop.android.ui.components.DownloadStateTrailing
 import com.bestiapop.android.ui.components.PlaybackScrubber
 import com.bestiapop.android.ui.components.QueueItemRow
@@ -454,27 +452,39 @@ fun NowPlayingScreen(
                                                 discoverOrigin = discoverOrigin,
                                                 isLocal = localSong != null,
                                                 canEditAlbum = localSong != null && matchedAlbum != null,
-                                                onGoToAlbum = { name ->
-                                                    goToLibrary { viewModel.openLibraryAlbum(name, fromNestedParent = false) }
-                                                },
-                                                onGoToArtist = { name ->
-                                                    goToLibrary { viewModel.openLibraryArtist(name) }
-                                                },
-                                                onGoToLocalPlaylist = { id ->
-                                                    goToPlaylists { viewModel.openLocalPlaylist(id) }
-                                                },
-                                                onGoToListenBrainz = { mbid ->
-                                                    goToDiscover { viewModel.openListenBrainzPlaylistDetail(mbid) }
-                                                },
-                                                onGoToCfRecommendations = {
-                                                    goToDiscover { viewModel.openCfRecommendationsDetail() }
-                                                },
-                                                onAddToPlaylist = { localSong?.let(songDialogs.onAddToPlaylist) },
-                                                onIdentify = { localSong?.let { viewModel.identifySongForReview(it) } },
-                                                onEditSong = { localSong?.let(songDialogs.onEdit) },
-                                                onEditLyrics = { localSong?.let(songDialogs.onEditLyrics) },
-                                                onEditAlbum = { albumForEdit = matchedAlbum },
-                                                onStartRadio = { viewModel.startRadio() }
+                                                actions = remember(
+                                                    matchedAlbum,
+                                                    localSong,
+                                                    songDialogs,
+                                                    viewModel,
+                                                    onDismiss
+                                                ) {
+                                                    NowPlayingMenuActions(
+                                                        navigation = NowPlayingNavigationActions(
+                                                            onGoToAlbum = { name ->
+                                                                goToLibrary { viewModel.openLibraryAlbum(name, fromNestedParent = false) }
+                                                            },
+                                                            onGoToArtist = { name ->
+                                                                goToLibrary { viewModel.openLibraryArtist(name) }
+                                                            },
+                                                            onGoToLocalPlaylist = { id ->
+                                                                goToPlaylists { viewModel.openLocalPlaylist(id) }
+                                                            },
+                                                            onGoToListenBrainz = { mbid ->
+                                                                goToDiscover { viewModel.openListenBrainzPlaylistDetail(mbid) }
+                                                            },
+                                                            onGoToCfRecommendations = {
+                                                                goToDiscover { viewModel.openCfRecommendationsDetail() }
+                                                            }
+                                                        ),
+                                                        song = NowPlayingSongActions.from(
+                                                            dialogs = songDialogs,
+                                                            localSong = localSong,
+                                                            onEditAlbum = { albumForEdit = matchedAlbum },
+                                                            onStartRadio = { viewModel.startRadio() }
+                                                        )
+                                                    )
+                                                }
                                             )
                                         }
                                     }
@@ -586,77 +596,22 @@ fun NowPlayingScreen(
                                     key = { _, qItem -> qItem.queueEntryId },
                                     contentType = { _, _ -> "queue_item" }
                                 ) { index, qItem ->
-                                    val currentQueueItems by rememberUpdatedState(queueItems)
-                                    val currentOnRemove by rememberUpdatedState(viewModel::removeFromQueue)
-                                    val dismissState = rememberSwipeToDismissBoxState(
-                                        confirmValueChange = { value ->
-                                            if (value == SwipeToDismissBoxValue.StartToEnd) {
-                                                val targetIndex = currentQueueItems.indexOfFirst { it.queueEntryId == qItem.queueEntryId }
-                                                if (targetIndex >= 0) {
-                                                    currentOnRemove(targetIndex)
-                                                }
-                                                true
-                                            } else {
-                                                false
-                                            }
-                                        }
-                                    )
-
-                                    SwipeToDismissBox(
-                                        state = dismissState,
-                                        enableDismissFromStartToEnd = true,
-                                        enableDismissFromEndToStart = false,
-                                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
-                                        backgroundContent = {
-                                            if (dismissState.dismissDirection == SwipeToDismissBoxValue.StartToEnd) {
-                                                Box(
-                                                    modifier = Modifier
-                                                        .fillMaxSize()
-                                                        .background(
-                                                            MaterialTheme.colorScheme.errorContainer,
-                                                            shape = RoundedCornerShape(ListDensity.corner)
-                                                        )
-                                                        .padding(horizontal = 16.dp),
-                                                    contentAlignment = Alignment.CenterStart
-                                                ) {
-                                                    Icon(
-                                                        imageVector = Icons.Default.Delete,
-                                                        contentDescription = "Quitar de la cola",
-                                                        tint = MaterialTheme.colorScheme.onErrorContainer
-                                                    )
-                                                }
-                                            }
-                                        }
-                                    ) {
-                                        Box(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .background(
-                                                    if (index == currentQueueIndex) {
-                                                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f)
-                                                    } else {
-                                                        MaterialTheme.colorScheme.surface
-                                                    },
-                                                    shape = RoundedCornerShape(ListDensity.corner)
-                                                )
-                                        ) {
-                                            val formattedDuration = remember(qItem.durationMs) {
-                                                formatDuration(qItem.durationMs)
-                                            }
-                                            QueueItemRow(
-                                                item = qItem,
-                                                isCurrentPlaying = (index == currentQueueIndex),
-                                                onClick = { viewModel.skipToQueueIndex(index) },
-                                                onRemove = { viewModel.removeFromQueue(index) },
-                                                showIndex = true,
-                                                index = index,
-                                                trailingDuration = formattedDuration,
-                                                compact = true,
-                                                reorderCount = queueItems.size,
-                                                onReorder = viewModel::moveDisplayQueueItem
-                                            )
-                                        }
+                                    val formattedDuration = remember(qItem.durationMs) {
+                                        formatDuration(qItem.durationMs)
                                     }
+                                    DismissibleQueueItemRow(
+                                        item = qItem,
+                                        isCurrentPlaying = (index == currentQueueIndex),
+                                        index = index,
+                                        queueSize = queueItems.size,
+                                        onClick = { viewModel.skipToQueueIndex(index) },
+                                        onRemove = { viewModel.removeFromQueue(qItem.queueEntryId) },
+                                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
+                                        trailingDuration = formattedDuration,
+                                        compact = true,
+                                        showIndex = true,
+                                        onReorder = viewModel::moveDisplayQueueItem
+                                    )
                                 }
                             }
 

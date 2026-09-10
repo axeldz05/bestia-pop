@@ -5,6 +5,7 @@ import com.bestiapop.android.data.listenbrainz.LbApiResult
 import com.bestiapop.android.data.listenbrainz.LbRecordingMetadata
 import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.data.model.Song
+import com.bestiapop.android.data.network.ListenBrainzClient
 import com.bestiapop.android.domain.usecase.FetchAndMatchCfRecommendationsUseCase
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -29,6 +30,30 @@ class CfRecommendationsRadio(
     private val fetchCount: Int = FETCH_COUNT,
     private val artistType: String = FetchAndMatchCfRecommendationsUseCase.ARTIST_TYPE_SIMILAR
 ) {
+
+    constructor(
+        clockMs: () -> Long = { System.currentTimeMillis() },
+        cacheTtlMs: Long = CACHE_TTL_MS,
+        fetchCount: Int = FETCH_COUNT,
+        artistType: String = FetchAndMatchCfRecommendationsUseCase.ARTIST_TYPE_SIMILAR
+    ) : this(
+        fetchCf = { username, token, count, offset, type ->
+            ListenBrainzClient.fetchCfRecordingRecommendations(
+                username = username,
+                token = token,
+                count = count,
+                offset = offset,
+                artistType = type
+            )
+        },
+        fetchRecordingMetadata = { mbids, token ->
+            ListenBrainzClient.fetchRecordingMetadata(mbids, token)
+        },
+        clockMs = clockMs,
+        cacheTtlMs = cacheTtlMs,
+        fetchCount = fetchCount,
+        artistType = artistType
+    )
 
     private val mutex = Mutex()
     private var cachedUsername: String? = null

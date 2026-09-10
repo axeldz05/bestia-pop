@@ -10,6 +10,7 @@ import com.bestiapop.android.data.model.TrackMeta
 import com.bestiapop.android.data.model.toIdentity
 import com.bestiapop.android.data.network.ListenBrainzClient
 import com.bestiapop.android.data.network.ListenPayload
+import com.bestiapop.android.domain.util.CollectionUtils
 import com.bestiapop.android.domain.util.IdentifyRanking
 import com.bestiapop.android.domain.util.TrackMatchKeys
 import com.bestiapop.android.domain.util.matchKey
@@ -127,73 +128,21 @@ class GetTopRelatedItemsUseCase {
             val lbRecordings = lbRecordingsDeferred.await()
 
             // 2. Local stats processing
-            class LocalArtistAccumulator(
-                var displayName: String,
-                var playScore: Long = 0L,
-                var artworkUri: String? = null
+            val localArtists = CollectionUtils.scoreLocalArtists(
+                librarySongs = librarySongs,
+                playStats = playStats,
+                playedWeight = 5L
             )
-            val localArtists = HashMap<String, LocalArtistAccumulator>()
-
-            class LocalAlbumAccumulator(
-                var title: String,
-                var artist: String,
-                var playScore: Long = 0L,
-                var artworkUri: String? = null
+            val localAlbums = CollectionUtils.scoreLocalAlbums(
+                librarySongs = librarySongs,
+                playStats = playStats,
+                playedWeight = 5L
             )
-            val localAlbums = HashMap<String, LocalAlbumAccumulator>()
-
-            class LocalTrackAccumulator(
-                var song: Song,
-                var playScore: Long = 0L
+            val localTracks = CollectionUtils.scoreLocalTracks(
+                librarySongs = librarySongs,
+                playStats = playStats,
+                playedWeight = 10L
             )
-            val localTracks = HashMap<String, LocalTrackAccumulator>()
-
-            for (song in librarySongs) {
-                val artist = song.artist.trim()
-                val isArtistValid = artist.isNotBlank() && !IdentifyRanking.isPlaceholderArtist(artist)
-                val artistKey = if (isArtistValid) TrackMatchKeys.normalize(artist) else ""
-                val lastPlayed = playStats[song.id] ?: song.lastPlayedAt
-
-                if (isArtistValid && artistKey.isNotEmpty()) {
-                    val artistEntry = localArtists.getOrPut(artistKey) {
-                        LocalArtistAccumulator(displayName = artist)
-                    }
-                    artistEntry.playScore += (if (lastPlayed > 0) 5L else 1L)
-                    if (artistEntry.artworkUri == null && !song.artworkUri.isNullOrBlank()) {
-                        artistEntry.artworkUri = song.artworkUri
-                    }
-                }
-
-                val album = song.album.trim()
-                if (album.isNotBlank() && !IdentifyRanking.isGenericAlbum(album)) {
-                    val albumKey = if (artistKey.isNotEmpty()) {
-                        TrackMatchKeys.composeKey(artistKey, TrackMatchKeys.normalize(album))
-                    } else {
-                        TrackMatchKeys.matchKey(artist, album)
-                    }
-                    if (albumKey.isNotEmpty()) {
-                        val albumEntry = localAlbums.getOrPut(albumKey) {
-                            LocalAlbumAccumulator(title = album, artist = artist)
-                        }
-                        albumEntry.playScore += (if (lastPlayed > 0) 5L else 1L)
-                        if (albumEntry.artworkUri == null && !song.artworkUri.isNullOrBlank()) {
-                            albumEntry.artworkUri = song.artworkUri
-                        }
-                    }
-                }
-
-                val trackKey = if (artistKey.isNotEmpty()) {
-                    TrackMatchKeys.composeKey(artistKey, TrackMatchKeys.normalize(song.title))
-                } else {
-                    song.matchKey()
-                }
-                if (trackKey.isNotEmpty()) {
-                    val trackEntry = localTracks.getOrPut(trackKey) {
-                        LocalTrackAccumulator(song = song)
-                    }
-                    trackEntry.playScore += (if (lastPlayed > 0) 10L else 1L)
-                }
-            }
 
             // 3. Merges using semantic compression helper
             val finalArtists = mergeLocalAndRemoteStats(
@@ -201,7 +150,7 @@ class GetTopRelatedItemsUseCase {
                 remoteList = lbArtists,
                 remoteKey = { TrackMatchKeys.normalize(it.artistName) },
                 remoteCount = { it.listenCount },
-                localScore = { it.playScore },
+                localScore = { it.score },
                 mergeExisting = { acc, totalScore, source ->
                     RelatedArtistItem(
                         name = acc.displayName,
@@ -227,7 +176,7 @@ class GetTopRelatedItemsUseCase {
                 remoteList = lbReleases,
                 remoteKey = { TrackMatchKeys.matchKey(it.artistName, it.releaseName) },
                 remoteCount = { it.listenCount },
-                localScore = { it.playScore },
+                localScore = { it.score },
                 mergeExisting = { acc, totalScore, source ->
                     RelatedAlbumItem(
                         title = acc.title,
@@ -255,7 +204,7 @@ class GetTopRelatedItemsUseCase {
                 remoteList = lbRecordings,
                 remoteKey = { TrackMatchKeys.matchKey(it.artistName, it.trackName) },
                 remoteCount = { it.listenCount },
-                localScore = { it.playScore },
+                localScore = { it.score },
                 mergeExisting = { acc, totalScore, source ->
                     RelatedTrackItem(
                         identity = acc.song.toIdentity(),

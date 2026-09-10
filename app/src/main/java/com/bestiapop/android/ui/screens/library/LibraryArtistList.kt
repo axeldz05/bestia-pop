@@ -1,8 +1,5 @@
 package com.bestiapop.android.ui.screens.library
 
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
@@ -11,15 +8,47 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import com.bestiapop.android.data.model.Artist
+import com.bestiapop.android.data.preferences.FastScrollSettings
 import com.bestiapop.android.ui.SortOption
-import com.bestiapop.android.ui.components.EmptyListHint
-import com.bestiapop.android.ui.components.FastScrollContainer
+import com.bestiapop.android.ui.components.FastScrollLazyColumn
 import com.bestiapop.android.ui.components.FastScrollSections
 import com.bestiapop.android.ui.components.formatSortRelevantInfo
 import com.bestiapop.android.ui.theme.ListDensity
 
-import com.bestiapop.android.data.preferences.FastScrollSettings
+/** Level 2: High-level LibraryArtistList accepting bundled [AggregateBrowseActions]. */
+@Composable
+fun LibraryArtistList(
+    artists: List<Artist>,
+    actions: AggregateBrowseActions<Artist>,
+    sortOption: SortOption = SortOption.TITLE,
+    fastScrollSettings: FastScrollSettings = FastScrollSettings(),
+    listState: LazyListState = rememberLazyListState(),
+    modifier: Modifier = Modifier
+) {
+    val sections = remember(artists, sortOption) {
+        FastScrollSections.fromArtists(artists, sortOption)
+    }
 
+    FastScrollLazyColumn(
+        items = artists,
+        key = { it.name },
+        sections = sections,
+        emptyText = "Ningún artista coincide",
+        fastScrollSettings = fastScrollSettings,
+        listState = listState,
+        modifier = modifier
+    ) { artist ->
+        ArtistListItem(
+            artist = artist,
+            sortOption = sortOption,
+            onClick = { actions.onClick(artist) },
+            onPlay = { actions.onPlay(artist) },
+            onShuffle = { actions.onShuffle(artist) }
+        )
+    }
+}
+
+/** Level 1: Low-level LibraryArtistList with individual primitive callbacks. */
 @Composable
 fun LibraryArtistList(
     artists: List<Artist>,
@@ -31,36 +60,21 @@ fun LibraryArtistList(
     listState: LazyListState = rememberLazyListState(),
     modifier: Modifier = Modifier
 ) {
-    if (artists.isEmpty()) {
-        EmptyListHint(
-            text = "Ningún artista coincide",
-            modifier = modifier.fillMaxSize()
+    val actions = remember(onArtistClick, onPlayArtist, onShuffleArtist) {
+        AggregateBrowseActions(
+            onClick = onArtistClick,
+            onPlay = onPlayArtist,
+            onShuffle = onShuffleArtist
         )
-        return
     }
-
-    val sections = remember(artists, sortOption) {
-        FastScrollSections.fromArtists(artists, sortOption)
-    }
-
-    FastScrollContainer(
-        sections = sections,
+    LibraryArtistList(
+        artists = artists,
+        actions = actions,
+        sortOption = sortOption,
+        fastScrollSettings = fastScrollSettings,
         listState = listState,
-        settings = fastScrollSettings,
-        modifier = modifier.fillMaxSize()
-    ) { listModifier ->
-        LazyColumn(state = listState, modifier = listModifier) {
-            items(artists, key = { it.name }) { artist ->
-                ArtistListItem(
-                    artist = artist,
-                    sortOption = sortOption,
-                    onClick = { onArtistClick(artist) },
-                    onPlay = { onPlayArtist(artist) },
-                    onShuffle = { onShuffleArtist(artist) }
-                )
-            }
-        }
-    }
+        modifier = modifier
+    )
 }
 
 @Composable

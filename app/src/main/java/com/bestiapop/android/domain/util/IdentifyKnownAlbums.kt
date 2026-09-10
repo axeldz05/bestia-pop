@@ -38,6 +38,7 @@ data class KnownAlbumTracks(
 
 data class KnownAlbumQuery(
     val songId: Long,
+    val artist: String = "",
     val title: String,
     val durationMs: Long = 0L,
     val trackNumber: Int = 0,
@@ -67,23 +68,34 @@ fun OnlineCatalogTrack.toKnownAlbumTrack(): KnownAlbumTrack = KnownAlbumTrack(
     artworkUri = artworkUri
 )
 
+private val UNUSABLE_KNOWN_ALBUM_TITLES = setOf(
+    "bonus", "bonus track", "track", "pista", "intro", "outro",
+    "audio", "sound", "demo", "untitled", "instrumental"
+)
+
 fun isUnusableKnownAlbumTitle(title: String): Boolean {
     val trimmed = title.trim()
     if (trimmed.isEmpty()) return true
     if (looksLikeStoragePath(trimmed)) return true
     if (isTrackNumberLabel(trimmed)) return true
+    val norm = TrackMatchKeys.normalize(trimmed)
+    if (norm in UNUSABLE_KNOWN_ALBUM_TITLES) return true
     return TRACK_PLACEHOLDER.matches(trimmed)
 }
 
 fun knownAlbumQueryOf(
     song: Song,
+    queryArtist: String = song.artist,
     queryTitle: String = song.title,
     queryTrack: Int = song.trackNumber
 ): KnownAlbumQuery {
     val hints = mergeIdentityHints(
         parseFilenameMetadataHints(queryTitle),
-        resolveWeakIdentityHints(song.artist, song.title)
+        resolveWeakIdentityHints(queryArtist, queryTitle)
     )
+    val artist = hints.artist?.takeUnless { IdentifyRanking.isPlaceholderArtist(it) }
+        ?: queryArtist.takeUnless { IdentifyRanking.isPlaceholderArtist(it) }
+        ?: ""
     val title = hints.title?.takeIf { !isUnusableKnownAlbumTitle(it) }
         ?: queryTitle.takeIf { !isUnusableKnownAlbumTitle(it) }
         ?: song.title
@@ -92,6 +104,7 @@ fun knownAlbumQueryOf(
         ?: albumTrackDisplayNumber(song.trackNumber)
     return KnownAlbumQuery(
         songId = song.id,
+        artist = artist,
         title = title,
         durationMs = song.durationMs,
         trackNumber = track,
@@ -165,6 +178,12 @@ fun matchSongToKnownAlbum(
     seedFolderPath: String = ""
 ): KnownAlbumMatch? {
     if (isUnusableKnownAlbumTitle(query.title)) return null
+    if (query.artist.isNotBlank() && album.artist.isNotBlank()) {
+        val artistSim = IdentifyRanking.fieldSimilarity(query.artist, album.artist)
+        if (artistSim < IdentifyRanking.MEDIUM_SCORE) return null
+    } else if (query.artist.isBlank() && IdentifyRanking.isGenericIdentifyTitle(query.title)) {
+        return null
+    }
     val qTitle = IdentifyRanking.stripTitleNoise(query.title)
     if (qTitle.isEmpty()) return null
     val scored = ArrayList<KnownAlbumMatch>(album.tracks.size)

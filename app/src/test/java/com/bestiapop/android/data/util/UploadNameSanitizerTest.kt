@@ -7,9 +7,9 @@ import org.junit.Test
 class UploadNameSanitizerTest {
 
     @Test
-    fun accentsAndSpaces_keepLettersReplaceSpaces() {
+    fun accentsAndSpaces_keepLettersAndSpaces() {
         assertEquals(
-            "01_-_Canción.mp3",
+            "01 - Canción.mp3",
             UploadNameSanitizer.sanitize("01 - Canción.mp3")
         )
         assertEquals(
@@ -21,11 +21,11 @@ class UploadNameSanitizerTest {
     @Test
     fun stripsPathSeparators_keepsSafeChars() {
         assertEquals(
-            "track_name-2.flac",
+            "track name-2.flac",
             UploadNameSanitizer.sanitize("/Music/BestiaPop/track name-2.flac")
         )
         assertEquals(
-            "win_track.mp3",
+            "win track.mp3",
             UploadNameSanitizer.sanitize("C:\\Uploads\\win track.mp3")
         )
     }
@@ -35,7 +35,7 @@ class UploadNameSanitizerTest {
         val rawBasename = "Álbum · Tema (live).m4a"
         val sanitized = UploadNameSanitizer.sanitize(rawBasename)
         assertEquals(sanitized, UploadNameSanitizer.sanitize(sanitized))
-        assertEquals("Álbum_·_Tema_(live).m4a", sanitized)
+        assertEquals("Álbum · Tema (live).m4a", sanitized)
         assertEquals("_lbum___Tema__live_.m4a", UploadNameSanitizer.asciiLegacy(rawBasename))
     }
 

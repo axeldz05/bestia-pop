@@ -25,7 +25,11 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyItemScope
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -229,6 +233,45 @@ fun FastScrollContainer(
             side = side,
             modifier = Modifier.align(side.toAlignment())
         )
+    }
+}
+
+/**
+ * Level 2: Shared FastScroll LazyColumn layout for aggregate/browse lists (albums, artists, genres).
+ * Renders [EmptyListHint] when empty, otherwise sets up [FastScrollContainer] + [LazyColumn].
+ */
+@Composable
+fun <T> FastScrollLazyColumn(
+    items: List<T>,
+    sections: List<FastScrollSection>,
+    emptyText: String,
+    modifier: Modifier = Modifier,
+    emptySubtitle: String? = null,
+    key: ((T) -> Any)? = null,
+    listState: LazyListState = rememberLazyListState(),
+    fastScrollSettings: FastScrollSettings = FastScrollSettings(),
+    itemContent: @Composable LazyItemScope.(T) -> Unit
+) {
+    if (items.isEmpty()) {
+        EmptyListHint(
+            text = emptyText,
+            subtitle = emptySubtitle,
+            modifier = modifier.fillMaxSize()
+        )
+        return
+    }
+
+    FastScrollContainer(
+        sections = sections,
+        listState = listState,
+        settings = fastScrollSettings,
+        modifier = modifier.fillMaxSize()
+    ) { listModifier ->
+        LazyColumn(state = listState, modifier = listModifier) {
+            items(items, key = key) { item ->
+                itemContent(item)
+            }
+        }
     }
 }
 

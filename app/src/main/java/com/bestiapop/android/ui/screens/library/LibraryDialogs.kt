@@ -35,6 +35,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.foundation.layout.width
 import androidx.compose.ui.unit.dp
 import com.bestiapop.android.data.model.Playlist
+import com.bestiapop.android.data.model.PlaylistMessages
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.data.util.albumDiscNumber
 import com.bestiapop.android.data.util.albumTrackDisplayNumber
@@ -378,10 +379,10 @@ fun AddToPlaylistDialog(
 
     if (showCreateDialog) {
         PlaylistFormDialog(
-            title = "Nueva Playlist",
+            title = PlaylistMessages.newPlaylist,
             initialCoverUri = defaultCoverUri,
-            confirmText = if (songCount > 1) "Añadir ($songCount)" else "Crear",
-            confirmAndOpenText = "Crear y entrar",
+            confirmText = PlaylistMessages.addSongsButtonLabel(songCount),
+            confirmAndOpenText = PlaylistMessages.createAndOpen,
             onDismiss = { showCreateDialog = false },
             onSave = { name, desc, cover ->
                 onCreatePlaylist(name, desc, cover, false)
@@ -397,10 +398,7 @@ fun AddToPlaylistDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
-            Text(
-                if (songCount > 1) "Agregar $songCount canciones a playlist"
-                else "Agregar a playlist"
-            )
+            Text(PlaylistMessages.addSongsCount(songCount))
         },
         text = {
             Column(modifier = Modifier.fillMaxWidth()) {
@@ -408,12 +406,12 @@ fun AddToPlaylistDialog(
                     onClick = { showCreateDialog = true },
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("+ Crear nueva playlist")
+                    Text(PlaylistMessages.createNewPlaylistButton)
                 }
                 Spacer(modifier = Modifier.height(12.dp))
                 if (playlists.isEmpty()) {
                     Text(
-                        text = "No tenés playlists creadas todavía.",
+                        text = PlaylistMessages.noPlaylistsYet,
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                         modifier = Modifier.padding(vertical = 16.dp)

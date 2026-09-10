@@ -77,29 +77,17 @@ fun MatchedTrackRow(
     onDownloadRemote: (PlayableItem.Remote) -> Unit,
     onRetryDownload: ((String) -> Unit)? = null,
     onCancelDownload: ((String) -> Unit)? = null,
-    queueActions: SongQueueActions,
-    leadingIcon: ImageVector = Icons.Default.PlayArrow,
-    onAddToPlaylist: ((Song) -> Unit)? = null,
-    onEditMetadata: ((Song) -> Unit)? = null,
-    onEditLyrics: ((Song) -> Unit)? = null,
-    onIdentify: ((Song) -> Unit)? = null,
-    onDelete: ((Song) -> Unit)? = null
+    songActions: SongItemActions,
+    leadingIcon: ImageVector = Icons.Default.PlayArrow
 ) {
     val local = localSong
     if (local != null) {
         SongListItem(
             song = local,
+            actions = songActions,
             artworkUri = meta.artworkUri ?: local.artworkUri,
             isCurrentPlaying = isCurrentPlaying,
-            onClick = onPlayAt,
-            onPlayNext = { queueActions.onPlayNext(local) },
-            onAddToQueue = { queueActions.onAddToQueue(local) },
-            onStartRadio = { queueActions.onStartRadio(local) },
-            onAddToPlaylist = onAddToPlaylist?.let { cb -> { cb(local) } },
-            onEditMetadata = onEditMetadata?.let { cb -> { cb(local) } },
-            onEditLyrics = onEditLyrics?.let { cb -> { cb(local) } },
-            onIdentify = onIdentify?.let { cb -> { cb(local) } },
-            onDelete = onDelete?.let { cb -> { cb(local) } }
+            onClick = onPlayAt
         )
     } else if (remote != null) {
         RemoteTrackPlaceholderRow(
@@ -119,6 +107,50 @@ fun MatchedTrackRow(
     }
 }
 
+/**
+ * L1: primitive song callbacks overload delegating to bundled [songActions].
+ */
+@Composable
+fun MatchedTrackRow(
+    localSong: Song?,
+    meta: TrackMeta,
+    remoteBadge: String,
+    isCurrentPlaying: Boolean,
+    remote: PlayableItem.Remote?,
+    download: ActiveDownload? = null,
+    onPlayAt: () -> Unit,
+    onDownloadRemote: (PlayableItem.Remote) -> Unit,
+    onRetryDownload: ((String) -> Unit)? = null,
+    onCancelDownload: ((String) -> Unit)? = null,
+    queueActions: SongQueueActions,
+    leadingIcon: ImageVector = Icons.Default.PlayArrow,
+    onAddToPlaylist: ((Song) -> Unit)? = null,
+    onEditMetadata: ((Song) -> Unit)? = null,
+    onEditLyrics: ((Song) -> Unit)? = null,
+    onIdentify: ((Song) -> Unit)? = null,
+    onDelete: ((Song) -> Unit)? = null
+) = MatchedTrackRow(
+    localSong = localSong,
+    meta = meta,
+    remoteBadge = remoteBadge,
+    isCurrentPlaying = isCurrentPlaying,
+    remote = remote,
+    download = download,
+    onPlayAt = onPlayAt,
+    onDownloadRemote = onDownloadRemote,
+    onRetryDownload = onRetryDownload,
+    onCancelDownload = onCancelDownload,
+    songActions = SongItemActions.from(
+        queueActions = queueActions,
+        onAddToPlaylist = onAddToPlaylist,
+        onEditMetadata = onEditMetadata,
+        onEditLyrics = onEditLyrics,
+        onIdentify = onIdentify,
+        onDelete = onDelete
+    ),
+    leadingIcon = leadingIcon
+)
+
 /** L1: flat title/artist when a call site lacks a [TrackMeta] wrapper. */
 @Composable
 fun MatchedTrackRow(
@@ -132,6 +164,7 @@ fun MatchedTrackRow(
     onPlayAt: () -> Unit,
     onDownloadRemote: (PlayableItem.Remote) -> Unit,
     onRetryDownload: ((String) -> Unit)? = null,
+    onCancelDownload: ((String) -> Unit)? = null,
     queueActions: SongQueueActions,
     leadingIcon: ImageVector = Icons.Default.PlayArrow,
     onAddToPlaylist: ((Song) -> Unit)? = null,
@@ -149,6 +182,7 @@ fun MatchedTrackRow(
     onPlayAt = onPlayAt,
     onDownloadRemote = onDownloadRemote,
     onRetryDownload = onRetryDownload,
+    onCancelDownload = onCancelDownload,
     queueActions = queueActions,
     leadingIcon = leadingIcon,
     onAddToPlaylist = onAddToPlaylist,

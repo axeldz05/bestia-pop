@@ -53,16 +53,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.state.ToggleableState
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.ui.SortOption
 import com.bestiapop.android.ui.components.AlbumHeader
-import com.bestiapop.android.ui.components.ArtworkThumbnail
+import com.bestiapop.android.ui.components.AlbumHeaderActions
 import com.bestiapop.android.ui.components.EmptyListHint
 import com.bestiapop.android.ui.components.FastScrollContainer
 import com.bestiapop.android.ui.components.FastScrollSections
 import com.bestiapop.android.ui.components.PlayShuffleIconPair
+import com.bestiapop.android.ui.components.SongItemActions
 import com.bestiapop.android.ui.components.SongListItem
 import com.bestiapop.android.ui.components.SongOptionsMenu
 import com.bestiapop.android.ui.components.SortEmphasizedTexts
@@ -100,83 +100,6 @@ fun LibrarySongList(
     listState: LazyListState = rememberLazyListState(),
     modifier: Modifier = Modifier
 ) {
-    LibrarySongList(
-        list = list,
-        currentSongId = currentSongId,
-        isSelectionMode = isSelectionMode,
-        selectedSongIds = selectedSongIds,
-        collapsedAlbumNames = collapsedAlbumNames,
-        sortOption = sortOption,
-        emphasizeLastPlayed = emphasizeLastPlayed,
-        emptySubtitle = emptySubtitle,
-        emptyText = emptyText,
-        loading = loading,
-        fastScrollSettings = fastScrollSettings,
-        onSongClick = onSongClick,
-        onSongLongClick = onSongLongClick,
-        onToggleSelect = actions.onToggleSelect,
-        onPlayNext = actions.onPlayNext,
-        onAddToQueue = actions.onAddToQueue,
-        onStartRadio = actions.onStartRadio,
-        onAddToPlaylist = actions.onAddToPlaylist,
-        onEditMetadata = actions.onEditMetadata,
-        onEditLyrics = actions.onEditLyrics,
-        onIdentify = actions.onIdentify,
-        onDeleteSong = actions.onDeleteSong,
-        onPlayAlbum = actions.onPlayAlbum,
-        onShuffleAlbum = actions.onShuffleAlbum,
-        onToggleSelectAlbum = actions.onToggleSelectAlbum,
-        onAlbumLongClick = actions.onAlbumLongClick,
-        onToggleCollapseAlbum = actions.onToggleCollapseAlbum,
-        onEditAlbum = actions.onEditAlbum,
-        onChangeAlbumCover = actions.onChangeAlbumCover,
-        onIdentifyAlbum = actions.onIdentifyAlbum,
-        onOpenAlbum = actions.onOpenAlbum,
-        currentSongIdFlow = currentSongIdFlow,
-        listState = listState,
-        modifier = modifier
-    )
-}
-
-/** Level 1: Low-level LibrarySongList with individual primitive callbacks for custom call sites. */
-@Composable
-@Suppress("UNUSED_PARAMETER")
-fun LibrarySongList(
-    list: LibraryListModel,
-    currentSongId: Long?,
-    isSelectionMode: Boolean,
-    selectedSongIds: Set<Long>,
-    collapsedAlbumNames: Set<String> = emptySet(),
-    sortOption: SortOption = SortOption.TITLE,
-    emphasizeLastPlayed: Boolean = false,
-    emptySubtitle: String? = null,
-    emptyText: String = "No se encontraron canciones",
-    loading: Boolean = false,
-    fastScrollSettings: FastScrollSettings = FastScrollSettings(),
-    onSongClick: (Song, Int) -> Unit,
-    onSongLongClick: (Song) -> Unit,
-    onToggleSelect: (Song) -> Unit,
-    onPlayNext: (Song) -> Unit,
-    onAddToQueue: (Song) -> Unit,
-    onStartRadio: (Song) -> Unit = {},
-    onAddToPlaylist: (Song) -> Unit,
-    onEditMetadata: (Song) -> Unit,
-    onEditLyrics: (Song) -> Unit = {},
-    onIdentify: (Song) -> Unit = {},
-    onDeleteSong: (Song) -> Unit,
-    onPlayAlbum: (String, List<Long>) -> Unit,
-    onShuffleAlbum: (String, List<Long>) -> Unit,
-    onToggleSelectAlbum: (List<Long>) -> Unit = {},
-    onAlbumLongClick: (List<Long>) -> Unit = {},
-    onToggleCollapseAlbum: (String) -> Unit = {},
-    onEditAlbum: (String) -> Unit = {},
-    onChangeAlbumCover: (String) -> Unit = {},
-    onIdentifyAlbum: (String) -> Unit = {},
-    onOpenAlbum: (String) -> Unit = {},
-    currentSongIdFlow: StateFlow<Long?>? = null,
-    listState: LazyListState = rememberLazyListState(),
-    modifier: Modifier = Modifier
-) {
     val visible = remember(list, collapsedAlbumNames) {
         list.collapsed(collapsedAlbumNames)
     }
@@ -205,26 +128,9 @@ fun LibrarySongList(
         }
     }
 
+    val actionsState = rememberUpdatedState(actions)
     val onSongClickState = rememberUpdatedState(onSongClick)
     val onSongLongClickState = rememberUpdatedState(onSongLongClick)
-    val onToggleSelectState = rememberUpdatedState(onToggleSelect)
-    val onPlayNextState = rememberUpdatedState(onPlayNext)
-    val onAddToQueueState = rememberUpdatedState(onAddToQueue)
-    val onStartRadioState = rememberUpdatedState(onStartRadio)
-    val onAddToPlaylistState = rememberUpdatedState(onAddToPlaylist)
-    val onEditMetadataState = rememberUpdatedState(onEditMetadata)
-    val onEditLyricsState = rememberUpdatedState(onEditLyrics)
-    val onIdentifyState = rememberUpdatedState(onIdentify)
-    val onDeleteSongState = rememberUpdatedState(onDeleteSong)
-    val onPlayAlbumState = rememberUpdatedState(onPlayAlbum)
-    val onShuffleAlbumState = rememberUpdatedState(onShuffleAlbum)
-    val onToggleSelectAlbumState = rememberUpdatedState(onToggleSelectAlbum)
-    val onAlbumLongClickState = rememberUpdatedState(onAlbumLongClick)
-    val onToggleCollapseAlbumState = rememberUpdatedState(onToggleCollapseAlbum)
-    val onEditAlbumState = rememberUpdatedState(onEditAlbum)
-    val onChangeAlbumCoverState = rememberUpdatedState(onChangeAlbumCover)
-    val onIdentifyAlbumState = rememberUpdatedState(onIdentifyAlbum)
-    val onOpenAlbumState = rememberUpdatedState(onOpenAlbum)
 
     var menuSong by remember { mutableStateOf<Song?>(null) }
     val onOpenSongMenu: (Song) -> Unit = remember { { menuSong = it } }
@@ -297,31 +203,26 @@ fun LibrarySongList(
                             selectedSongIds = selectedSongIds,
                             isSelectionMode = isSelectionMode,
                             collapsedAlbumNames = collapsedAlbumNames,
-                            onPlayAlbumState = onPlayAlbumState,
-                            onShuffleAlbumState = onShuffleAlbumState,
-                            onToggleSelectAlbumState = onToggleSelectAlbumState,
-                            onAlbumLongClickState = onAlbumLongClickState,
-                            onToggleCollapseAlbumState = onToggleCollapseAlbumState,
-                            onEditAlbumState = onEditAlbumState,
-                            onChangeAlbumCoverState = onChangeAlbumCoverState,
-                            onIdentifyAlbumState = onIdentifyAlbumState,
-                            onOpenAlbumState = onOpenAlbumState
+                            albumActionsState = rememberUpdatedState(actionsState.value.albumActions)
                         )
                     }
 
                     is LibraryListItem.SongRow -> {
-                        LibrarySongRow(
-                            song = item.song,
-                            index = item.index,
+                        val song = item.song
+                        SongListItem(
+                            song = song,
                             artworkUri = item.artworkUri,
-                            isPlaying = playingIdState.value == item.song.id,
+                            isCurrentPlaying = playingIdState.value == song.id,
                             isSelectionMode = isSelectionMode,
-                            isSelected = selectedSongIds.contains(item.song.id),
-                            emphasis = item.emphasis,
-                            onOptionsClick = onOpenSongMenu,
-                            onSongClickState = onSongClickState,
-                            onSongLongClickState = onSongLongClickState,
-                            onToggleSelectState = onToggleSelectState
+                            isSelected = selectedSongIds.contains(song.id),
+                            title = item.emphasis.title,
+                            subtitle = item.emphasis.subtitle,
+                            trailing = item.emphasis.trailing,
+                            trailingIsSortKey = item.emphasis.trailingIsSortKey,
+                            onClick = { onSongClickState.value(song, item.index) },
+                            onLongClick = { onSongLongClickState.value(song) },
+                            onToggleSelect = { actionsState.value.onToggleSelect(song) },
+                            onOptionsClick = { onOpenSongMenu(song) }
                         )
                     }
                 }
@@ -332,17 +233,97 @@ fun LibrarySongList(
     val currentMenuSong = menuSong
     if (currentMenuSong != null) {
         SongOptionsMenu(
-            onDismiss = { menuSong = null },
-            onPlayNext = { onPlayNextState.value(currentMenuSong) },
-            onAddToQueue = { onAddToQueueState.value(currentMenuSong) },
-            onStartRadio = { onStartRadioState.value(currentMenuSong) },
-            onAddToPlaylist = { onAddToPlaylistState.value(currentMenuSong) },
-            onEditMetadata = { onEditMetadataState.value(currentMenuSong) },
-            onEditLyrics = { onEditLyricsState.value(currentMenuSong) },
-            onIdentify = { onIdentifyState.value(currentMenuSong) },
-            onDelete = { onDeleteSongState.value(currentMenuSong) }
+            song = currentMenuSong,
+            actions = actionsState.value.songActions,
+            onDismiss = { menuSong = null }
         )
     }
+}
+
+/** Level 1: Low-level LibrarySongList with individual primitive callbacks for custom call sites. */
+@Composable
+fun LibrarySongList(
+    list: LibraryListModel,
+    currentSongId: Long?,
+    isSelectionMode: Boolean,
+    selectedSongIds: Set<Long>,
+    collapsedAlbumNames: Set<String> = emptySet(),
+    sortOption: SortOption = SortOption.TITLE,
+    emphasizeLastPlayed: Boolean = false,
+    emptySubtitle: String? = null,
+    emptyText: String = "No se encontraron canciones",
+    loading: Boolean = false,
+    fastScrollSettings: FastScrollSettings = FastScrollSettings(),
+    onSongClick: (Song, Int) -> Unit,
+    onSongLongClick: (Song) -> Unit,
+    onToggleSelect: (Song) -> Unit,
+    onPlayNext: (Song) -> Unit,
+    onAddToQueue: (Song) -> Unit,
+    onStartRadio: (Song) -> Unit = {},
+    onAddToPlaylist: (Song) -> Unit,
+    onEditMetadata: (Song) -> Unit,
+    onEditLyrics: (Song) -> Unit = {},
+    onIdentify: (Song) -> Unit = {},
+    onDeleteSong: (Song) -> Unit,
+    onPlayAlbum: (String, List<Long>) -> Unit,
+    onShuffleAlbum: (String, List<Long>) -> Unit,
+    onToggleSelectAlbum: (List<Long>) -> Unit = {},
+    onAlbumLongClick: (List<Long>) -> Unit = {},
+    onToggleCollapseAlbum: (String) -> Unit = {},
+    onEditAlbum: (String) -> Unit = {},
+    onChangeAlbumCover: (String) -> Unit = {},
+    onIdentifyAlbum: (String) -> Unit = {},
+    onOpenAlbum: (String) -> Unit = {},
+    currentSongIdFlow: StateFlow<Long?>? = null,
+    listState: LazyListState = rememberLazyListState(),
+    modifier: Modifier = Modifier
+) {
+    val actions = remember(
+        onToggleSelect, onPlayNext, onAddToQueue, onStartRadio, onAddToPlaylist,
+        onEditMetadata, onEditLyrics, onIdentify, onDeleteSong,
+        onPlayAlbum, onShuffleAlbum, onToggleSelectAlbum, onAlbumLongClick,
+        onToggleCollapseAlbum, onEditAlbum, onChangeAlbumCover, onIdentifyAlbum, onOpenAlbum
+    ) {
+        LibrarySongListActions(
+            onToggleSelect = onToggleSelect,
+            onPlayNext = onPlayNext,
+            onAddToQueue = onAddToQueue,
+            onStartRadio = onStartRadio,
+            onAddToPlaylist = onAddToPlaylist,
+            onEditMetadata = onEditMetadata,
+            onEditLyrics = onEditLyrics,
+            onIdentify = onIdentify,
+            onDeleteSong = onDeleteSong,
+            onPlayAlbum = onPlayAlbum,
+            onShuffleAlbum = onShuffleAlbum,
+            onToggleSelectAlbum = onToggleSelectAlbum,
+            onAlbumLongClick = onAlbumLongClick,
+            onToggleCollapseAlbum = onToggleCollapseAlbum,
+            onEditAlbum = onEditAlbum,
+            onChangeAlbumCover = onChangeAlbumCover,
+            onIdentifyAlbum = onIdentifyAlbum,
+            onOpenAlbum = onOpenAlbum
+        )
+    }
+    LibrarySongList(
+        list = list,
+        currentSongId = currentSongId,
+        isSelectionMode = isSelectionMode,
+        selectedSongIds = selectedSongIds,
+        collapsedAlbumNames = collapsedAlbumNames,
+        sortOption = sortOption,
+        emphasizeLastPlayed = emphasizeLastPlayed,
+        emptySubtitle = emptySubtitle,
+        emptyText = emptyText,
+        loading = loading,
+        fastScrollSettings = fastScrollSettings,
+        actions = actions,
+        onSongClick = onSongClick,
+        onSongLongClick = onSongLongClick,
+        currentSongIdFlow = currentSongIdFlow,
+        listState = listState,
+        modifier = modifier
+    )
 }
 
 @Composable
@@ -351,15 +332,7 @@ private fun LibraryAlbumHeaderRow(
     selectedSongIds: Set<Long>,
     isSelectionMode: Boolean,
     collapsedAlbumNames: Set<String>,
-    onPlayAlbumState: State<(String, List<Long>) -> Unit>,
-    onShuffleAlbumState: State<(String, List<Long>) -> Unit>,
-    onToggleSelectAlbumState: State<(List<Long>) -> Unit>,
-    onAlbumLongClickState: State<(List<Long>) -> Unit>,
-    onToggleCollapseAlbumState: State<(String) -> Unit>,
-    onEditAlbumState: State<(String) -> Unit>,
-    onChangeAlbumCoverState: State<(String) -> Unit>,
-    onIdentifyAlbumState: State<(String) -> Unit>,
-    onOpenAlbumState: State<(String) -> Unit>
+    albumActionsState: State<LibraryAlbumGroupActions>
 ) {
     val groupingKey = item.groupingKey
     val selectionState = if (isSelectionMode) {
@@ -369,32 +342,18 @@ private fun LibraryAlbumHeaderRow(
     } else {
         AlbumHeaderSelectionState.NONE
     }
-    val playAlbum = remember(groupingKey) {
-        { onPlayAlbumState.value(item.albumName, item.songIds) }
-    }
-    val shuffleAlbum = remember(groupingKey) {
-        { onShuffleAlbumState.value(item.albumName, item.songIds) }
-    }
-    val toggleSelectAlbum = remember(groupingKey) {
-        { onToggleSelectAlbumState.value(item.songIds) }
-    }
-    val albumLongClick = remember(groupingKey) {
-        { onAlbumLongClickState.value(item.songIds) }
-    }
-    val toggleCollapse = remember(groupingKey) {
-        { onToggleCollapseAlbumState.value(item.albumName) }
-    }
-    val editAlbum = remember(groupingKey) {
-        { onEditAlbumState.value(item.albumName) }
-    }
-    val changeAlbumCover = remember(groupingKey) {
-        { onChangeAlbumCoverState.value(item.albumName) }
-    }
-    val identifyAlbum = remember(groupingKey) {
-        { onIdentifyAlbumState.value(item.albumName) }
-    }
-    val openAlbum = remember(groupingKey) {
-        { onOpenAlbumState.value(item.albumName) }
+    val headerActions = remember(groupingKey, albumActionsState) {
+        AlbumHeaderActions(
+            onPlay = { albumActionsState.value.onPlayAlbum(item.albumName, item.songIds) },
+            onShuffle = { albumActionsState.value.onShuffleAlbum(item.albumName, item.songIds) },
+            onOpen = { albumActionsState.value.onOpenAlbum(item.albumName) },
+            onEdit = { albumActionsState.value.onEditAlbum(item.albumName) },
+            onChangeCover = { albumActionsState.value.onChangeAlbumCover(item.albumName) },
+            onIdentify = { albumActionsState.value.onIdentifyAlbum(item.albumName) },
+            onToggleSelect = { albumActionsState.value.onToggleSelectAlbum(item.songIds) },
+            onLongClick = { albumActionsState.value.onAlbumLongClick(item.songIds) },
+            onToggleCollapse = { albumActionsState.value.onToggleCollapseAlbum(item.albumName) }
+        )
     }
     AlbumHeader(
         title = item.displayName,
@@ -406,15 +365,7 @@ private fun LibraryAlbumHeaderRow(
         isCollapsed = item.matchesCollapsed(collapsedAlbumNames),
         isSelectionMode = isSelectionMode,
         selectionState = selectionState,
-        onPlayAlbum = playAlbum,
-        onShuffleAlbum = shuffleAlbum,
-        onToggleSelect = toggleSelectAlbum,
-        onLongClick = albumLongClick,
-        onToggleCollapse = toggleCollapse,
-        onEditAlbum = editAlbum,
-        onChangeAlbumCover = changeAlbumCover,
-        onIdentifyAlbum = identifyAlbum,
-        onOpenAlbum = openAlbum
+        actions = headerActions
     )
 }
 
@@ -463,136 +414,3 @@ enum class AlbumHeaderSelectionState {
     ALL
 }
 
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-private fun LibrarySongRow(
-    song: Song,
-    index: Int,
-    artworkUri: String?,
-    isPlaying: Boolean,
-    isSelectionMode: Boolean,
-    isSelected: Boolean,
-    emphasis: SortEmphasizedTexts,
-    onOptionsClick: (Song) -> Unit,
-    onSongClickState: State<(Song, Int) -> Unit>,
-    onSongLongClickState: State<(Song) -> Unit>,
-    onToggleSelectState: State<(Song) -> Unit>
-) {
-    val songState = rememberUpdatedState(song)
-    val onClick = remember(song.id, index) {
-        { onSongClickState.value(songState.value, index) }
-    }
-    val onLongClick = remember(song.id) {
-        { onSongLongClickState.value(songState.value) }
-    }
-    val onToggleSelect = remember(song.id) {
-        { onToggleSelectState.value(songState.value) }
-    }
-    val onOptions = remember(song.id) {
-        { onOptionsClick(songState.value) }
-    }
-    val handleRowClick = remember(isSelectionMode, onClick, onToggleSelect) {
-        if (isSelectionMode) onToggleSelect else onClick
-    }
-
-    val isHighlighted = isPlaying || isSelected
-    val primaryColor = MaterialTheme.colorScheme.primary
-    val onSurfaceColor = MaterialTheme.colorScheme.onSurface
-
-    val bgColor = when {
-        isSelected -> primaryColor.copy(alpha = 0.25f)
-        isPlaying -> primaryColor.copy(alpha = 0.15f)
-        else -> androidx.compose.ui.graphics.Color.Transparent
-    }
-    val titleColor = if (isHighlighted) primaryColor else onSurfaceColor
-    val titleWeight = if (isHighlighted) FontWeight.Bold else FontWeight.Medium
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(
-                horizontal = ListDensity.rowHorizontalPadding,
-                vertical = ListDensity.rowVerticalPadding
-            )
-            .then(
-                if (bgColor != androidx.compose.ui.graphics.Color.Transparent) {
-                    Modifier
-                        .clip(RoundedCornerShape(ListDensity.corner))
-                        .background(bgColor)
-                } else {
-                    Modifier
-                }
-            )
-            .combinedClickable(
-                onClick = handleRowClick,
-                onLongClick = onLongClick
-            )
-            .padding(ListDensity.rowInnerPadding),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        if (isSelectionMode) {
-            Checkbox(
-                checked = isSelected,
-                onCheckedChange = { onToggleSelect() },
-                colors = CheckboxDefaults.colors(checkedColor = primaryColor)
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-        }
-
-        ArtworkThumbnail(
-            artworkUri = artworkUri,
-            size = ListDensity.artworkSong,
-            contentDescription = song.title
-        )
-
-        Spacer(modifier = Modifier.width(12.dp))
-
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = emphasis.title,
-                style = ListDensity.titleStyle,
-                fontWeight = titleWeight,
-                color = titleColor,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            if (emphasis.subtitle.isNotEmpty()) {
-                Text(
-                    text = emphasis.subtitle,
-                    style = ListDensity.subtitleStyle,
-                    color = onSurfaceColor.copy(alpha = 0.7f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-        }
-
-        if (!emphasis.trailing.isNullOrEmpty()) {
-            Text(
-                text = emphasis.trailing,
-                style = MaterialTheme.typography.labelMedium,
-                color = if (emphasis.trailingIsSortKey) primaryColor else onSurfaceColor.copy(alpha = 0.5f),
-                textAlign = TextAlign.End,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier
-                    .widthIn(min = 56.dp)
-                    .padding(horizontal = 8.dp)
-            )
-        }
-
-        if (!isSelectionMode) {
-            IconButton(
-                onClick = onOptions,
-                modifier = Modifier.size(36.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.MoreVert,
-                    contentDescription = "Opciones",
-                    tint = onSurfaceColor.copy(alpha = 0.7f),
-                    modifier = Modifier.size(20.dp)
-                )
-            }
-        }
-    }
-}

@@ -298,20 +298,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     private val matchListenBrainzTracksUseCase = MatchListenBrainzTracksUseCase()
     private val importListenBrainzPlaylistUseCase = ImportListenBrainzPlaylistUseCase(repository)
-    private val fetchAndMatchCfRecommendationsUseCase = FetchAndMatchCfRecommendationsUseCase(
-        fetchCf = { username, token, count, offset, artistType ->
-            ListenBrainzClient.fetchCfRecordingRecommendations(
-                username = username,
-                token = token,
-                count = count,
-                offset = offset,
-                artistType = artistType
-            )
-        },
-        fetchRecordingMetadata = { mbids, token ->
-            ListenBrainzClient.fetchRecordingMetadata(mbids, token)
-        }
-    )
+    private val fetchAndMatchCfRecommendationsUseCase = FetchAndMatchCfRecommendationsUseCase()
 
     private val _lbDiscover =
         MutableStateFlow(LoadableUiState<List<LbPlaylistSummary>>(emptyList()))
@@ -476,7 +463,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         getLibrarySongsUseCase.songsForAlbum(songs, albumName)
 
     fun songsForArtist(songs: List<Song>, artistName: String): List<Song> =
-        songs.filter { it.artist.equals(artistName, ignoreCase = true) }
+        getLibrarySongsUseCase.songsForArtist(songs, artistName)
 
     fun songsForGenre(songs: List<Song>, genreName: String): List<Song> =
         getLibrarySongsUseCase.songsMatchingGenre(songs, genreName)
@@ -651,6 +638,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     /** Set when MainActivity should switch to Descargas (notification / dialog deep-link). */
     private val _pendingOpenDownloads = MutableStateFlow(false)
     private val _pendingOpenIdentifyReview = MutableStateFlow(false)
+    private val _pendingOpenNowPlaying = MutableStateFlow(false)
     private val _localLibraryJobProgress = MutableStateFlow<LibraryJobProgress?>(null)
     val libraryJobProgress: StateFlow<LibraryJobProgress?> =
         combine(_localLibraryJobProgress, processIdentifyRuntime.progress) { local, identify ->
@@ -663,6 +651,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private val identifiedWifiSongIds = mutableSetOf<Long>()
     val pendingOpenDownloads = _pendingOpenDownloads.asStateFlow()
     val pendingOpenIdentifyReview = _pendingOpenIdentifyReview.asStateFlow()
+    val pendingOpenNowPlaying = _pendingOpenNowPlaying.asStateFlow()
 
     fun requestOpenDownloads() {
         _pendingOpenDownloads.value = true
@@ -671,6 +660,10 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     fun requestOpenIdentifyReview() {
         setSelectedNavIndex(NAV_LIBRARY)
         _pendingOpenIdentifyReview.value = true
+    }
+
+    fun requestOpenNowPlaying() {
+        _pendingOpenNowPlaying.value = true
     }
 
     fun onUiAttached() {
@@ -737,6 +730,10 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     fun consumeOpenIdentifyReview() {
         _pendingOpenIdentifyReview.value = false
+    }
+
+    fun consumeOpenNowPlaying() {
+        _pendingOpenNowPlaying.value = false
     }
 
     private fun getDeviceVolumeRatio(): Float {
@@ -1057,6 +1054,10 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
         viewModelScope.launch(Dispatchers.IO) {
             awaitFirstCatalogLoaded()
+            val pruned = repository.pruneUnplayableCorruptSongs()
+            if (pruned.isNotEmpty()) {
+                identifyReviewStore.removeSongIds(pruned.map { it.id }.toSet())
+            }
             if (!libraryPreferences.isCanonicalAudioUrisMigrated()) {
                 repository.migrateCanonicalAudioUris()
                 libraryPreferences.setCanonicalAudioUrisMigrated()
@@ -1255,7 +1256,8 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         applyManualModes: Boolean = true,
         startShuffled: Boolean = false,
         origin: DiscoverPlaybackOrigin = DiscoverPlaybackOrigin.None,
-        resumeAtMs: Long? = null
+        resumeAtMs: Long? = null,
+        openNowPlaying: Boolean = true
     ) {
         playbackRuntime.playPlayableCollection(
             items = items,
@@ -1267,7 +1269,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             origin = origin,
             resumeAtMs = resumeAtMs
         )
-        if (items.isNotEmpty() && !fromRadio && playbackSettings.value.openNowPlayingOnPlay) {
+        if (openNowPlaying && items.isNotEmpty() && !fromRadio && playbackSettings.value.openNowPlayingOnPlay) {
             _openNowPlayingEvents.tryEmit(Unit)
         }
     }
@@ -1289,7 +1291,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             identity = track.identity,
             youtubeQueryOrId = queryOrId
         )
-        playPlayableCollection(listOf(remote), 0)
+        playPlayableCollection(listOf(remote), 0, openNowPlaying = false)
     }
 
     /** Returns matched local (non-remote) Song from library index in O(1) time. */
@@ -1323,12 +1325,28 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         playCatalogOrLocalTrack(candidate.effectiveTrack)
     }
 
-    /** Downloads a single catalog candidate using YouTube extraction and tracking. */
+    /** Level 2: Downloads a single catalog candidate preserving all candidate matches and identity. */
     fun downloadCatalogCandidate(
         candidate: CatalogTrackCandidate,
-        source: ActiveDownloadSource = ActiveDownloadSource.CATALOG
+        source: ActiveDownloadSource = ActiveDownloadSource.CATALOG,
+        targetPlaylistId: Long? = null
     ) {
-        downloadOnlineTrack(candidate.effectiveTrack, source = source)
+        val targetTrack = candidate.currentTrack ?: candidate.effectiveTrack
+        val resolvedPlaylistId = targetPlaylistId ?: (_catalogCollection.value.takeIf { it.kind == CatalogCollectionKind.PLAYLIST }?.let {
+            catalogBatchPlaylistTarget?.playlistId
+        })
+        val explicitId = if (source == ActiveDownloadSource.BATCH) {
+            TrackMatchKeys.batchDownloadIdFor(candidate.artist, candidate.title)
+        } else null
+        downloadOnlineTrack(
+            track = targetTrack,
+            source = source,
+            targetPlaylistId = resolvedPlaylistId,
+            existingCandidates = candidate.candidates,
+            currentCandidateIndex = candidate.currentCandidateIndex,
+            lookupIdentity = candidate.identity,
+            explicitId = explicitId
+        )
     }
 
     /** Returns status of track in library (DOWNLOADED, SAVED_REMOTE, or NOT_IN_LIBRARY) in O(1). */
@@ -1350,12 +1368,22 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     /** Preview local file while reviewing identify candidates (toggle if already current). */
     fun previewIdentifyLocalSong(song: Song) {
+        _catalogPreviewKey.value = null
         val current = currentItem.value
         if (current is PlayableItem.Local && current.song.id == song.id) {
             togglePlayPause()
             return
         }
-        playSong(song)
+        val local = PlayableItem.Local(
+            song = song,
+            resolvedArtworkUri = libraryProjection.resolveAlbumArtwork(song)
+        )
+        playPlayableCollection(
+            items = listOf(local),
+            startIndex = 0,
+            rotate = false,
+            openNowPlaying = false
+        )
     }
 
     /** Stream-preview a ranked identify candidate via YouTube (same path as catalog). */
@@ -1394,6 +1422,92 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     fun playCollection(songs: List<Song>, startSong: Song) {
         playSong(startSong, songs)
+    }
+
+    enum class GroupPlaybackAction { PLAY, PLAY_SHUFFLED, PLAY_NEXT, ENQUEUE }
+
+    /**
+     * Level 1: Core pipeline for executing playback actions on any collection of songs.
+     */
+    fun executeGroupPlayback(songs: List<Song>, action: GroupPlaybackAction) {
+        if (songs.isEmpty()) return
+        when (action) {
+            GroupPlaybackAction.PLAY -> playCollection(songs, startShuffled = false)
+            GroupPlaybackAction.PLAY_SHUFFLED -> shuffleCollection(songs)
+            GroupPlaybackAction.PLAY_NEXT -> playNextBatch(songs)
+            GroupPlaybackAction.ENQUEUE -> enqueueCollection(songs)
+        }
+    }
+
+    // Unified Group / Aggregate Actions ("Everything is a Collection")
+    fun playAlbum(albumName: String, startShuffled: Boolean = false) {
+        executeGroupPlayback(
+            songsForAlbum(libraryProjection.songs.value, albumName),
+            if (startShuffled) GroupPlaybackAction.PLAY_SHUFFLED else GroupPlaybackAction.PLAY
+        )
+    }
+
+    fun playAlbum(album: Album, startShuffled: Boolean = false) = playAlbum(album.name, startShuffled)
+
+    fun playAlbumNext(albumName: String) {
+        executeGroupPlayback(songsForAlbum(libraryProjection.songs.value, albumName), GroupPlaybackAction.PLAY_NEXT)
+    }
+
+    fun playAlbumNext(album: Album) = playAlbumNext(album.name)
+
+    fun enqueueAlbum(albumName: String) {
+        executeGroupPlayback(songsForAlbum(libraryProjection.songs.value, albumName), GroupPlaybackAction.ENQUEUE)
+    }
+
+    fun enqueueAlbum(album: Album) = enqueueAlbum(album.name)
+
+    fun playArtist(artistName: String, startShuffled: Boolean = false) {
+        executeGroupPlayback(
+            songsForArtist(libraryProjection.songs.value, artistName),
+            if (startShuffled) GroupPlaybackAction.PLAY_SHUFFLED else GroupPlaybackAction.PLAY
+        )
+    }
+
+    fun playArtistNext(artistName: String) {
+        executeGroupPlayback(songsForArtist(libraryProjection.songs.value, artistName), GroupPlaybackAction.PLAY_NEXT)
+    }
+
+    fun enqueueArtist(artistName: String) {
+        executeGroupPlayback(songsForArtist(libraryProjection.songs.value, artistName), GroupPlaybackAction.ENQUEUE)
+    }
+
+    fun playGenre(genreName: String, startShuffled: Boolean = false) {
+        executeGroupPlayback(
+            songsForGenre(libraryProjection.songs.value, genreName),
+            if (startShuffled) GroupPlaybackAction.PLAY_SHUFFLED else GroupPlaybackAction.PLAY
+        )
+    }
+
+    fun playGenreNext(genreName: String) {
+        executeGroupPlayback(songsForGenre(libraryProjection.songs.value, genreName), GroupPlaybackAction.PLAY_NEXT)
+    }
+
+    fun enqueueGenre(genreName: String) {
+        executeGroupPlayback(songsForGenre(libraryProjection.songs.value, genreName), GroupPlaybackAction.ENQUEUE)
+    }
+
+    fun identifyAlbum(album: Album) {
+        val albumSongs = songsForAlbum(libraryProjection.songs.value, album.name)
+        if (albumSongs.isNotEmpty()) {
+            openIdentifySetup(albumSongs, contextTitle = "Álbum: ${album.displayName}")
+        }
+    }
+
+    fun identifyAlbum(albumName: String) {
+        val album = libraryProjection.albums.value.firstOrNull { albumNamesMatch(it.name, albumName) }
+        if (album != null) {
+            identifyAlbum(album)
+        } else {
+            val albumSongs = songsForAlbum(libraryProjection.songs.value, albumName)
+            if (albumSongs.isNotEmpty()) {
+                openIdentifySetup(albumSongs, contextTitle = "Álbum: $albumName")
+            }
+        }
     }
 
     fun resolveAlbumArtwork(song: Song): String? = libraryProjection.resolveAlbumArtwork(song)
@@ -1450,7 +1564,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         viewModelScope.launch {
             repository.mergeAlbumInto(pending.source.name, pending.target.name)
             _pendingAlbumMerge.value = null
-            toast("Álbumes unidos")
+            toast(DownloadMessages.albumsMerged)
         }
     }
 
@@ -1470,7 +1584,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     fun mergeAlbumInto(sourceAlbumKey: String, targetAlbumKey: String) {
         viewModelScope.launch {
             repository.mergeAlbumInto(sourceAlbumKey, targetAlbumKey)
-            toast("Álbumes unidos")
+            toast(DownloadMessages.albumsMerged)
         }
     }
 
@@ -1625,7 +1739,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         if (state.loading) return
         val selected = state.selectedItems
         if (selected.isEmpty()) {
-            toast("Seleccioná al menos una canción")
+            toast(DownloadMessages.selectAtLeastOneSong)
             return
         }
         val playlistName = (name ?: state.playlistName).ifBlank {
@@ -1637,7 +1751,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 items = selected
             )
             if (playlistId == null) {
-                toast("No se pudo crear la playlist")
+                toast(PlaylistMessages.createFailed)
                 return@launch
             }
             val localCount = selected.count { it is PlayableItem.Local }
@@ -1657,7 +1771,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         if (state.loading) return
         val selected = state.selectedItems
         if (selected.isEmpty()) {
-            toast("Seleccioná al menos una canción")
+            toast(DownloadMessages.selectAtLeastOneSong)
             return
         }
         action(selected)
@@ -1808,6 +1922,9 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     fun removeFromQueue(index: Int) {
         playbackRuntime.removeFromQueue(index)
     }
+
+    fun removeFromQueue(queueEntryId: String): Boolean =
+        playbackRuntime.removeFromQueue(queueEntryId)
 
     fun clearQueue() {
         playbackRuntime.clearQueue()
@@ -2118,7 +2235,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     private fun fallbackDiscoverRestore(announce: Boolean) {
         closePlaylistDetail()
-        if (announce) toast("No se pudo abrir la playlist")
+        if (announce) toast(PlaylistMessages.openFailed)
     }
 
     private fun parseSortOption(name: String): SortOption =
@@ -2403,30 +2520,30 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
-    fun playPlaylist(playlistId: Long, startShuffled: Boolean = false) {
+    private inline fun runWithPlaylistSongs(playlistId: Long, crossinline action: (List<Song>) -> Unit) {
         viewModelScope.launch {
             val songs = repository.getPlaylistSongsOrdered(playlistId)
             if (songs.isNotEmpty()) {
-                playCollection(songs, startShuffled = startShuffled)
+                action(songs)
             }
+        }
+    }
+
+    fun playPlaylist(playlistId: Long, startShuffled: Boolean = false) {
+        runWithPlaylistSongs(playlistId) { songs ->
+            executeGroupPlayback(songs, if (startShuffled) GroupPlaybackAction.PLAY_SHUFFLED else GroupPlaybackAction.PLAY)
         }
     }
 
     fun playPlaylistNext(playlistId: Long) {
-        viewModelScope.launch {
-            val songs = repository.getPlaylistSongsOrdered(playlistId)
-            if (songs.isNotEmpty()) {
-                playNextBatch(songs)
-            }
+        runWithPlaylistSongs(playlistId) { songs ->
+            executeGroupPlayback(songs, GroupPlaybackAction.PLAY_NEXT)
         }
     }
 
     fun enqueuePlaylist(playlistId: Long) {
-        viewModelScope.launch {
-            val songs = repository.getPlaylistSongsOrdered(playlistId)
-            if (songs.isNotEmpty()) {
-                enqueueCollection(songs)
-            }
+        runWithPlaylistSongs(playlistId) { songs ->
+            executeGroupPlayback(songs, GroupPlaybackAction.ENQUEUE)
         }
     }
 
@@ -2728,7 +2845,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         viewModelScope.launch {
             val pending = repository.getPlaylistPendingTracksFlow(playlistId).first()
             if (pending.isEmpty()) {
-                toast("No hay canciones pendientes")
+                toast(DownloadMessages.noPendingTracks)
                 return@launch
             }
             enqueuePendingDownloads(
@@ -2764,16 +2881,11 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     private fun toastPlaylistSaved(matchedCount: Int, pending: Int = 0) {
-        val message = if (pending > 0) {
-            "Playlist guardada ($matchedCount en lib · $pending pendientes)"
-        } else {
-            "Playlist guardada ($matchedCount canciones)"
-        }
-        toast(message)
+        toast(DownloadMessages.playlistSaved(matchedCount, pending))
     }
 
     private fun toastRadioNeedsSeed() {
-        toast("Necesitás una canción con artista y título para Radio")
+        toast(DownloadMessages.radioNeedsSeed)
     }
 
     private data class TrackedBatchItem(
@@ -3009,32 +3121,58 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
-    fun saveAlbumToLibrary(album: CatalogAlbum, candidates: List<CatalogTrackCandidate> = emptyList()) {
+    /**
+     * Level 1: Save album tracks to library using primitive values and optional candidates.
+     */
+    fun saveAlbumToLibrary(
+        albumTitle: String,
+        artistName: String,
+        coverUrl: String? = null,
+        year: Int = 0,
+        genre: String = Song.UNKNOWN_GENRE,
+        candidates: List<CatalogTrackCandidate> = emptyList(),
+        albumId: String = ""
+    ) {
         viewModelScope.launch {
             try {
                 val effectiveCandidates = if (candidates.isNotEmpty()) {
                     candidates
                 } else {
                     MetadataFetcher.fetchAlbumTrackCandidates(
-                        albumId = album.id,
-                        albumTitle = album.title,
-                        artistName = album.artist,
-                        albumCoverUrl = album.coverUrl
+                        albumId = albumId,
+                        albumTitle = albumTitle,
+                        artistName = artistName,
+                        albumCoverUrl = coverUrl
                     )
                 }
                 repository.saveAlbumTracksToLibrary(
-                    albumTitle = album.title,
-                    artistName = album.artist,
-                    coverUrl = album.coverUrl,
-                    year = album.releaseYear.toIntOrNull() ?: 0,
-                    genre = Song.UNKNOWN_GENRE,
+                    albumTitle = albumTitle,
+                    artistName = artistName,
+                    coverUrl = coverUrl,
+                    year = year,
+                    genre = genre,
                     tracks = effectiveCandidates
                 )
-                toast("Álbum guardado en la biblioteca")
+                toast(DownloadMessages.albumSaved)
             } catch (e: Exception) {
                 toast("Error al guardar álbum: ${e.message}")
             }
         }
+    }
+
+    /**
+     * Level 2: Save album tracks to library from a [CatalogAlbum].
+     */
+    fun saveAlbumToLibrary(album: CatalogAlbum, candidates: List<CatalogTrackCandidate> = emptyList()) {
+        saveAlbumToLibrary(
+            albumTitle = album.title,
+            artistName = album.artist,
+            coverUrl = album.coverUrl,
+            year = album.releaseYear.toIntOrNull() ?: 0,
+            genre = Song.UNKNOWN_GENRE,
+            candidates = candidates,
+            albumId = album.id
+        )
     }
 
     fun removeSavedAlbum(albumName: String, artistName: String) {
@@ -3311,38 +3449,51 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         }
 
     /**
-     * Manual download of a streamed remote (Para Ti / Recomendados / Now Playing) into the library.
-     * Enqueues via [runTrackedDownload] ([ActiveDownloadSource.DISCOVER]); progress in Descargas.
+     * Level 2: Shared pre-flight validation, status checks, and feedback toast for downloading any online track.
      */
-    fun downloadRemoteItem(remote: PlayableItem.Remote) {
-        val key = TrackMatchKeys.downloadIdFor(remote.artist, remote.title)
+    private fun preflightOnlineTrackDownload(
+        meta: TrackMeta,
+        source: ActiveDownloadSource,
+        enqueue: suspend () -> Unit
+    ): Boolean {
+        val key = TrackMatchKeys.downloadIdFor(meta.artist, meta.title)
         if (key.isEmpty()) {
             toast(DownloadMessages.missingArtistOrTitle)
-            return
+            return false
         }
         val existing = processDownloadRuntime.findClaimedDownload(
             key,
-            remote.artist,
-            remote.title
+            meta.artist,
+            meta.title
         )
-        if (processDownloadRuntime.isRunning(key, remote.artist, remote.title)) {
+        if (processDownloadRuntime.isRunning(key, meta.artist, meta.title)) {
             toastDownloadsQueued(alreadyQueued = true)
-            return
+            return false
         }
         when (existing?.state) {
             CandidateDownloadState.SUCCESS -> {
-                toastSongInLibrary(remote.title, LibraryToastKind.ALREADY)
+                toastSongInLibrary(meta.title, LibraryToastKind.ALREADY)
                 viewModelScope.launch {
                     rematchDiscoverAfterLibraryChange()
                 }
-                return
+                return false
             }
-
             else -> Unit
         }
 
         viewModelScope.launch {
             toastDownloadsQueued()
+            enqueue()
+        }
+        return true
+    }
+
+    /**
+     * Manual download of a streamed remote (Para Ti / Recomendados / Now Playing) into the library.
+     * Enqueues via [runTrackedDownload] ([ActiveDownloadSource.DISCOVER]); progress in Descargas.
+     */
+    fun downloadRemoteItem(remote: PlayableItem.Remote) {
+        preflightOnlineTrackDownload(remote, ActiveDownloadSource.DISCOVER) {
             enqueueRemoteDownload(remote, ActiveDownloadSource.DISCOVER)
         }
     }
@@ -3412,23 +3563,12 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         val list = collection.candidates
         if (index !in list.indices) return
         val candidate = list[index]
-        val track = candidate.currentTrack ?: return
-        val downloadId = activeDownloadIdFor(
-            track,
-            ActiveDownloadSource.BATCH,
-            explicitId = TrackMatchKeys.batchDownloadIdFor(candidate.artist, candidate.title)
-        )
-
         viewModelScope.launch {
             val targetPlaylistId = ensureCatalogPlaylistForBatch(collection)
-            runTrackedDownload(
-                downloadId = downloadId,
+            downloadCatalogCandidate(
+                candidate = candidate,
                 source = ActiveDownloadSource.BATCH,
-                track = track,
-                existingCandidates = candidate.candidates,
-                currentCandidateIndex = candidate.currentCandidateIndex,
-                targetPlaylistId = targetPlaylistId,
-                lookupIdentity = candidate.identity
+                targetPlaylistId = targetPlaylistId
             )
         }
     }
@@ -3492,30 +3632,33 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         val trimmed = url.trim()
         if (trimmed.isBlank()) return
         downloadOnlineTrack(
-            OnlineCatalogTrack(
-                id = trimmed,
-                title = "",
-                artist = "",
-                album = "",
-                artworkUri = null,
-                durationMs = 0L,
-                audioUrl = trimmed,
-                provider = "YouTube"
-            ),
+            OnlineCatalogTrack.fromUrl(trimmed),
             source = ActiveDownloadSource.LINK
         )
     }
 
+    /**
+     * Level 1: Low-level primitive download for an online track with custom candidates and targets.
+     */
     fun downloadOnlineTrack(
         track: OnlineCatalogTrack,
-        source: ActiveDownloadSource = ActiveDownloadSource.CATALOG
+        source: ActiveDownloadSource = ActiveDownloadSource.CATALOG,
+        targetPlaylistId: Long? = null,
+        existingCandidates: List<OnlineCatalogTrack>? = null,
+        currentCandidateIndex: Int = 0,
+        lookupIdentity: TrackIdentity? = null,
+        explicitId: String? = null
     ) {
-        val downloadId = activeDownloadIdFor(track, source)
-        viewModelScope.launch {
+        preflightOnlineTrackDownload(lookupIdentity ?: track.identity, source) {
+            val downloadId = activeDownloadIdFor(track, source, explicitId)
             runTrackedDownload(
                 downloadId = downloadId,
                 source = source,
-                track = track
+                track = track,
+                existingCandidates = existingCandidates,
+                currentCandidateIndex = currentCandidateIndex,
+                targetPlaylistId = targetPlaylistId,
+                lookupIdentity = lookupIdentity
             )
         }
     }

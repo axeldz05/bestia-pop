@@ -1,24 +1,91 @@
 package com.bestiapop.android.ui.screens.library
 
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import com.bestiapop.android.data.model.Album
 import com.bestiapop.android.data.preferences.FastScrollSettings
 import com.bestiapop.android.ui.SortOption
 import com.bestiapop.android.ui.components.AlbumHeader
-import com.bestiapop.android.ui.components.EmptyListHint
-import com.bestiapop.android.ui.components.FastScrollContainer
+import com.bestiapop.android.ui.components.AlbumHeaderActions
+import com.bestiapop.android.ui.components.FastScrollLazyColumn
 import com.bestiapop.android.ui.components.FastScrollSections
 import com.bestiapop.android.ui.components.formatSortRelevantInfo
 
+/** Action bundle for album browse items. */
+@Immutable
+data class AlbumBrowseActions(
+    val onAlbumClick: (Album) -> Unit,
+    val onPlayAlbum: (Album) -> Unit,
+    val onShuffleAlbum: (Album) -> Unit,
+    val onEditAlbum: (Album) -> Unit,
+    val onChangeAlbumCover: (Album) -> Unit,
+    val onIdentifyAlbum: (Album) -> Unit = {}
+)
+
 /**
  * Browse projection for albums: dense [AlbumHeader] rows (no big grid cards).
+ * Level 2: High-level LibraryAlbumBrowseList accepting bundled [AlbumBrowseActions].
+ */
+@Composable
+fun LibraryAlbumBrowseList(
+    albums: List<Album>,
+    actions: AlbumBrowseActions,
+    sortOption: SortOption = SortOption.TITLE,
+    fastScrollSettings: FastScrollSettings = FastScrollSettings(),
+    listState: LazyListState = rememberLazyListState(),
+    modifier: Modifier = Modifier
+) {
+    val sections = remember(albums, sortOption) {
+        FastScrollSections.fromAlbums(albums, sortOption)
+    }
+
+    FastScrollLazyColumn(
+        items = albums,
+        key = { it.groupingKey.ifBlank { it.name } },
+        sections = sections,
+        emptyText = "Ningún álbum coincide",
+        fastScrollSettings = fastScrollSettings,
+        listState = listState,
+        modifier = modifier
+    ) { album ->
+        val sortHint = remember(album.genre, album.dateAdded, sortOption) {
+            formatSortRelevantInfo(
+                sortOption = sortOption,
+                genre = album.genre,
+                dateAdded = album.dateAdded,
+                alreadyShowsArtist = true,
+                alreadyShowsAlbum = true,
+                alreadyShowsTitle = true
+            )
+        }
+        val headerActions = remember(album, actions) {
+            AlbumHeaderActions(
+                onPlay = { actions.onPlayAlbum(album) },
+                onShuffle = { actions.onShuffleAlbum(album) },
+                onOpen = { actions.onAlbumClick(album) },
+                onEdit = { actions.onEditAlbum(album) },
+                onChangeCover = { actions.onChangeAlbumCover(album) },
+                onIdentify = { actions.onIdentifyAlbum(album) }
+            )
+        }
+        AlbumHeader(
+            title = album.displayName,
+            artistName = album.artist,
+            artworkUri = album.artworkUri,
+            songCount = album.songCount,
+            sortHint = sortHint,
+            showCollapseToggle = false,
+            actions = headerActions
+        )
+    }
+}
+
+/**
+ * Level 1: Low-level LibraryAlbumBrowseList with individual primitive callbacks.
  */
 @Composable
 fun LibraryAlbumBrowseList(
@@ -34,51 +101,22 @@ fun LibraryAlbumBrowseList(
     listState: LazyListState = rememberLazyListState(),
     modifier: Modifier = Modifier
 ) {
-    if (albums.isEmpty()) {
-        EmptyListHint(
-            text = "Ningún álbum coincide",
-            modifier = modifier.fillMaxSize()
+    val actions = remember(onAlbumClick, onPlayAlbum, onShuffleAlbum, onEditAlbum, onChangeAlbumCover, onIdentifyAlbum) {
+        AlbumBrowseActions(
+            onAlbumClick = onAlbumClick,
+            onPlayAlbum = onPlayAlbum,
+            onShuffleAlbum = onShuffleAlbum,
+            onEditAlbum = onEditAlbum,
+            onChangeAlbumCover = onChangeAlbumCover,
+            onIdentifyAlbum = onIdentifyAlbum
         )
-        return
     }
-
-    val sections = remember(albums, sortOption) {
-        FastScrollSections.fromAlbums(albums, sortOption)
-    }
-
-    FastScrollContainer(
-        sections = sections,
+    LibraryAlbumBrowseList(
+        albums = albums,
+        actions = actions,
+        sortOption = sortOption,
+        fastScrollSettings = fastScrollSettings,
         listState = listState,
-        settings = fastScrollSettings,
-        modifier = modifier.fillMaxSize()
-    ) { listModifier ->
-        LazyColumn(state = listState, modifier = listModifier) {
-            items(albums, key = { it.groupingKey.ifBlank { it.name } }) { album ->
-                val sortHint = remember(album.genre, album.dateAdded, sortOption) {
-                    formatSortRelevantInfo(
-                        sortOption = sortOption,
-                        genre = album.genre,
-                        dateAdded = album.dateAdded,
-                        alreadyShowsArtist = true,
-                        alreadyShowsAlbum = true,
-                        alreadyShowsTitle = true
-                    )
-                }
-                AlbumHeader(
-                    title = album.displayName,
-                    artistName = album.artist,
-                    artworkUri = album.artworkUri,
-                    songCount = album.songCount,
-                    sortHint = sortHint,
-                    showCollapseToggle = false,
-                    onPlayAlbum = { onPlayAlbum(album) },
-                    onShuffleAlbum = { onShuffleAlbum(album) },
-                    onEditAlbum = { onEditAlbum(album) },
-                    onChangeAlbumCover = { onChangeAlbumCover(album) },
-                    onIdentifyAlbum = { onIdentifyAlbum(album) },
-                    onOpenAlbum = { onAlbumClick(album) }
-                )
-            }
-        }
-    }
+        modifier = modifier
+    )
 }

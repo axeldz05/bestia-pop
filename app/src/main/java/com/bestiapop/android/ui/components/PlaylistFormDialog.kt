@@ -42,10 +42,11 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import com.bestiapop.android.data.model.PlaylistMessages
 
 @Composable
 fun PlaylistFormDialog(
-    title: String,
+    title: String = PlaylistMessages.newPlaylist,
     initialName: String = "",
     initialDescription: String = "",
     initialCoverUri: String? = null,

@@ -15,11 +15,37 @@ import kotlinx.coroutines.sync.withLock
  * Keeps a short-lived in-memory cache; CDN URLs must not be written to Room.
  */
 class StreamResolver internal constructor(
-    private val extract: suspend (String) -> YouTubeExtractResult = { YouTubeExtractor.extractAudioStreamDetailed(it) },
+    private val extractDetailed: suspend (
+        queryOrId: String,
+        expectedDurationMs: Long,
+        expectedTitle: String?,
+        expectedArtist: String?,
+        fallbackQuery: String?
+    ) -> YouTubeExtractResult = { q, dur, title, artist, fb ->
+        YouTubeExtractor.extractAudioStreamDetailed(
+            urlOrQuery = q,
+            expectedDurationMs = dur,
+            expectedTitle = title,
+            expectedArtist = artist,
+            fallbackQuery = fb
+        )
+    },
     private val clockMs: () -> Long = { System.currentTimeMillis() },
     private val ttlMs: Long = DEFAULT_TTL_MS,
     private val onKeyLockReserved: suspend (String, Any) -> Unit = { _, _ -> }
 ) {
+    constructor(
+        extract: suspend (String) -> YouTubeExtractResult,
+        clockMs: () -> Long = { System.currentTimeMillis() },
+        ttlMs: Long = DEFAULT_TTL_MS,
+        onKeyLockReserved: suspend (String, Any) -> Unit = { _, _ -> }
+    ) : this(
+        extractDetailed = { q, _, _, _, _ -> extract(q) },
+        clockMs = clockMs,
+        ttlMs = ttlMs,
+        onKeyLockReserved = onKeyLockReserved
+    )
+
     private data class CachedExtraction(
         val stream: YouTubeStreamResult,
         val resolved: ResolvedStream
@@ -40,7 +66,14 @@ class StreamResolver internal constructor(
      * On a fresh cache hit, metadata fields may be empty (URL + UA + videoId are filled).
      * [forceRefresh] skips cache reads (download must re-extract; CDN URLs expire).
      */
-    suspend fun resolveQuery(queryOrId: String, forceRefresh: Boolean = false): Result<YouTubeStreamResult> {
+    suspend fun resolveQuery(
+        queryOrId: String,
+        forceRefresh: Boolean = false,
+        expectedDurationMs: Long = 0L,
+        expectedTitle: String? = null,
+        expectedArtist: String? = null,
+        fallbackQuery: String? = null
+    ): Result<YouTubeStreamResult> {
         val query = queryOrId.trim()
         if (query.isBlank()) {
             return Result.failure(IllegalArgumentException("Missing YouTube query"))
@@ -55,7 +88,14 @@ class StreamResolver internal constructor(
                     return@withKeyLock Result.success(it)
                 }
             }
-            extractAndCache(query, qKey).map { it.stream }
+            extractAndCache(
+                query = query,
+                qKey = qKey,
+                expectedDurationMs = expectedDurationMs,
+                expectedTitle = expectedTitle,
+                expectedArtist = expectedArtist,
+                fallbackQuery = fallbackQuery
+            ).map { it.stream }
         }
     }
 
@@ -123,7 +163,14 @@ class StreamResolver internal constructor(
             cachedResolvedForPlayback(item, qKey, query, maxCachedAgeMs)?.let {
                 return@withKeyLock Result.success(it)
             }
-            extractAndCache(query, qKey).map { it.resolved }
+            extractAndCache(
+                query = query,
+                qKey = qKey,
+                expectedDurationMs = item.durationMs,
+                expectedTitle = item.identity.title,
+                expectedArtist = item.identity.artist,
+                fallbackQuery = item.youtubeSearchQuery()
+            ).map { it.resolved }
         }
     }
 
@@ -195,8 +242,20 @@ class StreamResolver internal constructor(
 
     private suspend fun extractAndCache(
         query: String,
-        qKey: String
-    ): Result<CachedExtraction> = when (val result = extract(query)) {
+        qKey: String,
+        expectedDurationMs: Long = 0L,
+        expectedTitle: String? = null,
+        expectedArtist: String? = null,
+        fallbackQuery: String? = null
+    ): Result<CachedExtraction> = when (
+        val result = extractDetailed(
+            query,
+            expectedDurationMs,
+            expectedTitle,
+            expectedArtist,
+            fallbackQuery
+        )
+    ) {
         is YouTubeExtractResult.Success -> {
             val stream = result.result
             val resolved = stream.toResolvedStream()

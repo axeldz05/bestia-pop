@@ -174,4 +174,38 @@ class PlaybackQueueOrderTest {
         assertEquals(0, PlaybackQueueOrder.toDisplayIndex(order, timelineIndex = 2, size = 4))
         assertFalse(PlaybackQueueOrder.isValidPlayOrder(listOf(0, 0, 1), 3))
     }
+
+    @Test
+    fun reshuffleItemsAvoidingFirst_avoidsFirstElementWhenMultipleItemsExist() {
+        val items = listOf("A", "B", "C", "D")
+        for (seed in 0..20) {
+            val rng = Random(seed)
+            val reshuffled = PlaybackQueueOrder.reshuffleItemsAvoidingFirst(items, avoidItem = "A", random = rng)
+            assertEquals(items.toSet(), reshuffled.toSet())
+            assertEquals(4, reshuffled.size)
+            assertTrue("Should not start with A", reshuffled.first() != "A")
+        }
+    }
+
+    @Test
+    fun reshuffleItemsAvoidingFirst_handlesCornerCases() {
+        assertEquals(emptyList<String>(), PlaybackQueueOrder.reshuffleItemsAvoidingFirst(emptyList(), "A"))
+        assertEquals(listOf("A"), PlaybackQueueOrder.reshuffleItemsAvoidingFirst(listOf("A"), "A"))
+        assertEquals(listOf("A", "A"), PlaybackQueueOrder.reshuffleItemsAvoidingFirst(listOf("A", "A"), "A"))
+    }
+
+    @Test
+    fun reshuffleItemsAvoidingKey_avoidsSpecifiedKey() {
+        data class TestItem(val id: Int, val name: String)
+        val items = listOf(TestItem(1, "A"), TestItem(2, "B"), TestItem(3, "C"))
+        for (seed in 0..10) {
+            val reshuffled = PlaybackQueueOrder.reshuffleItemsAvoidingKey(
+                items = items,
+                avoidKey = 1,
+                keySelector = { it.id },
+                random = Random(seed)
+            )
+            assertTrue("Should not start with item id 1", reshuffled.first().id != 1)
+        }
+    }
 }

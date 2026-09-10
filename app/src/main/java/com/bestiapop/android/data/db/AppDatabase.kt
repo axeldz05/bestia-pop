@@ -18,9 +18,15 @@ import com.bestiapop.android.data.model.SongPlayStat
         PlaylistPendingTrackEntity::class,
         PendingListenEntity::class,
         AlbumOverride::class,
-        SongPlayStat::class
+        SongPlayStat::class,
+        ArtistEntity::class,
+        GenreEntity::class,
+        SongArtistCrossRef::class,
+        SongGenreCrossRef::class,
+        AlbumArtistCrossRef::class,
+        AlbumGenreCrossRef::class
     ],
-    version = 14,
+    version = 15,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -212,8 +218,99 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_14_15 = object : Migration(14, 15) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `artists` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `name` TEXT NOT NULL,
+                        `normalizedName` TEXT NOT NULL,
+                        `photoUri` TEXT
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_artists_normalizedName` ON `artists` (`normalizedName`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_artists_name` ON `artists` (`name`)")
+
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `genres` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `name` TEXT NOT NULL,
+                        `normalizedName` TEXT NOT NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_genres_normalizedName` ON `genres` (`normalizedName`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_genres_name` ON `genres` (`name`)")
+
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `song_artist_cross_ref` (
+                        `songId` INTEGER NOT NULL,
+                        `artistId` INTEGER NOT NULL,
+                        `isPrimary` INTEGER NOT NULL DEFAULT 1,
+                        `position` INTEGER NOT NULL DEFAULT 0,
+                        PRIMARY KEY(`songId`, `artistId`),
+                        FOREIGN KEY(`songId`) REFERENCES `songs`(`id`) ON DELETE CASCADE,
+                        FOREIGN KEY(`artistId`) REFERENCES `artists`(`id`) ON DELETE CASCADE
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_song_artist_cross_ref_songId` ON `song_artist_cross_ref` (`songId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_song_artist_cross_ref_artistId` ON `song_artist_cross_ref` (`artistId`)")
+
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `song_genre_cross_ref` (
+                        `songId` INTEGER NOT NULL,
+                        `genreId` INTEGER NOT NULL,
+                        PRIMARY KEY(`songId`, `genreId`),
+                        FOREIGN KEY(`songId`) REFERENCES `songs`(`id`) ON DELETE CASCADE,
+                        FOREIGN KEY(`genreId`) REFERENCES `genres`(`id`) ON DELETE CASCADE
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_song_genre_cross_ref_songId` ON `song_genre_cross_ref` (`songId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_song_genre_cross_ref_genreId` ON `song_genre_cross_ref` (`genreId`)")
+
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `album_artist_cross_ref` (
+                        `albumKey` TEXT NOT NULL,
+                        `artistId` INTEGER NOT NULL,
+                        PRIMARY KEY(`albumKey`, `artistId`),
+                        FOREIGN KEY(`artistId`) REFERENCES `artists`(`id`) ON DELETE CASCADE
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_album_artist_cross_ref_albumKey` ON `album_artist_cross_ref` (`albumKey`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_album_artist_cross_ref_artistId` ON `album_artist_cross_ref` (`artistId`)")
+
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `album_genre_cross_ref` (
+                        `albumKey` TEXT NOT NULL,
+                        `genreId` INTEGER NOT NULL,
+                        PRIMARY KEY(`albumKey`, `genreId`),
+                        FOREIGN KEY(`genreId`) REFERENCES `genres`(`id`) ON DELETE CASCADE
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_album_genre_cross_ref_albumKey` ON `album_genre_cross_ref` (`albumKey`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_album_genre_cross_ref_genreId` ON `album_genre_cross_ref` (`genreId`)")
+
+                // Initial seed from songs
+                db.execSQL("INSERT OR IGNORE INTO `artists` (`name`, `normalizedName`) SELECT DISTINCT `artist`, LOWER(TRIM(`artist`)) FROM `songs` WHERE `artist` IS NOT NULL AND TRIM(`artist`) != ''")
+                db.execSQL("INSERT OR IGNORE INTO `genres` (`name`, `normalizedName`) SELECT DISTINCT `genre`, LOWER(TRIM(`genre`)) FROM `songs` WHERE `genre` IS NOT NULL AND TRIM(`genre`) != '' AND TRIM(`genre`) != 'Unknown Genre'")
+                db.execSQL("INSERT OR IGNORE INTO `song_artist_cross_ref` (`songId`, `artistId`, `isPrimary`, `position`) SELECT s.id, a.id, 1, 0 FROM `songs` s JOIN `artists` a ON LOWER(TRIM(s.artist)) = a.normalizedName")
+                db.execSQL("INSERT OR IGNORE INTO `song_genre_cross_ref` (`songId`, `genreId`) SELECT s.id, g.id FROM `songs` s JOIN `genres` g ON LOWER(TRIM(s.genre)) = g.normalizedName")
+            }
+        }
+
         /** Kept in sync with the `@Database` version so a downgrade can be detected and reported. */
-        const val VERSION = 14
+        const val VERSION = 15
 
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
@@ -235,7 +332,8 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_10_11,
                     MIGRATION_11_12,
                     MIGRATION_12_13,
-                    MIGRATION_13_14
+                    MIGRATION_13_14,
+                    MIGRATION_14_15
                 )
                 // Sideloading an older APK is plausible here (GitHub Releases), and Room would refuse
                 // to open a newer schema, so the app has to stay usable. The wipe is not silent:

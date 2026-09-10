@@ -42,6 +42,7 @@ open class FakeMusicRepository : IMusicRepository {
     override suspend fun saveUploadedSong(song: Song): Long = 0L
     override suspend fun deleteSongsFromApp(songs: List<Song>) = Unit
     override suspend fun deleteSongsFromDevice(songs: List<Song>) = Unit
+    override suspend fun pruneUnplayableCorruptSongs(): List<Song> = emptyList()
     override suspend fun enhanceSongMetadataAndLyrics(song: Song) = Unit
     override suspend fun proposeSongIdentity(
         song: Song,

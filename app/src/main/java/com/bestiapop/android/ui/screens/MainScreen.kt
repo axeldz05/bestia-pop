@@ -94,6 +94,7 @@ fun MainScreen(
     val activeDownloads by viewModel.activeDownloads.collectAsStateWithLifecycle()
     val pendingOpenDownloads by viewModel.pendingOpenDownloads.collectAsStateWithLifecycle()
     val pendingOpenIdentifyReview by viewModel.pendingOpenIdentifyReview.collectAsStateWithLifecycle()
+    val pendingOpenNowPlaying by viewModel.pendingOpenNowPlaying.collectAsStateWithLifecycle()
     val downloadConflict by viewModel.downloadConflict.collectAsStateWithLifecycle()
     val identifyReview by viewModel.identifyReview.collectAsStateWithLifecycle()
     val identifySetup by viewModel.identifySetup.collectAsStateWithLifecycle()
@@ -192,6 +193,13 @@ fun MainScreen(
     LaunchedEffect(viewModel) {
         viewModel.openNowPlayingEvents.collect {
             openFullPlayer()
+        }
+    }
+
+    LaunchedEffect(pendingOpenNowPlaying) {
+        if (pendingOpenNowPlaying) {
+            openFullPlayer()
+            viewModel.consumeOpenNowPlaying()
         }
     }
 

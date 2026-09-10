@@ -38,13 +38,8 @@ fun MatchedTrackLazyColumn(
     onDownloadRemote: (PlayableItem.Remote) -> Unit,
     onRetryDownload: (String) -> Unit,
     onCancelDownload: (String) -> Unit,
-    queueActions: SongQueueActions,
-    modifier: Modifier = Modifier,
-    onAddToPlaylist: ((Song) -> Unit)? = null,
-    onEditMetadata: ((Song) -> Unit)? = null,
-    onEditLyrics: ((Song) -> Unit)? = null,
-    onIdentify: ((Song) -> Unit)? = null,
-    onDelete: ((Song) -> Unit)? = null
+    songActions: SongItemActions,
+    modifier: Modifier = Modifier
 ) {
     LazyColumn(modifier = modifier.fillMaxSize()) {
         itemsIndexed(
@@ -70,13 +65,48 @@ fun MatchedTrackLazyColumn(
                 onDownloadRemote = onDownloadRemote,
                 onRetryDownload = onRetryDownload,
                 onCancelDownload = onCancelDownload,
-                queueActions = queueActions,
-                onAddToPlaylist = onAddToPlaylist,
-                onEditMetadata = onEditMetadata,
-                onEditLyrics = onEditLyrics,
-                onIdentify = onIdentify,
-                onDelete = onDelete
+                songActions = songActions
             )
         }
     }
 }
+
+/**
+ * Level 1: Individual primitive callbacks overload delegating to bundled [SongItemActions].
+ */
+@Composable
+fun MatchedTrackLazyColumn(
+    matches: List<MatchedTrackListItem>,
+    remoteBadge: String,
+    currentItem: PlayableItem?,
+    activeDownloads: List<ActiveDownload>,
+    onPlayAt: (Int) -> Unit,
+    onDownloadRemote: (PlayableItem.Remote) -> Unit,
+    onRetryDownload: (String) -> Unit,
+    onCancelDownload: (String) -> Unit,
+    queueActions: SongQueueActions,
+    modifier: Modifier = Modifier,
+    onAddToPlaylist: ((Song) -> Unit)? = null,
+    onEditMetadata: ((Song) -> Unit)? = null,
+    onEditLyrics: ((Song) -> Unit)? = null,
+    onIdentify: ((Song) -> Unit)? = null,
+    onDelete: ((Song) -> Unit)? = null
+) = MatchedTrackLazyColumn(
+    matches = matches,
+    remoteBadge = remoteBadge,
+    currentItem = currentItem,
+    activeDownloads = activeDownloads,
+    onPlayAt = onPlayAt,
+    onDownloadRemote = onDownloadRemote,
+    onRetryDownload = onRetryDownload,
+    onCancelDownload = onCancelDownload,
+    songActions = SongItemActions.from(
+        queueActions = queueActions,
+        onAddToPlaylist = onAddToPlaylist,
+        onEditMetadata = onEditMetadata,
+        onEditLyrics = onEditLyrics,
+        onIdentify = onIdentify,
+        onDelete = onDelete
+    ),
+    modifier = modifier
+)

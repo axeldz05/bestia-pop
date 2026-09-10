@@ -2903,7 +2903,7 @@ class MusicRepository private constructor(
         return try {
             val fetched = metadataSource.fetchFullTrackMetadata(artist, title)
             fetched?.trackNumber?.takeIf { it > 0 } ?: 0
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             0
         }
     }

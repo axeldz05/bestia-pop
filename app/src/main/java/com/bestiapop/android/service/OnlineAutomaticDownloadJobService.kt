@@ -39,13 +39,14 @@ class OnlineAutomaticDownloadJobService : JobService() {
         val stopReason = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             params.stopReason
         } else {
-            JobParameters.STOP_REASON_UNDEFINED
+            0
         }
         reportOnlineDownloadJobStop(
             OnlineDownloadBackend.BACKGROUND_JOB,
             stopReason
         )
-        val userStopped = stopReason == JobParameters.STOP_REASON_USER
+        val userStopped = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+            stopReason == JobParameters.STOP_REASON_USER
         return handleOnlineDownloadJobStop(
             backend = OnlineDownloadBackend.BACKGROUND_JOB,
             userStopped = userStopped,

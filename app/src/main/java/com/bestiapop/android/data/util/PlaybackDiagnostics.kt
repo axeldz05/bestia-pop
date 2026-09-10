@@ -121,7 +121,8 @@ object PlaybackDiagnostics {
         val status = BackgroundExecutionProbe.current(context)
         log(
             TAG_SYSTEM,
-            "System status: Device=${Build.MANUFACTURER} ${Build.MODEL}, Android=${Build.VERSION.RELEASE} (SDK ${Build.VERSION.SDK_INT}), " +
+            "System status: Device=${Build.MANUFACTURER} ${Build.MODEL}, " +
+                "Android=${Build.VERSION.RELEASE} (SDK ${Build.VERSION.SDK_INT}), " +
                 "IgnoringBatteryOptimizations=$ignoringBattery, BackgroundRestricted=$bgRestricted, " +
                 "RunAnyInBackgroundIgnored=${status.runAnyInBackgroundIgnored}, " +
                 "BlocksBackgroundPlayback=${status.blocksBackgroundPlayback}, " +
@@ -180,7 +181,7 @@ object PlaybackDiagnostics {
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
             error(
                 TAG_SYSTEM,
-                "!!! UNCAUGHT EXCEPTION on thread '${thread.name}' (id=${thread.id}) !!!: ${throwable.message}",
+                "!!! UNCAUGHT EXCEPTION on thread '${thread.name}' !!!: ${throwable.message}",
                 throwable
             )
             defaultHandler?.uncaughtException(thread, throwable)
@@ -188,38 +189,43 @@ object PlaybackDiagnostics {
     }
 
     private fun registerMemoryCallbacks(application: Application) {
-        application.registerComponentCallbacks(object : ComponentCallbacks2 {
-            override fun onConfigurationChanged(newConfig: Configuration) = Unit
+        application.registerComponentCallbacks(DiagnosticMemoryCallbacks(application))
+    }
 
-            override fun onLowMemory() {
-                warn(TAG_SYSTEM, "onLowMemory() received! System is critically low on memory. Clearing memory cache.")
+    private class DiagnosticMemoryCallbacks(private val application: Application) : ComponentCallbacks2 {
+        override fun onConfigurationChanged(newConfig: Configuration) = Unit
+
+        @Deprecated("Deprecated in Java", ReplaceWith("onTrimMemory(level)"))
+        override fun onLowMemory() {
+            warn(TAG_SYSTEM, "onLowMemory() received! System is critically low on memory. Clearing memory cache.")
+            try {
+                coil.Coil.imageLoader(application).memoryCache?.clear()
+            } catch (_: Throwable) {}
+            System.gc()
+        }
+
+        override fun onTrimMemory(level: Int) {
+            if (level >= ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN) {
                 try {
                     coil.Coil.imageLoader(application).memoryCache?.clear()
                 } catch (_: Throwable) {}
-                System.gc()
             }
+            val levelName = formatTrimMemoryLevel(level)
+            val runtime = Runtime.getRuntime()
+            val usedMemMb = (runtime.totalMemory() - runtime.freeMemory()) / 1024 / 1024
+            val maxMemMb = runtime.maxMemory() / 1024 / 1024
+            log(TAG_SYSTEM, "onTrimMemory(level=$levelName), HeapUsed=${usedMemMb}MB / Max=${maxMemMb}MB")
+        }
 
-            override fun onTrimMemory(level: Int) {
-                if (level >= ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN) {
-                    try {
-                        coil.Coil.imageLoader(application).memoryCache?.clear()
-                    } catch (_: Throwable) {}
-                }
-                val levelName = when (level) {
-                    ComponentCallbacks2.TRIM_MEMORY_COMPLETE -> "TRIM_MEMORY_COMPLETE (80 - process near kill)"
-                    ComponentCallbacks2.TRIM_MEMORY_MODERATE -> "TRIM_MEMORY_MODERATE (60 - background near kill)"
-                    ComponentCallbacks2.TRIM_MEMORY_BACKGROUND -> "TRIM_MEMORY_BACKGROUND (40 - entered background)"
-                    ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN -> "TRIM_MEMORY_UI_HIDDEN (20 - UI no longer visible)"
-                    ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL -> "TRIM_MEMORY_RUNNING_CRITICAL (15 - app running, sys critical)"
-                    ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW -> "TRIM_MEMORY_RUNNING_LOW (10 - app running, sys low)"
-                    ComponentCallbacks2.TRIM_MEMORY_RUNNING_MODERATE -> "TRIM_MEMORY_RUNNING_MODERATE (5 - app running, sys moderate)"
-                    else -> "TRIM_MEMORY_UNKNOWN ($level)"
-                }
-                val runtime = Runtime.getRuntime()
-                val usedMemMb = (runtime.totalMemory() - runtime.freeMemory()) / 1024 / 1024
-                val maxMemMb = runtime.maxMemory() / 1024 / 1024
-                log(TAG_SYSTEM, "onTrimMemory(level=$levelName), HeapUsed=${usedMemMb}MB / Max=${maxMemMb}MB")
-            }
-        })
+        private fun formatTrimMemoryLevel(level: Int): String = when (level) {
+            ComponentCallbacks2.TRIM_MEMORY_BACKGROUND -> "TRIM_MEMORY_BACKGROUND (40 - entered background)"
+            ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN -> "TRIM_MEMORY_UI_HIDDEN (20 - UI no longer visible)"
+            80 -> "TRIM_MEMORY_COMPLETE (80 - process near kill)"
+            60 -> "TRIM_MEMORY_MODERATE (60 - background near kill)"
+            15 -> "TRIM_MEMORY_RUNNING_CRITICAL (15 - app running, sys critical)"
+            10 -> "TRIM_MEMORY_RUNNING_LOW (10 - app running, sys low)"
+            5 -> "TRIM_MEMORY_RUNNING_MODERATE (5 - app running, sys moderate)"
+            else -> "TRIM_MEMORY_UNKNOWN ($level)"
+        }
     }
 }

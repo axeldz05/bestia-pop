@@ -1,7 +1,6 @@
 package com.bestiapop.android
 
 import android.Manifest
-import android.annotation.SuppressLint
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -78,7 +77,10 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        PlaybackDiagnostics.log(PlaybackDiagnostics.TAG_LIFECYCLE, "MainActivity.onCreate(savedInstanceState=${savedInstanceState != null})")
+        PlaybackDiagnostics.log(
+            PlaybackDiagnostics.TAG_LIFECYCLE,
+            "MainActivity.onCreate(savedInstanceState=${savedInstanceState != null})"
+        )
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         viewModel.warmupPlayback()
@@ -116,52 +118,62 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onPause() {
-        PlaybackDiagnostics.log(PlaybackDiagnostics.TAG_LIFECYCLE, "MainActivity.onPause (UI losing focus / switching apps / locking)")
+        PlaybackDiagnostics.log(
+            PlaybackDiagnostics.TAG_LIFECYCLE,
+            "MainActivity.onPause (UI losing focus / switching apps / locking)"
+        )
         super.onPause()
     }
 
     override fun onStop() {
-        PlaybackDiagnostics.log(PlaybackDiagnostics.TAG_LIFECYCLE, "MainActivity.onStop (UI no longer visible / in background)")
+        PlaybackDiagnostics.log(
+            PlaybackDiagnostics.TAG_LIFECYCLE,
+            "MainActivity.onStop (UI no longer visible / in background)"
+        )
         viewModel.onUiDetached()
         super.onStop()
     }
 
     override fun onDestroy() {
-        PlaybackDiagnostics.log(PlaybackDiagnostics.TAG_LIFECYCLE, "MainActivity.onDestroy (Activity destroyed, isFinishing=$isFinishing)")
+        PlaybackDiagnostics.log(
+            PlaybackDiagnostics.TAG_LIFECYCLE,
+            "MainActivity.onDestroy (Activity destroyed, isFinishing=$isFinishing)"
+        )
         super.onDestroy()
     }
 
-    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        val action = event.action
-        val keyCode = event.keyCode
-        if (action == KeyEvent.ACTION_DOWN) {
-            when (keyCode) {
-                KeyEvent.KEYCODE_VOLUME_UP -> {
-                    if (viewModel.handleVolumeUp()) {
-                        return true
-                    }
-                }
-                KeyEvent.KEYCODE_VOLUME_DOWN -> {
-                    if (viewModel.handleVolumeDown()) {
-                        return true
-                    }
+    override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
+        when (keyCode) {
+            KeyEvent.KEYCODE_VOLUME_UP -> {
+                if (viewModel.handleVolumeUp()) {
+                    return true
                 }
             }
-        } else if (action == KeyEvent.ACTION_UP) {
-            when (keyCode) {
-                KeyEvent.KEYCODE_VOLUME_UP -> {
-                    if (viewModel.isVolumeBoostActive()) {
-                        return true
-                    }
-                }
-                KeyEvent.KEYCODE_VOLUME_DOWN -> {
-                    if (viewModel.consumeVolumeDownUpAction()) {
-                        return true
-                    }
+
+            KeyEvent.KEYCODE_VOLUME_DOWN -> {
+                if (viewModel.handleVolumeDown()) {
+                    return true
                 }
             }
         }
-        return super.dispatchKeyEvent(event)
+        return super.onKeyDown(keyCode, event)
+    }
+
+    override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean {
+        when (keyCode) {
+            KeyEvent.KEYCODE_VOLUME_UP -> {
+                if (viewModel.isVolumeBoostActive()) {
+                    return true
+                }
+            }
+
+            KeyEvent.KEYCODE_VOLUME_DOWN -> {
+                if (viewModel.consumeVolumeDownUpAction()) {
+                    return true
+                }
+            }
+        }
+        return super.onKeyUp(keyCode, event)
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -182,6 +194,7 @@ class MainActivity : ComponentActivity() {
                 viewModel.requestOpenDownloads()
                 intent?.removeExtra(DownloadNotificationHelper.EXTRA_OPEN_TAB)
             }
+
             IdentifyNotificationHelper.TAB_IDENTIFY_REVIEW -> {
                 viewModel.requestOpenIdentifyReview()
                 intent?.removeExtra(IdentifyNotificationHelper.EXTRA_OPEN_TAB)
@@ -189,14 +202,12 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun hasAudioPermission(): Boolean {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            ContextCompat.checkSelfPermission(this, Manifest.permission.READ_MEDIA_AUDIO) ==
-                PackageManager.PERMISSION_GRANTED
-        } else {
-            ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE) ==
-                PackageManager.PERMISSION_GRANTED
-        }
+    private fun hasAudioPermission(): Boolean = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        ContextCompat.checkSelfPermission(this, Manifest.permission.READ_MEDIA_AUDIO) ==
+            PackageManager.PERMISSION_GRANTED
+    } else {
+        ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE) ==
+            PackageManager.PERMISSION_GRANTED
     }
 
     private fun requestRequiredPermissions() {

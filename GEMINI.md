@@ -13,6 +13,7 @@ Leer y seguir estos skills del repo **antes** de diseñar o implementar cambios 
 | **Implementation map** | `.agents/skills/bestiapop-implementation-map/SKILL.md` | Localizar archivos/clases/funciones concretas |
 | **Living docs** | `.agents/skills/bestiapop-living-docs/SKILL.md` | Protocolo para actualizar los skills anteriores |
 | **Release changelog** | `.agents/skills/bestiapop-release-changelog/SKILL.md` | Anotar cambios user-facing y armar notas del APK |
+| **Linter management** | `.agents/skills/kotlin-linter-management/SKILL.md` | Diagnóstico, ejecución y resolución de errores de linter sin supresiones |
 
 Resumen histórico de principios (mantener alineado con features): `.agents/AGENTS.md`
 
@@ -55,6 +56,16 @@ Leer las skills de refactorizacion y aplicalos en los cambios que hiciste.
 - Granularidad continua .agents/skills/continuous-granularity/SKILL.md
 Busca principalmente comportamiento repetido que creaste ya sea en tus cambios o con el resto del codigo que podria estar teniendo comportamientos similares (ejemplo, si cambiaste como se descarga algo, busca en todas las partes de descargas si tienen comportamiento repetido).
 Una regla de oro para saber si tenes comportamiento repetido es pensar en cuantos sitios tendrías que tocar código para cambiar algo de lo que implementaste, si son más de 2 veces es que tenés código repetido. Ejemplos: cambiar un algoritmo específico para las recomendaciones, cambiar texto de "descarga completada", botones como reproducir cancion o agregar a playlist.
+
+## Linters, calidad de código y modernización de APIs
+
+- **Prohibición estricta de supresión:** Nunca agregar `@SuppressLint` ni `@Suppress` para eludir advertencias o errores del linter o del compilador. Si un linter marca un problema, se debe corregir el código en su raíz arquitectural o estructural, no esconderlo ni evitarlo.
+- **Modernización y adaptación de APIs:** Si se requiere interactuar con funcionalidades de APIs inestables (ej. `@UnstableApi` en Media3) o deprecadas, investigar y adaptar el diseño para usar APIs estables o desacoplar la lógica en el límite correcto (ej. en la factoría de `DataSource` en lugar de llamadas de conveniencia).
+- **Linters canónicos del proyecto:**
+  - **Android Lint:** Correr `./gradlew lintDebug` o `./gradlew lint` para validar APIs de Android, recursos, KTX, ciclos de vida y seguridad.
+  - **ktlint:** El linter y formateador estandarizado para Kotlin proviene exclusivamente de `https://github.com/ktlint/ktlint` (nunca de repositorios obsoletos de terceros).
+  - **Kotlin compiler:** Compilar con `-Pkotlin.compiler.allWarningsAsErrors=true` para garantizar código libre de advertencias de compilación.
+- **Invariante de entrega:** Todo cambio debe finalizar con **0 errores y 0 warnings en el código base** reportados por Android Lint, compilador de Kotlin y ktlint en los bloques de código modificados. Consulta el skill `.agents/skills/kotlin-linter-management/SKILL.md`.
 
 ## Limpieza obligatoria al terminar
 

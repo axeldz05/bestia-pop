@@ -54,6 +54,7 @@ import java.util.Locale
 import java.util.UUID
 
 internal const val WIFI_SYNC_MAX_UPLOAD_BYTES = 512L * 1024 * 1024
+private const val WIFI_SYNC_WAKELOCK_TIMEOUT_MS = 60 * 60 * 1000L
 private const val UPLOAD_TOO_LARGE_MESSAGE = "Archivo demasiado grande"
 
 internal data class WifiPendingUpload(
@@ -397,10 +398,10 @@ class WebServerService : Service() {
             val wifiManager = applicationContext.getSystemService(WifiManager::class.java)
             if (wifiLock == null) {
                 val mode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    WifiManager.WIFI_MODE_FULL_HIGH_PERF
+                    WifiManager.WIFI_MODE_FULL_LOW_LATENCY
                 } else {
                     @Suppress("DEPRECATION")
-                    WifiManager.WIFI_MODE_FULL
+                    WifiManager.WIFI_MODE_FULL_HIGH_PERF
                 }
                 wifiLock = wifiManager?.createWifiLock(mode, "BestiaPop:WifiSyncLock")?.apply {
                     setReferenceCounted(false)
@@ -419,7 +420,7 @@ class WebServerService : Service() {
                     "BestiaPop:WifiSyncWakeLock"
                 )?.apply {
                     setReferenceCounted(false)
-                    acquire()
+                    acquire(WIFI_SYNC_WAKELOCK_TIMEOUT_MS)
                 }
             }
         } catch (e: Exception) {

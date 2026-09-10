@@ -40,8 +40,10 @@ object MetadataFetcher {
         .readTimeout(6, TimeUnit.SECONDS)
         .callTimeout(8, TimeUnit.SECONDS)
         .build()
+
     @Volatile
     private var client: OkHttpClient = defaultClient
+
     @Volatile
     private var endpoints = MetadataFetcherEndpoints()
 
@@ -502,13 +504,17 @@ object MetadataFetcher {
         val cleanQ = query.trim()
         if (cleanQ.isEmpty()) return@withContext emptyList()
         val pageLimit = limit.coerceIn(1, 100)
-        val itunesTracks = searchItunesSongs(cleanQ, pageLimit, country = null) +
-            searchItunesSongs(cleanQ, pageLimit, country = "JP") +
-            if (IdentifyQueryVariants.hasHan(cleanQ)) {
-                searchItunesSongs(cleanQ, pageLimit, country = "TW")
-            } else {
-                emptyList()
-            }
+        val itunesTracks = buildList {
+            addAll(this@MetadataFetcher.searchItunesSongs(cleanQ, pageLimit, country = null))
+            addAll(this@MetadataFetcher.searchItunesSongs(cleanQ, pageLimit, country = "JP"))
+            addAll(
+                if (IdentifyQueryVariants.hasHan(cleanQ)) {
+                    this@MetadataFetcher.searchItunesSongs(cleanQ, pageLimit, country = "TW")
+                } else {
+                    emptyList()
+                }
+            )
+        }
         val mbTracks = try {
             MusicBrainzClient.searchRecordings(
                 query = cleanQ,
@@ -520,7 +526,11 @@ object MetadataFetcher {
             emptyList()
         }
         val youtubeTracks = YouTubeExtractor.searchYouTube(cleanQ)
-        return@withContext itunesTracks + mbTracks + youtubeTracks
+        return@withContext buildList {
+            addAll(itunesTracks)
+            addAll(mbTracks)
+            addAll(youtubeTracks)
+        }
     }
 
     private fun searchItunesSongs(

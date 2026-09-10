@@ -1,6 +1,7 @@
 package com.bestiapop.android.ui.components
 
 import androidx.compose.foundation.background
+import androidx.core.graphics.toColorInt
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -476,7 +477,7 @@ fun ThemeEditorDialog(
                             val clean = input.trim().removePrefix("#")
                             if (clean.length == 6) {
                                 try {
-                                    val parsed = android.graphics.Color.parseColor("#$clean")
+                                    val parsed = "#$clean".toColorInt()
                                     activeState.setColor(Color(parsed))
                                 } catch (_: Exception) {}
                             }

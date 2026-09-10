@@ -225,7 +225,7 @@ private fun extractTrackAndPhrase(value: String): Pair<String, Int>? {
  * Splits artist and title from a phrase, checking spaced dashes first,
  * then a single BestiaPop underscore.
  */
-fun splitArtistAndTitle(phrase: String): Pair<String, String>? =
+internal fun splitArtistAndTitle(phrase: String): Pair<String, String>? =
     splitArtistTitleDash(phrase) ?: splitSingleUnderscoreArtistTitle(phrase)
 
 private fun hintsFromPhraseAndTrack(phrase: String, track: Int?): FilenameMetadataHints {

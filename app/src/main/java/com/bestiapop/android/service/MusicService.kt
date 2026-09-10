@@ -16,6 +16,7 @@ import android.os.PowerManager
 import android.os.SystemClock
 import androidx.annotation.OptIn
 import androidx.core.app.ServiceCompat
+import androidx.core.content.edit
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -625,35 +626,33 @@ class MusicService : MediaLibraryService() {
     }
 
     private fun createPlaybackNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val notificationManager = getSystemService(NotificationManager::class.java) ?: return
-            val channelName = getString(R.string.playback_notification_channel)
-            val existing = notificationManager.getNotificationChannel(PLAYBACK_CHANNEL_ID)
-            if (existing == null) {
-                val channel = NotificationChannel(
-                    PLAYBACK_CHANNEL_ID,
-                    channelName,
-                    NotificationManager.IMPORTANCE_LOW
+        val notificationManager = getSystemService(NotificationManager::class.java) ?: return
+        val channelName = getString(R.string.playback_notification_channel)
+        val existing = notificationManager.getNotificationChannel(PLAYBACK_CHANNEL_ID)
+        if (existing == null) {
+            val channel = NotificationChannel(
+                PLAYBACK_CHANNEL_ID,
+                channelName,
+                NotificationManager.IMPORTANCE_LOW
+            ).apply {
+                description = getString(R.string.playback_notification_channel_description)
+                setShowBadge(false)
+                lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
+            }
+            notificationManager.createNotificationChannel(channel)
+        }
+        if (notificationManager.getNotificationChannel(RESTRICTION_CHANNEL_ID) == null) {
+            notificationManager.createNotificationChannel(
+                NotificationChannel(
+                    RESTRICTION_CHANNEL_ID,
+                    getString(R.string.playback_restricted_notification_channel),
+                    NotificationManager.IMPORTANCE_HIGH
                 ).apply {
-                    description = getString(R.string.playback_notification_channel_description)
-                    setShowBadge(false)
+                    description = getString(R.string.playback_restricted_notification_text)
+                    setShowBadge(true)
                     lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
                 }
-                notificationManager.createNotificationChannel(channel)
-            }
-            if (notificationManager.getNotificationChannel(RESTRICTION_CHANNEL_ID) == null) {
-                notificationManager.createNotificationChannel(
-                    NotificationChannel(
-                        RESTRICTION_CHANNEL_ID,
-                        getString(R.string.playback_restricted_notification_channel),
-                        NotificationManager.IMPORTANCE_HIGH
-                    ).apply {
-                        description = getString(R.string.playback_restricted_notification_text)
-                        setShowBadge(true)
-                        lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
-                    }
-                )
-            }
+            )
         }
     }
 
@@ -713,10 +712,9 @@ class MusicService : MediaLibraryService() {
     }
 
     private fun persistPlaybackEngaged(engaged: Boolean) {
-        getSharedPreferences(PLAYBACK_LIFETIME_PREFS, MODE_PRIVATE)
-            .edit()
-            .putBoolean(KEY_PLAYBACK_ENGAGED, engaged)
-            .apply()
+        getSharedPreferences(PLAYBACK_LIFETIME_PREFS, MODE_PRIVATE).edit {
+            putBoolean(KEY_PLAYBACK_ENGAGED, engaged)
+        }
     }
 
     private fun wasPlaybackEngaged(): Boolean =
@@ -912,8 +910,10 @@ internal class UserAgentMediaSourceFactory(
             upstreamFactory,
             ::boundGoogleVideoRequest
         )
+        val cacheKey = tag?.videoId?.takeIf { it.isNotBlank() }
+            ?.let(com.bestiapop.android.data.stream.BestiaPopMediaCache::cacheKey)
         val cachedFactory = com.bestiapop.android.data.stream.BestiaPopMediaCache
-            .createCacheDataSourceFactory(context, dataSourceFactory)
+            .createCacheDataSourceFactory(context, dataSourceFactory, cacheKey)
         return DefaultMediaSourceFactory(cachedFactory, extractorsFactory)
             .createMediaSource(mediaItem)
     }

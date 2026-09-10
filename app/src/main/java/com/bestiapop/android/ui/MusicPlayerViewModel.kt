@@ -702,14 +702,12 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
-    private fun publishBackgroundExecutionStatus(
-        snapshot: BackgroundExecutionStatus = BackgroundExecutionProbe.current(getApplication())
-    ) {
+    private fun publishBackgroundExecutionStatus(snapshot: BackgroundExecutionStatus) {
         backgroundExecutionConfirmJob?.cancel()
         val current = _backgroundExecutionStatus.value
         val raisingAlarm =
             (snapshot.blocksBackgroundPlayback && !current.blocksBackgroundPlayback) ||
-                    (snapshot.oemScreenOffCleanupActive && !current.oemScreenOffCleanupActive)
+                (snapshot.oemScreenOffCleanupActive && !current.oemScreenOffCleanupActive)
         if (!raisingAlarm) {
             _backgroundExecutionStatus.value = snapshot
             return
@@ -747,9 +745,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         val targetVolume = (systemRatio.coerceIn(0f, 1f) * max).toInt().coerceIn(0, max)
         try {
             audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, targetVolume, 0)
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
+        } catch (_: Exception) {}
     }
 
     fun setVolume(ratio: Float) {

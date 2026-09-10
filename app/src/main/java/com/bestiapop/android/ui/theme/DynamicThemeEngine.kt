@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.drawable.BitmapDrawable
 import android.util.LruCache
+import androidx.core.graphics.drawable.toBitmap
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import coil.imageLoader
@@ -145,19 +146,11 @@ object DynamicThemeEngine {
             val result = context.imageLoader.execute(request)
             val drawable = result.drawable ?: return null
 
-            if (drawable is BitmapDrawable) {
-                drawable.bitmap
-            } else {
-                val bmp = Bitmap.createBitmap(
-                    drawable.intrinsicWidth.coerceAtLeast(1),
-                    drawable.intrinsicHeight.coerceAtLeast(1),
-                    Bitmap.Config.ARGB_8888
-                )
-                val canvas = android.graphics.Canvas(bmp)
-                drawable.setBounds(0, 0, canvas.width, canvas.height)
-                drawable.draw(canvas)
-                bmp
-            }
+            drawable.toBitmap(
+                width = drawable.intrinsicWidth.coerceAtLeast(1),
+                height = drawable.intrinsicHeight.coerceAtLeast(1),
+                config = Bitmap.Config.ARGB_8888
+            )
         } catch (_: Exception) {
             null
         }

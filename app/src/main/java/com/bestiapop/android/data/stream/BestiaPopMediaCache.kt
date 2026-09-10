@@ -45,17 +45,23 @@ object BestiaPopMediaCache {
 
     /**
      * Builds a [CacheDataSource.Factory] wrapping [upstreamFactory] for ExoPlayer.
+     * When [cacheKey] is provided, uses it as the fixed cache key for all requests through this source.
      */
     fun createCacheDataSourceFactory(
         context: Context,
-        upstreamFactory: DataSource.Factory
+        upstreamFactory: DataSource.Factory,
+        cacheKey: String? = null
     ): CacheDataSource.Factory {
         val cache = getCache(context)
-        return CacheDataSource.Factory()
+        val factory = CacheDataSource.Factory()
             .setCache(cache)
             .setUpstreamDataSourceFactory(upstreamFactory)
             .setCacheWriteDataSinkFactory(CacheDataSink.Factory().setCache(cache))
             .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
+        if (!cacheKey.isNullOrBlank()) {
+            factory.setCacheKeyFactory { _ -> cacheKey }
+        }
+        return factory
     }
 
     /**

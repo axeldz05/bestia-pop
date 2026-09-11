@@ -44,9 +44,13 @@ Tras un cambio **visible para quien usa la app** (feature, fix, mejora de UX/cop
 
 - Español, tono amigo/beta (como la UI)
 - Qué gana el usuario, no el path del archivo
-- Corto (una línea; dos si hace falta)
+- Estrictamente conciso: máximo 1 a 2 líneas por bullet. Cero párrafos largos o narrativos
+- Formato estándar: `- **Área / Feature:** qué hace o gana el usuario (ej. ruta en Ajustes si aplica).`
+- **Consolidación obligatoria:** si ya existe un bullet del área (ej. Now Playing, Letras, Biblioteca), incorporar la mejora al bullet existente o unificar en vez de crear múltiples bullets dispersos
 - Mal: `MusicRepository.fetchListenBrainzIdentifyTrack edge re-rank`
-- Bien: `Identificar: con ListenBrainz activo, afina canciones dudosas cuando el catálogo no alcanza`
+- Mal: párrafos de 4+ líneas explicando cada detalle técnico o variantes de uso
+- Bien: `- **Identificar:** con ListenBrainz activo, afina canciones dudosas cuando el catálogo no alcanza.`
+- Bien: `- **Letras:** guía fonética / romanización (Rōmaji, Hiragana), traducción directa y búsqueda en segundo plano.`
 
 Si el archivo no existe, crearlo con la plantilla de abajo y rellenar `Último APK` desde `version.properties` + último tag `v*`.
 

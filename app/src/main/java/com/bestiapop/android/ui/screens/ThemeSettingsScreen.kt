@@ -37,7 +37,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -61,9 +61,9 @@ fun ThemeSettingsScreen(
     viewModel: MusicPlayerViewModel,
     showTitle: Boolean = true
 ) {
-    val currentTheme by viewModel.currentThemeState.collectAsState()
-    val configuredTheme by viewModel.configuredThemeState.collectAsState()
-    val rawSongs by viewModel.rawSongs.collectAsState()
+    val currentTheme by viewModel.currentThemeState.collectAsStateWithLifecycle()
+    val configuredTheme by viewModel.configuredThemeState.collectAsStateWithLifecycle()
+    val rawSongs by viewModel.rawSongs.collectAsStateWithLifecycle()
 
     var showThemeEditor by remember { mutableStateOf(false) }
 

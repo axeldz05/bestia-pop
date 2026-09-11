@@ -237,6 +237,7 @@ internal interface PlaybackRuntimeListenTracker {
     fun onDurationKnown(songId: Long, durationMs: Long)
     fun onPlaybackTick(isPlaying: Boolean, elapsedRealtimeMs: Long)
     fun onStopped()
+    fun creditPlaybackTime(timeMs: Long) = Unit
 }
 
 internal sealed interface SaveWhileListeningDownloadResult {
@@ -791,7 +792,11 @@ class PlaybackRuntime internal constructor(
                 scope.launch { samplePositionAndOwnership() }
             } else {
                 controller?.let { player ->
-                    _playbackPositionMs.value = player.currentPosition.coerceAtLeast(0L)
+                    val pos = player.currentPosition.coerceAtLeast(0L)
+                    _playbackPositionMs.value = pos
+                    if (pos > 0L) {
+                        dependencies.listenTracker.creditPlaybackTime(pos)
+                    }
                 }
                 dependencies.listenTracker.onStopped()
                 persistPlaybackSession(force = true)
@@ -1912,6 +1917,7 @@ class PlaybackRuntime internal constructor(
 
         if (wrappedShuffleCycle) {
             val previous = _currentItem.value
+            creditItemPlayback(previous, completed = true)
             (previous as? PlayableItem.Remote)?.let { outgoing ->
                 maybeSaveWhileListening(
                     outgoing,
@@ -1975,6 +1981,10 @@ class PlaybackRuntime internal constructor(
                         sameOccurrence &&
                         !explicitStart
             if (!metadataOnly) {
+                creditItemPlayback(
+                    previous,
+                    completed = reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO
+                )
                 (previous as? PlayableItem.Remote)?.let { outgoing ->
                     val event = when (reason) {
                         Player.MEDIA_ITEM_TRANSITION_REASON_AUTO,
@@ -2016,6 +2026,17 @@ class PlaybackRuntime internal constructor(
             dependencies.listenTracker.onTrackChanged(null, PlaybackChangeHint.METADATA_UPDATE)
         }
         lastMediaItemIndex = newIndex
+    }
+
+    private fun creditItemPlayback(item: PlayableItem?, completed: Boolean = false) {
+        val playedMs = if (completed && item != null && item.durationMs > 0L) {
+            item.durationMs
+        } else {
+            _playbackPositionMs.value
+        }
+        if (playedMs > 0L) {
+            dependencies.listenTracker.creditPlaybackTime(playedMs)
+        }
     }
 
     private fun ensureRemoteReadyAt(index: Int, startPlaying: Boolean) {
@@ -3237,6 +3258,8 @@ private class ListenTrackerRuntimeAdapter(
         tracker.onPlaybackTick(isPlaying, elapsedRealtimeMs)
 
     override fun onStopped() = tracker.onStopped()
+
+    override fun creditPlaybackTime(timeMs: Long) = tracker.creditPlaybackTime(timeMs)
 }
 
 private class StreamResolverRuntimeAccess(

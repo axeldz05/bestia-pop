@@ -130,6 +130,13 @@ class ListenTracker private constructor(
         lastTickElapsedRealtime = 0L
     }
 
+    /** Credits played time on track transition or pause when periodic ticker is idle (e.g. background). */
+    fun creditPlaybackTime(timeMs: Long) {
+        if (activeSong == null || timeMs <= 0L) return
+        playedMs = maxOf(playedMs, timeMs)
+        maybeEnqueueIfReady()
+    }
+
     private fun thresholdMs(song: Song): Long {
         val duration = song.durationMs
         return if (duration > 0) {

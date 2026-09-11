@@ -81,6 +81,19 @@ class ListenTrackerTest {
         assertEquals("Song 2", listens.single().trackName)
     }
 
+    @Test
+    fun creditPlaybackTime_withoutTick_enqueuesListenWhenThresholdMet() {
+        val listens = mutableListOf<ListenPayload>()
+        val tracker = tracker(nowSec = { 100L }, listens = listens)
+
+        tracker.onTrackChanged(song(id = 1L, durationMs = 10_000L))
+        // No periodic onPlaybackTick (simulating background with idle ticker)
+        tracker.creditPlaybackTime(5_000L)
+
+        assertEquals(1, listens.size)
+        assertEquals("Song 1", listens.single().trackName)
+    }
+
     private fun tracker(
         nowSec: () -> Long,
         listens: MutableList<ListenPayload>

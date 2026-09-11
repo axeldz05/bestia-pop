@@ -37,7 +37,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -75,7 +75,7 @@ fun EditLyricsDialog(
     onSeek: (Long) -> Unit,
     onFetchOnline: ((String?) -> Unit) -> Unit
 ) {
-    val positionMs by positionMsFlow.collectAsState()
+    val positionMs by positionMsFlow.collectAsStateWithLifecycle()
     val initialLines = remember(song.id, song.lyrics) { SyncedLyrics.parse(song.lyrics.orEmpty()) }
     var lines by remember(song.id, song.lyrics) { mutableStateOf(initialLines) }
     var text by remember(song.id, song.lyrics) { mutableStateOf(SyncedLyrics.plainText(initialLines)) }

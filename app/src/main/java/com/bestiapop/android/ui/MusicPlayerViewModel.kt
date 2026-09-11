@@ -230,7 +230,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     // Theme state
     val configuredThemeState: StateFlow<CustomTheme> = themeRepository.selectedThemeFlow
-        .stateIn(viewModelScope, SharingStarted.Lazily, themeRepository.initialTheme)
+        .stateInUi(viewModelScope, themeRepository.initialTheme)
 
     val currentThemeState: StateFlow<CustomTheme> = themeRepository.selectedThemeFlow
         .flatMapLatest { selectedTheme ->
@@ -252,7 +252,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 flowOf(selectedTheme)
             }
         }
-        .stateIn(viewModelScope, SharingStarted.Lazily, themeRepository.initialTheme)
+        .stateInUi(viewModelScope, themeRepository.initialTheme)
 
     // ListenBrainz state
     val listenBrainzSettings: StateFlow<ListenBrainzSettings> =
@@ -349,8 +349,8 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         val localSongsByMatchKey: Map<String, Song> = emptyMap(),
         val allSongsByMatchKey: Map<String, Song> = emptyMap(),
         val allSongsById: Map<Long, Song> = emptyMap(),
-        val albumsByArtistAndTitle: Map<String, List<Song>> = emptyMap(),
-        val albumsByTitle: Map<String, List<Song>> = emptyMap()
+        val albumStatusByArtistAndAlbum: Map<String, ItemLibraryStatus> = emptyMap(),
+        val albumStatusByTitle: Map<String, ItemLibraryStatus> = emptyMap()
     )
 
     private val libraryLookupIndex: StateFlow<LibraryLookupIndex> = rawSongs
@@ -358,8 +358,8 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             val byId = HashMap<Long, Song>(songs.size)
             val allByMatchKey = HashMap<String, Song>(songs.size)
             val localByMatchKey = HashMap<String, Song>(songs.size)
-            val byArtistAndAlbum = HashMap<String, MutableList<Song>>()
-            val byAlbumTitle = HashMap<String, MutableList<Song>>()
+            val albumStatusByArtistAndAlbum = HashMap<String, ItemLibraryStatus>()
+            val albumStatusByTitle = HashMap<String, ItemLibraryStatus>()
 
             for (song in songs) {
                 if (song.id > 0L) {
@@ -372,17 +372,23 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                         localByMatchKey.putIfAbsent(matchKey, song)
                     }
                 }
+                val artistAlbumKey = albumArtistKey(song.artist, song.album)
+                val status = if (!song.isRemote) ItemLibraryStatus.DOWNLOADED else ItemLibraryStatus.SAVED_REMOTE
+                if (albumStatusByArtistAndAlbum[artistAlbumKey] != ItemLibraryStatus.DOWNLOADED) {
+                    albumStatusByArtistAndAlbum[artistAlbumKey] = status
+                }
                 val albumKey = albumIdentityKey(song.album)
-                byArtistAndAlbum.getOrPut(albumArtistKey(song.artist, song.album)) { ArrayList() }.add(song)
-                byAlbumTitle.getOrPut(albumKey) { ArrayList() }.add(song)
+                if (albumStatusByTitle[albumKey] != ItemLibraryStatus.DOWNLOADED) {
+                    albumStatusByTitle[albumKey] = status
+                }
             }
 
             LibraryLookupIndex(
                 localSongsByMatchKey = localByMatchKey,
                 allSongsByMatchKey = allByMatchKey,
                 allSongsById = byId,
-                albumsByArtistAndTitle = byArtistAndAlbum,
-                albumsByTitle = byAlbumTitle
+                albumStatusByArtistAndAlbum = albumStatusByArtistAndAlbum,
+                albumStatusByTitle = albumStatusByTitle
             )
         }
         .flowOn(Dispatchers.Default)
@@ -689,7 +695,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     val libraryJobProgress: StateFlow<LibraryJobProgress?> =
         combine(_localLibraryJobProgress, processIdentifyRuntime.progress) { local, identify ->
             identify ?: local
-        }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
+        }.stateInUi(viewModelScope, null)
     private val uiAttached = AtomicBoolean(false)
 
     /** Serializes the first-launch disk import: two callers race the completed-flag check. */
@@ -1535,11 +1541,11 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     /** Returns status of album in library (DOWNLOADED, SAVED_REMOTE, or NOT_IN_LIBRARY) in O(1). */
     fun getAlbumLibraryStatus(albumTitle: String, artistName: String): ItemLibraryStatus {
         val indices = libraryLookupIndex.value
-        val albumKey = albumIdentityKey(albumTitle)
         val key = albumArtistKey(artistName, albumTitle)
-        val songs = indices.albumsByArtistAndTitle[key] ?: indices.albumsByTitle[albumKey]
-        if (songs.isNullOrEmpty()) return ItemLibraryStatus.NOT_IN_LIBRARY
-        return if (songs.any { !it.isRemote }) ItemLibraryStatus.DOWNLOADED else ItemLibraryStatus.SAVED_REMOTE
+        val albumKey = albumIdentityKey(albumTitle)
+        return indices.albumStatusByArtistAndAlbum[key]
+            ?: indices.albumStatusByTitle[albumKey]
+            ?: ItemLibraryStatus.NOT_IN_LIBRARY
     }
 
     /** Preview local file while reviewing identify candidates (toggle if already current). */

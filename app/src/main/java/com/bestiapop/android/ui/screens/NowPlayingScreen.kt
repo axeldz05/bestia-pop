@@ -143,23 +143,23 @@ fun NowPlayingScreen(
 ) {
     BackHandler { onDismiss() }
 
-    val currentItem by viewModel.currentItem.collectAsState()
-    val currentSong by viewModel.currentSong.collectAsState()
-    val isPlaying by viewModel.isPlaying.collectAsState()
+    val currentItem by viewModel.currentItem.collectAsStateWithLifecycle()
+    val currentSong by viewModel.currentSong.collectAsStateWithLifecycle()
+    val isPlaying by viewModel.isPlaying.collectAsStateWithLifecycle()
     // Do NOT collect playbackPositionMs here — it ticks every 200ms and would recompose
     // the whole screen (including the Cola LazyColumn). Scrubber/lyrics collect locally.
-    val repeatMode by viewModel.repeatMode.collectAsState()
-    val isShuffle by viewModel.isShuffle.collectAsState()
-    val queueItems by viewModel.displayQueue.collectAsState()
-    val resolvingRemote by viewModel.resolvingRemote.collectAsState()
-    val radioActive by viewModel.radioActive.collectAsState()
-    val radioLoading by viewModel.radioLoading.collectAsState()
-    val radioMode by viewModel.radioMode.collectAsState()
-    val radioStatusLabel by viewModel.radioStatusLabel.collectAsState()
-    val playlists by viewModel.playlists.collectAsState(initial = emptyList())
-    val discoverOrigin by viewModel.discoverPlaybackOrigin.collectAsState()
-    val isFetchingLyrics by viewModel.isFetchingLyrics.collectAsState()
-    val lyricsFetchError by viewModel.lyricsFetchError.collectAsState()
+    val repeatMode by viewModel.repeatMode.collectAsStateWithLifecycle()
+    val isShuffle by viewModel.isShuffle.collectAsStateWithLifecycle()
+    val queueItems by viewModel.displayQueue.collectAsStateWithLifecycle()
+    val resolvingRemote by viewModel.resolvingRemote.collectAsStateWithLifecycle()
+    val radioActive by viewModel.radioActive.collectAsStateWithLifecycle()
+    val radioLoading by viewModel.radioLoading.collectAsStateWithLifecycle()
+    val radioMode by viewModel.radioMode.collectAsStateWithLifecycle()
+    val radioStatusLabel by viewModel.radioStatusLabel.collectAsStateWithLifecycle()
+    val playlists by viewModel.playlists.collectAsStateWithLifecycle(initialValue = emptyList())
+    val discoverOrigin by viewModel.discoverPlaybackOrigin.collectAsStateWithLifecycle()
+    val isFetchingLyrics by viewModel.isFetchingLyrics.collectAsStateWithLifecycle()
+    val lyricsFetchError by viewModel.lyricsFetchError.collectAsStateWithLifecycle()
     var actionsMenuExpanded by remember { mutableStateOf(false) }
     val songDialogs = rememberSongActionDialogs(
         viewModel = viewModel,
@@ -971,7 +971,7 @@ private fun DockedProgressIndicator(
     positionMsFlow: StateFlow<Long>,
     modifier: Modifier = Modifier
 ) {
-    val positionMs by positionMsFlow.collectAsState()
+    val positionMs by positionMsFlow.collectAsStateWithLifecycle()
     val progress = if (durationMs > 0) (positionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f) else 0f
     LinearProgressIndicator(
         progress = { progress },
@@ -1022,13 +1022,13 @@ private fun NowPlayingLyricsView(
                 val plainLines = remember(parsedLrc) { parsedLrc.map { it.text } }
                 val timed = remember(parsedLrc) { SyncedLyrics.hasTimestamps(parsedLrc) }
 
-                val lyricsSettings by viewModel.lyricsSettings.collectAsState()
-                val isTranslationActive by viewModel.isTranslationActive.collectAsState()
-                val isFetchingTranslation by viewModel.isFetchingTranslation.collectAsState()
-                val translationSource by viewModel.translationSource.collectAsState()
-                val pendingPrompt by viewModel.pendingGoogleTranslatePrompt.collectAsState()
-                val romanizationVersion by viewModel.romanizationVersion.collectAsState()
-                val translationVersion by viewModel.translationVersion.collectAsState()
+                val lyricsSettings by viewModel.lyricsSettings.collectAsStateWithLifecycle()
+                val isTranslationActive by viewModel.isTranslationActive.collectAsStateWithLifecycle()
+                val isFetchingTranslation by viewModel.isFetchingTranslation.collectAsStateWithLifecycle()
+                val translationSource by viewModel.translationSource.collectAsStateWithLifecycle()
+                val pendingPrompt by viewModel.pendingGoogleTranslatePrompt.collectAsStateWithLifecycle()
+                val romanizationVersion by viewModel.romanizationVersion.collectAsStateWithLifecycle()
+                val translationVersion by viewModel.translationVersion.collectAsStateWithLifecycle()
                 val context = LocalContext.current
 
                 LaunchedEffect(localSong.id, plainLines, lyricsSettings.phoneticGuideEnabled) {
@@ -1194,7 +1194,7 @@ private fun NowPlayingLyricsView(
                                 positionMsFlow
                                     .map { pos -> SyncedLyrics.currentLineIndex(parsedLrc, pos) }
                                     .distinctUntilChanged()
-                            }.collectAsState(initial = SyncedLyrics.currentLineIndex(parsedLrc, positionMsFlow.value))
+                            }.collectAsStateWithLifecycle(initialValue = SyncedLyrics.currentLineIndex(parsedLrc, positionMsFlow.value))
 
                             val listState = rememberLazyListState()
                             val isDragged by listState.interactionSource.collectIsDraggedAsState()

@@ -199,11 +199,11 @@ class MusicService : MediaLibraryService() {
                     updateWakeMode()
                     updateCrossfadeLoop()
                     if (playbackState == Player.STATE_BUFFERING) {
-                        acquireTransientWakeLock(30_000L)
+                        acquireTransientWakeLock(10_000L)
                     } else if (playbackState == Player.STATE_READY && p.isPlaying) {
                         releaseTransientWakeLock()
                     } else if (playbackState == Player.STATE_ENDED && p.playWhenReady && p.mediaItemCount > 0) {
-                        acquireTransientWakeLock(30_000L)
+                        acquireTransientWakeLock(10_000L)
                     }
                 }
 
@@ -322,7 +322,11 @@ class MusicService : MediaLibraryService() {
                     updateWakeMode()
                     updateCrossfadeLoop()
                     if (p.playWhenReady) {
-                        acquireTransientWakeLock(30_000L)
+                        if (!p.isPlaying || p.playbackState != Player.STATE_READY) {
+                            acquireTransientWakeLock(10_000L)
+                        } else {
+                            releaseTransientWakeLock()
+                        }
                     }
                 }
 
@@ -403,13 +407,27 @@ class MusicService : MediaLibraryService() {
 
         crossfadeJob = serviceScope.launch {
             while (isActive && p.isPlaying && latestPlaybackSettings.crossfadeEnabled) {
+                val positionMs = p.currentPosition
+                val durationMs = p.duration
+                val crossfadeDurationSeconds = latestPlaybackSettings.crossfadeDurationSeconds
                 val targetVolume = calculateCrossfadeVolume(
-                    positionMs = p.currentPosition,
-                    durationMs = p.duration,
-                    crossfadeDurationSeconds = latestPlaybackSettings.crossfadeDurationSeconds
+                    positionMs = positionMs,
+                    durationMs = durationMs,
+                    crossfadeDurationSeconds = crossfadeDurationSeconds
                 )
                 if (kotlin.math.abs(p.volume - targetVolume) > 0.01f) {
                     p.volume = targetVolume
+                }
+                if (durationMs > 1500L && positionMs >= 0L) {
+                    val fadeMs = (crossfadeDurationSeconds * 1000L).coerceIn(500L, 10000L)
+                    val effectiveFadeMs = minOf(fadeMs, durationMs / 3).coerceAtLeast(500L)
+                    val timeUntilFadeOut = (durationMs - effectiveFadeMs) - positionMs
+                    if (positionMs in effectiveFadeMs until (durationMs - effectiveFadeMs) && timeUntilFadeOut > 100L) {
+                        // Stable body of the track: volume is 1.0f. Sleep directly until fade-out begins.
+                        // Seeks/skips trigger onPositionDiscontinuity and re-evaluate immediately.
+                        delay(timeUntilFadeOut)
+                        continue
+                    }
                 }
                 delay(40L)
             }
@@ -595,7 +613,7 @@ class MusicService : MediaLibraryService() {
         p.setWakeMode(playbackWakeMode(currentIsRemote = currentIsRemote, nextIsRemote = nextIsRemote))
     }
 
-    private fun acquireTransientWakeLock(timeoutMs: Long = 30_000L) {
+    private fun acquireTransientWakeLock(timeoutMs: Long = 10_000L) {
         val powerManager = getSystemService(PowerManager::class.java) ?: return
         try {
             if (serviceWakeLock?.isHeld == true) {

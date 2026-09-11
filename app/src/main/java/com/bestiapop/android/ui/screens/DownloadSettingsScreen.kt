@@ -5,7 +5,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -17,7 +17,7 @@ import com.bestiapop.android.ui.components.SettingsSwitchRow
 
 @Composable
 fun DownloadSettingsScreen(viewModel: MusicPlayerViewModel) {
-    val downloadSettings by viewModel.downloadSettings.collectAsState()
+    val downloadSettings by viewModel.downloadSettings.collectAsStateWithLifecycle()
     val savePathLabel = StorageUtils.userVisibleMusicDirLabel()
     val absolutePath = StorageUtils.publicBestiaPopDir().absolutePath
 

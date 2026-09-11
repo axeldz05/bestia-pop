@@ -12,7 +12,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
@@ -29,19 +29,19 @@ import kotlin.math.roundToInt
 
 @Composable
 fun PlaybackSettingsScreen(viewModel: MusicPlayerViewModel) {
-    val rememberShuffle by viewModel.rememberShuffleOnLaunch.collectAsState()
-    val rememberRepeat by viewModel.rememberRepeatOnLaunch.collectAsState()
-    val autoplayOnLaunch by viewModel.autoplayOnLaunch.collectAsState()
-    val clearShuffleOnManualPlay by viewModel.clearShuffleOnManualPlay.collectAsState()
-    val clearRepeatAllOnManualPlay by viewModel.clearRepeatAllOnManualPlay.collectAsState()
-    val clearRepeatOneOnManualPlay by viewModel.clearRepeatOneOnManualPlay.collectAsState()
-    val clearShuffleOnSkip by viewModel.clearShuffleOnSkip.collectAsState()
-    val clearRepeatOneOnSkip by viewModel.clearRepeatOneOnSkip.collectAsState()
-    val streamGraceSeconds by viewModel.streamSkipGraceSeconds.collectAsState()
-    val openNowPlayingOnPlay by viewModel.openNowPlayingOnPlay.collectAsState()
-    val crossfadeEnabled by viewModel.crossfadeEnabled.collectAsState()
-    val crossfadeDurationSeconds by viewModel.crossfadeDurationSeconds.collectAsState()
-    val backgroundExecutionStatus by viewModel.backgroundExecutionStatus.collectAsState()
+    val rememberShuffle by viewModel.rememberShuffleOnLaunch.collectAsStateWithLifecycle()
+    val rememberRepeat by viewModel.rememberRepeatOnLaunch.collectAsStateWithLifecycle()
+    val autoplayOnLaunch by viewModel.autoplayOnLaunch.collectAsStateWithLifecycle()
+    val clearShuffleOnManualPlay by viewModel.clearShuffleOnManualPlay.collectAsStateWithLifecycle()
+    val clearRepeatAllOnManualPlay by viewModel.clearRepeatAllOnManualPlay.collectAsStateWithLifecycle()
+    val clearRepeatOneOnManualPlay by viewModel.clearRepeatOneOnManualPlay.collectAsStateWithLifecycle()
+    val clearShuffleOnSkip by viewModel.clearShuffleOnSkip.collectAsStateWithLifecycle()
+    val clearRepeatOneOnSkip by viewModel.clearRepeatOneOnSkip.collectAsStateWithLifecycle()
+    val streamGraceSeconds by viewModel.streamSkipGraceSeconds.collectAsStateWithLifecycle()
+    val openNowPlayingOnPlay by viewModel.openNowPlayingOnPlay.collectAsStateWithLifecycle()
+    val crossfadeEnabled by viewModel.crossfadeEnabled.collectAsStateWithLifecycle()
+    val crossfadeDurationSeconds by viewModel.crossfadeDurationSeconds.collectAsStateWithLifecycle()
+    val backgroundExecutionStatus by viewModel.backgroundExecutionStatus.collectAsStateWithLifecycle()
 
     val context = LocalContext.current
     val oemScreenOffCleanupIntent = remember(context) {

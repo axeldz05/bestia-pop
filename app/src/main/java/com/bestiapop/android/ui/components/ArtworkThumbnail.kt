@@ -67,7 +67,7 @@ internal fun buildArtworkImageRequest(context: Context, uri: String, sizePx: Int
         }
         .crossfade(false)
         .memoryCacheKey(artworkMemoryCacheKey(uri, sizePx))
-        .diskCacheKey(artworkMemoryCacheKey(uri, sizePx))
+        .diskCacheKey(uri)
         .build()
 }
 

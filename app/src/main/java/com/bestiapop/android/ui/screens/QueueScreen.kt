@@ -17,7 +17,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -31,9 +31,9 @@ import com.bestiapop.android.ui.components.focusedQueueIndex
 fun QueueScreen(
     viewModel: MusicPlayerViewModel
 ) {
-    val queue by viewModel.displayQueue.collectAsState()
-    val currentItem by viewModel.currentItem.collectAsState()
-    val queueFocusEpoch by viewModel.queueFocusEpoch.collectAsState()
+    val queue by viewModel.displayQueue.collectAsStateWithLifecycle()
+    val currentItem by viewModel.currentItem.collectAsStateWithLifecycle()
+    val queueFocusEpoch by viewModel.queueFocusEpoch.collectAsStateWithLifecycle()
     val listState = rememberLazyListState()
     val currentQueueIndex = focusedQueueIndex(queue, currentItem?.queueEntryId)
 

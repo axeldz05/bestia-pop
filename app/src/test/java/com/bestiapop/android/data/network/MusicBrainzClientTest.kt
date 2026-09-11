@@ -110,5 +110,86 @@ class MusicBrainzClientTest {
         val track = tracks.single()
         assertEquals(0, track.trackNumber)
     }
+
+    @Test
+    fun parseSearch_multiTrackMatchingTitle_resolvesCorrectTrack() {
+        val json = JSONObject(
+            """
+            {
+              "recordings": [{
+                "id": "rec-3",
+                "title": "Hit Single",
+                "length": 200000,
+                "artist-credit": [{"name": "Artist"}],
+                "releases": [{
+                  "id": "rel-2",
+                  "title": "Great Album",
+                  "status": "Official",
+                  "date": "2022-08-15",
+                  "media": [{
+                    "position": 1,
+                    "track": [{
+                      "number": "1",
+                      "title": "Intro"
+                    }, {
+                      "number": "2",
+                      "title": "Hit Single"
+                    }]
+                  }]
+                }]
+              }]
+            }
+            """.trimIndent()
+        )
+
+        val tracks = parseMusicBrainzRecordingSearch(json)
+        assertEquals(1, tracks.size)
+        val track = tracks.single()
+        assertEquals(2, track.trackNumber)
+        assertEquals("Great Album", track.album)
+        assertEquals(2022, track.year)
+    }
+
+    @Test
+    fun parseSearch_prefersReleaseWithMediaAndDateOverStub() {
+        val json = JSONObject(
+            """
+            {
+              "recordings": [{
+                "id": "rec-4",
+                "title": "Deep Track",
+                "length": 180000,
+                "artist-credit": [{"name": "Artist"}],
+                "releases": [{
+                  "id": "rel-stub",
+                  "title": "Stub Release",
+                  "status": "Official"
+                }, {
+                  "id": "rel-complete",
+                  "title": "Full Deluxe Edition",
+                  "status": "Official",
+                  "date": "2021-03-10",
+                  "media": [{
+                    "position": 2,
+                    "track": [{
+                      "number": "4",
+                      "title": "Deep Track"
+                    }]
+                  }]
+                }]
+              }]
+            }
+            """.trimIndent()
+        )
+
+        val tracks = parseMusicBrainzRecordingSearch(json)
+        assertEquals(1, tracks.size)
+        val track = tracks.single()
+        assertEquals("Full Deluxe Edition", track.album)
+        assertEquals(2021, track.year)
+        // Disc 2, track 4 = encodeAlbumTrack(4, 2) = 2004
+        assertEquals(2004, track.trackNumber)
+    }
 }
+
 

@@ -185,21 +185,22 @@ internal fun parseMusicBrainzRecordingSearch(
 private fun toCatalogTrack(rec: JSONObject, coverArtBaseUrl: String): OnlineCatalogTrack? {
     val recordingId = rec.optString("id").trim()
     val title = rec.optString("title").trim()
-    if (recordingId.isEmpty() || title.isBlank()) return null
+    if (recordingId.isEmpty() || title.isEmpty()) return null
     val artist = artistCreditName(rec.optJSONArray("artist-credit"))
     if (IdentifyRanking.isPlaceholderArtist(artist)) return null
-    val release = pickRelease(rec.optJSONArray("releases"))
-    val album = release?.optString("title")?.trim().orEmpty()
+
+    val release = pickBestRelease(rec.optJSONArray("releases"))
     val releaseId = release?.optString("id")?.trim().orEmpty()
-    val artworkUri = if (releaseId.isNotEmpty()) {
-        "${coverArtBaseUrl.trimEnd('/')}/release/$releaseId/front-500"
-    } else {
-        null
+    val album = release?.optString("title")?.trim().orEmpty()
+    val artworkUri = releaseId.takeIf { it.isNotEmpty() }?.let {
+        "${coverArtBaseUrl.trimEnd('/')}/release/$it/front-500"
     }
-    val durationMs = rec.optLong("length", 0L).coerceAtLeast(0L)
-    val trackNumber = trackNumberOf(release, title)
     val year = MetadataFetcher.parseReleaseYear(release?.optString("date"))
+    val trackNumber = release?.let { extractTrackNumber(it, title) } ?: 0
+
+    val durationMs = rec.optLong("length", 0L).coerceAtLeast(0L)
     val bilingualTitle = bilingualFromAliases(title, rec.optJSONArray("aliases"))
+
     val identity = TrackIdentity(
         title = bilingualTitle,
         artist = artist,
@@ -243,46 +244,60 @@ private fun artistCreditName(credits: JSONArray?): String {
     }.trim()
 }
 
-private fun pickRelease(releases: JSONArray?): JSONObject? {
+private fun pickBestRelease(releases: JSONArray?): JSONObject? {
     if (releases == null || releases.length() == 0) return null
-    var fallback: JSONObject? = null
+    var bestRel: JSONObject? = null
+    var bestScore = -1
+
     for (i in 0 until releases.length()) {
         val rel = releases.optJSONObject(i) ?: continue
-        val status = rel.optString("status")
-        if (status.equals("Official", ignoreCase = true)) return rel
-        if (fallback == null) fallback = rel
+        val isOfficial = rel.optString("status").equals("Official", ignoreCase = true)
+        val hasMedia = rel.optJSONArray("media")?.let { it.length() > 0 } == true
+        val hasDate = rel.optString("date").isNotBlank()
+
+        var score = 0
+        if (isOfficial) score += 4
+        if (hasMedia) score += 2
+        if (hasDate) score += 1
+
+        if (score > bestScore) {
+            bestScore = score
+            bestRel = rel
+            if (score == 7) break
+        }
     }
-    return fallback
+    return bestRel
 }
 
-private fun trackNumberOf(release: JSONObject?, recordingTitle: String): Int {
-    val media = release?.optJSONArray("media") ?: return 0
-    val cleanedRecording = IdentifyRanking.cleanIdentityTitle(recordingTitle)
-    val strippedRecording = IdentifyRanking.stripTitleNoise(cleanedRecording)
+private fun extractTrackNumber(release: JSONObject, recordingTitle: String): Int {
+    val media = release.optJSONArray("media") ?: return 0
     for (i in 0 until media.length()) {
         val medium = media.optJSONObject(i) ?: continue
         val disc = medium.optInt("position", i + 1)
         val tracks = medium.optJSONArray("track") ?: continue
-        for (j in 0 until tracks.length()) {
+        val count = tracks.length()
+
+        // Standard MusicBrainz recording payload: media contains only the matching track
+        if (count == 1) {
+            val track = tracks.optJSONObject(0) ?: continue
+            return encodeAlbumTrack(parseTrackNumber(track), disc)
+        }
+
+        // Multi-track fallback: match exact title ignoring case
+        for (j in 0 until count) {
             val track = tracks.optJSONObject(j) ?: continue
             val name = track.optString("title").trim()
-            val num = track.optString("number").substringBefore('.').toIntOrNull()
-                ?: track.optInt("position", 0)
-            val cleanedName = IdentifyRanking.cleanIdentityTitle(name)
-            val strippedName = IdentifyRanking.stripTitleNoise(cleanedName)
-            if (name.equals(recordingTitle, ignoreCase = true) ||
-                cleanedName.equals(cleanedRecording, ignoreCase = true) ||
-                strippedName.equals(strippedRecording, ignoreCase = true) ||
-                (strippedName.isNotEmpty() && strippedRecording.isNotEmpty() &&
-                    IdentifyRanking.fieldSimilarity(strippedName, strippedRecording) >= 0.85f) ||
-                tracks.length() == 1
-            ) {
-                return encodeAlbumTrack(num, disc)
+            if (name.equals(recordingTitle, ignoreCase = true)) {
+                return encodeAlbumTrack(parseTrackNumber(track), disc)
             }
         }
     }
     return 0
 }
+
+private fun parseTrackNumber(track: JSONObject): Int =
+    track.optString("number").substringBefore('.').toIntOrNull()
+        ?: track.optInt("position", 0)
 
 private fun escapeLucene(raw: String): String {
     val specials = charArrayOf(

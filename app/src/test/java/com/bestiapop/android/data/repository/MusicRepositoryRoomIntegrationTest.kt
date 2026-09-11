@@ -843,6 +843,51 @@ class MusicRepositoryRoomIntegrationTest {
             proposal.confidence
         )
     }
+
+    @Test
+    fun getAllSongPathRefs_returnsOnlyPathsWithoutLyrics() = runTest {
+        val repo = repository()
+        val songItem = song("path_song1.mp3", "Song 1")
+        val id = database.musicDao.insertSong(
+            songItem.copy(lyrics = "[00:01.00]Lyrics")
+        )
+        assertTrue(id > 0)
+        val paths = repo.getAllSongPathRefs()
+        assertEquals(1, paths.size)
+        assertEquals(songItem.uriString, paths[0].uriString)
+    }
+
+    @Test
+    fun playlistAndAlbumQueries_omitLyricsBlobs() = runTest {
+        val repo = repository()
+        val songId = database.musicDao.insertSong(
+            song("test.mp3", "Title", album = "Album A").copy(lyrics = "[00:01.00]Some heavy lyrics")
+        )
+        val playlistId = repo.createPlaylist("Favorites", null, null)
+        repo.addSongToPlaylist(playlistId, songId)
+
+        val playlistSongs = repo.getPlaylistSongsOrdered(playlistId)
+        assertEquals(1, playlistSongs.size)
+        assertNull(playlistSongs[0].lyrics)
+
+        val albumSongs = database.musicDao.getSongsForAlbum("Album A")
+        assertEquals(1, albumSongs.size)
+        assertNull(albumSongs[0].lyrics)
+
+        val fullSong = repo.getSongById(songId)
+        assertNotNull(fullSong?.lyrics)
+    }
+
+    @Test
+    fun findSongByArtistTitle_findsSongViaCachedLibrary() = runTest {
+        val repo = repository()
+        database.musicDao.insertSong(
+            song("hit.mp3", "Canción de Prueba", artist = "Artista Único")
+        )
+        val found = repo.findSongByArtistTitle("artista unico", "cancion de prueba")
+        assertNotNull(found)
+        assertEquals("Canción de Prueba", found?.title)
+    }
 }
 
 internal class EphemeralCoverContentProvider : ContentProvider() {

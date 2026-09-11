@@ -215,9 +215,15 @@ class GetLibrarySongsUseCase {
     }
 
     fun songsInOrder(pool: List<Song>, ids: List<Long>): List<Song> {
-        if (ids.isEmpty()) return emptyList()
-        val byId = HashMap<Long, Song>(pool.size * 2)
-        for (song in pool) byId[song.id] = song
+        if (ids.isEmpty() || pool.isEmpty()) return emptyList()
+        val targetIds = ids.toHashSet()
+        val byId = HashMap<Long, Song>(targetIds.size)
+        for (song in pool) {
+            if (song.id in targetIds) {
+                byId[song.id] = song
+                if (byId.size == targetIds.size) break
+            }
+        }
         return ids.mapNotNull { byId[it] }
     }
 

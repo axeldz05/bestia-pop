@@ -55,6 +55,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -401,7 +403,6 @@ private fun PlaylistDetailScreen(
     }
     val currentSong by viewModel.currentSong.collectAsStateWithLifecycle()
     val currentItem by viewModel.currentItem.collectAsStateWithLifecycle()
-    val activeDownloads by viewModel.activeDownloads.collectAsStateWithLifecycle()
     val detailListState = rememberSaveable(playlist.id, saver = LazyListState.Saver) { LazyListState() }
 
     Surface(
@@ -590,9 +591,9 @@ private fun PlaylistDetailScreen(
                         key = { "pending-${it.id}" },
                         contentType = { "pending" }
                     ) { pending ->
-                        PlaylistPendingTrackRow(
-                            pending = pending,
-                            download = activeDownloads.findUiDownloadByTrack(pending.artist, pending.title)
+                        PlaylistPendingTrackItem(
+                            viewModel = viewModel,
+                            pending = pending
                         )
                     }
                 }
@@ -615,6 +616,23 @@ private fun PlaylistDetailScreen(
             )
         }
     }
+}
+
+@Composable
+private fun PlaylistPendingTrackItem(
+    viewModel: MusicPlayerViewModel,
+    pending: PlaylistPendingTrack
+) {
+    val download by remember(viewModel, pending.artist, pending.title) {
+        viewModel.activeDownloads.map { list ->
+            list.findUiDownloadByTrack(pending.artist, pending.title)
+        }.distinctUntilChanged()
+    }.collectAsStateWithLifecycle(initialValue = null)
+
+    PlaylistPendingTrackRow(
+        pending = pending,
+        download = download
+    )
 }
 
 @Composable

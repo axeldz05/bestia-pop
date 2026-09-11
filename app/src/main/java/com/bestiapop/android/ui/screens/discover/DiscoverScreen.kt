@@ -106,8 +106,6 @@ fun DiscoverScreen(
     val currentItem by viewModel.currentItem.collectAsStateWithLifecycle()
     val activeDownloads by viewModel.activeDownloads.collectAsStateWithLifecycle()
     val playlists by viewModel.playlists.collectAsStateWithLifecycle(emptyList())
-    val librarySongs by viewModel.libraryProjection.songs.collectAsStateWithLifecycle()
-    val libraryAlbums by viewModel.libraryProjection.albums.collectAsStateWithLifecycle()
     val songActions = rememberSongQueueActions(viewModel)
     val songDialogs = rememberSongActionDialogs(viewModel = viewModel, playlists = playlists)
     val songItemActions = remember(songActions, songDialogs) {
@@ -183,66 +181,15 @@ fun DiscoverScreen(
             )
 
             if (catalogCollection.kind == CatalogCollectionKind.ARTIST) {
-                val artistLocalSongs = remember(librarySongs, selectedCollectionTitle) {
-                    viewModel.songsForArtist(librarySongs, selectedCollectionTitle)
-                }
-                val artistLocalAlbums = remember(libraryAlbums, artistLocalSongs, selectedCollectionTitle) {
-                    val albumTitles = artistLocalSongs.map { it.album.lowercase().trim() }.toSet()
-                    libraryAlbums.filter { album ->
-                        album.artist.equals(selectedCollectionTitle, ignoreCase = true) ||
-                            albumTitles.contains(album.name.lowercase().trim())
-                    }
-                }
-
-                val artistActions = remember(activeCandidates, selectedCollectionTitle, artistLocalSongs) {
-                    DiscoverArtistActions(
-                        onBack = { viewModel.clearSelectedCollection() },
-                        onPlayAll = {
-                            viewModel.playCatalogCandidates(activeCandidates, startIndex = 0, startShuffled = false)
-                        },
-                        onShuffle = {
-                            viewModel.playCatalogCandidates(activeCandidates, startIndex = 0, startShuffled = true)
-                        },
-                        onStartRadio = {
-                            val seed = artistLocalSongs.randomOrNull()
-                            if (seed != null) {
-                                viewModel.startRadio(seedSong = seed)
-                            } else {
-                                viewModel.startRadio()
-                            }
-                        },
-                        onSelectAlbum = { album ->
-                            viewModel.selectAlbumForInspection(album)
-                        },
-                        onSaveAlbum = { album ->
-                            viewModel.saveAlbumToLibrary(album)
-                        },
-                        onPlayTrack = { candidate ->
-                            viewModel.playCatalogCandidate(candidate)
-                        },
-                        onDownloadTrack = { candidate ->
-                            viewModel.downloadCatalogCandidate(candidate)
-                        },
-                        onPlayLocalSong = { song ->
-                            viewModel.playSong(song)
-                        },
-                        getTrackStatus = viewModel::getTrackLibraryStatus,
-                        getAlbumStatus = viewModel::getAlbumLibraryStatus,
-                        onAlreadyInLibrary = { viewModel.toast(it) }
-                    )
-                }
-
-                DiscoverArtistDetailView(
+                DiscoverArtistDetailSection(
+                    viewModel = viewModel,
                     artistName = selectedCollectionTitle,
                     coverUrl = catalogCollection.coverUrl,
                     candidates = activeCandidates,
                     albums = catalogCollection.albums,
                     isLoading = isLoadingCollection,
-                    localSongs = artistLocalSongs,
-                    localAlbums = artistLocalAlbums,
                     currentItem = currentItem,
-                    activeDownloads = activeDownloads,
-                    actions = artistActions
+                    activeDownloads = activeDownloads
                 )
             } else {
                 val albumStatus = viewModel.getAlbumLibraryStatus(
@@ -2344,6 +2291,85 @@ data class DiscoverArtistActions(
     val getAlbumStatus: (String, String) -> ItemLibraryStatus = { _, _ -> ItemLibraryStatus.NOT_IN_LIBRARY },
     val onAlreadyInLibrary: (String) -> Unit = {}
 )
+
+/** Level 3: Stateful artist detail section that collects library songs and albums only when mounted. */
+@Composable
+private fun DiscoverArtistDetailSection(
+    viewModel: MusicPlayerViewModel,
+    artistName: String,
+    coverUrl: String?,
+    candidates: List<CatalogTrackCandidate>,
+    albums: List<CatalogAlbum>,
+    isLoading: Boolean,
+    currentItem: PlayableItem?,
+    activeDownloads: List<ActiveDownload>,
+    modifier: Modifier = Modifier
+) {
+    val librarySongs by viewModel.libraryProjection.songs.collectAsStateWithLifecycle()
+    val libraryAlbums by viewModel.libraryProjection.albums.collectAsStateWithLifecycle()
+    val artistLocalSongs = remember(librarySongs, artistName) {
+        viewModel.songsForArtist(librarySongs, artistName)
+    }
+    val artistLocalAlbums = remember(libraryAlbums, artistLocalSongs, artistName) {
+        val albumTitles = artistLocalSongs.map { it.album.lowercase().trim() }.toSet()
+        libraryAlbums.filter { album ->
+            album.artist.equals(artistName, ignoreCase = true) ||
+                albumTitles.contains(album.name.lowercase().trim())
+        }
+    }
+
+    val artistActions = remember(candidates, artistName, artistLocalSongs) {
+        DiscoverArtistActions(
+            onBack = { viewModel.clearSelectedCollection() },
+            onPlayAll = {
+                viewModel.playCatalogCandidates(candidates, startIndex = 0, startShuffled = false)
+            },
+            onShuffle = {
+                viewModel.playCatalogCandidates(candidates, startIndex = 0, startShuffled = true)
+            },
+            onStartRadio = {
+                val seed = artistLocalSongs.randomOrNull()
+                if (seed != null) {
+                    viewModel.startRadio(seedSong = seed)
+                } else {
+                    viewModel.startRadio()
+                }
+            },
+            onSelectAlbum = { album ->
+                viewModel.selectAlbumForInspection(album)
+            },
+            onSaveAlbum = { album ->
+                viewModel.saveAlbumToLibrary(album)
+            },
+            onPlayTrack = { candidate ->
+                viewModel.playCatalogCandidate(candidate)
+            },
+            onDownloadTrack = { candidate ->
+                viewModel.downloadCatalogCandidate(candidate)
+            },
+            onPlayLocalSong = { song ->
+                viewModel.playSong(song)
+            },
+            getTrackStatus = viewModel::getTrackLibraryStatus,
+            getAlbumStatus = viewModel::getAlbumLibraryStatus,
+            onAlreadyInLibrary = { viewModel.toast(it) }
+        )
+    }
+
+    DiscoverArtistDetailView(
+        artistName = artistName,
+        coverUrl = coverUrl,
+        candidates = candidates,
+        albums = albums,
+        isLoading = isLoading,
+        localSongs = artistLocalSongs,
+        localAlbums = artistLocalAlbums,
+        currentItem = currentItem,
+        activeDownloads = activeDownloads,
+        actions = artistActions,
+        modifier = modifier
+    )
+}
 
 /** Level 2: Artist detail view using bundled [DiscoverArtistActions]. */
 @Composable

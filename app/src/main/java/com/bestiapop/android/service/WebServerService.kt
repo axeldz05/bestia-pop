@@ -481,8 +481,8 @@ class WebServerService : Service() {
                     advertisedHost = { ip },
                     dashboardHtml = ::getWebDashboardHtml,
                     listLibraryNames = {
-                        repository.getAllSongsSync().mapNotNull { song ->
-                            SongPathNormalizer.fileName(song.uriString, song.folderPath)
+                        repository.getAllSongPathRefs().mapNotNull { ref ->
+                            SongPathNormalizer.fileName(ref.uriString, ref.folderPath)
                                 .takeIf(String::isNotBlank)
                         }
                     },

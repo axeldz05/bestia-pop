@@ -36,6 +36,7 @@ open class FakeMusicRepository : IMusicRepository {
     override suspend fun scanFolderUri(treeUri: Uri, onProgress: LibraryScanProgress?): List<Song> =
         emptyList()
     override suspend fun getAllSongsSync(): List<Song> = emptyList()
+    override suspend fun getAllSongPathRefs(): List<com.bestiapop.android.data.model.SongPathRef> = emptyList()
     override suspend fun getSongsByIds(ids: List<Long>): List<Song> = emptyList()
     override suspend fun getSongById(id: Long): Song? = null
     override suspend fun findSongByArtistTitle(artist: String, title: String): Song? = null

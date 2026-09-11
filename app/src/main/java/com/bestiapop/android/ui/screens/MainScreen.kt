@@ -57,7 +57,6 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.bestiapop.android.data.preferences.activeDownloadBadgeCount
 import com.bestiapop.android.data.system.BackgroundExecutionProbe
 import com.bestiapop.android.ui.MusicPlayerViewModel
 import com.bestiapop.android.ui.components.BottomPlayerBar
@@ -91,7 +90,7 @@ fun MainScreen(
     val radioStatusLabel by viewModel.radioStatusLabel.collectAsStateWithLifecycle()
     val resolvingRemote by viewModel.resolvingRemote.collectAsStateWithLifecycle()
     val radioLoading by viewModel.radioLoading.collectAsStateWithLifecycle()
-    val activeDownloads by viewModel.activeDownloads.collectAsStateWithLifecycle()
+    val downloadBadgeCount by viewModel.activeDownloadBadgeCount.collectAsStateWithLifecycle()
     val pendingOpenDownloads by viewModel.pendingOpenDownloads.collectAsStateWithLifecycle()
     val pendingOpenIdentifyReview by viewModel.pendingOpenIdentifyReview.collectAsStateWithLifecycle()
     val pendingOpenNowPlaying by viewModel.pendingOpenNowPlaying.collectAsStateWithLifecycle()
@@ -102,7 +101,6 @@ fun MainScreen(
     val appUpdateState by appUpdateViewModel.state.collectAsStateWithLifecycle()
     val volumeLevel by viewModel.volumeLevel.collectAsStateWithLifecycle()
     val volumeBoostHudVisible by viewModel.volumeBoostHudVisible.collectAsStateWithLifecycle()
-    val downloadBadgeCount = activeDownloadBadgeCount(activeDownloads)
     val backgroundExecutionStatus by viewModel.backgroundExecutionStatus.collectAsStateWithLifecycle()
     val oemScreenOffCleanupHintDismissed by viewModel.oemScreenOffCleanupHintDismissed.collectAsStateWithLifecycle()
     val oemScreenOffCleanupIntent = remember(context) {

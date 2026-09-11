@@ -14,6 +14,7 @@ import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.data.model.Playlist
 import com.bestiapop.android.data.model.PlaylistPendingTrack
 import com.bestiapop.android.data.model.Song
+import com.bestiapop.android.data.model.SongPathRef
 import com.bestiapop.android.data.util.TagSyncSummary
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -24,8 +25,8 @@ typealias LibraryScanProgress = (done: Int, total: Int, fileName: String) -> Uni
 interface IMusicRepository {
     val allSongsFlow: Flow<List<Song>>
     val songPlayStatsFlow: Flow<Map<Long, Long>>
-    val playlistsFlow: Flow<List<Playlist>>
     val albumOverridesFlow: Flow<List<AlbumOverride>>
+    val playlistsFlow: Flow<List<Playlist>>
 
     fun getPlaylistSongsFlow(playlistId: Long): Flow<List<Song>>
     fun getPlaylistDetailsFlow(playlistId: Long): Flow<Pair<Playlist, List<Song>>?>
@@ -39,6 +40,8 @@ interface IMusicRepository {
     suspend fun scanFolderUri(treeUri: Uri, onProgress: LibraryScanProgress? = null): List<Song>
     /** Identity-slim library snapshot (no `lyrics`, no play stamps), same columns as [allSongsFlow]. */
     suspend fun getAllSongsSync(): List<Song>
+    /** Lightweight path-only rows (uriString and folderPath), skipping Song entity allocations. */
+    suspend fun getAllSongPathRefs(): List<SongPathRef>
     /** Identity-slim rows for [ids]. Empty [ids] → empty list. */
     suspend fun getSongsByIds(ids: List<Long>): List<Song>
     /** Full Room row including `lyrics`. The [allSongsFlow] list is identity-slim. */

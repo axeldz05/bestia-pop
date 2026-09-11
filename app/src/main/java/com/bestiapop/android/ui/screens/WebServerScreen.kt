@@ -74,6 +74,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import com.bestiapop.android.data.model.ActiveDownload
 import com.bestiapop.android.data.model.ActiveDownloadSource
 import com.bestiapop.android.data.model.DownloadMessages
@@ -110,18 +112,19 @@ fun WebServerScreen(
     val identifyReview by viewModel.identifyReview.collectAsStateWithLifecycle()
     val playlists by viewModel.playlists.collectAsStateWithLifecycle(initialValue = emptyList())
     val currentItem by viewModel.currentItem.collectAsStateWithLifecycle()
-    val activeDownloads by viewModel.activeDownloads.collectAsStateWithLifecycle()
     val currentSongId = (currentItem as? PlayableItem.Local)?.song?.id
 
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
     var linkUrlInput by rememberSaveable { mutableStateOf("") }
 
-    val linkDownloads = remember(activeDownloads) {
-        activeDownloads.filter {
-            it.source == ActiveDownloadSource.LINK &&
-                (it.state.isInFlight || it.state.isFailed)
-        }
-    }
+    val linkDownloads by remember(viewModel) {
+        viewModel.activeDownloads.map { list ->
+            list.filter {
+                it.source == ActiveDownloadSource.LINK &&
+                    (it.state.isInFlight || it.state.isFailed)
+            }
+        }.distinctUntilChanged()
+    }.collectAsStateWithLifecycle(initialValue = emptyList())
 
     val songDialogs = rememberSongActionDialogs(
         viewModel = viewModel,

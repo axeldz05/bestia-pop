@@ -8,6 +8,7 @@ import androidx.room.Transaction
 import androidx.room.Update
 import com.bestiapop.android.data.model.AlbumOverride
 import com.bestiapop.android.data.model.Song
+import com.bestiapop.android.data.model.SongPathRef
 import com.bestiapop.android.data.model.SongPlayStat
 import kotlinx.coroutines.flow.Flow
 
@@ -15,6 +16,14 @@ import kotlinx.coroutines.flow.Flow
 internal const val IDENTITY_SONG_SELECT = """
         SELECT id, uriString, title, artist, album, genre, durationMs, year, trackNumber,
                artworkUri, CAST(NULL AS TEXT) AS lyrics, folderPath, dateAdded,
+               0 AS lastPlayedAt
+        FROM songs
+"""
+
+internal const val PLAYLIST_SONG_SELECT = """
+        SELECT songs.id, songs.uriString, songs.title, songs.artist, songs.album, songs.genre,
+               songs.durationMs, songs.year, songs.trackNumber, songs.artworkUri,
+               CAST(NULL AS TEXT) AS lyrics, songs.folderPath, songs.dateAdded,
                0 AS lastPlayedAt
         FROM songs
 """
@@ -34,6 +43,9 @@ interface MusicDao {
 
     @Query("$IDENTITY_SONG_SELECT WHERE id IN (:ids)")
     suspend fun getIdentitySongsByIds(ids: List<Long>): List<Song>
+
+    @Query("SELECT uriString, folderPath FROM songs")
+    suspend fun getAllSongPathRefs(): List<SongPathRef>
 
     @Query("SELECT * FROM songs WHERE album = 'YouTube Music'")
     suspend fun getLegacyYouTubeMusicSongs(): List<Song>
@@ -138,7 +150,7 @@ interface MusicDao {
         artworkUri: String?
     )
 
-    @Query("SELECT * FROM songs WHERE album = :albumName COLLATE NOCASE")
+    @Query("$IDENTITY_SONG_SELECT WHERE album = :albumName COLLATE NOCASE")
     suspend fun getSongsForAlbum(albumName: String): List<Song>
 
     @Query("SELECT artworkUri FROM songs WHERE album = :albumName AND artworkUri IS NOT NULL AND artworkUri != '' LIMIT 1")
@@ -314,7 +326,7 @@ interface MusicDao {
 
     @Query(
         """
-        SELECT songs.* FROM songs
+        $PLAYLIST_SONG_SELECT
         INNER JOIN playlist_song_cross_ref AS refs ON refs.songId = songs.id
         WHERE refs.playlistId = :playlistId
         ORDER BY refs.position ASC, refs.id ASC
@@ -324,7 +336,7 @@ interface MusicDao {
 
     @Query(
         """
-        SELECT songs.* FROM songs
+        $PLAYLIST_SONG_SELECT
         INNER JOIN playlist_song_cross_ref AS refs ON refs.songId = songs.id
         WHERE refs.playlistId = :playlistId
         ORDER BY refs.position ASC, refs.id ASC

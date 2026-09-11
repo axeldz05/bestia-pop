@@ -103,13 +103,24 @@ internal fun refreshLocalQueueMetadata(
     queue: List<PlayableItem>,
     songs: List<Song>
 ): List<PlayableItem> {
-    if (queue.none { it is PlayableItem.Local }) return queue
-    val byId = HashMap<Long, IndexedValue<Song>>(songs.size)
-    val byUri = HashMap<String, IndexedValue<Song>>(songs.size)
+    val localItems = queue.filterIsInstance<PlayableItem.Local>()
+    if (localItems.isEmpty() || songs.isEmpty()) return queue
+    val targetIds = HashSet<Long>(localItems.size)
+    val targetUris = HashSet<String>(localItems.size)
+    for (item in localItems) {
+        if (item.song.id > 0L) targetIds.add(item.song.id)
+        targetUris.add(item.song.uriString)
+    }
+    val byId = HashMap<Long, IndexedValue<Song>>(targetIds.size)
+    val byUri = HashMap<String, IndexedValue<Song>>(targetUris.size)
     songs.forEachIndexed { index, song ->
-        val indexed = IndexedValue(index, song)
-        if (song.id > 0L) byId.putIfAbsent(song.id, indexed)
-        byUri.putIfAbsent(song.uriString, indexed)
+        val matchId = song.id > 0L && song.id in targetIds
+        val matchUri = song.uriString in targetUris
+        if (matchId || matchUri) {
+            val indexed = IndexedValue(index, song)
+            if (matchId) byId.putIfAbsent(song.id, indexed)
+            if (matchUri) byUri.putIfAbsent(song.uriString, indexed)
+        }
     }
     return queue.map { item ->
         if (item !is PlayableItem.Local) return@map item

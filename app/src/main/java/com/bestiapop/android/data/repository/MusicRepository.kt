@@ -31,6 +31,7 @@ import com.bestiapop.android.data.model.OnlineCatalogTrack
 import com.bestiapop.android.data.model.Playlist
 import com.bestiapop.android.data.model.PlaylistPendingTrack
 import com.bestiapop.android.data.model.Song
+import com.bestiapop.android.data.model.SongPathRef
 import com.bestiapop.android.data.model.TrackIdentity
 import com.bestiapop.android.data.listenbrainz.LbApiResult
 import com.bestiapop.android.data.model.mergePreferring
@@ -421,7 +422,9 @@ class MusicRepository private constructor(
     private val tagWriteScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val catalogAlbumTracksCache = ConcurrentHashMap<String, List<KnownAlbumTrack>>()
     private val identityLibraryMutex = Mutex()
-    private var identityLibrary: MutableList<Song>? = null
+    private var identityLibrary: List<Song>? = null
+    private var cachedLibraryArtists: List<String>? = null
+    private var cachedKnownAlbums: List<KnownAlbumTracks>? = null
     private val libraryShareScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val libraryQueryStartedAtNs = System.nanoTime()
     private val loggedFirstLibraryEmit = java.util.concurrent.atomic.AtomicBoolean(false)
@@ -926,6 +929,10 @@ class MusicRepository private constructor(
         musicDao.getIdentitySongs()
     }
 
+    override suspend fun getAllSongPathRefs(): List<SongPathRef> = withContext(Dispatchers.IO) {
+        musicDao.getAllSongPathRefs()
+    }
+
     override suspend fun getSongById(id: Long): Song? = withContext(Dispatchers.IO) {
         musicDao.getSongById(id)
     }
@@ -943,12 +950,34 @@ class MusicRepository private constructor(
         }
     }
 
+    private suspend fun identityLibrarySongsLocked(): List<Song> {
+        identityLibrary?.let { return it }
+        val loaded = musicDao.getIdentitySongs()
+        identityLibrary = loaded
+        return loaded
+    }
+
     private suspend fun identityLibrarySongs(): List<Song> {
         identityLibraryMutex.withLock {
-            identityLibrary?.let { return it.toList() }
-            val loaded = musicDao.getIdentitySongs().toMutableList()
-            identityLibrary = loaded
-            return loaded.toList()
+            return identityLibrarySongsLocked()
+        }
+    }
+
+    private suspend fun libraryArtistsCached(): List<String> {
+        identityLibraryMutex.withLock {
+            cachedLibraryArtists?.let { return it }
+            val artists = identityLibrarySongsLocked().map { it.artist }.distinct()
+            cachedLibraryArtists = artists
+            return artists
+        }
+    }
+
+    private suspend fun libraryKnownAlbumsCached(): List<KnownAlbumTracks> {
+        identityLibraryMutex.withLock {
+            cachedKnownAlbums?.let { return it }
+            val albums = knownAlbumsFromLibrary(identityLibrarySongsLocked())
+            cachedKnownAlbums = albums
+            return albums
         }
     }
 
@@ -959,17 +988,24 @@ class MusicRepository private constructor(
     private suspend fun rememberIdentitySongs(updated: List<Song>) {
         if (updated.isEmpty()) return
         identityLibraryMutex.withLock {
-            val cache = identityLibrary ?: return@withLock
+            val cache = identityLibrary?.toMutableList() ?: return@withLock
             for (song in updated) {
                 val slim = song.copy(lyrics = null)
                 val index = cache.indexOfFirst { it.id == slim.id }
                 if (index >= 0) cache[index] = slim else cache.add(slim)
             }
+            identityLibrary = cache
+            cachedLibraryArtists = null
+            cachedKnownAlbums = null
         }
     }
 
     private suspend fun invalidateIdentityLibrary() {
-        identityLibraryMutex.withLock { identityLibrary = null }
+        identityLibraryMutex.withLock {
+            identityLibrary = null
+            cachedLibraryArtists = null
+            cachedKnownAlbums = null
+        }
     }
 
     override suspend fun saveUploadedSong(song: Song): Long = withContext(Dispatchers.IO) {
@@ -1234,7 +1270,7 @@ class MusicRepository private constructor(
 
         val stage1 = IdentifyPipeline.parseLocalFile(song)
         val baseName = stage1.baseName
-        val stage2 = IdentifyPipeline.narrowArtist(stage1, identityLibrarySongs().map { it.artist })
+        val stage2 = IdentifyPipeline.narrowArtist(stage1, libraryArtistsCached())
         val working = if (isExpand) song else persistWeakIdentityCleanup(song, stage2.mergedHints)
         val filenameArtist = stage2.filenameArtist
         val filenameTitle = stage2.filenameTitle
@@ -1435,7 +1471,7 @@ class MusicRepository private constructor(
         queryArtist: String,
         queryTitle: String
     ): IdentifyCandidate? {
-        val albums = knownAlbumsFromLibrary(identityLibrarySongs(), excludeSongIds = setOf(song.id))
+        val albums = libraryKnownAlbumsCached()
         if (albums.isEmpty()) return null
         val query = knownAlbumQueryOf(song, queryArtist = queryArtist, queryTitle = queryTitle)
         return assignUniqueKnownAlbumMatches(listOf(query), albums, scoped = false)[song.id]
@@ -1449,8 +1485,7 @@ class MusicRepository private constructor(
     ): KnownAlbumTracks? = withContext(Dispatchers.IO) {
         if (album.isBlank() || IdentifyRanking.isGenericAlbum(album)) return@withContext null
         val key = albumGroupKey(artist, album)
-        val library = knownAlbumsFromLibrary(identityLibrarySongs())
-            .firstOrNull { it.key == key }
+        val library = libraryKnownAlbumsCached().firstOrNull { it.key == key }
         val catalog = if (fetchCatalog) {
             catalogAlbumTracksCache.getOrPut(key) {
                 fetchCatalogAlbumTracks(artist, album)
@@ -1462,7 +1497,7 @@ class MusicRepository private constructor(
     }
 
     override suspend fun loadLibraryKnownAlbums(): List<KnownAlbumTracks> = withContext(Dispatchers.IO) {
-        knownAlbumsFromLibrary(identityLibrarySongs())
+        libraryKnownAlbumsCached()
     }
 
     private suspend fun fetchCatalogAlbumTracks(
@@ -2463,7 +2498,7 @@ class MusicRepository private constructor(
             )
         }
 
-        val library = musicDao.getIdentitySongs()
+        val library = identityLibrarySongs()
         finalAlbum = pickPersistedAlbumName(
             library = library,
             proposedAlbum = finalAlbum,
@@ -2540,7 +2575,7 @@ class MusicRepository private constructor(
 
     override suspend fun syncTagsToFiles(onProgress: LibraryScanProgress?): TagSyncSummary =
         withContext(Dispatchers.IO) {
-            val songs = musicDao.getAllSongs()
+            val songs = musicDao.getIdentitySongs()
             var updated = 0
             var skipped = 0
             var errors = 0
@@ -2604,8 +2639,13 @@ class MusicRepository private constructor(
     private suspend fun lookupSongByArtistTitle(artist: String, title: String): Song? {
         val key = TrackMatchKeys.matchKey(artist, title)
         if (key.isEmpty()) return null
-        val songs = musicDao.getIdentitySongs()
-        return TrackMatchKeys.buildIndex(songs, { it.artist }, { it.title })[key]
+        val songs = identityLibrarySongs()
+        for (song in songs) {
+            if (TrackMatchKeys.matchKey(song.artist, song.title) == key) {
+                return song
+            }
+        }
+        return null
     }
 
     suspend fun migrateCanonicalAudioUris() = withContext(Dispatchers.IO) {
@@ -2718,7 +2758,7 @@ class MusicRepository private constructor(
      */
     suspend fun migrateEmbeddedFileTags(): List<Song> = withContext(Dispatchers.IO) {
         try {
-            val songs = musicDao.getAllSongs()
+            val songs = musicDao.getIdentitySongs()
             if (songs.isEmpty()) return@withContext emptyList()
             val candidates = songs.filter { song ->
                 IdentifyRanking.isPlaceholderArtist(song.artist) ||

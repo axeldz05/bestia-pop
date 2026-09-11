@@ -64,6 +64,9 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -144,11 +147,8 @@ fun NowPlayingScreen(
     val radioLoading by viewModel.radioLoading.collectAsState()
     val radioMode by viewModel.radioMode.collectAsState()
     val radioStatusLabel by viewModel.radioStatusLabel.collectAsState()
-    val albums by viewModel.libraryProjection.albums.collectAsState()
-    val artists by viewModel.libraryProjection.artists.collectAsState()
     val playlists by viewModel.playlists.collectAsState(initial = emptyList())
     val discoverOrigin by viewModel.discoverPlaybackOrigin.collectAsState()
-    val activeDownloads by viewModel.activeDownloads.collectAsState()
     val isFetchingLyrics by viewModel.isFetchingLyrics.collectAsState()
     val lyricsFetchError by viewModel.lyricsFetchError.collectAsState()
     var actionsMenuExpanded by remember { mutableStateOf(false) }
@@ -192,16 +192,20 @@ fun NowPlayingScreen(
         is PlayableItem.Local -> item.song.album
         is PlayableItem.Remote -> item.album.takeIf { it.isNotBlank() } ?: "Stream"
     }
-    val matchedAlbum = remember(albums, item.album) {
-        item.album.takeIf { it.isNotBlank() }?.let { albumName ->
-            albums.firstOrNull { it.name.equals(albumName, ignoreCase = true) }
-        }
-    }
-    val matchedArtist = remember(artists, item.artist) {
-        item.artist.takeIf { it.isNotBlank() }?.let { artistName ->
-            artists.firstOrNull { it.name.equals(artistName, ignoreCase = true) }
-        }
-    }
+    val matchedAlbum by remember(viewModel, item.album) {
+        viewModel.libraryProjection.albums.map { list ->
+            item.album.takeIf { it.isNotBlank() }?.let { albumName ->
+                list.firstOrNull { it.name.equals(albumName, ignoreCase = true) }
+            }
+        }.distinctUntilChanged()
+    }.collectAsStateWithLifecycle(initialValue = null)
+    val matchedArtist by remember(viewModel, item.artist) {
+        viewModel.libraryProjection.artists.map { list ->
+            item.artist.takeIf { it.isNotBlank() }?.let { artistName ->
+                list.firstOrNull { it.name.equals(artistName, ignoreCase = true) }
+            }
+        }.distinctUntilChanged()
+    }.collectAsStateWithLifecycle(initialValue = null)
 
     LaunchedEffect(localSong?.id, playlists) {
         val songId = localSong?.id
@@ -504,14 +508,9 @@ fun NowPlayingScreen(
 
                                     val remoteItem = item as? PlayableItem.Remote
                                     if (remoteItem != null) {
-                                        NowPlayingRemoteDownloadAction(
-                                            download = activeDownloads.findUiDownloadByTrack(
-                                                remoteItem.artist,
-                                                remoteItem.title
-                                            ),
-                                            onDownload = { viewModel.downloadRemoteItem(remoteItem) },
-                                            onRetry = viewModel::retryActiveDownload,
-                                            onCancel = viewModel::dismissActiveDownload
+                                        NowPlayingRemoteDownloadButton(
+                                            viewModel = viewModel,
+                                            remoteItem = remoteItem
                                         )
                                     }
                                 }
@@ -1194,6 +1193,25 @@ private fun formatLyricStamp(timeMs: Long): String {
     val min = totalSec / 60
     val sec = totalSec % 60
     return "%02d:%02d".format(min, sec)
+}
+
+@Composable
+private fun NowPlayingRemoteDownloadButton(
+    viewModel: MusicPlayerViewModel,
+    remoteItem: PlayableItem.Remote
+) {
+    val download by remember(viewModel, remoteItem.artist, remoteItem.title) {
+        viewModel.activeDownloads.map { list ->
+            list.findUiDownloadByTrack(remoteItem.artist, remoteItem.title)
+        }.distinctUntilChanged()
+    }.collectAsStateWithLifecycle(initialValue = null)
+
+    NowPlayingRemoteDownloadAction(
+        download = download,
+        onDownload = { viewModel.downloadRemoteItem(remoteItem) },
+        onRetry = viewModel::retryActiveDownload,
+        onCancel = viewModel::dismissActiveDownload
+    )
 }
 
 @Composable

@@ -40,6 +40,7 @@ import com.bestiapop.android.data.preferences.NAV_DOWNLOADS
 import com.bestiapop.android.data.preferences.NAV_LIBRARY
 import com.bestiapop.android.data.preferences.NAV_PLAYLISTS
 import com.bestiapop.android.data.preferences.NAV_SETTINGS
+import com.bestiapop.android.data.preferences.activeDownloadBadgeCount
 import com.bestiapop.android.data.preferences.SearchHistoryPreferencesRepository
 import com.bestiapop.android.domain.usecase.GetDiscoverRecommendationsUseCase
 import com.bestiapop.android.domain.usecase.GetTopRelatedItemsUseCase
@@ -332,64 +333,83 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     )
     val identifyReview: StateFlow<IdentifyReviewState> = identifyCoordinator.identifyReview
     val identifySetup: StateFlow<IdentifySetupState?> = identifyCoordinator.identifySetup
-    val localLibraryIndex: StateFlow<Map<String, Song>> = rawSongs
+    private data class LibraryLookupIndex(
+        val localSongsByMatchKey: Map<String, Song> = emptyMap(),
+        val allSongsByMatchKey: Map<String, Song> = emptyMap(),
+        val allSongsById: Map<Long, Song> = emptyMap(),
+        val albumsByArtistAndTitle: Map<String, List<Song>> = emptyMap(),
+        val albumsByTitle: Map<String, List<Song>> = emptyMap()
+    )
+
+    private val libraryLookupIndex: StateFlow<LibraryLookupIndex> = rawSongs
         .map { songs ->
-            val localOnly = songs.filter { !it.isRemote }
-            TrackMatchKeys.buildLibraryIndex(localOnly)
+            val byId = HashMap<Long, Song>(songs.size)
+            val allByMatchKey = HashMap<String, Song>(songs.size)
+            val localByMatchKey = HashMap<String, Song>(songs.size)
+            val byArtistAndAlbum = HashMap<String, MutableList<Song>>()
+            val byAlbumTitle = HashMap<String, MutableList<Song>>()
+
+            for (song in songs) {
+                if (song.id > 0L) {
+                    byId[song.id] = song
+                }
+                val matchKey = TrackMatchKeys.matchKey(song.artist, song.title)
+                if (matchKey.isNotEmpty()) {
+                    allByMatchKey.putIfAbsent(matchKey, song)
+                    if (!song.isRemote) {
+                        localByMatchKey.putIfAbsent(matchKey, song)
+                    }
+                }
+                val albumKey = albumIdentityKey(song.album)
+                byArtistAndAlbum.getOrPut(albumArtistKey(song.artist, song.album)) { ArrayList() }.add(song)
+                byAlbumTitle.getOrPut(albumKey) { ArrayList() }.add(song)
+            }
+
+            LibraryLookupIndex(
+                localSongsByMatchKey = localByMatchKey,
+                allSongsByMatchKey = allByMatchKey,
+                allSongsById = byId,
+                albumsByArtistAndTitle = byArtistAndAlbum,
+                albumsByTitle = byAlbumTitle
+            )
         }
         .flowOn(Dispatchers.Default)
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.Eagerly,
-            initialValue = emptyMap()
+            initialValue = LibraryLookupIndex()
         )
-    val allLibrarySongsIndex: StateFlow<Map<String, Song>> = rawSongs
-        .map { songs ->
-            TrackMatchKeys.buildLibraryIndex(songs)
-        }
-        .flowOn(Dispatchers.Default)
+
+    val localLibraryIndex: StateFlow<Map<String, Song>> = libraryLookupIndex
+        .map { it.localSongsByMatchKey }
+        .distinctUntilChanged()
         .stateIn(
             scope = viewModelScope,
-            started = SharingStarted.Eagerly,
+            started = SharingStarted.WhileSubscribed(5_000),
             initialValue = emptyMap()
         )
-    val allSongsById: StateFlow<Map<Long, Song>> = rawSongs
-        .map { songs -> songs.associateBy(Song::id) }
-        .flowOn(Dispatchers.Default)
+    val allLibrarySongsIndex: StateFlow<Map<String, Song>> = libraryLookupIndex
+        .map { it.allSongsByMatchKey }
+        .distinctUntilChanged()
         .stateIn(
             scope = viewModelScope,
-            started = SharingStarted.Eagerly,
+            started = SharingStarted.WhileSubscribed(5_000),
+            initialValue = emptyMap()
+        )
+    val allSongsById: StateFlow<Map<Long, Song>> = libraryLookupIndex
+        .map { it.allSongsById }
+        .distinctUntilChanged()
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5_000),
             initialValue = emptyMap()
         )
 
     /** Level 2: Resolves an iterable of song IDs into the corresponding Songs in O(1) per song. */
     fun songsForIds(ids: Iterable<Long>): List<Song> {
-        val index = allSongsById.value
+        val index = libraryLookupIndex.value.allSongsById
         return ids.mapNotNull { index[it] }
     }
-
-    private data class SavedAlbumIndices(
-        val byArtistAndAlbum: Map<String, List<Song>> = emptyMap(),
-        val byAlbumTitle: Map<String, List<Song>> = emptyMap()
-    )
-
-    private val savedAlbumsIndices: StateFlow<SavedAlbumIndices> = rawSongs
-        .map { songs ->
-            val byArtist = HashMap<String, MutableList<Song>>()
-            val byTitle = HashMap<String, MutableList<Song>>()
-            for (song in songs) {
-                val albumKey = albumIdentityKey(song.album)
-                byArtist.getOrPut(albumArtistKey(song.artist, song.album)) { ArrayList() }.add(song)
-                byTitle.getOrPut(albumKey) { ArrayList() }.add(song)
-            }
-            SavedAlbumIndices(byArtist, byTitle)
-        }
-        .flowOn(Dispatchers.Default)
-        .stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.Eagerly,
-            initialValue = SavedAlbumIndices()
-        )
     val playlists = repository.playlistsFlow
 
     // Sorting & Searching
@@ -635,6 +655,14 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private var catalogSearchGeneration = 0L
 
     val activeDownloads: StateFlow<List<ActiveDownload>> = processDownloadRuntime.downloads
+    val activeDownloadBadgeCount: StateFlow<Int> = activeDownloads
+        .map { activeDownloadBadgeCount(it) }
+        .distinctUntilChanged()
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5_000),
+            initialValue = activeDownloadBadgeCount(activeDownloads.value)
+        )
     val downloadConflict: StateFlow<DownloadConflict?> = processDownloadRuntime.downloadConflict
 
     /** Set when MainActivity should switch to Descargas (notification / dialog deep-link). */
@@ -1099,9 +1127,8 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                         }
                     }
                     if (newIds.isEmpty()) return@collect
-                    val idSet = newIds.toSet()
                     val songs = withContext(Dispatchers.IO) {
-                        repository.getAllSongsSync().filter { it.id in idSet }
+                        repository.getSongsByIds(newIds)
                     }
                     if (songs.isEmpty()) return@collect
                     identifiedWifiSongIds += songs.map { it.id }
@@ -1155,7 +1182,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         // change, which restarted these network passes over the whole library each time.
         viewModelScope.launch(Dispatchers.IO) {
             awaitFirstLibraryIdle()
-            rawSongs.map { songs -> songs.map { it.artist }.distinct() }
+            rawSongs.map { songs -> songs.mapTo(LinkedHashSet()) { it.artist } }
                 .distinctUntilChanged()
                 .collect { artists ->
                     val newPhotos = mutableMapOf<String, String>()
@@ -1301,7 +1328,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     /** Returns matched local (non-remote) Song from library index in O(1) time. */
     fun findLocalSongFor(meta: TrackMeta): Song? {
-        val song = TrackMatchKeys.lookupLocalSong(localLibraryIndex.value, meta)
+        val song = TrackMatchKeys.lookupLocalSong(libraryLookupIndex.value.localSongsByMatchKey, meta)
         return if (song != null && !song.isRemote) song else null
     }
 
@@ -1321,7 +1348,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         startIndex: Int = 0,
         startShuffled: Boolean = false
     ) {
-        val playables = candidates.toPlayableItems(localLibraryIndex.value)
+        val playables = candidates.toPlayableItems(libraryLookupIndex.value.localSongsByMatchKey)
         playPlayableCollection(playables, startIndex = startIndex, startShuffled = startShuffled)
     }
 
@@ -1356,17 +1383,17 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     /** Returns status of track in library (DOWNLOADED, SAVED_REMOTE, or NOT_IN_LIBRARY) in O(1). */
     fun getTrackLibraryStatus(meta: TrackMeta): ItemLibraryStatus {
-        val song = TrackMatchKeys.lookupLocalSong(allLibrarySongsIndex.value, meta)
+        val song = TrackMatchKeys.lookupLocalSong(libraryLookupIndex.value.allSongsByMatchKey, meta)
             ?: return ItemLibraryStatus.NOT_IN_LIBRARY
         return if (song.isRemote) ItemLibraryStatus.SAVED_REMOTE else ItemLibraryStatus.DOWNLOADED
     }
 
     /** Returns status of album in library (DOWNLOADED, SAVED_REMOTE, or NOT_IN_LIBRARY) in O(1). */
     fun getAlbumLibraryStatus(albumTitle: String, artistName: String): ItemLibraryStatus {
-        val indices = savedAlbumsIndices.value
+        val indices = libraryLookupIndex.value
         val albumKey = albumIdentityKey(albumTitle)
         val key = albumArtistKey(artistName, albumTitle)
-        val songs = indices.byArtistAndAlbum[key] ?: indices.byAlbumTitle[albumKey]
+        val songs = indices.albumsByArtistAndTitle[key] ?: indices.albumsByTitle[albumKey]
         if (songs.isNullOrEmpty()) return ItemLibraryStatus.NOT_IN_LIBRARY
         return if (songs.any { !it.isRemote }) ItemLibraryStatus.DOWNLOADED else ItemLibraryStatus.SAVED_REMOTE
     }

@@ -33,6 +33,8 @@ import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Shuffle
+import com.bestiapop.android.data.preferences.SubmenuSwipeAction
+import com.bestiapop.android.ui.components.SubmenuSwipeBox
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.Check
@@ -222,17 +224,31 @@ fun PlaylistsScreen(
                     val songsInPlaylist = pair.second
                     val pendingTracks by viewModel.getPlaylistPendingTracksFlow(playlistId)
                         .collectAsStateWithLifecycle(initialValue = emptyList())
-                    PlaylistDetailScreen(
-                        playlist = playlist,
-                        songs = songsInPlaylist,
-                        pendingTracks = pendingTracks,
-                        onBack = { viewModel.closePlaylistDetail() },
-                        viewModel = viewModel,
-                        onAddSongsRequest = { onAddSongsRequest(it) },
-                        onDeletePlaylist = { playlistToDelete = playlist },
-                        onDownloadPending = { viewModel.downloadPlaylistPendingTracks(playlistId) },
-                        dialogs = songDialogs
-                    )
+                    val gestureSettings by viewModel.submenuGestureSettings.collectAsStateWithLifecycle()
+                    SubmenuSwipeBox(
+                        settings = gestureSettings,
+                        onSwipeRight = { viewModel.closePlaylistDetail() },
+                        onSwipeLeft = {
+                            viewModel.executeSubmenuActionForSongs(
+                                action = gestureSettings.swipeLeftAction,
+                                songs = songsInPlaylist,
+                                onAddToPlaylist = { songDialogs.onAddManyToPlaylist(it) }
+                            )
+                        },
+                        canExecuteAction = songsInPlaylist.isNotEmpty()
+                    ) {
+                        PlaylistDetailScreen(
+                            playlist = playlist,
+                            songs = songsInPlaylist,
+                            pendingTracks = pendingTracks,
+                            onBack = { viewModel.closePlaylistDetail() },
+                            viewModel = viewModel,
+                            onAddSongsRequest = { onAddSongsRequest(it) },
+                            onDeletePlaylist = { playlistToDelete = playlist },
+                            onDownloadPending = { viewModel.downloadPlaylistPendingTracks(playlistId) },
+                            dialogs = songDialogs
+                        )
+                    }
                 } ?: Box(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center

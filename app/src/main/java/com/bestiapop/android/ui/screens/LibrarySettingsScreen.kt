@@ -34,20 +34,23 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bestiapop.android.data.preferences.FastScrollSide
 import com.bestiapop.android.data.preferences.LibraryBlobConfig
 import com.bestiapop.android.data.preferences.LibraryBlobsSettings
+import com.bestiapop.android.data.preferences.SubmenuSwipeAction
 import com.bestiapop.android.ui.MusicPlayerViewModel
 import com.bestiapop.android.ui.components.ReorderDragModifiers
 import com.bestiapop.android.ui.components.rememberVerticalReorderDrag
 import com.bestiapop.android.ui.components.SettingsScrollColumn
 import com.bestiapop.android.ui.components.SettingsSwitchRow
+import com.bestiapop.android.ui.components.icon
 import com.bestiapop.android.ui.screens.library.chipLabel
 
 @Composable
 fun LibrarySettingsScreen(viewModel: MusicPlayerViewModel) {
     val fastScrollSettings by viewModel.fastScrollSettings.collectAsStateWithLifecycle()
     val libraryBlobsSettings by viewModel.libraryBlobsSettings.collectAsStateWithLifecycle()
+    val submenuGestureSettings by viewModel.submenuGestureSettings.collectAsStateWithLifecycle()
 
     SettingsScrollColumn(
-        intro = "Personalizá las categorías de tu biblioteca, su orden y el desplazamiento rápido."
+        intro = "Personalizá las categorías de tu biblioteca, su orden y los gestos en submenús."
     ) {
         Text(
             text = "Categorías de biblioteca (Blobs)",
@@ -153,6 +156,122 @@ fun LibrarySettingsScreen(viewModel: MusicPlayerViewModel) {
                     selected = fastScrollSettings.side == FastScrollSide.RIGHT,
                     onClick = { viewModel.setFastScrollSide(FastScrollSide.RIGHT) },
                     modifier = Modifier.weight(1f)
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(28.dp))
+
+        Text(
+            text = "Gestos en submenús",
+            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+            color = MaterialTheme.colorScheme.onBackground
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+        Text(
+            text = "Deslizá horizontalmente dentro de un álbum, playlist o detalle en Biblioteca o Descubrir para navegar o ejecutar acciones rápidas.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(modifier = Modifier.height(14.dp))
+
+        SettingsSwitchRow(
+            title = "Deslizar para volver atrás",
+            checked = submenuGestureSettings.swipeBackEnabled,
+            onCheckedChange = { viewModel.setSubmenuSwipeBackEnabled(it) },
+            onSubtitle = "Activo — deslizá hacia la derecha dentro de un álbum, playlist o detalle para volver",
+            offSubtitle = "Desactivado — usá solo el botón de volver o la navegación del sistema"
+        )
+
+        Spacer(modifier = Modifier.height(20.dp))
+
+        Text(
+            text = "Acción al deslizar a la izquierda",
+            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+            color = MaterialTheme.colorScheme.onBackground
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+        Text(
+            text = "Elegí qué acción realizar al deslizar hacia la izquierda dentro de una colección o detalle.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(modifier = Modifier.height(12.dp))
+
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            SubmenuSwipeAction.entries.forEach { action ->
+                SubmenuSwipeActionRow(
+                    action = action,
+                    selected = submenuGestureSettings.swipeLeftAction == action,
+                    onClick = { viewModel.setSubmenuSwipeLeftAction(action) }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SubmenuSwipeActionRow(
+    action: SubmenuSwipeAction,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        onClick = onClick,
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (selected) {
+                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
+            } else {
+                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+            }
+        ),
+        border = if (selected) {
+            BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
+        } else {
+            BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+        },
+        modifier = modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = action.icon,
+                contentDescription = null,
+                tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(24.dp)
+            )
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = if (action == SubmenuSwipeAction.ENQUEUE_ALL) "${action.label()} (Predeterminado)" else action.label(),
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium
+                    ),
+                    color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = action.description(),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            if (selected) {
+                Spacer(modifier = Modifier.width(8.dp))
+                Icon(
+                    imageVector = Icons.Default.Check,
+                    contentDescription = "Seleccionado",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(20.dp)
                 )
             }
         }

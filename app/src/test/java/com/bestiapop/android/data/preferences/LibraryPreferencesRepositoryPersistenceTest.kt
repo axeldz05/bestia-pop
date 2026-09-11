@@ -84,4 +84,19 @@ class LibraryPreferencesRepositoryPersistenceTest {
         assertEquals(false, reloaded.enabled)
         assertEquals(FastScrollSide.LEFT, reloaded.side)
     }
+
+    @Test
+    fun submenuGestureSettings_survivesRepositoryRecreation() = runTest {
+        val repo = LibraryPreferencesRepository(context)
+        val defaultSettings = repo.submenuGestureSettingsFlow.first()
+        assertEquals(true, defaultSettings.swipeBackEnabled)
+        assertEquals(SubmenuSwipeAction.ENQUEUE_ALL, defaultSettings.swipeLeftAction)
+
+        repo.setSubmenuSwipeBackEnabled(false)
+        repo.setSubmenuSwipeLeftAction(SubmenuSwipeAction.START_RADIO)
+
+        val reloaded = LibraryPreferencesRepository(context).submenuGestureSettingsFlow.first()
+        assertEquals(false, reloaded.swipeBackEnabled)
+        assertEquals(SubmenuSwipeAction.START_RADIO, reloaded.swipeLeftAction)
+    }
 }

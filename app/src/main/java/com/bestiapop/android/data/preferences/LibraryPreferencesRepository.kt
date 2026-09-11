@@ -205,6 +205,22 @@ class LibraryPreferencesRepository(private val context: Context) {
         context.libraryDataStore.put(Keys.FAST_SCROLL_SIDE, side.name)
     }
 
+    val submenuGestureSettingsFlow: Flow<SubmenuGestureSettings> = context.libraryDataStore.data.map { prefs ->
+        val swipeBackEnabled = prefs[Keys.SUBMENU_SWIPE_BACK_ENABLED] ?: true
+        val actionName = prefs[Keys.SUBMENU_SWIPE_LEFT_ACTION]
+        val action = SubmenuSwipeAction.entries.find { it.name.equals(actionName, ignoreCase = true) }
+            ?: SubmenuSwipeAction.ENQUEUE_ALL
+        SubmenuGestureSettings(swipeBackEnabled = swipeBackEnabled, swipeLeftAction = action)
+    }
+
+    suspend fun setSubmenuSwipeBackEnabled(enabled: Boolean) {
+        context.libraryDataStore.put(Keys.SUBMENU_SWIPE_BACK_ENABLED, enabled)
+    }
+
+    suspend fun setSubmenuSwipeLeftAction(action: SubmenuSwipeAction) {
+        context.libraryDataStore.put(Keys.SUBMENU_SWIPE_LEFT_ACTION, action.name)
+    }
+
     private object Keys {
         val INITIAL_SCAN_COMPLETED = booleanPreferencesKey("initial_library_scan_completed")
         val LEGACY_YTM_MIGRATED = booleanPreferencesKey("legacy_ytm_album_migrated")
@@ -228,5 +244,7 @@ class LibraryPreferencesRepository(private val context: Context) {
         val LIBRARY_BLOBS_SETTINGS = stringPreferencesKey("library_blobs_settings")
         val FAST_SCROLL_ENABLED = booleanPreferencesKey("fast_scroll_enabled")
         val FAST_SCROLL_SIDE = stringPreferencesKey("fast_scroll_side")
+        val SUBMENU_SWIPE_BACK_ENABLED = booleanPreferencesKey("submenu_swipe_back_enabled")
+        val SUBMENU_SWIPE_LEFT_ACTION = stringPreferencesKey("submenu_swipe_left_action")
     }
 }

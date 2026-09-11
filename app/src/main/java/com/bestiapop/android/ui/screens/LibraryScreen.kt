@@ -59,6 +59,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import com.bestiapop.android.data.preferences.FastScrollSettings
+import com.bestiapop.android.data.preferences.SubmenuSwipeAction
 import com.bestiapop.android.domain.util.albumNamesMatch
 import com.bestiapop.android.ui.MusicPlayerViewModel
 import com.bestiapop.android.ui.SortDirection
@@ -68,6 +69,7 @@ import com.bestiapop.android.ui.components.MultiSelectActionBar
 import com.bestiapop.android.ui.components.MultiSelectActions
 import com.bestiapop.android.ui.components.PlaylistAdditionActionBar
 import com.bestiapop.android.ui.components.SimilarPlaylistPreviewDialog
+import com.bestiapop.android.ui.components.SubmenuSwipeBox
 import com.bestiapop.android.ui.components.rememberSongQueueActions
 import com.bestiapop.android.ui.screens.library.AlbumBrowseActions
 import com.bestiapop.android.ui.screens.library.AggregateBrowseActions
@@ -680,7 +682,8 @@ fun LibraryScreen(
                 genreBrowseActions = genreBrowseActions,
                 fastScrollSettings = fastScrollSettings,
                 listStates = browseListStates,
-                onAddSongsToPlaylist = { localTargetPlaylistForAddition = it }
+                onAddSongsToPlaylist = { localTargetPlaylistForAddition = it },
+                onAddManyToPlaylist = { songDialogs.onAddManyToPlaylist(it) }
             )
         }
     }
@@ -801,26 +804,45 @@ private fun LibraryBrowsePane(
     genreBrowseActions: AggregateBrowseActions<GenreGroup>,
     fastScrollSettings: FastScrollSettings,
     listStates: LibraryBrowseListStates = rememberLibraryBrowseListStates(),
-    onAddSongsToPlaylist: (Playlist) -> Unit = {}
+    onAddSongsToPlaylist: (Playlist) -> Unit = {},
+    onAddManyToPlaylist: ((List<Song>) -> Unit)? = null
 ) {
     when {
         selectedAlbumName != null || selectedArtistName != null || selectedGenreName != null -> {
-            NestedLibraryBrowse(
-                selectedAlbumName = selectedAlbumName,
-                selectedArtistName = selectedArtistName,
-                selectedGenreName = selectedGenreName,
-                viewMode = if (selectedAlbumName != null) LibraryViewMode.FLAT else LibraryViewMode.ALBUM_GROUPS,
-                viewModel = viewModel,
-                currentSongIdFlow = currentSongIdFlow,
-                isSelectionMode = isMultiSelectMode,
-                selectedSongIds = selectedSongIds,
-                collapsedAlbumNames = collapsedAlbumNames,
-                sortOption = sortOption,
-                sortDirection = sortDirection,
-                actions = actions,
-                onToggleSelect = onToggleSelect,
-                fastScrollSettings = fastScrollSettings
-            )
+            val gestureSettings by viewModel.submenuGestureSettings.collectAsStateWithLifecycle()
+            val allSongs by viewModel.libraryProjection.songs.collectAsStateWithLifecycle()
+            val nestedSongs = remember(allSongs, selectedAlbumName, selectedArtistName, selectedGenreName) {
+                libraryNestedSongs(viewModel, allSongs, selectedAlbumName, selectedArtistName, selectedGenreName)
+            }
+            SubmenuSwipeBox(
+                settings = gestureSettings,
+                onSwipeRight = { viewModel.popLibraryNested() },
+                onSwipeLeft = {
+                    viewModel.executeSubmenuActionForSongs(
+                        action = gestureSettings.swipeLeftAction,
+                        songs = nestedSongs,
+                        onAddToPlaylist = onAddManyToPlaylist
+                    )
+                },
+                canExecuteAction = nestedSongs.isNotEmpty()
+            ) {
+                NestedLibraryBrowse(
+                    selectedAlbumName = selectedAlbumName,
+                    selectedArtistName = selectedArtistName,
+                    selectedGenreName = selectedGenreName,
+                    viewMode = if (selectedAlbumName != null) LibraryViewMode.FLAT else LibraryViewMode.ALBUM_GROUPS,
+                    viewModel = viewModel,
+                    currentSongIdFlow = currentSongIdFlow,
+                    isSelectionMode = isMultiSelectMode,
+                    selectedSongIds = selectedSongIds,
+                    collapsedAlbumNames = collapsedAlbumNames,
+                    sortOption = sortOption,
+                    sortDirection = sortDirection,
+                    actions = actions,
+                    onToggleSelect = onToggleSelect,
+                    fastScrollSettings = fastScrollSettings
+                )
+            }
         }
 
         activeFilter == LibraryBrowseFilter.SONGS || isPlaylistAdditionMode -> {

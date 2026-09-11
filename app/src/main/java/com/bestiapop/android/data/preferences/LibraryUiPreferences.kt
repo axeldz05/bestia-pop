@@ -60,6 +60,38 @@ data class FastScrollSettings(
     val side: FastScrollSide = FastScrollSide.RIGHT
 )
 
+enum class SubmenuSwipeAction {
+    ENQUEUE_ALL,
+    PLAY_NEXT,
+    START_RADIO,
+    SEARCH_SIMILAR,
+    ADD_TO_PLAYLIST,
+    DISABLED;
+
+    fun label(): String = when (this) {
+        ENQUEUE_ALL -> "Añadir a la cola"
+        PLAY_NEXT -> "Reproducir siguiente"
+        START_RADIO -> "Iniciar radio"
+        SEARCH_SIMILAR -> "Buscar similares"
+        ADD_TO_PLAYLIST -> "Añadir a playlist"
+        DISABLED -> "Desactivado"
+    }
+
+    fun description(): String = when (this) {
+        ENQUEUE_ALL -> "Añade todas las canciones de la colección al final de la cola"
+        PLAY_NEXT -> "Inserta las canciones para reproducirlas a continuación"
+        START_RADIO -> "Inicia una sesión de radio con sugerencias basadas en la colección"
+        SEARCH_SIMILAR -> "Abre la pestaña Descubrir buscando contenido relacionado"
+        ADD_TO_PLAYLIST -> "Abre el selector para guardar las canciones en una playlist"
+        DISABLED -> "No realiza ninguna acción al deslizar hacia la izquierda"
+    }
+}
+
+data class SubmenuGestureSettings(
+    val swipeBackEnabled: Boolean = true,
+    val swipeLeftAction: SubmenuSwipeAction = SubmenuSwipeAction.ENQUEUE_ALL
+)
+
 data class LibraryBlobConfig(
     val filter: LibraryBrowseFilter,
     val enabled: Boolean = true

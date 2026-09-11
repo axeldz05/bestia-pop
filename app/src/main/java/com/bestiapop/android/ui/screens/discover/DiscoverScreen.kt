@@ -58,6 +58,8 @@ import com.bestiapop.android.domain.usecase.TopRelatedFeed
 import com.bestiapop.android.ui.components.artistAlbumLabel
 import com.bestiapop.android.ui.screens.library.rememberSongActionDialogs
 import com.bestiapop.android.ui.components.SongItemActions
+import com.bestiapop.android.data.preferences.SubmenuSwipeAction
+import com.bestiapop.android.ui.components.SubmenuSwipeBox
 import com.bestiapop.android.ui.components.SongQueueActions
 import com.bestiapop.android.ui.components.rememberSongQueueActions
 import com.bestiapop.android.ui.state.PlaylistDetailNav
@@ -175,113 +177,149 @@ fun DiscoverScreen(
 
     Box(modifier = modifier.fillMaxSize()) {
         if (selectedCollectionTitle != null) {
-            val albumProgress = activeDownloads.findAlbumDownloadProgress(
-                albumTitle = selectedCollectionTitle,
-                artistName = activeCandidates.firstOrNull()?.artist.orEmpty()
-            )
-
-            if (catalogCollection.kind == CatalogCollectionKind.ARTIST) {
-                DiscoverArtistDetailSection(
-                    viewModel = viewModel,
-                    artistName = selectedCollectionTitle,
-                    coverUrl = catalogCollection.coverUrl,
-                    candidates = activeCandidates,
-                    albums = catalogCollection.albums,
-                    isLoading = isLoadingCollection,
-                    currentItem = currentItem,
-                    activeDownloads = activeDownloads
-                )
-            } else {
-                val albumStatus = viewModel.getAlbumLibraryStatus(
+            val gestureSettings by viewModel.submenuGestureSettings.collectAsStateWithLifecycle()
+            SubmenuSwipeBox(
+                settings = gestureSettings,
+                onSwipeRight = { viewModel.clearSelectedCollection() },
+                onSwipeLeft = {
+                    viewModel.executeSubmenuActionForCandidates(
+                        action = gestureSettings.swipeLeftAction,
+                        candidates = activeCandidates
+                    )
+                },
+                canExecuteAction = activeCandidates.isNotEmpty()
+            ) {
+                val albumProgress = activeDownloads.findAlbumDownloadProgress(
                     albumTitle = selectedCollectionTitle,
                     artistName = activeCandidates.firstOrNull()?.artist.orEmpty()
                 )
 
-                val collectionActions = remember(
-                    activeCandidates,
-                    selectedCollectionTitle,
-                    albumProgress,
-                    activeDownloads
-                ) {
-                    DiscoverCollectionActions(
-                        onBack = { viewModel.clearSelectedCollection() },
-                        onPlayAll = {
-                            viewModel.playCatalogCandidates(activeCandidates, startIndex = 0, startShuffled = false)
-                        },
-                        onShuffle = {
-                            viewModel.playCatalogCandidates(activeCandidates, startIndex = 0, startShuffled = true)
-                        },
-                        onSaveAlbum = {
-                            viewModel.saveAlbumToLibrary(
-                                albumTitle = selectedCollectionTitle,
-                                artistName = activeCandidates.firstOrNull()?.artist.orEmpty(),
-                                coverUrl = catalogCollection.coverUrl,
-                                candidates = activeCandidates,
-                                albumId = catalogCollection.selectionKey.orEmpty()
-                            )
-                        },
-                        onDownloadAll = {
-                            viewModel.downloadSelectedCandidatesBatch()
-                        },
-                        onPlayCandidate = { candidate ->
-                            viewModel.playCatalogCandidate(candidate)
-                        },
-                        onDownloadCandidate = { candidate ->
-                            viewModel.downloadCatalogCandidate(candidate)
-                        },
-                        onSelectArtist = { artistName ->
-                            viewModel.selectArtistForInspection(artistName)
-                        },
-                        albumDownloadProgress = albumProgress,
-                        activeDownloads = activeDownloads,
-                        getTrackStatus = viewModel::getTrackLibraryStatus,
-                        onAlreadyInLibrary = { viewModel.toast(it) }
+                if (catalogCollection.kind == CatalogCollectionKind.ARTIST) {
+                    DiscoverArtistDetailSection(
+                        viewModel = viewModel,
+                        artistName = selectedCollectionTitle,
+                        coverUrl = catalogCollection.coverUrl,
+                        candidates = activeCandidates,
+                        albums = catalogCollection.albums,
+                        isLoading = isLoadingCollection,
+                        currentItem = currentItem,
+                        activeDownloads = activeDownloads
+                    )
+                } else {
+                    val albumStatus = viewModel.getAlbumLibraryStatus(
+                        albumTitle = selectedCollectionTitle,
+                        artistName = activeCandidates.firstOrNull()?.artist.orEmpty()
+                    )
+
+                    val collectionActions = remember(
+                        activeCandidates,
+                        selectedCollectionTitle,
+                        albumProgress,
+                        activeDownloads
+                    ) {
+                        DiscoverCollectionActions(
+                            onBack = { viewModel.clearSelectedCollection() },
+                            onPlayAll = {
+                                viewModel.playCatalogCandidates(activeCandidates, startIndex = 0, startShuffled = false)
+                            },
+                            onShuffle = {
+                                viewModel.playCatalogCandidates(activeCandidates, startIndex = 0, startShuffled = true)
+                            },
+                            onSaveAlbum = {
+                                viewModel.saveAlbumToLibrary(
+                                    albumTitle = selectedCollectionTitle,
+                                    artistName = activeCandidates.firstOrNull()?.artist.orEmpty(),
+                                    coverUrl = catalogCollection.coverUrl,
+                                    candidates = activeCandidates,
+                                    albumId = catalogCollection.selectionKey.orEmpty()
+                                )
+                            },
+                            onDownloadAll = {
+                                viewModel.downloadSelectedCandidatesBatch()
+                            },
+                            onPlayCandidate = { candidate ->
+                                viewModel.playCatalogCandidate(candidate)
+                            },
+                            onDownloadCandidate = { candidate ->
+                                viewModel.downloadCatalogCandidate(candidate)
+                            },
+                            onSelectArtist = { artistName ->
+                                viewModel.selectArtistForInspection(artistName)
+                            },
+                            albumDownloadProgress = albumProgress,
+                            activeDownloads = activeDownloads,
+                            getTrackStatus = viewModel::getTrackLibraryStatus,
+                            onAlreadyInLibrary = { viewModel.toast(it) }
+                        )
+                    }
+
+                    // Collection Drill-down view (Album / Playlist / Genre)
+                    DiscoverCollectionDetailView(
+                        title = selectedCollectionTitle,
+                        kind = catalogCollection.kind ?: CatalogCollectionKind.ALBUM,
+                        coverUrl = catalogCollection.coverUrl,
+                        candidates = activeCandidates,
+                        isLoading = isLoadingCollection,
+                        albumStatus = albumStatus,
+                        currentItem = currentItem,
+                        actions = collectionActions
                     )
                 }
-
-                // Collection Drill-down view (Album / Playlist / Genre)
-                DiscoverCollectionDetailView(
-                    title = selectedCollectionTitle,
-                    kind = catalogCollection.kind ?: CatalogCollectionKind.ALBUM,
-                    coverUrl = catalogCollection.coverUrl,
-                    candidates = activeCandidates,
-                    isLoading = isLoadingCollection,
-                    albumStatus = albumStatus,
-                    currentItem = currentItem,
-                    actions = collectionActions
-                )
             }
         } else if (selectedLbPlaylistMbid != null || cfDetailOpen) {
-            DiscoverPlaylistDetailHost(
-                selectedLbPlaylistMbid = selectedLbPlaylistMbid,
-                cfDetailOpen = cfDetailOpen,
-                lbPlaylistDetail = lbPlaylistDetail,
-                cfRecommendationsState = cfRecommendationsState,
-                currentItem = currentItem,
-                activeDownloads = activeDownloads,
-                songActions = songActions,
-                onEditLyrics = songDialogs.onEditLyrics,
-                onBack = { viewModel.closePlaylistDetail() },
-                onDownloadRemote = { viewModel.downloadRemoteItem(it) },
-                onRetryDownload = viewModel::retryActiveDownload,
-                onCancelDownload = viewModel::dismissActiveDownload,
-                onPlayMatched = { items, origin, startIndex ->
-                    viewModel.playMatchedTracks(items, origin, startIndex = startIndex)
+            val gestureSettings by viewModel.submenuGestureSettings.collectAsStateWithLifecycle()
+            val lbItems = lbPlaylistDetail.data?.toPlayableItems() ?: emptyList()
+            val cfItems = cfRecommendationsState.data?.toPlayableItems() ?: emptyList()
+            val currentItems = if (selectedLbPlaylistMbid != null) lbItems else cfItems
+            SubmenuSwipeBox(
+                settings = gestureSettings,
+                onSwipeRight = { viewModel.closePlaylistDetail() },
+                onSwipeLeft = {
+                    viewModel.executeSubmenuActionForPlayables(
+                        action = gestureSettings.swipeLeftAction,
+                        items = currentItems,
+                        onAddToPlaylist = {
+                            if (selectedLbPlaylistMbid != null) {
+                                viewModel.saveListenBrainzPlaylistAsLocal { newId ->
+                                    viewModel.openLocalPlaylist(newId)
+                                }
+                            }
+                        }
+                    )
                 },
-                onShuffleMatched = { items, origin ->
-                    viewModel.shuffleMatchedTracks(items, origin)
-                },
-                onSaveLbAsLocal = { onComplete ->
-                    viewModel.saveListenBrainzPlaylistAsLocal(onComplete)
-                },
-                onOpenLocalPlaylist = { newId ->
-                    viewModel.openLocalPlaylist(newId)
-                },
-                onImportLbWithDownloads = {
-                    viewModel.importListenBrainzPlaylistWithDownloads()
-                },
-                songItemActions = songItemActions
-            )
+                canExecuteAction = currentItems.isNotEmpty()
+            ) {
+                DiscoverPlaylistDetailHost(
+                    selectedLbPlaylistMbid = selectedLbPlaylistMbid,
+                    cfDetailOpen = cfDetailOpen,
+                    lbPlaylistDetail = lbPlaylistDetail,
+                    cfRecommendationsState = cfRecommendationsState,
+                    currentItem = currentItem,
+                    activeDownloads = activeDownloads,
+                    songActions = songActions,
+                    onEditLyrics = songDialogs.onEditLyrics,
+                    onBack = { viewModel.closePlaylistDetail() },
+                    onDownloadRemote = { viewModel.downloadRemoteItem(it) },
+                    onRetryDownload = viewModel::retryActiveDownload,
+                    onCancelDownload = viewModel::dismissActiveDownload,
+                    onPlayMatched = { items, origin, startIndex ->
+                        viewModel.playMatchedTracks(items, origin, startIndex = startIndex)
+                    },
+                    onShuffleMatched = { items, origin ->
+                        viewModel.shuffleMatchedTracks(items, origin)
+                    },
+                    onSaveLbAsLocal = { onComplete ->
+                        viewModel.saveListenBrainzPlaylistAsLocal(onComplete)
+                    },
+                    onOpenLocalPlaylist = { newId ->
+                        viewModel.openLocalPlaylist(newId)
+                    },
+                    onImportLbWithDownloads = {
+                        viewModel.importListenBrainzPlaylistWithDownloads()
+                    },
+                    songItemActions = songItemActions
+                )
+            }
         } else {
             val isSearchActive = searchInput.isNotBlank() || catalogSearch.hasActiveFilters || catalogSearch.isSearching
 

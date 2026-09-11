@@ -51,6 +51,8 @@ import com.bestiapop.android.data.model.toListenBrainzCatalogTrack
 import com.bestiapop.android.data.preferences.DiscoverSourcePreference
 import com.bestiapop.android.data.preferences.FastScrollSettings
 import com.bestiapop.android.data.preferences.FastScrollSide
+import com.bestiapop.android.data.preferences.SubmenuGestureSettings
+import com.bestiapop.android.data.preferences.SubmenuSwipeAction
 import com.bestiapop.android.data.preferences.LibraryBlobsSettings
 import com.bestiapop.android.data.preferences.UiNavSnapshot
 import com.bestiapop.android.data.preferences.ListenBrainzPreferencesRepository
@@ -622,6 +624,10 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     val fastScrollSettings: StateFlow<FastScrollSettings> =
         libraryPreferences.fastScrollSettingsFlow
             .stateInUi(viewModelScope, FastScrollSettings())
+
+    val submenuGestureSettings: StateFlow<SubmenuGestureSettings> =
+        libraryPreferences.submenuGestureSettingsFlow
+            .stateInUi(viewModelScope, SubmenuGestureSettings())
 
     val libraryBlobsSettings: StateFlow<LibraryBlobsSettings> =
         libraryPreferences.libraryBlobsSettingsFlow
@@ -2029,6 +2035,10 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         playbackRuntime.playNextBatch(songs.toPlayableItems { libraryProjection.resolveAlbumArtwork(it) })
     }
 
+    fun playNextPlayableBatch(items: List<PlayableItem>) {
+        playbackRuntime.playNextBatch(items)
+    }
+
     fun addSongsToPlaylist(playlistId: Long, songs: List<Song>) =
         addSongsToPlaylist(playlistId, songs.map { it.id })
 
@@ -3211,6 +3221,95 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     fun setFastScrollSide(side: FastScrollSide) {
         viewModelScope.launch { libraryPreferences.setFastScrollSide(side) }
+    }
+
+    fun setSubmenuSwipeBackEnabled(enabled: Boolean) {
+        viewModelScope.launch { libraryPreferences.setSubmenuSwipeBackEnabled(enabled) }
+    }
+
+    fun setSubmenuSwipeLeftAction(action: SubmenuSwipeAction) {
+        viewModelScope.launch { libraryPreferences.setSubmenuSwipeLeftAction(action) }
+    }
+
+    private fun enqueueToastMessage(count: Int): String =
+        if (count == 1) "Canción añadida a la cola" else "$count canciones añadidas a la cola"
+
+    private fun playNextToastMessage(count: Int): String =
+        if (count == 1) "Se reproducirá a continuación" else "$count canciones se reproducirán a continuación"
+
+    fun executeSubmenuActionForPlayables(
+        action: SubmenuSwipeAction,
+        items: List<PlayableItem>,
+        onAddToPlaylist: ((List<PlayableItem>) -> Unit)? = null
+    ) {
+        if (items.isEmpty() || action == SubmenuSwipeAction.DISABLED) return
+        when (action) {
+            SubmenuSwipeAction.ENQUEUE_ALL -> {
+                addPlayableBatch(items)
+                toast(enqueueToastMessage(items.size))
+            }
+            SubmenuSwipeAction.PLAY_NEXT -> {
+                playNextPlayableBatch(items)
+                toast(playNextToastMessage(items.size))
+            }
+            SubmenuSwipeAction.START_RADIO -> {
+                val seed = items.firstOrNull()
+                if (seed != null) {
+                    if (seed is PlayableItem.Local) {
+                        startRadio(seed.song)
+                    } else {
+                        val local = TrackMatchKeys.lookupLocalSong(libraryLookupIndex.value.allSongsByMatchKey, seed)
+                        if (local != null) {
+                            startRadio(local)
+                        } else {
+                            playPlayableCollection(listOf(seed), startIndex = 0)
+                            startRadio()
+                        }
+                    }
+                    val artist = seed.artist
+                    toast(if (artist.isNotBlank()) "Iniciando radio de $artist" else "Iniciando radio")
+                }
+            }
+            SubmenuSwipeAction.SEARCH_SIMILAR -> {
+                val artist = items.firstOrNull()?.artist.orEmpty()
+                if (artist.isNotBlank()) {
+                    searchCatalog(artist)
+                    setSelectedNavIndex(NAV_DISCOVER)
+                }
+            }
+            SubmenuSwipeAction.ADD_TO_PLAYLIST -> {
+                onAddToPlaylist?.invoke(items)
+            }
+            SubmenuSwipeAction.DISABLED -> Unit
+        }
+    }
+
+    fun executeSubmenuActionForSongs(
+        action: SubmenuSwipeAction,
+        songs: List<Song>,
+        onAddToPlaylist: ((List<Song>) -> Unit)? = null
+    ) {
+        if (songs.isEmpty() || action == SubmenuSwipeAction.DISABLED) return
+        if (action == SubmenuSwipeAction.ADD_TO_PLAYLIST) {
+            onAddToPlaylist?.invoke(songs)
+            return
+        }
+        val playables = songs.toPlayableItems { libraryProjection.resolveAlbumArtwork(it) }
+        executeSubmenuActionForPlayables(action, playables)
+    }
+
+    fun executeSubmenuActionForCandidates(
+        action: SubmenuSwipeAction,
+        candidates: List<CatalogTrackCandidate>,
+        onAddToPlaylist: ((List<CatalogTrackCandidate>) -> Unit)? = null
+    ) {
+        if (candidates.isEmpty() || action == SubmenuSwipeAction.DISABLED) return
+        if (action == SubmenuSwipeAction.ADD_TO_PLAYLIST) {
+            onAddToPlaylist?.invoke(candidates)
+            return
+        }
+        val playables = candidates.toPlayableItems(libraryLookupIndex.value.localSongsByMatchKey)
+        executeSubmenuActionForPlayables(action, playables)
     }
 
     fun setLibraryBlobsSettings(settings: LibraryBlobsSettings) {

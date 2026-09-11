@@ -10,11 +10,12 @@ object SyncedLyrics {
     private val timestampOnly = Regex("""^(\d{1,2}):(\d{2})(?:[.:](\d{1,3}))?$""")
 
     fun parse(raw: String): List<SyncedLyricLine> {
-        if (raw.isBlank()) return emptyList()
+        val trimmed = raw.trim()
+        if (trimmed.isBlank() || trimmed.equals("null", ignoreCase = true)) return emptyList()
         return raw.lineSequence().mapNotNull { lineStr ->
-            val trimmed = lineStr.trim()
-            if (trimmed.isEmpty()) return@mapNotNull null
-            val match = lrcLine.find(trimmed)
+            val trimmedLine = lineStr.trim()
+            if (trimmedLine.isEmpty()) return@mapNotNull null
+            val match = lrcLine.find(trimmedLine)
             if (match != null) {
                 val min = match.groupValues[1].toLongOrNull() ?: 0L
                 val sec = match.groupValues[2].toLongOrNull() ?: 0L
@@ -24,7 +25,7 @@ object SyncedLyrics {
                 val totalMs = (min * 60 + sec) * 1000 + fractionalMs(frac, msPart)
                 SyncedLyricLine(totalMs, text)
             } else {
-                SyncedLyricLine(timeMs = null, text = trimmed)
+                SyncedLyricLine(timeMs = null, text = trimmedLine)
             }
         }.toList()
     }
@@ -40,8 +41,11 @@ object SyncedLyrics {
     fun plainText(lines: List<SyncedLyricLine>): String =
         lines.joinToString("\n") { it.text }
 
-    fun looksLikeLrc(raw: String): Boolean =
-        raw.lineSequence().any { lrcLine.containsMatchIn(it.trim()) }
+    fun looksLikeLrc(raw: String): Boolean {
+        val trimmed = raw.trim()
+        if (trimmed.isBlank() || trimmed.equals("null", ignoreCase = true)) return false
+        return raw.lineSequence().any { lrcLine.containsMatchIn(it.trim()) }
+    }
 
     /**
      * Keep stamps when the user edits wording (same line count → by index).

@@ -77,6 +77,14 @@ class SyncedLyricsTest {
     }
 
     @Test
+    fun parse_nullString_isEmpty() {
+        assertTrue(SyncedLyrics.parse("null").isEmpty())
+        assertTrue(SyncedLyrics.parse("  null  ").isEmpty())
+        assertTrue(SyncedLyrics.parse("NULL").isEmpty())
+        assertFalse(SyncedLyrics.looksLikeLrc("null"))
+    }
+
+    @Test
     fun plainText_stripsTimestamps() {
         val lines = SyncedLyrics.parse("[00:12.40]Hello\nWorld")
         assertEquals("Hello\nWorld", SyncedLyrics.plainText(lines))

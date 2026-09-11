@@ -142,6 +142,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -336,6 +337,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             val localOnly = songs.filter { !it.isRemote }
             TrackMatchKeys.buildLibraryIndex(localOnly)
         }
+        .flowOn(Dispatchers.Default)
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.Eagerly,
@@ -345,6 +347,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         .map { songs ->
             TrackMatchKeys.buildLibraryIndex(songs)
         }
+        .flowOn(Dispatchers.Default)
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.Eagerly,
@@ -352,6 +355,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         )
     val allSongsById: StateFlow<Map<Long, Song>> = rawSongs
         .map { songs -> songs.associateBy(Song::id) }
+        .flowOn(Dispatchers.Default)
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.Eagerly,
@@ -380,6 +384,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             }
             SavedAlbumIndices(byArtist, byTitle)
         }
+        .flowOn(Dispatchers.Default)
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.Eagerly,
@@ -1177,10 +1182,34 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
+    private val _isFetchingLyrics = MutableStateFlow(false)
+    val isFetchingLyrics: StateFlow<Boolean> = _isFetchingLyrics.asStateFlow()
+
+    private val _lyricsFetchError = MutableStateFlow<String?>(null)
+    val lyricsFetchError: StateFlow<String?> = _lyricsFetchError.asStateFlow()
+
+    fun clearLyricsFetchError() {
+        _lyricsFetchError.value = null
+    }
+
     fun retryFetchLyrics(song: Song) {
+        if (_isFetchingLyrics.value) return
         viewModelScope.launch {
-            repository.enhanceSongMetadataAndLyrics(song)
-            playbackRuntime.hydrateCurrentSongLyrics(song.id)
+            _isFetchingLyrics.value = true
+            _lyricsFetchError.value = null
+            try {
+                val lyrics = repository.fetchSongLyrics(song)?.trim()?.takeIf { it.isNotBlank() && !it.equals("null", ignoreCase = true) }
+                if (lyrics != null) {
+                    repository.updateSongLyrics(song.id, lyrics)
+                    playbackRuntime.updateCurrentSongLyrics(song.id, lyrics)
+                } else {
+                    _lyricsFetchError.value = "No se encontró letra en línea"
+                }
+            } catch (_: Exception) {
+                _lyricsFetchError.value = "Error al buscar letra en línea"
+            } finally {
+                _isFetchingLyrics.value = false
+            }
         }
     }
 
@@ -1884,7 +1913,8 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     fun fetchSongLyrics(song: Song, onResult: (String?) -> Unit) {
         viewModelScope.launch {
-            onResult(repository.fetchSongLyrics(song))
+            val lyrics = repository.fetchSongLyrics(song)?.trim()?.takeIf { it.isNotBlank() && !it.equals("null", ignoreCase = true) }
+            onResult(lyrics)
         }
     }
 

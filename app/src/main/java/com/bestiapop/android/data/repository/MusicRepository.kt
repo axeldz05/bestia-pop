@@ -1157,9 +1157,11 @@ class MusicRepository private constructor(
             }
         }
 
-        var lyricsStr = persisted.lyrics
+        var lyricsStr = persisted.lyrics?.trim()?.takeIf { it.isNotBlank() && !it.equals("null", ignoreCase = true) }
         if (lyricsStr.isNullOrEmpty() && !IdentifyRanking.isPlaceholderArtist(persisted.artist)) {
             lyricsStr = metadataSource.fetchLyrics(persisted.artist, persisted.title)
+                ?.trim()
+                ?.takeIf { it.isNotBlank() && !it.equals("null", ignoreCase = true) }
         }
 
         var trackNumber: Int? = null
@@ -1882,12 +1884,15 @@ class MusicRepository private constructor(
 
     override suspend fun updateSongLyrics(songId: Long, lyrics: String?) =
         withContext(Dispatchers.IO) {
-            musicDao.updateSongLyrics(songId, lyrics?.ifBlank { null })
+            val cleanLyrics = lyrics?.trim()?.takeIf { it.isNotBlank() && !it.equals("null", ignoreCase = true) }
+            musicDao.updateSongLyrics(songId, cleanLyrics)
         }
 
     override suspend fun fetchSongLyrics(song: Song): String? =
         withContext(Dispatchers.IO) {
-            metadataSource.fetchLyrics(song.artist, song.title)?.ifBlank { null }
+            metadataSource.fetchLyrics(song.artist, song.title)
+                ?.trim()
+                ?.takeIf { it.isNotBlank() && !it.equals("null", ignoreCase = true) }
         }
 
     override suspend fun getAlbumOverride(albumKey: String): AlbumOverride? =

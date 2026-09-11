@@ -10,6 +10,7 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -50,6 +51,7 @@ import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -147,7 +149,8 @@ fun NowPlayingScreen(
     val playlists by viewModel.playlists.collectAsState(initial = emptyList())
     val discoverOrigin by viewModel.discoverPlaybackOrigin.collectAsState()
     val activeDownloads by viewModel.activeDownloads.collectAsState()
-
+    val isFetchingLyrics by viewModel.isFetchingLyrics.collectAsState()
+    val lyricsFetchError by viewModel.lyricsFetchError.collectAsState()
     var actionsMenuExpanded by remember { mutableStateOf(false) }
     val songDialogs = rememberSongActionDialogs(
         viewModel = viewModel,
@@ -175,9 +178,15 @@ fun NowPlayingScreen(
     val localSong = when {
         baseLocalSong == null -> null
         currentSong?.id == baseLocalSong.id -> baseLocalSong.copy(
-            lyrics = currentSong?.lyrics ?: baseLocalSong.lyrics
+            lyrics = (currentSong?.lyrics ?: baseLocalSong.lyrics)?.trim()?.takeIf { it.isNotBlank() && !it.equals("null", ignoreCase = true) }
         )
-        else -> baseLocalSong
+        else -> baseLocalSong.copy(
+            lyrics = baseLocalSong.lyrics?.trim()?.takeIf { it.isNotBlank() && !it.equals("null", ignoreCase = true) }
+        )
+    }
+
+    LaunchedEffect(localSong?.id) {
+        viewModel.clearLyricsFetchError()
     }
     val albumLabel = when (item) {
         is PlayableItem.Local -> item.song.album
@@ -652,6 +661,8 @@ fun NowPlayingScreen(
                             isPlaying = isPlaying,
                             isShuffle = isShuffle,
                             repeatMode = repeatMode,
+                            isFetchingLyrics = isFetchingLyrics,
+                            lyricsFetchError = lyricsFetchError,
                             onTogglePlayPause = viewModel::togglePlayPause,
                             onSkipPrevious = viewModel::skipToPrevious,
                             onSkipNext = viewModel::skipToNext,
@@ -962,6 +973,8 @@ private fun NowPlayingLyricsView(
     isPlaying: Boolean,
     isShuffle: Boolean,
     repeatMode: RepeatMode,
+    isFetchingLyrics: Boolean,
+    lyricsFetchError: String?,
     onTogglePlayPause: () -> Unit,
     onSkipPrevious: () -> Unit,
     onSkipNext: () -> Unit,
@@ -973,7 +986,7 @@ private fun NowPlayingLyricsView(
     modifier: Modifier = Modifier
 ) {
     val positionMs by positionMsFlow.collectAsState()
-    val rawLyrics = localSong?.lyrics
+    val rawLyrics = localSong?.lyrics?.trim()?.takeIf { it.isNotBlank() && !it.equals("null", ignoreCase = true) }
 
     Column(modifier = modifier.fillMaxSize()) {
         Box(
@@ -992,10 +1005,11 @@ private fun NowPlayingLyricsView(
                         SyncedLyrics.currentLineIndex(parsedLrc, positionMs)
                     }
                     val listState = rememberLazyListState()
+                    val isDragged by listState.interactionSource.collectIsDraggedAsState()
                     var userScrolledRecent by remember { mutableStateOf(false) }
 
-                    LaunchedEffect(listState.isScrollInProgress) {
-                        if (listState.isScrollInProgress) {
+                    LaunchedEffect(isDragged) {
+                        if (isDragged) {
                             userScrolledRecent = true
                         } else if (userScrolledRecent) {
                             kotlinx.coroutines.delay(3500)
@@ -1003,11 +1017,12 @@ private fun NowPlayingLyricsView(
                         }
                     }
 
-                    LaunchedEffect(currentLineIndex, userScrolledRecent) {
-                        if (!userScrolledRecent && currentLineIndex in parsedLrc.indices) {
+                    LaunchedEffect(currentLineIndex, userScrolledRecent, isDragged) {
+                        if (!userScrolledRecent && !isDragged && currentLineIndex in parsedLrc.indices) {
+                            val targetIndex = (currentLineIndex - 1).coerceAtLeast(0)
                             listState.animateScrollToItem(
-                                index = currentLineIndex,
-                                scrollOffset = -180
+                                index = targetIndex,
+                                scrollOffset = 0
                             )
                         }
                     }
@@ -1105,15 +1120,34 @@ private fun NowPlayingLyricsView(
                         Spacer(modifier = Modifier.height(14.dp))
                         Button(
                             onClick = { onRetryFetchLyrics(localSong) },
+                            enabled = !isFetchingLyrics,
                             shape = RoundedCornerShape(12.dp)
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.Refresh,
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp)
+                            if (isFetchingLyrics) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(16.dp),
+                                    strokeWidth = 2.dp,
+                                    color = MaterialTheme.colorScheme.onPrimary
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Buscando en línea…")
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Default.Refresh,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Buscar en línea")
+                            }
+                        }
+                        if (!lyricsFetchError.isNullOrBlank()) {
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Text(
+                                text = lyricsFetchError,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error
                             )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Buscar en línea")
                         }
                     }
                 }

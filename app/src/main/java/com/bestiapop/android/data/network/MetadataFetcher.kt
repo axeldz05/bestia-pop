@@ -699,10 +699,10 @@ object MetadataFetcher {
                     if (response.isSuccessful) {
                         val body = response.body?.string() ?: ""
                         val json = JSONObject(body)
-                        val syncedLyrics = json.optString("syncedLyrics")
-                        val plainLyrics = json.optString("plainLyrics")
-                        val res = syncedLyrics.ifEmpty { plainLyrics }
-                        if (res.isNotEmpty()) return@withContext res
+                        val syncedLyrics = json.optNullableLyrics("syncedLyrics")
+                        val plainLyrics = json.optNullableLyrics("plainLyrics")
+                        val res = syncedLyrics ?: plainLyrics
+                        if (!res.isNullOrBlank()) return@withContext res
                     }
                 }
             }
@@ -722,10 +722,10 @@ object MetadataFetcher {
                     val array = JSONArray(body)
                     if (array.length() > 0) {
                         val first = array.getJSONObject(0)
-                        val synced = first.optString("syncedLyrics")
-                        val plain = first.optString("plainLyrics")
-                        val res = synced.ifEmpty { plain }
-                        if (res.isNotEmpty()) return@withContext res
+                        val synced = first.optNullableLyrics("syncedLyrics")
+                        val plain = first.optNullableLyrics("plainLyrics")
+                        val res = synced ?: plain
+                        if (!res.isNullOrBlank()) return@withContext res
                     }
                 }
             }
@@ -733,6 +733,12 @@ object MetadataFetcher {
             e.printStackTrace()
         }
         return@withContext null
+    }
+
+    private fun JSONObject.optNullableLyrics(name: String): String? {
+        if (isNull(name)) return null
+        val str = optString(name, "").trim()
+        return str.takeIf { it.isNotBlank() && !it.equals("null", ignoreCase = true) }
     }
 
     suspend fun fetchTrackDurationMs(artist: String, title: String): Long = withContext(Dispatchers.IO) {

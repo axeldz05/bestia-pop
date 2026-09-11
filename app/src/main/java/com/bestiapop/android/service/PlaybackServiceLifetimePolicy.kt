@@ -18,11 +18,15 @@ object PlaybackServiceLifetimePolicy {
             mediaItemCount > 0 &&
             playbackState != Player.STATE_ENDED
 
+    /**
+     * When the user intentionally removes the task from the recent apps overview (task manager),
+     * playback and the foreground service should stop cleanly.
+     */
     fun shouldStopAfterTaskRemoved(
-        playWhenReady: Boolean,
-        mediaItemCount: Int,
-        playbackState: Int
-    ): Boolean = !isPlaybackEngaged(playWhenReady, mediaItemCount, playbackState)
+        playWhenReady: Boolean = false,
+        mediaItemCount: Int = 0,
+        playbackState: Int = Player.STATE_IDLE
+    ): Boolean = true
 
     /**
      * Paused shade controls stay visible while a queue item is current, including Remote

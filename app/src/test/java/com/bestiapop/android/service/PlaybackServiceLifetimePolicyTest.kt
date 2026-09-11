@@ -8,7 +8,7 @@ import org.junit.Test
 class PlaybackServiceLifetimePolicyTest {
 
     @Test
-    fun taskRemoved_keepsRemotePlaceholderWhilePlayIntentIsActive() {
+    fun taskRemoved_alwaysStopsWhenUserDismissesTask() {
         assertTrue(
             PlaybackServiceLifetimePolicy.isPlaybackEngaged(
                 playWhenReady = true,
@@ -16,17 +16,13 @@ class PlaybackServiceLifetimePolicyTest {
                 playbackState = Player.STATE_IDLE
             )
         )
-        assertFalse(
+        assertTrue(
             PlaybackServiceLifetimePolicy.shouldStopAfterTaskRemoved(
                 playWhenReady = true,
                 mediaItemCount = 4,
                 playbackState = Player.STATE_IDLE
             )
         )
-    }
-
-    @Test
-    fun taskRemoved_stopsPausedOrEndedPlayback() {
         assertTrue(
             PlaybackServiceLifetimePolicy.shouldStopAfterTaskRemoved(
                 playWhenReady = false,

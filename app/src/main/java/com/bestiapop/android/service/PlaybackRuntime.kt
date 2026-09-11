@@ -293,7 +293,6 @@ internal data class PlaybackRuntimeDependencies(
     val persistRepeat: suspend (RepeatMode) -> Unit = {},
     val touchSongLastPlayed: suspend (Long) -> Unit = {},
     val updateSongDuration: suspend (Long, Long) -> Unit = { _, _ -> },
-    val enhanceSong: suspend (Song) -> Unit = {},
     val loadSongById: suspend (Long) -> Song? = { null },
     val loadSongsByIds: suspend (List<Long>) -> List<Song> = { emptyList() },
     val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
@@ -1008,12 +1007,6 @@ class PlaybackRuntime internal constructor(
         dependencies.listenTracker.onTrackChanged(local, hint)
         if (displayed != null && displayed.lyrics.isNullOrEmpty()) {
             hydrateCurrentSongLyrics(displayed.id)
-        }
-        if (local != null && occurrenceChanged && uiAttachments.get() > 0) {
-            scope.launch(Dispatchers.IO) {
-                dependencies.enhanceSong(local)
-                hydrateCurrentSongLyrics(local.id)
-            }
         }
         if (persistLastPlayed) {
             persistPlaybackSession(force = true)
@@ -3187,7 +3180,6 @@ class PlaybackRuntime internal constructor(
                     persistRepeat = playbackPreferences::setLastRepeatMode,
                     touchSongLastPlayed = repository::touchSongLastPlayed,
                     updateSongDuration = repository::updateSongDuration,
-                    enhanceSong = repository::enhanceSongMetadataAndLyrics,
                     loadSongById = repository::getSongById,
                     loadSongsByIds = repository::getSongsByIds,
                     requestListenSync = sync::requestSync

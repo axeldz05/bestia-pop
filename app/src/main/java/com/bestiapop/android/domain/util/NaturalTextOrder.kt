@@ -54,6 +54,7 @@ object NaturalTextOrder {
      * Transliterates non-Latin characters to Latin ASCII if an ICU transliterator is available.
      */
     fun transliterateToLatin(text: String): String {
+        if (text.isEmpty() || text.all { it.code <= 0x024F }) return text
         val pair = icuTransliteratorPair ?: return text
         return try {
             pair.second.invoke(pair.first, text) as? String ?: text
@@ -72,6 +73,12 @@ object NaturalTextOrder {
     fun extractRomanizedOrParsed(raw: String?): String {
         if (raw.isNullOrBlank()) return ""
         val trimmed = raw.trim()
+        val firstChar = trimmed[0]
+        if ((firstChar.isLatinLetter() || firstChar in '0'..'9') &&
+            !trimmed.contains('(') && !trimmed.contains('[') && !trimmed.contains('{')
+        ) {
+            return trimmed
+        }
 
         // 1. Check if the string after stripping leading/trailing quotes/brackets already has a Latin letter or digit
         val stripped = trimmed.trim(*LEADING_QUOTE_AND_BRACKET_CHARS)
@@ -116,6 +123,16 @@ object NaturalTextOrder {
      */
     fun normalizeToLatinBase(text: String): String {
         if (text.isEmpty()) return ""
+        var isAscii = true
+        for (i in 0 until text.length) {
+            if (text[i].code > 0x7F) {
+                isAscii = false
+                break
+            }
+        }
+        if (isAscii) {
+            return text.uppercase(Locale.ROOT)
+        }
         val unaccented = Normalizer.normalize(text, Normalizer.Form.NFD)
             .replace(COMBINING_MARKS, "")
         return unaccented.uppercase(Locale.ROOT)

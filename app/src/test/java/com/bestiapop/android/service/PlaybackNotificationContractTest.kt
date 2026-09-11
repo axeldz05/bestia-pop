@@ -96,8 +96,8 @@ class PlaybackNotificationContractTest {
     }
 
     @Test
-    fun stickyRestart_resumesOnlyWhenIntentIsNullAndWasEngaged() {
-        assertTrue(shouldResumeAfterStickyRestart(intentNull = true, wasEngaged = true))
+    fun stickyRestart_disabledToPreventSpontaneousResurrection() {
+        assertFalse(shouldResumeAfterStickyRestart(intentNull = true, wasEngaged = true))
         assertFalse(shouldResumeAfterStickyRestart(intentNull = true, wasEngaged = false))
         assertFalse(shouldResumeAfterStickyRestart(intentNull = false, wasEngaged = true))
         assertFalse(shouldResumeAfterStickyRestart(intentNull = false, wasEngaged = false))

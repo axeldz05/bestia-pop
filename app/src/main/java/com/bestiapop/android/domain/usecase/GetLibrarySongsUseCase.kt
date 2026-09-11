@@ -764,12 +764,14 @@ class GetLibrarySongsUseCase {
         grouped: Map<String, List<Song>>,
         albumKey: String
     ): List<Song> {
-        val target = albumIdentityKey(albumKey)
         val bucket = grouped[albumKey]
-            ?: grouped[target]
-            ?: grouped.entries.firstOrNull { (_, songs) ->
-                preferredAlbumDisplayNameFromSongs(songs).equals(albumKey, ignoreCase = true)
-            }?.value
+            ?: run {
+                val target = albumIdentityKey(albumKey)
+                grouped[target]
+                    ?: grouped.entries.firstOrNull { (_, songs) ->
+                        preferredAlbumDisplayNameFromSongs(songs).equals(albumKey, ignoreCase = true)
+                    }?.value
+            }
         return sortSongsWithinAlbum(bucket.orEmpty())
     }
 

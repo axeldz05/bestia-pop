@@ -45,6 +45,10 @@ object DynamicThemeEngine {
 
     private val themeCache = LruCache<String, CustomTheme>(CACHE_MAX_SIZE)
 
+    fun clearCache() {
+        themeCache.evictAll()
+    }
+
     /**
      * Level 2 data bundle: captures dynamic theme and the artwork URI it was derived from.
      */
@@ -74,7 +78,11 @@ object DynamicThemeEngine {
         val theme = withContext(Dispatchers.IO) {
             val bitmap = loadThumbnailBitmap(context, artworkUri)
             if (bitmap != null) {
-                deriveThemeFromBitmap(bitmap, artworkUri, isDark)
+                try {
+                    deriveThemeFromBitmap(bitmap, artworkUri, isDark)
+                } finally {
+                    bitmap.recycle()
+                }
             } else {
                 fallback ?: fallbackTheme(isDark)
             }
@@ -138,8 +146,8 @@ object DynamicThemeEngine {
         return try {
             val request = ImageRequest.Builder(context)
                 .data(uri)
-                .size(THUMBNAIL_SIZE_PX)
-                .precision(Precision.INEXACT)
+                .size(THUMBNAIL_SIZE_PX, THUMBNAIL_SIZE_PX)
+                .precision(Precision.EXACT)
                 .allowHardware(false) // Software bitmap for pixel access
                 .build()
 
@@ -147,8 +155,8 @@ object DynamicThemeEngine {
             val drawable = result.drawable ?: return null
 
             drawable.toBitmap(
-                width = drawable.intrinsicWidth.coerceAtLeast(1),
-                height = drawable.intrinsicHeight.coerceAtLeast(1),
+                width = THUMBNAIL_SIZE_PX,
+                height = THUMBNAIL_SIZE_PX,
                 config = Bitmap.Config.ARGB_8888
             )
         } catch (_: Exception) {

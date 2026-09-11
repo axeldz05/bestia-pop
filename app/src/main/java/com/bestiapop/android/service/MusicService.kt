@@ -466,11 +466,7 @@ class MusicService : MediaLibraryService() {
         )
         super.onStartCommand(intent, flags, startId)
         maybeNotifyBackgroundRestriction("onStartCommand")
-        val engaged = wasPlaybackEngaged()
-        if (shouldResumeAfterStickyRestart(intent == null, engaged)) {
-            (application as BestiaPopApplication).playbackRuntime.requestResumeAfterServiceRestart()
-        }
-        return if (engaged) START_STICKY else START_NOT_STICKY
+        return START_NOT_STICKY
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? {
@@ -510,21 +506,17 @@ class MusicService : MediaLibraryService() {
      */
     override fun onTaskRemoved(rootIntent: Intent?) {
         val p = player
-        val shouldStop = PlaybackServiceLifetimePolicy.shouldStopAfterTaskRemoved(
-            playWhenReady = p?.playWhenReady == true,
-            mediaItemCount = p?.mediaItemCount ?: 0,
-            playbackState = p?.playbackState ?: Player.STATE_IDLE
-        )
         PlaybackDiagnostics.log(
             PlaybackDiagnostics.TAG_SERVICE,
-            "MusicService.onTaskRemoved(rootIntent=${rootIntent?.action}): shouldStop=$shouldStop, " +
+            "MusicService.onTaskRemoved(rootIntent=${rootIntent?.action}): stopping playback and service, " +
                 "isPlaying=${p?.isPlaying}, playWhenReady=${p?.playWhenReady}, items=${p?.mediaItemCount}, state=${p?.playbackState}"
         )
-        if (!shouldStop) {
-            PlaybackDiagnostics.log(PlaybackDiagnostics.TAG_SERVICE, "MusicService: Retaining playback service after task removed.")
-            return
+        try {
+            p?.stop()
+            p?.clearMediaItems()
+        } catch (_: Exception) {
         }
-        stopServiceAndClearForeground("task removed (not engaged)")
+        stopServiceAndClearForeground("task removed by user")
     }
 
     private fun stopServiceAndClearForeground(reason: String) {
@@ -532,6 +524,7 @@ class MusicService : MediaLibraryService() {
             PlaybackDiagnostics.TAG_SERVICE,
             "MusicService: Stopping service ($reason)."
         )
+        persistPlaybackEngaged(false)
         pauseGraceJob?.cancel()
         pauseGraceJob = null
         lastPausedAtElapsedRealtime = 0L
@@ -552,6 +545,7 @@ class MusicService : MediaLibraryService() {
             PlaybackDiagnostics.TAG_SERVICE,
             "MusicService.onDestroy() invoked! Releasing player and session."
         )
+        persistPlaybackEngaged(false)
         stopWatchingBackgroundAppOps()
         releaseTransientWakeLock()
         clearListener()
@@ -922,7 +916,7 @@ internal class UserAgentMediaSourceFactory(
 internal fun shouldResumeAfterStickyRestart(
     intentNull: Boolean,
     wasEngaged: Boolean
-): Boolean = intentNull && wasEngaged
+): Boolean = false
 
 /** Local files: AudioTrack holds the native lock; a Java WakeLock trips OEM killers. */
 @OptIn(UnstableApi::class)

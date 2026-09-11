@@ -541,9 +541,6 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     /** Artists already looked up this session (hit or miss) — a miss must not be retried forever. */
     private val artistPhotoAttempted = mutableSetOf<String>()
 
-    /** Song ids already passed to the background metadata/lyrics pass this session. */
-    private val metadataEnhanceAttempted = mutableSetOf<Long>()
-
     val radioActive = playbackRuntime.radioActive
     val radioLoading = playbackRuntime.radioLoading
     val radioMode = playbackRuntime.radioMode
@@ -1170,23 +1167,6 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                     if (newPhotos.isNotEmpty()) {
                         _artistPhotos.update { it + newPhotos }
                     }
-                }
-        }
-
-        viewModelScope.launch(Dispatchers.IO) {
-            awaitFirstLibraryIdle()
-            rawSongs.map { songs -> songs.map { it.id }.toSet() }
-                .distinctUntilChanged()
-                .collect {
-                    val songs = repository.allSongsFlow.first()
-                    val unenhanced = songs.filter {
-                        !SongPathNormalizer.hasUsableArtwork(it.artworkUri) &&
-                                it.id !in metadataEnhanceAttempted
-                    }
-                    val batch = unenhanced.take(METADATA_ENHANCE_BATCH)
-                    if (batch.isEmpty()) return@collect
-                    batch.forEach { metadataEnhanceAttempted.add(it.id) }
-                    repository.enhanceSongMetadataAndLyricsBatch(batch)
                 }
         }
     }
@@ -3675,7 +3655,6 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     companion object {
         const val RADIO_LOADING_LABEL = "Armando radio…"
-        private const val METADATA_ENHANCE_BATCH = 20
         private const val FIRST_LIBRARY_IDLE_MS = 1_500L
         const val VOLUME_BOOST_STEP = 0.10f
         const val VOLUME_BOOST_HUD_DURATION_MS = 2_000L

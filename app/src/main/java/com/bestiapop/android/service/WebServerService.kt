@@ -21,6 +21,7 @@ import com.bestiapop.android.data.model.WifiTransferState
 import com.bestiapop.android.data.util.AudioFileMetadata
 import com.bestiapop.android.data.util.CrashReporter
 import com.bestiapop.android.data.util.MusicFileStore
+import com.bestiapop.android.data.util.PlaybackDiagnostics
 import com.bestiapop.android.data.util.SongPathNormalizer
 import com.bestiapop.android.data.util.UploadNameSanitizer
 import io.ktor.http.ContentType
@@ -1006,6 +1007,19 @@ class WebServerService : Service() {
             }
         }
         super.onDestroy()
+    }
+
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        PlaybackDiagnostics.log(
+            PlaybackDiagnostics.TAG_SERVICE,
+            "WebServerService.onTaskRemoved: stopping server and self"
+        )
+        try {
+            androidx.core.app.ServiceCompat.stopForeground(this, androidx.core.app.ServiceCompat.STOP_FOREGROUND_REMOVE)
+        } catch (_: Exception) {
+        }
+        stopSelf()
+        super.onTaskRemoved(rootIntent)
     }
 
     override fun onBind(intent: Intent?): IBinder? = null

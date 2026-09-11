@@ -3,15 +3,18 @@ package com.bestiapop.android
 import android.app.Application
 import android.app.ActivityManager
 import android.app.ApplicationExitInfo
+import android.content.ComponentCallbacks2
 import android.os.Build
 import coil.ImageLoader
 import coil.ImageLoaderFactory
+import coil.imageLoader
 import coil.disk.DiskCache
 import coil.memory.MemoryCache
 import com.bestiapop.android.data.db.AppDatabase
 import com.bestiapop.android.data.repository.MusicRepository
 import com.bestiapop.android.data.util.CrashReporter
 import com.bestiapop.android.data.util.PlaybackDiagnostics
+import com.bestiapop.android.ui.theme.DynamicThemeEngine
 import com.bestiapop.android.domain.radio.RadioEngine
 import com.bestiapop.android.domain.radio.createBestiaPopRadioEngine
 import com.bestiapop.android.service.PlaybackRuntime
@@ -145,5 +148,27 @@ class BestiaPopApplication : Application(), ImageLoaderFactory {
             .decoderDispatcher(Dispatchers.IO.limitedParallelism(4))
             .respectCacheHeaders(false)
             .build()
+    }
+
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        PlaybackDiagnostics.log(PlaybackDiagnostics.TAG_LIFECYCLE, "BestiaPopApplication.onTrimMemory(level=$level)")
+        if (level >= ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN) {
+            trimCaches()
+        }
+    }
+
+    override fun onLowMemory() {
+        super.onLowMemory()
+        PlaybackDiagnostics.warn(PlaybackDiagnostics.TAG_LIFECYCLE, "BestiaPopApplication.onLowMemory() received")
+        trimCaches()
+    }
+
+    private fun trimCaches() {
+        try {
+            imageLoader.memoryCache?.clear()
+        } catch (_: Exception) {
+        }
+        DynamicThemeEngine.clearCache()
     }
 }

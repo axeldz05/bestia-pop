@@ -32,10 +32,20 @@ import coil.size.Precision
 
 import coil.imageLoader
 import coil.memory.MemoryCache
-import java.util.concurrent.ConcurrentHashMap
+import java.util.Collections
+import java.util.LinkedHashMap
 
-/** Thread-safe set of URIs that failed to load (e.g. FileNotFoundException in MediaStore). */
-private val unresolvableArtworkUris = ConcurrentHashMap.newKeySet<String>()
+private const val MAX_UNRESOLVABLE_URIS = 500
+
+/** Thread-safe bounded set of URIs that failed to load (e.g. FileNotFoundException in MediaStore). */
+private val unresolvableArtworkUris: MutableSet<String> = Collections.synchronizedSet(
+    Collections.newSetFromMap(
+        object : LinkedHashMap<String, Boolean>(MAX_UNRESOLVABLE_URIS, 0.75f, true) {
+            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Boolean>?): Boolean =
+                size > MAX_UNRESOLVABLE_URIS
+        }
+    )
+)
 
 internal fun artworkMemoryCacheKey(uri: String, sizePx: Int?): String =
     if (sizePx != null) "$uri@$sizePx" else uri

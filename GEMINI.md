@@ -14,6 +14,7 @@ Leer y seguir estos skills del repo **antes** de diseñar o implementar cambios 
 | **Living docs** | `.agents/skills/bestiapop-living-docs/SKILL.md` | Protocolo para actualizar los skills anteriores |
 | **Release changelog** | `.agents/skills/bestiapop-release-changelog/SKILL.md` | Anotar cambios user-facing y armar notas del APK |
 | **Linter management** | `.agents/skills/kotlin-linter-management/SKILL.md` | Diagnóstico, ejecución y resolución de errores de linter sin supresiones |
+| **Device debugging** | `.agents/skills/android-device-debugging/SKILL.md` | Depuración en dispositivo físico USB, memoria, Doze, LMK, servicios e input |
 
 Resumen histórico de principios (mantener alineado con features): `.agents/AGENTS.md`
 

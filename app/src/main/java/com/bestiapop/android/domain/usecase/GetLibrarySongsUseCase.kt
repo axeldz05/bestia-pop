@@ -315,7 +315,13 @@ class GetLibrarySongsUseCase {
 
     internal fun searchHaystack(song: Song): String {
         val raw = "${song.title} ${song.artist} ${song.album} ${song.genre}"
-        return TrackMatchKeys.normalize(IdentifyQueryVariants.searchTokens(raw))
+        val base = TrackMatchKeys.normalize(IdentifyQueryVariants.searchTokens(raw))
+        // Expand with transliterated Latin for non-Latin artist/title/album names
+        val transliterated = NaturalTextOrder.transliterateToLatin(
+            "${song.title} ${song.artist} ${song.album}"
+        )
+        val transNorm = TrackMatchKeys.normalize(transliterated)
+        return if (transNorm != base && transNorm.isNotBlank()) "$base $transNorm" else base
     }
 
     private fun albumArtworkBySongId(
@@ -442,28 +448,32 @@ class GetLibrarySongsUseCase {
             return cached.artists
         }
         val ascending = sortDirection == SortDirection.ASC
-        val candidateArtists = HashSet<String>(songs.size).apply {
-            for (song in songs) {
-                val a = song.artist.trim()
-                if (a.isNotEmpty() && !IdentifyRanking.isPlaceholderArtist(a)) {
-                    val featHead = a.substringBefore(" feat.").substringBefore(" ft.").substringBefore(";").trim()
-                    if (featHead.isNotEmpty()) add(featHead)
-                    add(a)
-                }
-            }
-        }
-        val artistToSongs = LinkedHashMap<String, MutableList<Song>>()
+        val candidateArtists = MetadataSplitter.buildCandidateArtists(
+            songs, { it.artist }, IdentifyRanking::isPlaceholderArtist
+        )
+        // Group by identity key, collecting all variant names and songs per key
+        val keyToVariants = LinkedHashMap<String, MutableSet<String>>()
+        val keyToSongs = LinkedHashMap<String, MutableList<Song>>()
         for (song in songs) {
             val tokens = MetadataSplitter.splitArtists(song.artist, candidateArtists)
             if (tokens.isEmpty()) {
-                artistToSongs.getOrPut("Unknown Artist") { mutableListOf() }.add(song)
+                val key = MetadataSplitter.artistIdentityKey("Unknown Artist")
+                keyToVariants.getOrPut(key) { mutableSetOf() }.add("Unknown Artist")
+                keyToSongs.getOrPut(key) { mutableListOf() }.add(song)
             } else {
+                val keysForSong = mutableSetOf<String>()
                 for (token in tokens) {
-                    artistToSongs.getOrPut(token) { mutableListOf() }.add(song)
+                    val key = MetadataSplitter.artistIdentityKey(token)
+                    keyToVariants.getOrPut(key) { mutableSetOf() }.add(token)
+                    if (keysForSong.add(key)) {
+                        keyToSongs.getOrPut(key) { mutableListOf() }.add(song)
+                    }
                 }
             }
         }
-        val artists = artistToSongs.map { (artistName, artistSongs) ->
+        val artists = keyToSongs.map { (key, artistSongs) ->
+            val variants = keyToVariants[key].orEmpty()
+            val displayName = MetadataSplitter.preferredArtistDisplayName(variants)
             val studio = studioAlbumKeysByArtist(artistSongs, IdentifyRanking::isGenericAlbum)
             val distinctAlbumKeys = HashSet<String>(artistSongs.size)
             for (song in artistSongs) {
@@ -471,10 +481,11 @@ class GetLibrarySongsUseCase {
                     albumGroupingKey(song.album, song.artist, studio, IdentifyRanking::isGenericAlbum)
                 )
             }
-            val photoArt = artistPhotoMap[artistName]
+            val photoArt = artistPhotoMap[displayName]
+                ?: variants.firstNotNullOfOrNull { artistPhotoMap[it] }
                 ?: artistSongs.firstNotNullOfOrNull { it.artworkUri?.takeIf(String::isNotBlank) }
             Artist(
-                name = artistName,
+                name = displayName,
                 songCount = artistSongs.size,
                 albumCount = distinctAlbumKeys.size,
                 photoUri = photoArt,
@@ -520,20 +531,35 @@ class GetLibrarySongsUseCase {
             return cached.genres
         }
         val ascending = sortDirection == SortDirection.ASC
-        val genreToSongs = LinkedHashMap<String, MutableList<Song>>()
+        // Group by identity key, collecting all variant names and songs per key
+        val keyToVariants = LinkedHashMap<String, MutableSet<String>>()
+        val keyToSongs = LinkedHashMap<String, MutableList<Song>>()
         for (song in songs) {
             val tokens = MetadataSplitter.splitGenres(song.genre)
             if (tokens.isEmpty()) {
-                genreToSongs.getOrPut(Song.UNKNOWN_GENRE) { mutableListOf() }.add(song)
+                val unknownKey = MetadataSplitter.genreIdentityKey(Song.UNKNOWN_GENRE)
+                keyToVariants.getOrPut(unknownKey) { mutableSetOf() }.add(Song.UNKNOWN_GENRE)
+                keyToSongs.getOrPut(unknownKey) { mutableListOf() }.add(song)
             } else {
+                val keysForSong = mutableSetOf<String>()
                 for (token in tokens) {
-                    genreToSongs.getOrPut(token) { mutableListOf() }.add(song)
+                    val key = MetadataSplitter.genreIdentityKey(token)
+                    keyToVariants.getOrPut(key) { mutableSetOf() }.add(token)
+                    if (keysForSong.add(key)) {
+                        keyToSongs.getOrPut(key) { mutableListOf() }.add(song)
+                    }
                 }
             }
         }
-        val groups = genreToSongs.map { (name, genreSongs) ->
+        val groups = keyToSongs.map { (key, genreSongs) ->
+            val variants = keyToVariants[key].orEmpty()
+            val displayName = if (variants.any { it.equals(Song.UNKNOWN_GENRE, ignoreCase = true) }) {
+                Song.UNKNOWN_GENRE
+            } else {
+                MetadataSplitter.preferredGenreDisplayName(variants)
+            }
             GenreGroup(
-                name = name,
+                name = displayName,
                 songCount = genreSongs.size,
                 artworkUri = firstArtwork(genreSongs),
                 dateAdded = genreSongs.maxOfOrNull { it.dateAdded }
@@ -570,30 +596,26 @@ class GetLibrarySongsUseCase {
         }
 
     fun songsForArtist(songs: List<Song>, artistName: String): List<Song> {
-        val candidateArtists = HashSet<String>(songs.size).apply {
-            for (s in songs) {
-                val a = s.artist.trim()
-                if (a.isNotEmpty()) {
-                    val featHead = a.substringBefore(" feat.").substringBefore(" ft.").substringBefore(";").trim()
-                    if (featHead.isNotEmpty()) add(featHead)
-                    add(a)
-                }
-            }
-        }
+        val targetKey = MetadataSplitter.artistIdentityKey(artistName)
+        val candidateArtists = MetadataSplitter.buildCandidateArtists(songs, artistOf = { it.artist })
         return songs.filter { song ->
-            MetadataSplitter.splitArtists(song.artist, candidateArtists).any { it.equals(artistName, ignoreCase = true) }
+            MetadataSplitter.splitArtists(song.artist, candidateArtists).any {
+                MetadataSplitter.artistIdentityKey(it) == targetKey
+            }
         }
     }
 
-    fun songsMatchingGenre(songs: List<Song>, genreName: String): List<Song> =
-        songs.filter { song ->
+    fun songsMatchingGenre(songs: List<Song>, genreName: String): List<Song> {
+        val targetKey = MetadataSplitter.genreIdentityKey(genreName)
+        return songs.filter { song ->
             val tokens = MetadataSplitter.splitGenres(song.genre)
             if (tokens.isEmpty()) {
                 genreName.equals(Song.UNKNOWN_GENRE, ignoreCase = true)
             } else {
-                tokens.any { it.equals(genreName, ignoreCase = true) }
+                tokens.any { MetadataSplitter.genreIdentityKey(it) == targetKey }
             }
         }
+    }
 
     /**
      * Flattens the songs represented by the current browse projection (play-all / shuffle).
@@ -622,13 +644,40 @@ class GetLibrarySongsUseCase {
             }
             LibraryBrowseFilter.ARTISTS -> {
                 val artistList = artists ?: extractArtists(songs)
-                val byArtist = songs.caseInsensitiveBuckets(Song::artist)
-                artistList.flatMap { artist -> byArtist[artist.name].orEmpty() }
+                val candidateArtists = MetadataSplitter.buildCandidateArtists(songs, artistOf = { it.artist })
+                val keyToSongs = LinkedHashMap<String, MutableList<Song>>()
+                for (song in songs) {
+                    val tokens = MetadataSplitter.splitArtists(song.artist, candidateArtists)
+                    val keys = if (tokens.isEmpty()) {
+                        listOf(MetadataSplitter.artistIdentityKey("Unknown Artist"))
+                    } else {
+                        tokens.map { MetadataSplitter.artistIdentityKey(it) }
+                    }
+                    for (k in keys.distinct()) {
+                        keyToSongs.getOrPut(k) { mutableListOf() }.add(song)
+                    }
+                }
+                artistList.flatMap { artist ->
+                    keyToSongs[MetadataSplitter.artistIdentityKey(artist.name)].orEmpty()
+                }
             }
             LibraryBrowseFilter.GENRES -> {
                 val genreList = genres ?: extractGenres(songs)
-                val byGenre = songs.caseInsensitiveBuckets(::genreKey)
-                genreList.flatMap { genre -> byGenre[genre.name].orEmpty() }
+                val keyToSongs = LinkedHashMap<String, MutableList<Song>>()
+                for (song in songs) {
+                    val tokens = MetadataSplitter.splitGenres(song.genre)
+                    val keys = if (tokens.isEmpty()) {
+                        listOf(MetadataSplitter.genreIdentityKey(Song.UNKNOWN_GENRE))
+                    } else {
+                        tokens.map { MetadataSplitter.genreIdentityKey(it) }
+                    }
+                    for (k in keys.distinct()) {
+                        keyToSongs.getOrPut(k) { mutableListOf() }.add(song)
+                    }
+                }
+                genreList.flatMap { genre ->
+                    keyToSongs[MetadataSplitter.genreIdentityKey(genre.name)].orEmpty()
+                }
             }
             LibraryBrowseFilter.PLAYLISTS -> emptyList()
         }

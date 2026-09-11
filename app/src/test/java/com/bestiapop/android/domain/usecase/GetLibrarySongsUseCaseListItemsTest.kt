@@ -614,4 +614,149 @@ class GetLibrarySongsUseCaseListItemsTest {
         assertEquals(current.id, shuffled.first().id)
         assertEquals(pool.size, shuffled.map { it.id }.distinct().size)
     }
+
+    @Test
+    fun extractArtists_unifiesMixedScriptArtists() {
+        // Mixed-script name "Elephant Gym 大象體操" shares its Latin portion with "Elephant Gym"
+        val crossScriptSongs = (1..9).map { i ->
+            Song(id = i.toLong(), uriString = "u$i", title = "T$i", artist = "Elephant Gym 大象體操", album = "A")
+        } + (10..18).map { i ->
+            Song(id = i.toLong(), uriString = "u$i", title = "T$i", artist = "Elephant Gym", album = "B")
+        }
+        val artists = useCase.extractArtists(crossScriptSongs)
+        // Must unify into a single artist — mixed-script variant preferred as display name
+        assertEquals(1, artists.size)
+        assertEquals("Elephant Gym 大象體操", artists[0].name)
+        assertEquals(18, artists[0].songCount)
+    }
+
+    @Test
+    fun extractArtists_unifiesDiacriticVariants() {
+        val diacriticSongs = listOf(
+            Song(id = 1, uriString = "u1", title = "A", artist = "Diego Sáenz", album = "X"),
+            Song(id = 2, uriString = "u2", title = "B", artist = "Diego Saenz", album = "Y")
+        )
+        val artists = useCase.extractArtists(diacriticSongs)
+        assertEquals(1, artists.size)
+        assertEquals("Diego Sáenz", artists[0].name) // prefers diacritics
+        assertEquals(2, artists[0].songCount)
+    }
+
+    @Test
+    fun extractArtists_unifiesCaseVariants() {
+        val caseSongs = listOf(
+            Song(id = 1, uriString = "u1", title = "A", artist = "ASIAN KUNG-FU GENERATION"),
+            Song(id = 2, uriString = "u2", title = "B", artist = "Asian Kung-Fu Generation")
+        )
+        val artists = useCase.extractArtists(caseSongs)
+        assertEquals(1, artists.size)
+        assertEquals("Asian Kung-Fu Generation", artists[0].name) // prefers mixed case
+    }
+
+    @Test
+    fun extractGenres_unifiesGenreVariants() {
+        val genreSongs = listOf(
+            Song(id = 1, uriString = "u1", title = "A", genre = "Pop Rock"),
+            Song(id = 2, uriString = "u2", title = "B", genre = "Rock & Pop"),
+            Song(id = 3, uriString = "u3", title = "C", genre = "pop-rock"),
+            Song(id = 4, uriString = "u4", title = "D", genre = "rock pop")
+        )
+        val genres = useCase.extractGenres(genreSongs)
+        // All four variants should unify into one genre
+        assertEquals(1, genres.size)
+        assertEquals("Pop Rock", genres[0].name) // Title Case preferred
+        assertEquals(4, genres[0].songCount)
+    }
+
+    @Test
+    fun extractGenres_unifiesSingularPluralAndLemma() {
+        val genreSongs = listOf(
+            Song(id = 1, uriString = "u1", title = "A", genre = "Soundtrack"),
+            Song(id = 2, uriString = "u2", title = "B", genre = "Soundtracks"),
+            Song(id = 3, uriString = "u3", title = "C", genre = "Electronic"),
+            Song(id = 4, uriString = "u4", title = "D", genre = "Electronica")
+        )
+        val genres = useCase.extractGenres(genreSongs)
+        assertEquals(2, genres.size)
+        val soundtrack = genres.first { it.name.startsWith("Soundtrack") }
+        assertEquals(2, soundtrack.songCount)
+        val electronic = genres.first { it.name.startsWith("Electronic") }
+        assertEquals(2, electronic.songCount)
+    }
+
+    @Test
+    fun songsForArtist_matchesByIdentityKeyAcrossVariants() {
+        val mixed = listOf(
+            Song(id = 1, uriString = "u1", title = "A", artist = "Diego Sáenz"),
+            Song(id = 2, uriString = "u2", title = "B", artist = "Diego Saenz"),
+            Song(id = 3, uriString = "u3", title = "C", artist = "Other")
+        )
+        // Searching with either variant should return both songs
+        assertEquals(2, useCase.songsForArtist(mixed, "Diego Sáenz").size)
+        assertEquals(2, useCase.songsForArtist(mixed, "Diego Saenz").size)
+    }
+
+    @Test
+    fun songsMatchingGenre_matchesByIdentityKeyAcrossVariants() {
+        val mixed = listOf(
+            Song(id = 1, uriString = "u1", title = "A", genre = "Pop Rock"),
+            Song(id = 2, uriString = "u2", title = "B", genre = "Rock & Pop"),
+            Song(id = 3, uriString = "u3", title = "C", genre = "Jazz")
+        )
+        // Searching with any variant should return all pop/rock songs
+        assertEquals(2, useCase.songsMatchingGenre(mixed, "Pop Rock").size)
+        assertEquals(2, useCase.songsMatchingGenre(mixed, "Rock & Pop").size)
+        assertEquals(2, useCase.songsMatchingGenre(mixed, "pop-rock").size)
+    }
+
+    @Test
+    fun extractArtists_doesNotDuplicateSongWhenMultipleTokensShareKey() {
+        // Tag with variants that resolve to the same key
+        val songs = listOf(
+            Song(id = 1, uriString = "u1", title = "A", artist = "Diego Sáenz; Diego Saenz")
+        )
+        val artists = useCase.extractArtists(songs)
+        assertEquals(1, artists.size)
+        assertEquals("Diego Sáenz", artists[0].name)
+        assertEquals(1, artists[0].songCount)
+    }
+
+    @Test
+    fun extractGenres_doesNotDuplicateSongWhenMultipleTokensShareKey() {
+        val songs = listOf(
+            Song(id = 1, uriString = "u1", title = "A", genre = "Pop-Rock, Pop Rock")
+        )
+        val genres = useCase.extractGenres(songs)
+        assertEquals(1, genres.size)
+        assertEquals("Pop Rock", genres[0].name)
+        assertEquals(1, genres[0].songCount)
+    }
+
+    @Test
+    fun songsForBrowseProjection_artists_matchesByIdentityKey() {
+        val list = listOf(
+            Song(id = 1, uriString = "u1", title = "A", artist = "Diego Sáenz"),
+            Song(id = 2, uriString = "u2", title = "B", artist = "Diego Saenz")
+        )
+        val projected = useCase.songsForBrowseProjection(
+            filter = com.bestiapop.android.ui.state.LibraryBrowseFilter.ARTISTS,
+            songs = list
+        )
+        // Both songs should be projected under the unified artist
+        assertEquals(listOf(1L, 2L), projected.map { it.id })
+    }
+
+    @Test
+    fun songsForBrowseProjection_genres_matchesByIdentityKey() {
+        val list = listOf(
+            Song(id = 1, uriString = "u1", title = "A", genre = "Pop Rock"),
+            Song(id = 2, uriString = "u2", title = "B", genre = "Rock & Pop")
+        )
+        val projected = useCase.songsForBrowseProjection(
+            filter = com.bestiapop.android.ui.state.LibraryBrowseFilter.GENRES,
+            songs = list
+        )
+        // Both songs should be projected under the unified genre
+        assertEquals(listOf(1L, 2L), projected.map { it.id })
+    }
 }

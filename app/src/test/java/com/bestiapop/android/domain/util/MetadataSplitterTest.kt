@@ -1,6 +1,7 @@
 package com.bestiapop.android.domain.util
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Test
 
 class MetadataSplitterTest {
@@ -113,5 +114,215 @@ class MetadataSplitterTest {
         assertEquals(MetadataSplitter.splitGenres(""), emptyList<String>())
         assertEquals(MetadataSplitter.splitGenres("Unknown Genre"), emptyList<String>())
         assertEquals(MetadataSplitter.splitGenres("Music"), emptyList<String>())
+    }
+
+    // --- Identity Key tests ---
+
+    @Test
+    fun artistIdentityKey_foldsDiacriticsAndCaseAndConnectors() {
+        // Case + diacritics: "Diego Sáenz" and "Diego Saenz" share the same key
+        assertEquals(
+            MetadataSplitter.artistIdentityKey("Diego Sáenz"),
+            MetadataSplitter.artistIdentityKey("Diego Saenz")
+        )
+        // "Raúl Carnota" vs "Raul Carnota"
+        assertEquals(
+            MetadataSplitter.artistIdentityKey("Raúl Carnota"),
+            MetadataSplitter.artistIdentityKey("Raul Carnota")
+        )
+        // ALL CAPS vs mixed case
+        assertEquals(
+            MetadataSplitter.artistIdentityKey("ASIAN KUNG-FU GENERATION"),
+            MetadataSplitter.artistIdentityKey("Asian Kung-Fu Generation")
+        )
+    }
+
+    @Test
+    fun artistIdentityKey_unifiesMixedScriptNames() {
+        // Mixed script (CJK + Latin) → Latin portion becomes canonical key
+        assertEquals(
+            MetadataSplitter.artistIdentityKey("Elephant Gym 大象體操"),
+            MetadataSplitter.artistIdentityKey("Elephant Gym")
+        )
+        // Simplified vs traditional Chinese with same Latin part → same key
+        assertEquals(
+            MetadataSplitter.artistIdentityKey("Elephant Gym 大象體操"),
+            MetadataSplitter.artistIdentityKey("Elephant Gym 大象体操")
+        )
+    }
+
+    @Test
+    fun artistIdentityKey_keepsPureNonLatinDistinct() {
+        // Pure CJK names without Latin content keep their original-script key
+        // They cannot dynamically resolve to a Latin romanization
+        assertNotEquals(
+            MetadataSplitter.artistIdentityKey("きのこ帝国"),
+            MetadataSplitter.artistIdentityKey("Kinokoteikoku")
+        )
+    }
+
+    @Test
+    fun genreIdentityKey_doesNotFalselyMergeBlues() {
+        // "blues" must NOT be stemmed to "blue"
+        assertNotEquals(
+            MetadataSplitter.genreIdentityKey("Blues"),
+            MetadataSplitter.genreIdentityKey("Blue")
+        )
+        // But "Blues Rock" and "Blues-Rock" should still unify via connector normalization
+        assertEquals(
+            MetadataSplitter.genreIdentityKey("Blues Rock"),
+            MetadataSplitter.genreIdentityKey("Blues-Rock")
+        )
+    }
+
+    @Test
+    fun genreIdentityKey_normalizesConnectorsAndOrderAndCase() {
+        // "Pop Rock" vs "Rock & Pop" vs "pop-rock" vs "rock pop"
+        val popRockKey = MetadataSplitter.genreIdentityKey("Pop Rock")
+        assertEquals(popRockKey, MetadataSplitter.genreIdentityKey("Rock & Pop"))
+        assertEquals(popRockKey, MetadataSplitter.genreIdentityKey("pop-rock"))
+        assertEquals(popRockKey, MetadataSplitter.genreIdentityKey("rock pop"))
+
+        // Lemmatization: "Soundtracks" → "Soundtrack"
+        assertEquals(
+            MetadataSplitter.genreIdentityKey("Soundtrack"),
+            MetadataSplitter.genreIdentityKey("Soundtracks")
+        )
+        assertEquals(
+            MetadataSplitter.genreIdentityKey("Electronic"),
+            MetadataSplitter.genreIdentityKey("Electronica")
+        )
+    }
+
+    @Test
+    fun genreIdentityKey_caseInsensitive() {
+        assertEquals(
+            MetadataSplitter.genreIdentityKey("Alternative Rock"),
+            MetadataSplitter.genreIdentityKey("alternative rock")
+        )
+        assertEquals(
+            MetadataSplitter.genreIdentityKey("Blues Rock"),
+            MetadataSplitter.genreIdentityKey("Blues-Rock")
+        )
+    }
+
+    // --- Display name selector tests ---
+
+    @Test
+    fun preferredArtistDisplayName_prefersOriginalScript() {
+        assertEquals(
+            "きのこ帝国",
+            MetadataSplitter.preferredArtistDisplayName(listOf("Kinokoteikoku", "きのこ帝国"))
+        )
+        assertEquals(
+            "アトラスサウンドチーム",
+            MetadataSplitter.preferredArtistDisplayName(listOf("Atlus Sound Team", "アトラスサウンドチーム"))
+        )
+        assertEquals(
+            "Elephant Gym 大象體操",
+            MetadataSplitter.preferredArtistDisplayName(listOf("Elephant Gym", "Elephant Gym 大象體操"))
+        )
+    }
+
+    @Test
+    fun preferredArtistDisplayName_prefersDiacriticsOverPlain() {
+        assertEquals(
+            "Diego Sáenz",
+            MetadataSplitter.preferredArtistDisplayName(listOf("Diego Saenz", "Diego Sáenz"))
+        )
+        assertEquals(
+            "Raúl Carnota",
+            MetadataSplitter.preferredArtistDisplayName(listOf("Raul Carnota", "Raúl Carnota"))
+        )
+    }
+
+    @Test
+    fun preferredArtistDisplayName_penalizesAllCaps() {
+        assertEquals(
+            "Asian Kung-Fu Generation",
+            MetadataSplitter.preferredArtistDisplayName(
+                listOf("ASIAN KUNG-FU GENERATION", "Asian Kung-Fu Generation")
+            )
+        )
+    }
+
+    @Test
+    fun preferredGenreDisplayName_appliesTitleCase() {
+        assertEquals("Pop Rock", MetadataSplitter.preferredGenreDisplayName(listOf("pop rock")))
+        assertEquals("Alternative Rock", MetadataSplitter.preferredGenreDisplayName(listOf("alternative rock")))
+    }
+
+    @Test
+    fun preferredGenreDisplayName_prefersSingularOverPlural() {
+        assertEquals(
+            "Soundtrack",
+            MetadataSplitter.preferredGenreDisplayName(listOf("Soundtracks", "Soundtrack"))
+        )
+    }
+
+    @Test
+    fun preferredGenreDisplayName_prefersSpaceSeparatedOverConnector() {
+        assertEquals(
+            "Pop Rock",
+            MetadataSplitter.preferredGenreDisplayName(listOf("Rock & Pop", "Pop Rock"))
+        )
+        assertEquals(
+            "Blues Rock",
+            MetadataSplitter.preferredGenreDisplayName(listOf("Blues-Rock", "Blues Rock"))
+        )
+    }
+
+    @Test
+    fun preferredArtistDisplayName_prefersTitleCaseOverLowercase() {
+        assertEquals(
+            "Asian Kung-Fu Generation",
+            MetadataSplitter.preferredArtistDisplayName(
+                listOf("asian kung-fu generation", "Asian Kung-Fu Generation")
+            )
+        )
+    }
+
+    @Test
+    fun preferredGenreDisplayName_prefersSingularEvenWhenPluralIsTitleCase() {
+        assertEquals(
+            "Soundtrack",
+            MetadataSplitter.preferredGenreDisplayName(listOf("soundtrack", "Soundtracks"))
+        )
+    }
+
+    @Test
+    fun genreIdentityKey_handlesSlashesAndConnectorsWithoutSpaces() {
+        assertEquals(
+            MetadataSplitter.genreIdentityKey("Pop Rock"),
+            MetadataSplitter.genreIdentityKey("Pop/Rock")
+        )
+        assertEquals(
+            MetadataSplitter.genreIdentityKey("Pop Rock"),
+            MetadataSplitter.genreIdentityKey("Pop&Rock")
+        )
+    }
+
+    @Test
+    fun artistIdentityKey_handlesConnectorsWithoutSpaces() {
+        assertEquals(
+            MetadataSplitter.artistIdentityKey("Simon & Garfunkel"),
+            MetadataSplitter.artistIdentityKey("Simon&Garfunkel")
+        )
+    }
+
+    // --- Semicolon header dedup ---
+
+    @Test
+    fun splitArtists_discardsRedundantCompositeHeader() {
+        // Real-world case: "Walter Ríos, Ulises Butrón & Popi Spatocco;Ulises Butrón;Popi Spatocco;Walter Ríos"
+        val result = MetadataSplitter.splitArtists(
+            "Walter Ríos, Ulises Butrón & Popi Spatocco;Ulises Butrón;Popi Spatocco;Walter Ríos"
+        )
+        // The composite header should be discarded, keeping only the individual artists
+        assertEquals(3, result.size)
+        assertEquals(
+            setOf("Ulises Butrón", "Popi Spatocco", "Walter Ríos"),
+            result.toSet()
+        )
     }
 }

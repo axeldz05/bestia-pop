@@ -382,6 +382,12 @@ interface MusicDao {
     @Query("UPDATE artists SET photoUri = :photoUri WHERE normalizedName = :normalizedName")
     suspend fun setArtistPhotoUri(normalizedName: String, photoUri: String?)
 
+    @Query("UPDATE artists SET name = :name WHERE id = :id")
+    suspend fun updateArtistName(id: Long, name: String)
+
+    @Query("UPDATE genres SET name = :name WHERE id = :id")
+    suspend fun updateGenreName(id: Long, name: String)
+
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertGenre(genre: GenreEntity): Long
 

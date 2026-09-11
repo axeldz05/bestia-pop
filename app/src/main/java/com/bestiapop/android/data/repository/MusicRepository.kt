@@ -566,7 +566,7 @@ class MusicRepository private constructor(
             val dedup = libraryDedupSets(existing)
 
             val ticker = ScanProgressTicker(managed.size, onProgress)
-            persistInsertedSongs(
+            val inserted = persistInsertedSongs(
                 indexSourcesParallel(
                     sources = managed.mapNotNull { file ->
                         if (!file.isFile || !isAudioFile(file.name)) return@mapNotNull null
@@ -576,6 +576,10 @@ class MusicRepository private constructor(
                     ticker = ticker
                 )
             )
+            if (existing.isNotEmpty()) {
+                syncSongsRelations(existing)
+            }
+            inserted
         }
 
     override suspend fun findSongByArtistTitle(artist: String, title: String): Song? =
@@ -2881,19 +2885,19 @@ class MusicRepository private constructor(
         }
 
     override suspend fun getSongsForArtist(artistName: String): List<Song> = withContext(Dispatchers.IO) {
-        val norm = MetadataSplitter.normalizeKey(artistName)
+        val norm = MetadataSplitter.artistIdentityKey(artistName)
         if (norm.isBlank()) emptyList()
         else musicDao.getSongsForArtistNormalized(norm)
     }
 
     override suspend fun getSongsForGenre(genreName: String): List<Song> = withContext(Dispatchers.IO) {
-        val norm = MetadataSplitter.normalizeKey(genreName)
+        val norm = MetadataSplitter.genreIdentityKey(genreName)
         if (norm.isBlank()) emptyList()
         else musicDao.getSongsForGenreNormalized(norm)
     }
 
     override suspend fun getAlbumsForArtist(artistName: String): List<String> = withContext(Dispatchers.IO) {
-        val norm = MetadataSplitter.normalizeKey(artistName)
+        val norm = MetadataSplitter.artistIdentityKey(artistName)
         if (norm.isBlank()) emptyList()
         else musicDao.getAlbumsForArtistNormalized(norm)
     }
@@ -2910,99 +2914,122 @@ class MusicRepository private constructor(
 
     private suspend fun syncSongsRelations(songs: List<Song>) {
         if (songs.isEmpty()) return
-        val candidateArtists = HashSet<String>(songs.size).apply {
-            for (s in songs) {
-                val a = s.artist.trim()
-                if (a.isNotEmpty() && !IdentifyRanking.isPlaceholderArtist(a)) {
-                    val featHead = a.substringBefore(" feat.").substringBefore(" ft.").substringBefore(";").trim()
-                    if (featHead.isNotEmpty()) add(featHead)
-                    add(a)
-                }
-            }
-        }
-        for (song in songs) {
-            val songId = song.id
-            if (songId <= 0L) continue
+        val candidateArtists = MetadataSplitter.buildCandidateArtists(
+            songs, { it.artist }, IdentifyRanking::isPlaceholderArtist
+        )
+        db.withTransaction {
+            for (song in songs) {
+                val songId = song.id
+                if (songId <= 0L) continue
 
-            // 1. Artists
-            val artistTokens = MetadataSplitter.splitArtists(song.artist, candidateArtists)
-            val artistIds = mutableListOf<Long>()
-            for (token in artistTokens) {
-                val norm = MetadataSplitter.normalizeKey(token)
-                val existing = musicDao.getArtistByNormalizedName(norm)
-                val id = if (existing != null) {
-                    existing.id
-                } else {
-                    val inserted = musicDao.insertArtist(
-                        ArtistEntity(name = token, normalizedName = norm)
-                    )
-                    if (inserted != -1L) inserted else (musicDao.getArtistByNormalizedName(norm)?.id ?: continue)
-                }
-                artistIds.add(id)
-            }
-            musicDao.deleteSongArtistCrossRefs(songId)
-            if (artistIds.isNotEmpty()) {
-                musicDao.insertSongArtistCrossRefs(
-                    artistIds.mapIndexed { idx, aId ->
-                        SongArtistCrossRef(
-                            songId = songId,
-                            artistId = aId,
-                            isPrimary = idx == 0,
-                            position = idx
+                // 1. Artists — use identity key for normalizedName, update display name when better
+                val artistTokens = MetadataSplitter.splitArtists(song.artist, candidateArtists)
+                val artistIds = mutableListOf<Long>()
+                val seenArtistKeys = mutableSetOf<String>()
+                for (token in artistTokens) {
+                    val identityKey = MetadataSplitter.artistIdentityKey(token)
+                    if (!seenArtistKeys.add(identityKey)) continue
+                    val existing = musicDao.getArtistByNormalizedName(identityKey)
+                    val id: Long
+                    if (existing != null) {
+                        id = existing.id
+                        // Update display name if this variant is better than the stored one
+                        val preferred = MetadataSplitter.preferredArtistDisplayName(
+                            listOf(existing.name, token)
                         )
-                    }
-                )
-            }
-
-            // 2. Genres
-            val genreTokens = MetadataSplitter.splitGenres(song.genre)
-            val genreIds = mutableListOf<Long>()
-            for (token in genreTokens) {
-                val norm = MetadataSplitter.normalizeKey(token)
-                val existing = musicDao.getGenreByNormalizedName(norm)
-                val id = if (existing != null) {
-                    existing.id
-                } else {
-                    val inserted = musicDao.insertGenre(
-                        GenreEntity(name = token, normalizedName = norm)
-                    )
-                    if (inserted != -1L) inserted else (musicDao.getGenreByNormalizedName(norm)?.id ?: continue)
-                }
-                genreIds.add(id)
-            }
-            musicDao.deleteSongGenreCrossRefs(songId)
-            if (genreIds.isNotEmpty()) {
-                musicDao.insertSongGenreCrossRefs(
-                    genreIds.map { gId ->
-                        SongGenreCrossRef(
-                            songId = songId,
-                            genreId = gId
+                        if (preferred != existing.name) {
+                            musicDao.updateArtistName(existing.id, preferred)
+                        }
+                    } else {
+                        val inserted = musicDao.insertArtist(
+                            ArtistEntity(name = token, normalizedName = identityKey)
                         )
+                        id = if (inserted != -1L) {
+                            inserted
+                        } else {
+                            musicDao.getArtistByNormalizedName(identityKey)?.id ?: continue
+                        }
                     }
-                )
-            }
-
-            // 3. Album Relations
-            val albumKey = albumIdentityKey(song.album)
-            if (albumKey.isNotBlank()) {
+                    artistIds.add(id)
+                }
+                musicDao.deleteSongArtistCrossRefs(songId)
                 if (artistIds.isNotEmpty()) {
-                    val albumArtistRefs = artistIds.map { aId ->
-                        AlbumArtistCrossRef(
-                            albumKey = albumKey,
-                            artistId = aId
-                        )
-                    }
-                    musicDao.insertAlbumArtistCrossRefs(albumArtistRefs)
+                    musicDao.insertSongArtistCrossRefs(
+                        artistIds.mapIndexed { idx, aId ->
+                            SongArtistCrossRef(
+                                songId = songId,
+                                artistId = aId,
+                                isPrimary = idx == 0,
+                                position = idx
+                            )
+                        }
+                    )
                 }
 
-                if (genreIds.isNotEmpty()) {
-                    val albumGenreRefs = genreIds.map { gId ->
-                        AlbumGenreCrossRef(
-                            albumKey = albumKey,
-                            genreId = gId
+                // 2. Genres — use identity key for normalizedName, update display name when better
+                val genreTokens = MetadataSplitter.splitGenres(song.genre)
+                val genreIds = mutableListOf<Long>()
+                val seenGenreKeys = mutableSetOf<String>()
+                for (token in genreTokens) {
+                    val identityKey = MetadataSplitter.genreIdentityKey(token)
+                    if (!seenGenreKeys.add(identityKey)) continue
+                    val existing = musicDao.getGenreByNormalizedName(identityKey)
+                    val id: Long
+                    if (existing != null) {
+                        id = existing.id
+                        // Update display name if this variant is better than the stored one
+                        val preferred = MetadataSplitter.preferredGenreDisplayName(
+                            listOf(existing.name, token)
                         )
+                        if (preferred != existing.name) {
+                            musicDao.updateGenreName(existing.id, preferred)
+                        }
+                    } else {
+                        val inserted = musicDao.insertGenre(
+                            GenreEntity(name = token, normalizedName = identityKey)
+                        )
+                        id = if (inserted != -1L) {
+                            inserted
+                        } else {
+                            musicDao.getGenreByNormalizedName(identityKey)?.id ?: continue
+                        }
                     }
-                    musicDao.insertAlbumGenreCrossRefs(albumGenreRefs)
+                    genreIds.add(id)
+                }
+                musicDao.deleteSongGenreCrossRefs(songId)
+                if (genreIds.isNotEmpty()) {
+                    musicDao.insertSongGenreCrossRefs(
+                        genreIds.map { gId ->
+                            SongGenreCrossRef(
+                                songId = songId,
+                                genreId = gId
+                            )
+                        }
+                    )
+                }
+
+                // 3. Album Relations
+                val albumKey = albumIdentityKey(song.album)
+                if (albumKey.isNotBlank()) {
+                    if (artistIds.isNotEmpty()) {
+                        val albumArtistRefs = artistIds.map { aId ->
+                            AlbumArtistCrossRef(
+                                albumKey = albumKey,
+                                artistId = aId
+                            )
+                        }
+                        musicDao.insertAlbumArtistCrossRefs(albumArtistRefs)
+                    }
+
+                    if (genreIds.isNotEmpty()) {
+                        val albumGenreRefs = genreIds.map { gId ->
+                            AlbumGenreCrossRef(
+                                albumKey = albumKey,
+                                genreId = gId
+                            )
+                        }
+                        musicDao.insertAlbumGenreCrossRefs(albumGenreRefs)
+                    }
                 }
             }
         }

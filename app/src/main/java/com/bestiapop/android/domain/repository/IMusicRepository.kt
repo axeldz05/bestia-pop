@@ -2,6 +2,7 @@ package com.bestiapop.android.domain.repository
 
 import android.net.Uri
 import com.bestiapop.android.data.model.AlbumOverride
+import com.bestiapop.android.data.model.CatalogAlbum
 import com.bestiapop.android.data.model.IdentifyApplyFields
 import com.bestiapop.android.data.model.IdentifyApplyRequest
 import com.bestiapop.android.data.model.IdentifyCandidate
@@ -138,6 +139,11 @@ interface IMusicRepository {
      * album/artist/genre/year/artwork to match the effective metadata of the target album.
      * Deletes the source album override; leaves the target override untouched.
      */
+    /**
+     * Search online albums (Deezer / iTunes) by query.
+     */
+    suspend fun searchAlbums(query: String): List<CatalogAlbum> = emptyList()
+
     suspend fun mergeAlbumInto(sourceAlbumKey: String, targetAlbumKey: String)
 
     suspend fun loadKnownAlbumTracks(

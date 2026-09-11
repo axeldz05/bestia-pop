@@ -1901,6 +1901,11 @@ class MusicRepository private constructor(
             Unit
         }
 
+    override suspend fun searchAlbums(query: String): List<CatalogAlbum> =
+        withContext(Dispatchers.IO) {
+            metadataSource.searchAlbums(query)
+        }
+
     override suspend fun setAlbumArtwork(albumKey: String, artworkUri: String?) =
         withContext(Dispatchers.IO) {
             val existing = musicDao.getAlbumOverride(albumKey)

@@ -1,5 +1,6 @@
 package com.bestiapop.android.ui.state
 
+import com.bestiapop.android.data.model.CatalogAlbum
 import com.bestiapop.android.data.model.IdentifyApplyFields
 import com.bestiapop.android.data.model.IdentifyCandidate
 import com.bestiapop.android.data.model.IdentifyConfidence
@@ -8,8 +9,10 @@ import com.bestiapop.android.data.model.IdentifySearchFilters
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.data.util.looksLikeStoragePath
 import com.bestiapop.android.domain.util.IdentifyAlbumGroup
+import com.bestiapop.android.domain.util.IdentifyAlbumGroupSource
 import com.bestiapop.android.domain.util.IdentifyRanking
 import com.bestiapop.android.domain.util.clusterIdentifyAlbumGroups
+import com.bestiapop.android.domain.util.clusterIdentifyAlbumGroupsFromSources
 import com.bestiapop.android.domain.util.gapApplyFields
 import com.bestiapop.android.domain.util.knownAlbumQueryOf
 import com.bestiapop.android.domain.util.knownAlbumsFromLibrary
@@ -24,6 +27,21 @@ enum class IdentifyReviewPhase {
 data class IdentifyReviewItem(
     val song: Song,
     val proposal: IdentifyProposal
+)
+
+fun List<IdentifyReviewItem>.toAlbumGroupSources(): List<IdentifyAlbumGroupSource> =
+    map { IdentifyAlbumGroupSource(it.song, it.proposal) }
+
+/** Level 2 continuous granularity: clusters album groups directly from UI review items. */
+fun List<IdentifyReviewItem>.clusterAlbumGroups(
+    applyFields: IdentifyApplyFields = IdentifyApplyFields.ALL,
+    searchedCandidates: Map<String, List<CatalogAlbum>> = emptyMap(),
+    selectedCandidateIndices: Map<String, Int> = emptyMap()
+): List<IdentifyAlbumGroup> = clusterIdentifyAlbumGroupsFromSources(
+    sources = toAlbumGroupSources(),
+    applyFields = applyFields,
+    searchedCandidates = searchedCandidates,
+    selectedCandidateIndices = selectedCandidateIndices
 )
 
 fun Song.forIdentifyReview(): Song = if (lyrics == null) this else copy(lyrics = null)
@@ -53,7 +71,9 @@ data class IdentifyReviewState(
     val phase: IdentifyReviewPhase = IdentifyReviewPhase.Item,
     val openedFromOverview: Boolean = false,
     val applyFields: IdentifyApplyFields = IdentifyApplyFields.ALL,
-    val isApplying: Boolean = false
+    val isApplying: Boolean = false,
+    val albumGroupCandidates: Map<String, List<CatalogAlbum>> = emptyMap(),
+    val albumGroupSelectedIndices: Map<String, Int> = emptyMap()
 ) {
     val current: IdentifyReviewItem?
         get() = items.getOrNull(currentIndex)
@@ -74,8 +94,13 @@ data class IdentifyReviewState(
         get() = items.size
 
     val albumGroups: List<IdentifyAlbumGroup> by lazy {
-        clusterIdentifyAlbumGroups(remaining.map { it.proposal })
+        remaining.clusterAlbumGroups(
+            applyFields = applyFields,
+            searchedCandidates = albumGroupCandidates,
+            selectedCandidateIndices = albumGroupSelectedIndices
+        )
     }
+
 
     val ungroupedCount: Int by lazy {
         val groupedIds = albumGroups.flatMap { it.songIds }.toSet()
@@ -210,7 +235,7 @@ fun leftoverIdentifyReview(
     if (leftover.isEmpty()) {
         return IdentifyReviewState(applyFields = applyFields)
     }
-    val phase = if (clusterIdentifyAlbumGroups(leftover.map { it.proposal }).isNotEmpty()) {
+    val phase = if (leftover.clusterAlbumGroups(applyFields).isNotEmpty()) {
         IdentifyReviewPhase.Overview
     } else {
         IdentifyReviewPhase.Item
@@ -283,7 +308,7 @@ fun identifyReviewFromPersisted(
     val attached = attachKnownAlbumMatches(items, songs)
     val requested = identifyReviewPhaseOrItem(phaseName)
     val phase = if (requested == IdentifyReviewPhase.Overview &&
-        clusterIdentifyAlbumGroups(attached.map { it.proposal }).isEmpty()
+        attached.clusterAlbumGroups(applyFields).isEmpty()
     ) {
         IdentifyReviewPhase.Item
     } else {

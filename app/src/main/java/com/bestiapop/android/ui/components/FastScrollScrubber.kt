@@ -91,7 +91,7 @@ fun FastScrollSide.toAlignment(): Alignment =
     if (this == FastScrollSide.LEFT) Alignment.CenterStart else Alignment.CenterEnd
 
 /**
- * Section descriptor for Niagara-style fast scroll.
+ * Section descriptor for fast scroll.
  *
  * @property label Compact symbol shown on the vertical rail (e.g. "A", "'26", "Rk").
  * @property popupLabel Full title shown in the preview bubble (e.g. "A", "2026", "Rock").
@@ -314,7 +314,7 @@ fun FastScrollScrubber(
 }
 
 /**
- * Level 1/2: Interactive Niagara-style vertical fast scrollbar connected to a [LazyListState].
+ * Level 1/2: Interactive vertical fast scrollbar connected to a [LazyListState].
  * Includes haptic ticks, magnifying letter wave animation, and floating indicator bubble.
  */
 @Composable

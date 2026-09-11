@@ -15,9 +15,9 @@ import com.bestiapop.android.domain.util.IdentifyRanking
 import com.bestiapop.android.domain.util.KnownAlbumMatch
 import com.bestiapop.android.domain.util.albumGroupKey
 import com.bestiapop.android.domain.util.assignUniqueKnownAlbumMatches
-import com.bestiapop.android.domain.util.clusterIdentifyAlbumGroups
 import com.bestiapop.android.domain.util.gapApplyFields
 import com.bestiapop.android.domain.util.isTrackNumberLabel
+
 import com.bestiapop.android.domain.util.knownAlbumQueryOf
 import com.bestiapop.android.domain.util.needsGapIdentify
 import com.bestiapop.android.domain.util.songHasGapsForFields
@@ -30,7 +30,9 @@ import com.bestiapop.android.ui.state.IdentifyReviewPhase
 import com.bestiapop.android.ui.state.IdentifyReviewState
 import com.bestiapop.android.ui.state.IdentifySetupState
 import com.bestiapop.android.ui.state.attachKnownAlbumMatches
+import com.bestiapop.android.ui.state.clusterAlbumGroups
 import com.bestiapop.android.ui.state.hasMediumSuggestion
+
 import com.bestiapop.android.ui.state.identifyPersistEcho
 import com.bestiapop.android.ui.state.identifyReviewFromPersisted
 import com.bestiapop.android.ui.state.identifySearchDraft
@@ -42,6 +44,7 @@ import com.bestiapop.android.ui.state.mergeIncomingReviewItems
 import com.bestiapop.android.ui.state.seedIdentifySearch
 import com.bestiapop.android.ui.state.withGapApplyFields
 import com.bestiapop.android.ui.state.withItemSearchChrome
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
@@ -72,7 +75,8 @@ class IdentifyReviewCoordinator internal constructor(
     private val awaitCatalogLoaded: suspend () -> Unit,
     private val clearCatalogPreview: () -> Unit,
     private val toast: (String) -> Unit,
-    private val uiAttached: () -> Boolean
+    private val uiAttached: () -> Boolean,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
 ) {
     private val _identifyReview = MutableStateFlow(IdentifyReviewState())
     val identifyReview: StateFlow<IdentifyReviewState> = _identifyReview.asStateFlow()
@@ -109,7 +113,7 @@ class IdentifyReviewCoordinator internal constructor(
                 .distinctUntilChanged()
                 .debounce(300)
                 .collect { (snap, knownIds, dropped) ->
-                    withContext(Dispatchers.IO) {
+                    withContext(ioDispatcher) {
                         identifyReviewStore.mergeUiRemaining(
                             remaining = snap.proposals,
                             knownSongIds = knownIds,
@@ -317,7 +321,7 @@ class IdentifyReviewCoordinator internal constructor(
         val cached = rawSongs.value.associateBy { it.id }
         val fromCache = ids.mapNotNull { cached[it] }
         if (fromCache.size == ids.size) return fromCache
-        return withContext(Dispatchers.IO) { repository.getSongsByIds(ids) }
+        return withContext(ioDispatcher) { repository.getSongsByIds(ids) }
     }
 
     private fun applyPersistedIdentifyFields(applyFields: IdentifyApplyFields) {
@@ -373,7 +377,7 @@ class IdentifyReviewCoordinator internal constructor(
     }
 
     private fun reviewPhaseFor(items: List<IdentifyReviewItem>): IdentifyReviewPhase =
-        if (clusterIdentifyAlbumGroups(items.map { it.proposal }).isNotEmpty()) {
+        if (items.clusterAlbumGroups(_identifyReview.value.applyFields).isNotEmpty()) {
             IdentifyReviewPhase.Overview
         } else {
             IdentifyReviewPhase.Item
@@ -393,7 +397,7 @@ class IdentifyReviewCoordinator internal constructor(
             return
         }
         val library = rawSongs.value.ifEmpty {
-            withContext(Dispatchers.IO) { repository.getAllSongsSync() }
+            withContext(ioDispatcher) { repository.getAllSongsSync() }
         }
         val attached = attachKnownAlbumMatches(items, library)
         val phase = reviewPhaseFor(attached)
@@ -427,7 +431,7 @@ class IdentifyReviewCoordinator internal constructor(
             return emptySet()
         }
         val queries = remaining.map { knownAlbumQueryOf(it.song, queryTitle = it.proposal.queryTitle) }
-        val libraryKnown = withContext(Dispatchers.IO) {
+        val libraryKnown = withContext(ioDispatcher) {
             repository.loadKnownAlbumTracks(artist, album, fetchCatalog = false)
         }
         val libraryMatches = if (libraryKnown != null) {
@@ -445,7 +449,7 @@ class IdentifyReviewCoordinator internal constructor(
         val catalogMatches = if (unmatched.isEmpty()) {
             emptyMap()
         } else {
-            val catalogKnown = withContext(Dispatchers.IO) {
+            val catalogKnown = withContext(ioDispatcher) {
                 repository.loadKnownAlbumTracks(artist, album, fetchCatalog = true)
             } ?: return applyKnownAlbumMatches(remaining, libraryMatches)
             withContext(Dispatchers.Default) {
@@ -566,7 +570,7 @@ class IdentifyReviewCoordinator internal constructor(
         commit: IdentifyApplyCommit
     ): List<IdentifyReviewItem>? {
         val applied = try {
-            withContext(Dispatchers.IO) {
+            withContext(ioDispatcher) {
                 repository.applySongIdentities(commit.requests)
             }
         } catch (cancelled: CancellationException) {
@@ -648,7 +652,7 @@ class IdentifyReviewCoordinator internal constructor(
         val phase = state.phase.name
         val fields = state.applyFields
         scope.launch {
-            withContext(Dispatchers.IO) {
+            withContext(ioDispatcher) {
                 identifyReviewStore.mergeUiRemaining(
                     remaining = remaining,
                     knownSongIds = knownIds,
@@ -730,40 +734,119 @@ class IdentifyReviewCoordinator internal constructor(
         }
     }
 
+    fun searchAlbumCandidates(groupKey: String, query: String) {
+        val clean = query.trim()
+        if (clean.isEmpty()) return
+        scope.launch {
+            try {
+                val hits = withContext(ioDispatcher) {
+                    repository.searchAlbums(clean)
+                }
+                _identifyReview.update { current ->
+                    current.copy(
+                        albumGroupCandidates = current.albumGroupCandidates + (groupKey to hits),
+                        albumGroupSelectedIndices = current.albumGroupSelectedIndices + (groupKey to 0)
+                    )
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                // Ignore search network errors
+            }
+        }
+    }
+
+    fun selectAlbumCandidate(groupKey: String, index: Int) {
+        _identifyReview.update { current ->
+            current.copy(
+                albumGroupSelectedIndices = current.albumGroupSelectedIndices + (groupKey to index)
+            )
+        }
+    }
+
     fun applyIdentifyAlbumGroup(key: String) {
         scope.launch {
-            val pending = identifyMutex.withLock {
-                val state = _identifyReview.value
-                if (state.isApplying || !state.applyFields.hasAny) return@withLock null
-                val group = state.albumGroups.find { it.key == key } ?: return@withLock null
+            val state = _identifyReview.value
+            if (state.isApplying || !state.applyFields.hasAny) return@launch
+            val group = state.albumGroups.find { it.key == key } ?: return@launch
+            val effectiveArtwork = group.artworkUri
+            val albumName = group.album.ifBlank { group.currentAlbum }
+
+            // Set album artwork in repository if artwork field is enabled
+            if (effectiveArtwork != null && state.applyFields.artwork) {
+                withContext(ioDispatcher) {
+                    repository.setAlbumArtwork(albumName, effectiveArtwork)
+                    if (group.currentAlbum.isNotBlank() && group.currentAlbum != albumName) {
+                        repository.setAlbumArtwork(group.currentAlbum, effectiveArtwork)
+                    }
+                }
+            }
+
+            val artworkOnlyIds = group.artworkOnlySongIds.toSet()
+            val otherGapsIds = group.otherGapsSongIds.toSet()
+
+            val fanOut = identifyMutex.withLock {
+                val currentState = _identifyReview.value
+                val remaining = currentState.remaining
                 val groupIds = group.songIds.toSet()
-                val remaining = state.remaining
                 val targets = remaining.filter { it.song.id in groupIds }
                 if (targets.isEmpty()) return@withLock null
-                val commit = beginOptimisticIdentifyApply(
-                    remaining = remaining,
-                    targets = targets,
-                    sessionApplied = state.sessionApplied,
-                    sessionSkipped = state.sessionSkipped
-                ) { it.proposal.suggested } ?: return@withLock null
-                toast(
-                    if (targets.size == 1) "1 aplicada al álbum"
-                    else "${targets.size} aplicadas al álbum"
-                )
-                val fanOut = if (commit.leftover.isEmpty()) {
-                    null
-                } else {
-                    Triple(group.artist, group.album, state.sessionSkipped)
+
+                val toDrop = targets.filter { it.song.id in artworkOnlyIds }
+                val dropIds = toDrop.map { it.song.id }.toSet()
+                identifyDroppedIds += dropIds
+
+                if (dropIds.isNotEmpty()) {
+                    withContext(ioDispatcher) {
+                        identifyReviewStore.removeSongIds(dropIds)
+                    }
                 }
-                commit to fanOut
-            } ?: return@launch
-            val leftover = confirmOptimisticIdentifyApply(pending.first) ?: return@launch
-            val fanOut = pending.second ?: return@launch
-            if (leftover.isEmpty()) return@launch
-            launchKnownAlbumFanOut(
-                albums = listOf(fanOut.first to fanOut.second),
-                sessionSkipped = fanOut.third
-            ) { extras, _ -> knownAlbumFanOutLabel(fanOut.second, extras) }
+
+                val updatedRemaining = remaining.mapNotNull { item ->
+                    when (item.song.id) {
+                        in dropIds -> null
+                        in otherGapsIds -> {
+                            val updatedSong = if (effectiveArtwork != null) {
+                                item.song.copy(artworkUri = effectiveArtwork)
+                            } else item.song
+                            item.copy(song = updatedSong)
+                        }
+
+                        else -> item
+                    }
+                }
+
+                publishIdentifyLeftover(
+                    leftover = updatedRemaining,
+                    sessionApplied = currentState.sessionApplied + dropIds.size,
+                    sessionSkipped = currentState.sessionSkipped,
+                    persist = true
+                )
+
+                val toastMessage = when {
+                    otherGapsIds.isEmpty() ->
+                        if (dropIds.size == 1) "1 canción completada para el álbum"
+                        else "${dropIds.size} canciones completadas para el álbum"
+
+                    dropIds.isEmpty() ->
+                        if (otherGapsIds.size == 1) "Portada guardada. 1 canción con otros datos pendientes"
+                        else "Portada guardada. ${otherGapsIds.size} canciones con otros datos pendientes"
+
+                    else ->
+                        "${dropIds.size} completadas, ${otherGapsIds.size} con otros datos pendientes"
+                }
+                toast(toastMessage)
+
+                if (updatedRemaining.isEmpty()) null
+                else Triple(group.artist, albumName, currentState.sessionSkipped)
+            }
+
+            if (fanOut != null) {
+                launchKnownAlbumFanOut(
+                    albums = listOf(fanOut.first to fanOut.second),
+                    sessionSkipped = fanOut.third
+                ) { extras, _ -> knownAlbumFanOutLabel(fanOut.second, extras) }
+            }
         }
     }
 
@@ -785,7 +868,7 @@ class IdentifyReviewCoordinator internal constructor(
         if (ids.isEmpty()) return
         identifyDroppedIds += ids
         scope.launch {
-            withContext(Dispatchers.IO) { identifyReviewStore.removeSongIds(ids) }
+            withContext(ioDispatcher) { identifyReviewStore.removeSongIds(ids) }
         }
         val state = _identifyReview.value
         if (state.items.none { it.song.id in ids }) return
@@ -835,7 +918,7 @@ class IdentifyReviewCoordinator internal constructor(
             )
         }
         if (requests.isEmpty()) return emptySet()
-        val appliedIds = withContext(Dispatchers.IO) {
+        val appliedIds = withContext(ioDispatcher) {
             repository.applySongIdentities(requests)
         }
         if (appliedIds.isNotEmpty()) {
@@ -959,7 +1042,7 @@ class IdentifyReviewCoordinator internal constructor(
         }
         scope.launch {
             _identifyReview.value = _identifyReview.value.copy(isSearching = true, isLoadingMore = false)
-            val proposal = withContext(Dispatchers.IO) {
+            val proposal = withContext(ioDispatcher) {
                 repository.proposeSongIdentity(
                     song = item.song,
                     customQuery = query.ifBlank { null },
@@ -1009,7 +1092,7 @@ class IdentifyReviewCoordinator internal constructor(
         val filters = state.searchFilters.normalized()
         scope.launch {
             _identifyReview.value = _identifyReview.value.copy(isLoadingMore = true)
-            val proposal = withContext(Dispatchers.IO) {
+            val proposal = withContext(ioDispatcher) {
                 repository.proposeSongIdentity(
                     song = item.song,
                     customQuery = query.ifBlank { null },

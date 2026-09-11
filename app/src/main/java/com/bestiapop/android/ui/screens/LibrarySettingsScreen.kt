@@ -110,7 +110,7 @@ fun LibrarySettingsScreen(viewModel: MusicPlayerViewModel) {
         Spacer(modifier = Modifier.height(28.dp))
 
         SettingsSwitchRow(
-            title = "Scroll vertical rápido (estilo Niagara)",
+            title = "Scroll vertical rápido",
             checked = fastScrollSettings.enabled,
             onCheckedChange = { viewModel.setFastScrollEnabled(it) },
             onSubtitle = "Activo — deslizá el pulgar por el lateral para saltar entre letras y categorías",

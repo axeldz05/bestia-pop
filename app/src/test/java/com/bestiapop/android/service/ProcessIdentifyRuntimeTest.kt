@@ -625,6 +625,135 @@ class ProcessIdentifyRuntimeTest {
         }
     }
 
+    @Test
+    fun albumBatch_queriesAlbumOnceAndResolvesArtworkOnlySongs() = runBlocking {
+        val albumQueries = AtomicInteger(0)
+        val appliedAlbumArt = mutableListOf<Pair<String, String?>>()
+        val proposeCalls = AtomicInteger(0)
+
+        val s1 = Song(1L, "file://1.mp3", "Time is Running Out", "Muse", "Absolution", artworkUri = null, year = 2003, trackNumber = 3)
+        val s2 = Song(2L, "file://2.mp3", "Hysteria", "Muse", "Absolution", artworkUri = null, year = 2003, trackNumber = 8)
+        val s3 = Song(3L, "file://3.mp3", "Stockholm Syndrome", "Muse", "Absolution", artworkUri = null, year = 2003, trackNumber = 4)
+
+        val fixture = fixture(
+            songsById = mapOf(1L to s1, 2L to s2, 3L to s3),
+            loadScopedAlbumTracks = { artist, album ->
+                albumQueries.incrementAndGet()
+                KnownAlbumTracks(
+                    key = albumGroupKey(artist, album),
+                    artist = artist,
+                    album = album,
+                    artworkUri = "https://example.com/absolution.jpg",
+                    tracks = listOf(
+                        KnownAlbumTrack("Time is Running Out", trackNumber = 3, artworkUri = "https://example.com/absolution.jpg"),
+                        KnownAlbumTrack("Stockholm Syndrome", trackNumber = 4, artworkUri = "https://example.com/absolution.jpg"),
+                        KnownAlbumTrack("Hysteria", trackNumber = 8, artworkUri = "https://example.com/absolution.jpg")
+                    )
+                )
+            },
+            setAlbumArtwork = { key, art ->
+                appliedAlbumArt += key to art
+            },
+            propose = { _, _, _ ->
+                proposeCalls.incrementAndGet()
+                proposal(999L, IdentifyConfidence.NONE)
+            }
+        )
+        try {
+            fixture.runtime.submit(listOf(s1, s2, s3)).join()
+            withTimeout(TIMEOUT_MS) { fixture.runtime.awaitIdle() }
+
+            assertEquals("Debe consultar el álbum exactamente 1 vez", 1, albumQueries.get())
+            assertEquals("No debe consultar pistas individuales si son del mismo álbum con portada", 0, proposeCalls.get())
+            assertEquals(1, appliedAlbumArt.size)
+            assertEquals("Absolution", appliedAlbumArt.single().first)
+            assertEquals("https://example.com/absolution.jpg", appliedAlbumArt.single().second)
+            assertTrue("La cola debe quedar vacía", fixture.work.isEmpty())
+        } finally {
+            fixture.close()
+        }
+    }
+
+    @Test
+    fun albumBatch_matchesOtherGapsAgainstAlbumTracklist() = runBlocking {
+        val albumQueries = AtomicInteger(0)
+        val appliedSongIds = mutableListOf<Long>()
+        val proposeCalls = AtomicInteger(0)
+
+        val s1 = Song(10L, "file://10.mp3", "Yellow", "Coldplay", "Parachutes", artworkUri = null, year = 2000, trackNumber = 5)
+        val s2 = Song(11L, "file://11.mp3", "Trouble (Acoustic)", "Coldplay", "Parachutes", artworkUri = null, year = 0, trackNumber = 8)
+
+        val fixture = fixture(
+            songsById = mapOf(10L to s1, 11L to s2),
+            loadScopedAlbumTracks = { artist, album ->
+                albumQueries.incrementAndGet()
+                KnownAlbumTracks(
+                    key = albumGroupKey(artist, album),
+                    artist = artist,
+                    album = album,
+                    artworkUri = "https://example.com/parachutes.jpg",
+                    tracks = listOf(
+                        KnownAlbumTrack("Yellow", trackNumber = 5, artworkUri = "https://example.com/parachutes.jpg"),
+                        KnownAlbumTrack("Trouble", trackNumber = 8, artworkUri = "https://example.com/parachutes.jpg")
+                    )
+                )
+            },
+            apply = { songId, _, _ ->
+                appliedSongIds += songId
+                IdentifyResult.Updated(songId)
+            },
+            propose = { _, _, _ ->
+                proposeCalls.incrementAndGet()
+                proposal(999L, IdentifyConfidence.NONE)
+            }
+        )
+        try {
+            fixture.runtime.submit(listOf(s1, s2)).join()
+            withTimeout(TIMEOUT_MS) { fixture.runtime.awaitIdle() }
+
+            assertEquals(1, albumQueries.get())
+            assertEquals(0, proposeCalls.get())
+            assertTrue(11L in appliedSongIds)
+            assertTrue(fixture.work.isEmpty())
+        } finally {
+            fixture.close()
+        }
+    }
+
+    @Test
+    fun albumBatch_fallbackToSingleSongWhenAlbumNotFound() = runBlocking {
+        val albumQueries = AtomicInteger(0)
+        val proposeCalls = AtomicInteger(0)
+
+        val s1 = Song(20L, "file://20.mp3", "Indie Song 1", "Indie Band", "Indie Tape", artworkUri = null)
+        val s2 = Song(21L, "file://21.mp3", "Indie Song 2", "Indie Band", "Indie Tape", artworkUri = null)
+
+        val fixture = fixture(
+            songsById = mapOf(20L to s1, 21L to s2),
+            loadScopedAlbumTracks = { artist, album ->
+                if (artist == "Indie Band" && album == "Indie Tape") {
+                    albumQueries.incrementAndGet()
+                }
+                null
+            },
+            propose = { song, _, _ ->
+                proposeCalls.incrementAndGet()
+                proposal(song.id, IdentifyConfidence.HIGH)
+            },
+            apply = { songId, _, _ -> IdentifyResult.Updated(songId) }
+        )
+        try {
+            fixture.runtime.submit(listOf(s1, s2)).join()
+            withTimeout(TIMEOUT_MS) { fixture.runtime.awaitIdle() }
+
+            assertEquals("Se intenta la consulta de álbum 1 vez", 1, albumQueries.get())
+            assertEquals("Ambas canciones caen a consulta individual de respaldo", 2, proposeCalls.get())
+            assertTrue(fixture.work.isEmpty())
+        } finally {
+            fixture.close()
+        }
+    }
+
     private fun fixture(
         pendingIds: Set<Long> = emptySet(),
         initialWork: IdentifyWorkSnapshot? = null,
@@ -640,7 +769,9 @@ class ProcessIdentifyRuntimeTest {
         appendReview: suspend (List<IdentifyProposal>, IdentifyApplyFields) -> Unit = { _, _ -> },
         onSaveWork: () -> Unit = {},
         loadScopedAlbumTracks: suspend (String, String) ->
-            com.bestiapop.android.domain.util.KnownAlbumTracks? = { _, _ -> null }
+            com.bestiapop.android.domain.util.KnownAlbumTracks? = { _, _ -> null },
+        setAlbumArtwork: (suspend (String, String?) -> Unit)? = null,
+        searchAlbums: (suspend (String) -> List<com.bestiapop.android.data.model.CatalogAlbum>)? = null
     ): Fixture {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
         val work = mutableListOf<IdentifyWorkSnapshot>()
@@ -663,7 +794,9 @@ class ProcessIdentifyRuntimeTest {
                 },
                 isOnline = isOnline,
                 acquireExecutionLease = acquireExecutionLease,
-                loadScopedAlbumTracks = loadScopedAlbumTracks
+                loadScopedAlbumTracks = loadScopedAlbumTracks,
+                setAlbumArtwork = setAlbumArtwork,
+                searchAlbums = searchAlbums
             ),
             ioDispatcher = Dispatchers.Unconfined
         )

@@ -66,3 +66,11 @@ fun songHasGapsForFields(song: Song, fields: IdentifyApplyFields): Boolean {
     return false
 }
 
+/**
+ * Evaluates whether [song] has missing, placeholder, or noisy metadata in fields OTHER than artwork.
+ */
+fun songHasOtherGapsThanArtwork(song: Song, fields: IdentifyApplyFields): Boolean {
+    val nonArtworkFields = fields.copy(artwork = false)
+    return nonArtworkFields.hasAny && songHasGapsForFields(song, nonArtworkFields)
+}
+

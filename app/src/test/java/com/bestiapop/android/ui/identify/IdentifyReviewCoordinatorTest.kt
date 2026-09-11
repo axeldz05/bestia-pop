@@ -80,17 +80,18 @@ class IdentifyReviewCoordinatorTest {
         Dispatchers.resetMain()
     }
 
-    private fun createCoordinator(): IdentifyReviewCoordinator {
+    private fun createCoordinator(customRepo: IMusicRepository = repository): IdentifyReviewCoordinator {
         return IdentifyReviewCoordinator(
             scope = CoroutineScope(dispatcher),
-            repository = repository,
+            repository = customRepo,
             identifyReviewStore = identifyReviewStore,
             processIdentifyRuntime = processIdentifyRuntime,
             rawSongs = rawSongs,
             awaitCatalogLoaded = {},
             clearCatalogPreview = {},
             toast = { toastMessages += it },
-            uiAttached = { true }
+            uiAttached = { true },
+            ioDispatcher = dispatcher
         )
     }
 
@@ -160,4 +161,38 @@ class IdentifyReviewCoordinatorTest {
         assertFalse(coordinator.identifyReview.value.showSearchField)
         assertFalse(coordinator.identifyReview.value.showSearchFilters)
     }
+
+    @Test
+    fun albumCandidates_searchAndSelect() = runTest(dispatcher) {
+        val fakeRepo = object : FakeMusicRepository() {
+            override suspend fun searchAlbums(query: String): List<com.bestiapop.android.data.model.CatalogAlbum> {
+                return listOf(
+                    com.bestiapop.android.data.model.CatalogAlbum(
+                        id = "a1",
+                        title = "Absolution",
+                        artist = "Muse",
+                        coverUrl = "https://img.example/cover.jpg",
+                        trackCount = 14,
+                        releaseYear = "2003"
+                    )
+                )
+            }
+        }
+        val coordinator = createCoordinator(customRepo = fakeRepo)
+
+        val groupKey = "muse_absolution"
+
+        coordinator.searchAlbumCandidates(groupKey, "Absolution")
+        dispatcher.scheduler.advanceUntilIdle()
+
+        val candidates = coordinator.identifyReview.value.albumGroupCandidates[groupKey]
+        assertNotNull(candidates)
+        assertEquals(1, candidates?.size)
+        assertEquals("Absolution", candidates?.first()?.title)
+        assertEquals(0, coordinator.identifyReview.value.albumGroupSelectedIndices[groupKey])
+
+        coordinator.selectAlbumCandidate(groupKey, 2)
+        assertEquals(2, coordinator.identifyReview.value.albumGroupSelectedIndices[groupKey])
+    }
 }
+

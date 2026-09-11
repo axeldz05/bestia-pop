@@ -2392,6 +2392,12 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     fun applyIdentifyAlbumGroup(key: String) = identifyCoordinator.applyIdentifyAlbumGroup(key)
 
+    fun searchAlbumCandidates(groupKey: String, query: String) =
+        identifyCoordinator.searchAlbumCandidates(groupKey, query)
+
+    fun selectAlbumCandidate(groupKey: String, index: Int) =
+        identifyCoordinator.selectAlbumCandidate(groupKey, index)
+
     private fun pruneIdentifyReview(ids: Set<Long>) = identifyCoordinator.pruneIdentifyReview(ids)
 
     fun selectIdentifyCandidate(index: Int) = identifyCoordinator.selectIdentifyCandidate(index)

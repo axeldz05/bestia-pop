@@ -50,8 +50,14 @@ import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
+import android.content.Intent
+import android.net.Uri
+import androidx.compose.material.icons.filled.Translate
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -59,6 +65,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.ui.platform.LocalContext
+import com.bestiapop.android.data.model.DisplayLyricLine
+import com.bestiapop.android.data.util.LyricsPhoneticProcessor
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -655,6 +664,7 @@ fun NowPlayingScreen(
                         // Page 1: Letra a pantalla completa con controles anclados abajo
                         NowPlayingLyricsView(
                             localSong = localSong,
+                            viewModel = viewModel,
                             positionMsFlow = viewModel.playbackPositionMs,
                             durationMs = item.durationMs,
                             isPlaying = isPlaying,
@@ -868,15 +878,9 @@ private fun NowPlayingDockedBar(
     ) {
         Column(modifier = Modifier.navigationBarsPadding()) {
             // Scrubber progress line en la parte superior de la barra
-            val positionMs by positionMsFlow.collectAsState()
-            val progress = if (durationMs > 0) (positionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f) else 0f
-            LinearProgressIndicator(
-                progress = { progress },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(3.dp),
-                color = MaterialTheme.colorScheme.primary,
-                trackColor = MaterialTheme.colorScheme.surfaceVariant
+            DockedProgressIndicator(
+                durationMs = durationMs,
+                positionMsFlow = positionMsFlow
             )
 
             Row(
@@ -961,12 +965,31 @@ private fun NowPlayingDockedBar(
     }
 }
 
+@Composable
+private fun DockedProgressIndicator(
+    durationMs: Long,
+    positionMsFlow: StateFlow<Long>,
+    modifier: Modifier = Modifier
+) {
+    val positionMs by positionMsFlow.collectAsState()
+    val progress = if (durationMs > 0) (positionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f) else 0f
+    LinearProgressIndicator(
+        progress = { progress },
+        modifier = modifier
+            .fillMaxWidth()
+            .height(3.dp),
+        color = MaterialTheme.colorScheme.primary,
+        trackColor = MaterialTheme.colorScheme.surfaceVariant
+    )
+}
+
 /**
  * Pantalla completa de letras sincronizadas con timestamps sutiles y controles fijados en la base.
  */
 @Composable
 private fun NowPlayingLyricsView(
     localSong: Song?,
+    viewModel: MusicPlayerViewModel,
     positionMsFlow: StateFlow<Long>,
     durationMs: Long,
     isPlaying: Boolean,
@@ -984,7 +1007,6 @@ private fun NowPlayingLyricsView(
     onRetryFetchLyrics: (Song) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val positionMs by positionMsFlow.collectAsState()
     val rawLyrics = localSong?.lyrics?.trim()?.takeIf { it.isNotBlank() && !it.equals("null", ignoreCase = true) }
 
     Column(modifier = modifier.fillMaxSize()) {
@@ -997,111 +1019,241 @@ private fun NowPlayingLyricsView(
         ) {
             if (!rawLyrics.isNullOrEmpty()) {
                 val parsedLrc = remember(rawLyrics) { SyncedLyrics.parse(rawLyrics) }
+                val plainLines = remember(parsedLrc) { parsedLrc.map { it.text } }
                 val timed = remember(parsedLrc) { SyncedLyrics.hasTimestamps(parsedLrc) }
 
-                if (timed) {
-                    val currentLineIndex = remember(parsedLrc, positionMs) {
-                        SyncedLyrics.currentLineIndex(parsedLrc, positionMs)
-                    }
-                    val listState = rememberLazyListState()
-                    val isDragged by listState.interactionSource.collectIsDraggedAsState()
-                    var userScrolledRecent by remember { mutableStateOf(false) }
+                val lyricsSettings by viewModel.lyricsSettings.collectAsState()
+                val isTranslationActive by viewModel.isTranslationActive.collectAsState()
+                val isFetchingTranslation by viewModel.isFetchingTranslation.collectAsState()
+                val translationSource by viewModel.translationSource.collectAsState()
+                val pendingPrompt by viewModel.pendingGoogleTranslatePrompt.collectAsState()
+                val romanizationVersion by viewModel.romanizationVersion.collectAsState()
+                val translationVersion by viewModel.translationVersion.collectAsState()
+                val context = LocalContext.current
 
-                    LaunchedEffect(isDragged) {
-                        if (isDragged) {
-                            userScrolledRecent = true
-                        } else if (userScrolledRecent) {
-                            kotlinx.coroutines.delay(3500)
-                            userScrolledRecent = false
+                LaunchedEffect(localSong.id, plainLines, lyricsSettings.phoneticGuideEnabled) {
+                    if (lyricsSettings.phoneticGuideEnabled) {
+                        viewModel.ensureRomanization(localSong.id, plainLines)
+                    }
+                }
+
+                val displayLines = remember(
+                    parsedLrc,
+                    isTranslationActive,
+                    romanizationVersion,
+                    translationVersion,
+                    lyricsSettings
+                ) {
+                    val translated = if (isTranslationActive) {
+                        viewModel.getTranslatedLines(localSong.id)
+                    } else {
+                        null
+                    }
+                    val romanized = viewModel.getRomanizedLines(localSong.id)
+
+                    parsedLrc.mapIndexed { idx, line ->
+                        val formattedTime = line.timeMs?.let { formatLyricStamp(it) }
+                        if (line.text.isEmpty()) {
+                            DisplayLyricLine(line.timeMs, "", null, formattedTime)
+                        } else if (isTranslationActive) {
+                            val transText = translated?.getOrNull(idx)?.takeIf { it.isNotBlank() } ?: line.text
+                            DisplayLyricLine(
+                                timeMs = line.timeMs,
+                                primaryText = transText,
+                                secondaryText = if (transText != line.text) line.text else null,
+                                formattedTime = formattedTime
+                            )
+                        } else {
+                            val romCandidate = romanized?.getOrNull(idx)
+                            val secondary = if (lyricsSettings.phoneticGuideEnabled) {
+                                LyricsPhoneticProcessor.formatPhoneticLine(
+                                    original = line.text,
+                                    romanizedCandidate = romCandidate,
+                                    japaneseMode = lyricsSettings.japanesePhoneticMode
+                                )
+                            } else {
+                                null
+                            }
+                            DisplayLyricLine(
+                                timeMs = line.timeMs,
+                                primaryText = line.text,
+                                secondaryText = secondary,
+                                formattedTime = formattedTime
+                            )
                         }
                     }
+                }
 
-                    LaunchedEffect(currentLineIndex, userScrolledRecent, isDragged) {
-                        if (!userScrolledRecent && !isDragged && currentLineIndex in parsedLrc.indices) {
-                            val targetIndex = (currentLineIndex - 1).coerceAtLeast(0)
-                            listState.animateScrollToItem(
-                                index = targetIndex,
-                                scrollOffset = 0
+                if (pendingPrompt) {
+                    AlertDialog(
+                        onDismissRequest = viewModel::cancelGoogleTranslatePrompt,
+                        title = {
+                            Text("Traducción no encontrada")
+                        },
+                        text = {
+                            Text("No se encontró una traducción comunitaria en Musixmatch ni sitios similares.\n\n¿Querés traducir esta letra con Google Traductor?")
+                        },
+                        confirmButton = {
+                            Button(
+                                onClick = {
+                                    viewModel.confirmGoogleTranslate(localSong, plainLines)
+                                }
+                            ) {
+                                Text("Traducir con Google")
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = viewModel::cancelGoogleTranslatePrompt) {
+                                Text("Cancelar")
+                            }
+                        }
+                    )
+                }
+
+                Column(modifier = Modifier.fillMaxSize()) {
+                    // Barra superior: Atribución de fuente y botón de traducción
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 4.dp, vertical = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        if (isTranslationActive && translationSource != null) {
+                            val source = translationSource!!
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .clickable(enabled = !source.url.isNullOrBlank()) {
+                                        source.url?.let { urlStr ->
+                                            try {
+                                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(urlStr))
+                                                context.startActivity(intent)
+                                            } catch (_: Exception) {}
+                                        }
+                                    }
+                            ) {
+                                Text(
+                                    text = "Fuente: ${source.name} ↗",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                                )
+                            }
+                        } else {
+                            Spacer(modifier = Modifier.weight(1f))
+                        }
+
+                        FilledTonalButton(
+                            onClick = {
+                                viewModel.toggleLyricsTranslation(localSong, plainLines)
+                            },
+                            enabled = !isFetchingTranslation,
+                            shape = RoundedCornerShape(16.dp),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                            colors = ButtonDefaults.filledTonalButtonColors(
+                                containerColor = if (isTranslationActive) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)
+                                },
+                                contentColor = if (isTranslationActive) {
+                                    MaterialTheme.colorScheme.onPrimary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                }
+                            )
+                        ) {
+                            if (isFetchingTranslation) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(14.dp),
+                                    strokeWidth = 2.dp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Default.Translate,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                            }
+                            Text(
+                                text = if (isTranslationActive) "Original" else "Traducir",
+                                style = MaterialTheme.typography.labelMedium
                             )
                         }
                     }
 
-                    LazyColumn(
-                        state = listState,
-                        modifier = Modifier.fillMaxSize(),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        contentPadding = PaddingValues(vertical = 40.dp)
-                    ) {
-                        itemsIndexed(
-                            items = parsedLrc,
-                            key = { index, line -> "lyric_${index}_${line.timeMs ?: 0}" }
-                        ) { index, line ->
-                            if (line.text.isNotEmpty()) {
-                                val isCurrent = index == currentLineIndex
-                                val timeMs = line.timeMs
-                                val formattedStamp = remember(timeMs) {
-                                    timeMs?.let { formatLyricStamp(it) }
-                                }
+                    Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                        if (timed) {
+                            val currentLineIndex by remember(parsedLrc, positionMsFlow) {
+                                positionMsFlow
+                                    .map { pos -> SyncedLyrics.currentLineIndex(parsedLrc, pos) }
+                                    .distinctUntilChanged()
+                            }.collectAsState(initial = SyncedLyrics.currentLineIndex(parsedLrc, positionMsFlow.value))
 
-                                Column(
-                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clip(RoundedCornerShape(12.dp))
-                                        .clickable(
-                                            enabled = timeMs != null,
-                                            onClick = { timeMs?.let(onSeekToLyric) }
-                                        )
-                                        .padding(vertical = 8.dp, horizontal = 12.dp)
-                                ) {
-                                    if (formattedStamp != null) {
-                                        Text(
-                                            text = formattedStamp,
-                                            fontSize = 11.sp,
-                                            fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal,
-                                            color = if (isCurrent) {
-                                                MaterialTheme.colorScheme.primary.copy(alpha = 0.85f)
-                                            } else {
-                                                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
-                                            },
-                                            modifier = Modifier.padding(bottom = 2.dp)
-                                        )
-                                    }
-                                    Text(
-                                        text = line.text,
-                                        style = MaterialTheme.typography.titleMedium.copy(
-                                            fontSize = if (isCurrent) 20.sp else 16.sp,
-                                            fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Medium,
-                                            letterSpacing = if (isCurrent) 0.2.sp else 0.sp
-                                        ),
-                                        color = if (isCurrent) {
-                                            MaterialTheme.colorScheme.primary
-                                        } else {
-                                            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f)
-                                        },
-                                        textAlign = TextAlign.Center,
-                                        modifier = Modifier.fillMaxWidth()
+                            val listState = rememberLazyListState()
+                            val isDragged by listState.interactionSource.collectIsDraggedAsState()
+                            var userScrolledRecent by remember { mutableStateOf(false) }
+
+                            LaunchedEffect(isDragged) {
+                                if (isDragged) {
+                                    userScrolledRecent = true
+                                } else if (userScrolledRecent) {
+                                    kotlinx.coroutines.delay(3500)
+                                    userScrolledRecent = false
+                                }
+                            }
+
+                            LaunchedEffect(currentLineIndex, userScrolledRecent, isDragged) {
+                                if (!userScrolledRecent && !isDragged && currentLineIndex in displayLines.indices) {
+                                    val targetIndex = (currentLineIndex - 1).coerceAtLeast(0)
+                                    listState.animateScrollToItem(
+                                        index = targetIndex,
+                                        scrollOffset = 0
                                     )
                                 }
                             }
+
+                            LazyColumn(
+                                state = listState,
+                                modifier = Modifier.fillMaxSize(),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                contentPadding = PaddingValues(vertical = 40.dp)
+                            ) {
+                                itemsIndexed(
+                                    items = displayLines,
+                                    key = { index, line -> "lyric_${index}_${line.timeMs ?: 0}" }
+                                ) { index, line ->
+                                    if (line.primaryText.isNotEmpty()) {
+                                        TimedLyricRow(
+                                            line = line,
+                                            isCurrent = (index == currentLineIndex),
+                                            onSeekToLyric = onSeekToLyric
+                                        )
+                                    }
+                                }
+                            }
+                        } else {
+                            // Letra en texto plano (sin timestamps)
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .verticalScroll(rememberScrollState())
+                                    .padding(vertical = 32.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                displayLines.forEach { line ->
+                                    if (line.primaryText.isNotEmpty()) {
+                                        UntimedLyricRow(line = line)
+                                    }
+                                }
+                            }
                         }
-                    }
-                } else {
-                    // Letra en texto plano (sin timestamps)
-                    Column(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .verticalScroll(rememberScrollState())
-                            .padding(vertical = 32.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Text(
-                            text = rawLyrics,
-                            style = MaterialTheme.typography.bodyLarge.copy(fontSize = 16.sp, lineHeight = 26.sp),
-                            textAlign = TextAlign.Center,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f),
-                            modifier = Modifier.fillMaxWidth()
-                        )
                     }
                 }
             } else {
@@ -1193,6 +1345,104 @@ private fun formatLyricStamp(timeMs: Long): String {
     val min = totalSec / 60
     val sec = totalSec % 60
     return "%02d:%02d".format(min, sec)
+}
+
+@Composable
+private fun TimedLyricRow(
+    line: DisplayLyricLine,
+    isCurrent: Boolean,
+    onSeekToLyric: (Long) -> Unit
+) {
+    val timeMs = line.timeMs
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(
+                enabled = timeMs != null,
+                onClick = { timeMs?.let(onSeekToLyric) }
+            )
+            .padding(vertical = 8.dp, horizontal = 12.dp)
+    ) {
+        if (line.formattedTime != null) {
+            Text(
+                text = line.formattedTime,
+                fontSize = 11.sp,
+                fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal,
+                color = if (isCurrent) {
+                    MaterialTheme.colorScheme.primary.copy(alpha = 0.85f)
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
+                },
+                modifier = Modifier.padding(bottom = 2.dp)
+            )
+        }
+        Text(
+            text = line.primaryText,
+            style = MaterialTheme.typography.titleMedium.copy(
+                fontSize = if (isCurrent) 20.sp else 16.sp,
+                fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Medium,
+                letterSpacing = if (isCurrent) 0.2.sp else 0.sp
+            ),
+            color = if (isCurrent) {
+                MaterialTheme.colorScheme.primary
+            } else {
+                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f)
+            },
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth()
+        )
+        if (!line.secondaryText.isNullOrBlank()) {
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = line.secondaryText,
+                style = MaterialTheme.typography.bodySmall.copy(
+                    fontSize = if (isCurrent) 13.sp else 11.sp,
+                    fontWeight = FontWeight.Normal
+                ),
+                color = if (isCurrent) {
+                    MaterialTheme.colorScheme.primary.copy(alpha = 0.8f)
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                },
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+    }
+}
+
+@Composable
+private fun UntimedLyricRow(line: DisplayLyricLine) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 6.dp, horizontal = 12.dp)
+    ) {
+        Text(
+            text = line.primaryText,
+            style = MaterialTheme.typography.bodyLarge.copy(
+                fontSize = 17.sp,
+                fontWeight = FontWeight.Medium,
+                lineHeight = 26.sp
+            ),
+            textAlign = TextAlign.Center,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f),
+            modifier = Modifier.fillMaxWidth()
+        )
+        if (!line.secondaryText.isNullOrBlank()) {
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = line.secondaryText,
+                style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                textAlign = TextAlign.Center,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f),
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+    }
 }
 
 @Composable

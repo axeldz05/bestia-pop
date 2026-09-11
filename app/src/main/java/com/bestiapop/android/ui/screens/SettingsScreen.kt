@@ -22,6 +22,7 @@ import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.AudioFile
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Headset
+import androidx.compose.material.icons.filled.Lyrics
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.Settings
@@ -59,6 +60,7 @@ private enum class SettingsSection {
     Library,
     ListenBrainz,
     Playback,
+    Lyrics,
     Sound,
     Downloads,
     LibraryTags,
@@ -99,6 +101,7 @@ fun SettingsScreen(viewModel: MusicPlayerViewModel, appUpdateViewModel: AppUpdat
             onOpenLibrary = { section = SettingsSection.Library },
             onOpenListenBrainz = { section = SettingsSection.ListenBrainz },
             onOpenPlayback = { section = SettingsSection.Playback },
+            onOpenLyrics = { section = SettingsSection.Lyrics },
             onOpenSound = { section = SettingsSection.Sound },
             onOpenDownloads = { section = SettingsSection.Downloads },
             onOpenLibraryTags = { section = SettingsSection.LibraryTags },
@@ -115,6 +118,9 @@ fun SettingsScreen(viewModel: MusicPlayerViewModel, appUpdateViewModel: AppUpdat
         }
         SettingsSection.Playback -> SettingsSectionPage("Reproducción", onBack = closeSection) {
             PlaybackSettingsScreen(viewModel = viewModel)
+        }
+        SettingsSection.Lyrics -> SettingsSectionPage("Letras", onBack = closeSection) {
+            LyricsSettingsScreen(viewModel = viewModel)
         }
         SettingsSection.Sound -> SettingsSectionPage("Sonido", onBack = closeSection) {
             VolumeBoostSettingsScreen(viewModel = viewModel)
@@ -154,6 +160,7 @@ private fun SettingsHome(
     onOpenLibrary: () -> Unit,
     onOpenListenBrainz: () -> Unit,
     onOpenPlayback: () -> Unit,
+    onOpenLyrics: () -> Unit,
     onOpenSound: () -> Unit,
     onOpenDownloads: () -> Unit,
     onOpenLibraryTags: () -> Unit,
@@ -233,6 +240,12 @@ private fun SettingsHome(
                 "Aleatorio y repetición al abrir",
                 Icons.Default.Repeat,
                 onOpenPlayback
+            ),
+            SettingsHomeEntry(
+                "Letras",
+                "Guía fonética, modo japonés y traducción",
+                Icons.Default.Lyrics,
+                onOpenLyrics
             ),
             SettingsHomeEntry(
                 "Sonido",

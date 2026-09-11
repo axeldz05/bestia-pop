@@ -2779,7 +2779,7 @@ class PlaybackRuntime internal constructor(
         val validIndex = startIndex.coerceIn(items.indices)
         if (newPlayback) pendingNewPlaybackQueueEntryId = items[validIndex].queueEntryId
         playWhenReadyIntent = startPlaying
-        if (!startPlaying) player.pause()
+        if (!startPlaying || (newPlayback && player.isPlaying)) player.pause()
 
         queueAppendJob?.cancel()
         queueAppendJob = null
@@ -2803,16 +2803,16 @@ class PlaybackRuntime internal constructor(
         }
         timelineMaterialized = true
         lastMediaItemIndex = validIndex
-        if (startPlaying) {
-            pendingPlayIntentEpoch = null
-            player.play()
-        }
         val remote = items[validIndex] as? PlayableItem.Remote
         if (remote != null && dependencies.streamAccess.needsResolve(remote)) {
             if (startPlaying) ensureRemoteReadyAt(validIndex, startPlaying = true)
         } else {
             player.prepare()
             if (startPlaying) prefetchAround(validIndex)
+        }
+        if (startPlaying) {
+            pendingPlayIntentEpoch = null
+            player.play()
         }
         syncShuffleToPlayer()
         updateTickerLifecycle()

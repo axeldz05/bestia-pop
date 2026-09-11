@@ -32,6 +32,7 @@ import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.audio.DefaultAudioSink
+import androidx.media3.exoplayer.mediacodec.MediaCodecSelector
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.MediaSource
 import androidx.media3.exoplayer.source.ShuffleOrder
@@ -125,6 +126,26 @@ class MusicService : MediaLibraryService() {
             .build()
 
         val renderersFactory = object : DefaultRenderersFactory(this) {
+            init {
+                setEnableDecoderFallback(true)
+                setMediaCodecSelector { mimeType, requiresSecure, requiresTunneling ->
+                    val decoders = MediaCodecSelector.DEFAULT.getDecoderInfos(mimeType, requiresSecure, requiresTunneling)
+                    if (mimeType.startsWith("audio/")) {
+                        decoders.sortedWith(
+                            compareBy { info ->
+                                when {
+                                    info.name.startsWith("c2.android.") || info.name.startsWith("OMX.google.") -> 0
+                                    info.name.startsWith("c2.unisoc.") -> 2
+                                    else -> 1
+                                }
+                            }
+                        )
+                    } else {
+                        decoders
+                    }
+                }
+            }
+
             override fun buildAudioSink(
                 context: Context,
                 enableFloatOutput: Boolean,

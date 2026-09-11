@@ -55,9 +55,18 @@ import com.bestiapop.android.data.preferences.LibraryBlobsSettings
 import com.bestiapop.android.data.preferences.UiNavSnapshot
 import com.bestiapop.android.data.preferences.ListenBrainzPreferencesRepository
 import com.bestiapop.android.data.preferences.ListenBrainzSettings
+import com.bestiapop.android.data.preferences.LyricsPreferencesRepository
+import com.bestiapop.android.data.preferences.LyricsSettings
+import com.bestiapop.android.data.preferences.JapanesePhoneticMode
 import com.bestiapop.android.data.preferences.PlaybackPreferencesRepository
 import com.bestiapop.android.data.preferences.PlaybackSettings
 import com.bestiapop.android.data.preferences.ThemePreferencesRepository
+import com.bestiapop.android.data.network.LyricsTranslationService
+import com.bestiapop.android.data.network.LyricsTranslationResult
+import com.bestiapop.android.data.network.LyricsTranslationSource
+import com.bestiapop.android.data.util.LyricsPhoneticProcessor
+import com.bestiapop.android.data.model.DisplayLyricLine
+import java.util.Collections
 import com.bestiapop.android.data.system.BACKGROUND_RESTRICTION_CONFIRM_MS
 import com.bestiapop.android.data.system.BackgroundExecutionProbe
 import com.bestiapop.android.data.system.BackgroundExecutionStatus
@@ -212,6 +221,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private val downloadPreferences = DownloadPreferencesRepository(application)
     private val libraryTagWritePreferences = LibraryTagWritePreferencesRepository(application)
     private val libraryPreferences = LibraryPreferencesRepository(application)
+    private val lyricsPreferences = LyricsPreferencesRepository(application)
     private val identifyReviewStore = IdentifyReviewStore(application)
     private val pendingListenDao = AppDatabase.getDatabase(application).pendingListenDao()
     private val connectivityObserver = ConnectivityObserver(application)
@@ -1208,6 +1218,134 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             repository.updateSongDuration(songId, durationMs)
         }
     }
+
+    val lyricsSettings: StateFlow<LyricsSettings> = lyricsPreferences.settingsFlow.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.Eagerly,
+        initialValue = LyricsSettings()
+    )
+
+    private val _isTranslationActive = MutableStateFlow(false)
+    val isTranslationActive: StateFlow<Boolean> = _isTranslationActive.asStateFlow()
+
+    private val _isFetchingTranslation = MutableStateFlow(false)
+    val isFetchingTranslation: StateFlow<Boolean> = _isFetchingTranslation.asStateFlow()
+
+    private val _translationSource = MutableStateFlow<LyricsTranslationSource?>(null)
+    val translationSource: StateFlow<LyricsTranslationSource?> = _translationSource.asStateFlow()
+
+    private val _pendingGoogleTranslatePrompt = MutableStateFlow(false)
+    val pendingGoogleTranslatePrompt: StateFlow<Boolean> = _pendingGoogleTranslatePrompt.asStateFlow()
+
+    private val _romanizationVersion = MutableStateFlow(0)
+    val romanizationVersion: StateFlow<Int> = _romanizationVersion.asStateFlow()
+
+    private val _translationVersion = MutableStateFlow(0)
+    val translationVersion: StateFlow<Int> = _translationVersion.asStateFlow()
+
+    private val translationCache: MutableMap<Long, LyricsTranslationResult> = Collections.synchronizedMap(
+        object : LinkedHashMap<Long, LyricsTranslationResult>(32, 0.75f, true) {
+            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Long, LyricsTranslationResult>?): Boolean {
+                return size > 50
+            }
+        }
+    )
+    private val romanizationCache: MutableMap<Long, List<String>> = Collections.synchronizedMap(
+        object : LinkedHashMap<Long, List<String>>(32, 0.75f, true) {
+            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Long, List<String>>?): Boolean {
+                return size > 50
+            }
+        }
+    )
+
+    fun setPhoneticGuideEnabled(enabled: Boolean) {
+        viewModelScope.launch { lyricsPreferences.setPhoneticGuideEnabled(enabled) }
+    }
+
+    fun setJapanesePhoneticMode(mode: JapanesePhoneticMode) {
+        viewModelScope.launch { lyricsPreferences.setJapanesePhoneticMode(mode) }
+    }
+
+    fun setAskBeforeGoogleTranslate(ask: Boolean) {
+        viewModelScope.launch { lyricsPreferences.setAskBeforeGoogleTranslate(ask) }
+    }
+
+    fun cancelGoogleTranslatePrompt() {
+        _pendingGoogleTranslatePrompt.value = false
+    }
+
+    fun confirmGoogleTranslate(song: Song, lines: List<String>) {
+        _pendingGoogleTranslatePrompt.value = false
+        translateWithGoogleInternal(song, lines)
+    }
+
+    fun toggleLyricsTranslation(song: Song, lines: List<String>) {
+        if (_isTranslationActive.value) {
+            _isTranslationActive.value = false
+            return
+        }
+
+        val cached = translationCache[song.id]
+        if (cached != null) {
+            _translationSource.value = LyricsTranslationSource(cached.sourceName, cached.sourceUrl)
+            _isTranslationActive.value = true
+            return
+        }
+
+        viewModelScope.launch {
+            _isFetchingTranslation.value = true
+            val community = LyricsTranslationService.fetchCommunityTranslation(song.artist, song.title)
+            _isFetchingTranslation.value = false
+            if (community != null) {
+                translationCache[song.id] = community
+                _translationSource.value = LyricsTranslationSource(community.sourceName, community.sourceUrl)
+                _isTranslationActive.value = true
+                _translationVersion.value++
+            } else {
+                if (lyricsSettings.value.askBeforeGoogleTranslate) {
+                    _pendingGoogleTranslatePrompt.value = true
+                } else {
+                    translateWithGoogleInternal(song, lines)
+                }
+            }
+        }
+    }
+
+    private fun translateWithGoogleInternal(song: Song, lines: List<String>) {
+        viewModelScope.launch {
+            _isFetchingTranslation.value = true
+            val gResult = LyricsTranslationService.translateWithGoogle(lines)
+            _isFetchingTranslation.value = false
+            if (gResult != null) {
+                translationCache[song.id] = gResult
+                _translationSource.value = LyricsTranslationSource(gResult.sourceName, gResult.sourceUrl)
+                _isTranslationActive.value = true
+                _translationVersion.value++
+            }
+        }
+    }
+
+    fun ensureRomanization(songId: Long, lines: List<String>) {
+        if (romanizationCache.containsKey(songId)) return
+        val hasNonLatin = lines.any { LyricsPhoneticProcessor.hasNonLatinScript(it) }
+        if (!hasNonLatin) {
+            romanizationCache[songId] = emptyList()
+            return
+        }
+
+        viewModelScope.launch {
+            val res = LyricsTranslationService.fetchRomanization(lines)
+            romanizationCache[songId] = res?.lines ?: emptyList()
+            if (res != null) {
+                _romanizationVersion.value++
+            }
+        }
+    }
+
+    fun getTranslatedLines(songId: Long): List<String>? = translationCache[songId]?.lines
+
+    fun getRomanizedLines(songId: Long): List<String>? =
+        romanizationCache[songId]?.takeIf { it.isNotEmpty() }
 
     private val _isFetchingLyrics = MutableStateFlow(false)
     val isFetchingLyrics: StateFlow<Boolean> = _isFetchingLyrics.asStateFlow()

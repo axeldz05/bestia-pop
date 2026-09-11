@@ -205,7 +205,7 @@ object MetadataFetcher {
                 OnlineCatalogTrack(
                     identity = identity,
                     id = obj.optString("id").ifBlank { "${identity.youtubeSearchQuery()}#$i" },
-                    audioUrl = isrc ?: identity.youtubeSearchQuery(),
+                    audioUrl = identity.youtubeSearchQuery(),
                     provider = provider,
                     year = parseReleaseYear(obj.optJSONObject("album")?.optString("release_date"))
                 )
@@ -830,7 +830,7 @@ object MetadataFetcher {
                         toCatalogCandidate(
                             identity.toCatalogTrack(
                                 provider = "YouTube",
-                                audioUrl = isrc ?: identity.youtubeSearchQuery()
+                                audioUrl = identity.youtubeSearchQuery()
                             )
                         )
                     )
@@ -899,7 +899,7 @@ object MetadataFetcher {
                         toCatalogCandidate(
                             identity.toCatalogTrack(
                                 provider = "YouTube",
-                                audioUrl = isrc ?: identity.youtubeSearchQuery()
+                                audioUrl = identity.youtubeSearchQuery()
                             )
                         )
                     )

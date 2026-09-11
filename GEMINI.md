@@ -38,6 +38,7 @@ Si solo hay un bugfix local sin cambio de diseño, no hace falta tocar skills.
 - Imágenes elegidas por el usuario → copiar a `context.filesDir`
 - Preferir patrones y nombres ya usados en `MusicPlayerViewModel`, `MusicRepository`, use cases existentes
 - Metadatos de canción compartidos → `TrackIdentity` / `TrackMeta` (`data/model/TrackIdentity.kt`). No clonar DTO satélite (title/artist/álbum/art/duration/trackNumber) por sistema. Wrappers solo para extras: score (`IdentifyCandidate` / `MatchedRemoteTrack.score`), mbid/stream (`PlayableItem.Remote`, `LbPlaylistTrack` / `LbRecordingMetadata`), genre de archivo (`AudioFileMetadata`), pending (`PlaylistPendingTrack`), columnas Room (`Song` plano = fila `songs`; `PlaylistPendingTrackEntity.releaseName` ↔ `identity.album`). Si un campo nuevo habría que pegarlo en >2 data classes de track, el modelo está mal.
+- **Anti-patrón de decompresión de parámetros (prohibido desglosar en primitivas sueltas):** Nunca desglosar metadatos de canción existentes (`TrackMeta`, `TrackIdentity`, etc.) en múltiples parámetros primitivos independientes (`expectedDurationMs`, `expectedTitle`, `expectedArtist`, `expectedAlbum`, ...) a lo largo de métodos o capas intermedias. Si una función o pipeline necesita validar o comparar datos de una pista, debe recibir el contenedor unificado (`expected: TrackMeta? = null`). Desempaquetar campos en firmas intermedias es decompresión y obliga a tocar decenas de llamadas ante cualquier cambio futuro.
 - No crear markdown de docs extras salvo que el usuario lo pida; los skills anteriores son el lugar para documentar arquitectura/features
 - Changelog user-facing → `CHANGELOG.pending.md` (gitignored). Tras features/fixes visibles, anotar ahí (skill `bestiapop-release-changelog`). No anotar refactors ni detalle interno
 
@@ -57,6 +58,7 @@ Leer las skills de refactorizacion y aplicalos en los cambios que hiciste.
 - Granularidad continua .agents/skills/continuous-granularity/SKILL.md
 Busca principalmente comportamiento repetido que creaste ya sea en tus cambios o con el resto del codigo que podria estar teniendo comportamientos similares (ejemplo, si cambiaste como se descarga algo, busca en todas las partes de descargas si tienen comportamiento repetido).
 Una regla de oro para saber si tenes comportamiento repetido es pensar en cuantos sitios tendrías que tocar código para cambiar algo de lo que implementaste, si son más de 2 veces es que tenés código repetido. Ejemplos: cambiar un algoritmo específico para las recomendaciones, cambiar texto de "descarga completada", botones como reproducir cancion o agregar a playlist.
+- **Chequeo obligatorio de decompresión:** Al terminar cualquier cambio, revisar todas las funciones y llamadas modificadas: si se agregaron parámetros individuales que pertenecen a un modelo existente (ej. datos de canción `expected*`, metadatos de playlist o colecciones), refactorizar de inmediato para empaquetarlos en el tipo compartido (`TrackMeta`, etc.) antes de dar la tarea por concluida.
 
 ## Linters, calidad de código y modernización de APIs
 

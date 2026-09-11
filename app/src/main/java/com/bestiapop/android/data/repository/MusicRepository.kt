@@ -37,6 +37,7 @@ import com.bestiapop.android.data.model.mergePreferring
 import com.bestiapop.android.data.model.toIdentity
 import com.bestiapop.android.data.model.toListenBrainzCatalogTrack
 import com.bestiapop.android.data.model.withIdentity
+import com.bestiapop.android.data.model.youtubeSearchQuery
 import com.bestiapop.android.data.network.ListenBrainzClient
 import com.bestiapop.android.data.network.MetadataFetcher
 import com.bestiapop.android.data.preferences.LibraryTagWritePreferencesRepository
@@ -2169,8 +2170,7 @@ class MusicRepository private constructor(
     ): Song = withContext(Dispatchers.IO) {
         onProgress?.invoke(DownloadPhase.Searching)
 
-        val queryOrId = com.bestiapop.android.data.network.YouTubeExtractor.resolveYouTubeQueryOrId(track)
-        val ytStream = streamResolver.resolveQuery(queryOrId, forceRefresh = true).getOrElse { e ->
+        val ytStream = resolveTrackStreamForDownload(track, forceRefresh = true).getOrElse { e ->
             throw java.io.IOException(e.message ?: "No se pudo resolver el stream de YouTube")
         }
         val downloadUrl = ytStream.audioUrl
@@ -2352,9 +2352,15 @@ class MusicRepository private constructor(
                             }
                         }
                         // A clean EOF short of Content-Length is a truncated body, not a finished file.
-                        downloadSuccess = expectedTotalBytes <= 0L || downloadedBytes >= expectedTotalBytes
+                        val minAudioBytes = 200_000L
+                        downloadSuccess = if (expectedTotalBytes > 0L) {
+                            downloadedBytes >= expectedTotalBytes
+                        } else {
+                            downloadedBytes >= minAudioBytes
+                        }
                         if (!downloadSuccess) {
-                            lastHttpError = "Descarga incompleta ($downloadedBytes/$expectedTotalBytes bytes)"
+                            val targetStr = if (expectedTotalBytes > 0L) "/$expectedTotalBytes" else ""
+                            lastHttpError = "Descarga incompleta ($downloadedBytes$targetStr bytes)"
                         }
                     }
                     continueChunks = googlevideoClen != null &&
@@ -2383,8 +2389,7 @@ class MusicRepository private constructor(
                     }
                 } else if (lastResponseCode == 403 || lastResponseCode == 410) {
                     // CDN URLs expire mid-download: without a fresh extract every retry hits the same
-                    // dead URL and the whole budget is burnt for nothing.
-                    val refreshed = streamResolver.resolveQuery(queryOrId, forceRefresh = true).getOrNull()
+                    val refreshed = resolveTrackStreamForDownload(track, forceRefresh = true).getOrNull()
                     refreshed?.let {
                         currentUrl = it.audioUrl
                         downloadedBytes = 0L
@@ -2508,6 +2513,19 @@ class MusicRepository private constructor(
 
         onProgress?.invoke(DownloadPhase.Completed)
         return@withContext savedSong
+    }
+
+    private suspend fun resolveTrackStreamForDownload(
+        track: OnlineCatalogTrack,
+        forceRefresh: Boolean = true
+    ): Result<com.bestiapop.android.data.network.YouTubeStreamResult> {
+        val queryOrId = com.bestiapop.android.data.network.YouTubeExtractor.resolveYouTubeQueryOrId(track)
+        return streamResolver.resolveQuery(
+            queryOrId = queryOrId,
+            forceRefresh = forceRefresh,
+            expected = track.identity,
+            fallbackQuery = track.youtubeSearchQuery()
+        )
     }
 
     override suspend fun syncTagsToFiles(onProgress: LibraryScanProgress?): TagSyncSummary =

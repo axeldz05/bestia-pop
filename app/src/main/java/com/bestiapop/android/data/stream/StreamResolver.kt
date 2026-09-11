@@ -3,6 +3,7 @@ package com.bestiapop.android.data.stream
 import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.data.model.ResolvedStream
 import com.bestiapop.android.data.model.TrackIdentity
+import com.bestiapop.android.data.model.TrackMeta
 import com.bestiapop.android.data.model.youtubeSearchQuery
 import com.bestiapop.android.data.network.YouTubeExtractResult
 import com.bestiapop.android.data.network.YouTubeExtractor
@@ -17,16 +18,12 @@ import kotlinx.coroutines.sync.withLock
 class StreamResolver internal constructor(
     private val extractDetailed: suspend (
         queryOrId: String,
-        expectedDurationMs: Long,
-        expectedTitle: String?,
-        expectedArtist: String?,
+        expected: TrackMeta?,
         fallbackQuery: String?
-    ) -> YouTubeExtractResult = { q, dur, title, artist, fb ->
+    ) -> YouTubeExtractResult = { q, exp, fb ->
         YouTubeExtractor.extractAudioStreamDetailed(
             urlOrQuery = q,
-            expectedDurationMs = dur,
-            expectedTitle = title,
-            expectedArtist = artist,
+            expected = exp,
             fallbackQuery = fb
         )
     },
@@ -40,7 +37,7 @@ class StreamResolver internal constructor(
         ttlMs: Long = DEFAULT_TTL_MS,
         onKeyLockReserved: suspend (String, Any) -> Unit = { _, _ -> }
     ) : this(
-        extractDetailed = { q, _, _, _, _ -> extract(q) },
+        extractDetailed = { q, _, _ -> extract(q) },
         clockMs = clockMs,
         ttlMs = ttlMs,
         onKeyLockReserved = onKeyLockReserved
@@ -69,9 +66,7 @@ class StreamResolver internal constructor(
     suspend fun resolveQuery(
         queryOrId: String,
         forceRefresh: Boolean = false,
-        expectedDurationMs: Long = 0L,
-        expectedTitle: String? = null,
-        expectedArtist: String? = null,
+        expected: TrackMeta? = null,
         fallbackQuery: String? = null
     ): Result<YouTubeStreamResult> {
         val query = queryOrId.trim()
@@ -91,9 +86,7 @@ class StreamResolver internal constructor(
             extractAndCache(
                 query = query,
                 qKey = qKey,
-                expectedDurationMs = expectedDurationMs,
-                expectedTitle = expectedTitle,
-                expectedArtist = expectedArtist,
+                expected = expected,
                 fallbackQuery = fallbackQuery
             ).map { it.stream }
         }
@@ -166,9 +159,7 @@ class StreamResolver internal constructor(
             extractAndCache(
                 query = query,
                 qKey = qKey,
-                expectedDurationMs = item.durationMs,
-                expectedTitle = item.identity.title,
-                expectedArtist = item.identity.artist,
+                expected = item.identity,
                 fallbackQuery = item.youtubeSearchQuery()
             ).map { it.resolved }
         }
@@ -243,16 +234,12 @@ class StreamResolver internal constructor(
     private suspend fun extractAndCache(
         query: String,
         qKey: String,
-        expectedDurationMs: Long = 0L,
-        expectedTitle: String? = null,
-        expectedArtist: String? = null,
+        expected: TrackMeta? = null,
         fallbackQuery: String? = null
     ): Result<CachedExtraction> = when (
         val result = extractDetailed(
             query,
-            expectedDurationMs,
-            expectedTitle,
-            expectedArtist,
+            expected,
             fallbackQuery
         )
     ) {

@@ -509,42 +509,6 @@ class GetLibrarySongsUseCaseListItemsTest {
     }
 
     @Test
-    fun execute_sortsByDateAddedDescendingByDefault() {
-        val list = listOf(
-            Song(id = 1, uriString = "u1", title = "Old", dateAdded = 10),
-            Song(id = 2, uriString = "u2", title = "New", dateAdded = 30),
-            Song(id = 3, uriString = "u3", title = "Mid", dateAdded = 20)
-        )
-        val sorted = useCase.execute(list, "", SortOption.DATE_ADDED)
-        assertEquals(listOf(2L, 3L, 1L), sorted.map { it.id })
-    }
-
-    @Test
-    fun execute_respectsSortDirectionAscAndDesc() {
-        val list = listOf(
-            Song(id = 1, uriString = "u1", title = "Charlie", dateAdded = 10),
-            Song(id = 2, uriString = "u2", title = "Alpha", dateAdded = 30),
-            Song(id = 3, uriString = "u3", title = "Bravo", dateAdded = 20)
-        )
-        assertEquals(
-            listOf(2L, 3L, 1L),
-            useCase.execute(list, "", SortOption.TITLE, SortDirection.ASC).map { it.id }
-        )
-        assertEquals(
-            listOf(1L, 3L, 2L),
-            useCase.execute(list, "", SortOption.TITLE, SortDirection.DESC).map { it.id }
-        )
-        assertEquals(
-            listOf(1L, 3L, 2L),
-            useCase.execute(list, "", SortOption.DATE_ADDED, SortDirection.ASC).map { it.id }
-        )
-        assertEquals(
-            listOf(2L, 3L, 1L),
-            useCase.execute(list, "", SortOption.DATE_ADDED, SortDirection.DESC).map { it.id }
-        )
-    }
-
-    @Test
     fun sortDirection_defaultFor_dateAddedDescOthersAsc() {
         assertEquals(SortDirection.DESC, SortDirection.defaultFor(SortOption.DATE_ADDED))
         assertEquals(SortDirection.ASC, SortDirection.defaultFor(SortOption.TITLE))

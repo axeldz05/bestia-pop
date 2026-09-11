@@ -16,24 +16,16 @@ class AlbumNamesTest {
     private val takkMojibake = "Takk\u00E2\u0080\u00A6"
 
     @Test
-    fun unicodeEllipsisMatchesAsciiDots() {
+    fun ellipsisAndPunctuationVariants_normalizeAndMatchAsciiDots() {
         assertEquals("Takk...", normalizeAlbumName(takkUnicodeEllipsis))
         assertEquals("Takk...", normalizeAlbumName(takkAsciiDots))
-        assertTrue(albumNamesMatch(takkUnicodeEllipsis, takkAsciiDots))
-    }
-
-    @Test
-    fun deviceMojibakeEllipsisMatchesAsciiDots() {
         assertEquals("Takk...", normalizeAlbumName(takkMojibake))
-        assertTrue(albumNamesMatch(takkMojibake, takkAsciiDots))
-        assertTrue(albumNamesMatch(takkMojibake, takkUnicodeEllipsis))
-    }
-
-    @Test
-    fun punctuationFold_matchesPeriodAndEllipsis() {
         assertEquals("Takk.", normalizeAlbumName(takkPeriod))
-        assertTrue(albumNamesMatch(takkPeriod, takkAsciiDots))
-        assertTrue(albumNamesMatch(takkPeriod, takkUnicodeEllipsis))
+
+        listOf(takkUnicodeEllipsis, takkMojibake, takkPeriod).forEach { variant ->
+            assertTrue(albumNamesMatch(variant, takkAsciiDots))
+            assertTrue(albumNamesMatch(variant, takkUnicodeEllipsis))
+        }
     }
 
     @Test

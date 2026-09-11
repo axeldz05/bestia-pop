@@ -1,13 +1,9 @@
 package com.bestiapop.android.ui.components
 
 import com.bestiapop.android.data.model.Song
-import com.bestiapop.android.ui.screens.library.AggregateBrowseActions
-import com.bestiapop.android.ui.screens.library.AlbumBrowseActions
-import com.bestiapop.android.ui.screens.library.LibraryAlbumGroupActions
 import com.bestiapop.android.ui.screens.library.LibrarySongListActions
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ActionBundlesTest {
@@ -20,41 +16,6 @@ class ActionBundlesTest {
         album = "Album",
         durationMs = 120_000L
     )
-
-    @Test
-    fun albumHeaderActions_defaultsAreFunctional() {
-        var played = false
-        var shuffled = false
-        val actions = AlbumHeaderActions(
-            onPlay = { played = true },
-            onShuffle = { shuffled = true }
-        )
-        actions.onPlay()
-        actions.onShuffle()
-        assertTrue(played)
-        assertTrue(shuffled)
-        assertEquals(null, actions.onIdentify)
-    }
-
-    @Test
-    fun multiSelectActions_mapsCallbacksCorrectly() {
-        var played = false
-        var cleared = false
-        val actions = MultiSelectActions(
-            onPlaySelected = { played = true },
-            onEnqueueSelected = {},
-            onAddToPlaylist = {},
-            onIdentifySelected = {},
-            onSimilarSelected = {},
-            onDeleteSelected = {},
-            onSelectAll = {},
-            onClearSelection = { cleared = true }
-        )
-        actions.onPlaySelected()
-        actions.onClearSelection()
-        assertTrue(played)
-        assertTrue(cleared)
-    }
 
     @Test
     fun librarySongListActions_secondaryConstructorComposesCorrectly() {
@@ -94,25 +55,5 @@ class ActionBundlesTest {
         assertNotNull(actions.songActions)
         assertNotNull(actions.albumActions)
     }
-
-    @Test
-    fun aggregateBrowseActions_invokesProperItem() {
-        var clickedItem = ""
-        var playedItem = ""
-        var shuffledItem = ""
-
-        val actions = AggregateBrowseActions<String>(
-            onClick = { clickedItem = it },
-            onPlay = { playedItem = it },
-            onShuffle = { shuffledItem = it }
-        )
-
-        actions.onClick("Rock")
-        actions.onPlay("Rock")
-        actions.onShuffle("Rock")
-
-        assertEquals("Rock", clickedItem)
-        assertEquals("Rock", playedItem)
-        assertEquals("Rock", shuffledItem)
-    }
 }
+

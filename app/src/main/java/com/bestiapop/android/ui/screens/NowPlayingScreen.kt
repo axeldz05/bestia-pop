@@ -465,7 +465,11 @@ fun NowPlayingScreen(
                                                                 goToLibrary { viewModel.openLibraryAlbum(name, fromNestedParent = false) }
                                                             },
                                                             onGoToArtist = { name ->
-                                                                goToLibrary { viewModel.openLibraryArtist(name) }
+                                                                if (item is PlayableItem.Remote) {
+                                                                    goToDiscover { viewModel.selectArtistForInspection(name) }
+                                                                } else {
+                                                                    goToLibrary { viewModel.openLibraryArtist(name) }
+                                                                }
                                                             },
                                                             onGoToLocalPlaylist = { id ->
                                                                 goToPlaylists { viewModel.openLocalPlaylist(id) }

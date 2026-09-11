@@ -3258,6 +3258,38 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
+    fun selectArtistForInspection(artistName: String) {
+        val cleanArtist = artistName.trim()
+        if (cleanArtist.isEmpty()) return
+        val current = _catalogCollection.value
+        val parent = if (current.isOpen && current.kind != CatalogCollectionKind.ARTIST) current else null
+        val requestKey = "artist:$cleanArtist#${++catalogCollectionGeneration}"
+        catalogCollectionJob?.cancel()
+        catalogBatchPlaylistTarget = null
+        _catalogCollection.value = CatalogCollectionUiState(
+            selectionKey = requestKey,
+            title = cleanArtist,
+            kind = CatalogCollectionKind.ARTIST,
+            parent = parent,
+            isLoading = true
+        )
+        catalogCollectionJob = viewModelScope.launch {
+            val deezerHit = MetadataFetcher.searchDeezerArtist(cleanArtist)
+            val albums = MetadataFetcher.fetchArtistAlbums(cleanArtist, deezerHit?.id)
+            val topTracks = MetadataFetcher.fetchArtistTopTracks(cleanArtist, deezerHit?.id)
+            val candidates = topTracks.map { MetadataFetcher.toCatalogCandidate(it) }
+            val coverUrl = deezerHit?.pictureUrl ?: albums.firstOrNull()?.coverUrl
+            updateCatalogCollection(requestKey) { state ->
+                state.copy(
+                    coverUrl = coverUrl,
+                    candidates = candidates,
+                    albums = albums,
+                    isLoading = false
+                )
+            }
+        }
+    }
+
     private fun updateCatalogCollection(
         selectionKey: String,
         transform: (CatalogCollectionUiState) -> CatalogCollectionUiState
@@ -3278,6 +3310,8 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         coverUrl: String?,
         fetch: suspend () -> List<CatalogTrackCandidate>
     ) {
+        val current = _catalogCollection.value
+        val parent = if (current.isOpen && current.kind != kind) current else null
         val requestKey = "$selectionKey#${++catalogCollectionGeneration}"
         catalogCollectionJob?.cancel()
         catalogBatchPlaylistTarget = null
@@ -3286,12 +3320,13 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             title = title,
             kind = kind,
             coverUrl = coverUrl,
+            parent = parent,
             isLoading = true
         )
         catalogCollectionJob = viewModelScope.launch {
             val candidates = fetch()
-            updateCatalogCollection(requestKey) { current ->
-                current.copy(candidates = candidates, isLoading = false)
+            updateCatalogCollection(requestKey) { state ->
+                state.copy(candidates = candidates, isLoading = false)
             }
         }
     }
@@ -3353,7 +3388,16 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         catalogCollectionJob?.cancel()
         catalogCollectionJob = null
         catalogBatchPlaylistTarget = null
-        _catalogCollection.value = CatalogCollectionUiState()
+        val parent = _catalogCollection.value.parent
+        if (parent != null) {
+            _catalogCollection.value = parent
+        } else {
+            _catalogCollection.value = CatalogCollectionUiState()
+        }
+    }
+
+    fun searchMore() {
+        catalogSearchCoordinator.searchMore()
     }
 
     fun resolveDownloadConflictOverwrite(applyToRemainingBatch: Boolean = false) {

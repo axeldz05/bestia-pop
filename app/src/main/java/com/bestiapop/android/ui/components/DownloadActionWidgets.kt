@@ -1,11 +1,18 @@
 package com.bestiapop.android.ui.components
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import com.bestiapop.android.data.model.CatalogAlbum
+import com.bestiapop.android.domain.usecase.RelatedAlbumItem
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
@@ -24,10 +31,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.bestiapop.android.data.model.ActiveDownload
 import com.bestiapop.android.data.model.CandidateDownloadState
 import com.bestiapop.android.data.model.DownloadMessages
+import com.bestiapop.android.data.model.TrackMeta
 import com.bestiapop.android.domain.util.TrackMatchKeys
 
 /** L1: circular progress + percent label. */
@@ -176,6 +185,128 @@ fun List<ActiveDownload>.findUiDownloadByTrack(artist: String, title: String): A
         val displayTitle = download.titleOverride?.takeIf { it.isNotBlank() } ?: download.title
         TrackMatchKeys.downloadIdFor(download.artist, displayTitle) == key ||
             TrackMatchKeys.downloadIdFor(download.artist, download.title) == key
+    }
+}
+
+/** Level 2: UI lookup directly using [TrackMeta] without unpacking artist and title primitives. */
+fun List<ActiveDownload>.findUiDownloadByTrack(meta: TrackMeta): ActiveDownload? =
+    findUiDownloadByTrack(meta.artist, meta.title)
+
+/** Level 1: Aggregate download state and progress for album collections. */
+data class ActiveAlbumDownloadProgress(
+    val isDownloading: Boolean = false,
+    val isQueued: Boolean = false,
+    val activeCount: Int = 0,
+    val completedCount: Int = 0,
+    val totalCount: Int = 0,
+    val progressPercent: Int = 0
+) {
+    val isActive: Boolean get() = isDownloading || isQueued
+}
+
+/** Level 1: Query download progress across active transfers for a given album. */
+fun List<ActiveDownload>.findAlbumDownloadProgress(
+    albumTitle: String,
+    artistName: String = ""
+): ActiveAlbumDownloadProgress {
+    if (isEmpty() || albumTitle.isBlank()) return ActiveAlbumDownloadProgress()
+    val normAlbum = TrackMatchKeys.normalize(albumTitle)
+    val normArtist = TrackMatchKeys.normalize(artistName)
+    val matching = filter { d ->
+        val dAlbum = TrackMatchKeys.normalize(d.album)
+        val dArtist = TrackMatchKeys.normalize(d.artist)
+        dAlbum.isNotEmpty() && dAlbum == normAlbum && (normArtist.isEmpty() || dArtist.isEmpty() || dArtist == normArtist || TrackMatchKeys.containsNormalized(dArtist, normArtist) || TrackMatchKeys.containsNormalized(normArtist, dArtist))
+    }
+    if (matching.isEmpty()) return ActiveAlbumDownloadProgress()
+    val downloading = matching.filter { it.state == CandidateDownloadState.DOWNLOADING }
+    val queued = matching.filter { it.state == CandidateDownloadState.QUEUED }
+    val success = matching.filter { it.state == CandidateDownloadState.SUCCESS }
+    val avgPercent = if (downloading.isNotEmpty()) {
+        downloading.map { it.progressPercent }.average().toInt()
+    } else 0
+    return ActiveAlbumDownloadProgress(
+        isDownloading = downloading.isNotEmpty(),
+        isQueued = queued.isNotEmpty(),
+        activeCount = downloading.size + queued.size,
+        completedCount = success.size,
+        totalCount = matching.size,
+        progressPercent = avgPercent
+    )
+}
+
+/** Level 1: Quick check if an album has active downloads in flight or queued. */
+fun List<ActiveDownload>.isAlbumDownloading(albumTitle: String, artistName: String = ""): Boolean =
+    findAlbumDownloadProgress(albumTitle, artistName).isActive
+
+fun List<ActiveDownload>.isAlbumDownloading(album: CatalogAlbum): Boolean =
+    isAlbumDownloading(album.title, album.artist)
+
+fun List<ActiveDownload>.isAlbumDownloading(album: RelatedAlbumItem): Boolean =
+    isAlbumDownloading(album.title, album.artist)
+
+/** Level 1: Circular download progress indicator overlay for media cards. */
+@Composable
+fun BoxScope.MediaCardDownloadSpinner(
+    modifier: Modifier = Modifier,
+    size: Dp = 32.dp,
+    indicatorSize: Dp = 16.dp,
+    strokeWidth: Dp = 2.dp
+) {
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = modifier
+            .align(Alignment.BottomEnd)
+            .padding(4.dp)
+            .size(size)
+            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.85f), CircleShape)
+    ) {
+        CircularProgressIndicator(
+            modifier = Modifier.size(indicatorSize),
+            strokeWidth = strokeWidth,
+            color = MaterialTheme.colorScheme.primary
+        )
+    }
+}
+
+/** Level 1: Download button or live progress indicator pill for album collections. */
+@Composable
+fun AlbumDownloadStateButton(
+    progress: ActiveAlbumDownloadProgress,
+    onDownload: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    if (progress.isActive) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = modifier
+                .background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(16.dp))
+                .padding(horizontal = 10.dp, vertical = 6.dp)
+        ) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(18.dp),
+                strokeWidth = 2.dp,
+                color = MaterialTheme.colorScheme.primary
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+            val pct = progress.progressPercent
+            val label = if (pct > 0) "$pct%" else "Descargando…"
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                color = MaterialTheme.colorScheme.primary
+            )
+        }
+    } else {
+        IconButton(
+            onClick = onDownload,
+            modifier = modifier.background(MaterialTheme.colorScheme.primaryContainer, androidx.compose.foundation.shape.CircleShape)
+        ) {
+            Icon(
+                imageVector = Icons.Default.Download,
+                contentDescription = "Descargar todo",
+                tint = MaterialTheme.colorScheme.onPrimaryContainer
+            )
+        }
     }
 }
 

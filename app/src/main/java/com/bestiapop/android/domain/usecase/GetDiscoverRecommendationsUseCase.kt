@@ -167,7 +167,7 @@ class GetDiscoverRecommendationsUseCase {
                         }
                     }
                 }
-                albumJobs.awaitAll().flatten().distinctCatalogAlbums(16, artistOf = { it.artist }, titleOf = { it.title })
+                albumJobs.awaitAll().flatten().distinctCatalogAlbums(16)
             }
 
             // Await all parallel results
@@ -216,7 +216,7 @@ class GetDiscoverRecommendationsUseCase {
                 if (chartTracks.isNotEmpty()) {
                     try {
                         val chartAlbums = MetadataFetcher.fetchChartAlbums(limit = 12)
-                        recAlbums = chartAlbums.distinctCatalogAlbums(16, artistOf = { it.artist }, titleOf = { it.title })
+                        recAlbums = chartAlbums.distinctCatalogAlbums(16)
                     } catch (_: Exception) {
                     }
                 }

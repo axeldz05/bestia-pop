@@ -6,6 +6,7 @@ import com.bestiapop.android.data.model.OnlineCatalogTrack
 import com.bestiapop.android.data.network.MetadataFetcher
 import com.bestiapop.android.domain.util.IdentifyCatalogQuery
 import com.bestiapop.android.domain.util.TrackMatchKeys
+import com.bestiapop.android.domain.util.matchKey
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -125,7 +126,7 @@ class CatalogSearchCoordinator(
         val category = _state.value.category
         catalogSearchJob?.cancel()
         catalogSearchJob = scope.launch {
-            _state.update { it.copy(isSearching = true) }
+            _state.update { it.copy(isSearching = true, canLoadMore = true, isLoadingMore = false) }
             when (category) {
                 CatalogCategory.SONGS -> {
                     val results = if (effectiveQuery.isEmpty() && !normalizedFilters.hasAny) {
@@ -133,13 +134,13 @@ class CatalogSearchCoordinator(
                     } else {
                         MetadataFetcher.searchOnlineCatalog(effectiveQuery)
                     }
-                    updateIfCurrent(generation) { it.copy(tracks = results) }
+                    updateIfCurrent(generation) { it.copy(tracks = results, canLoadMore = results.isNotEmpty()) }
                 }
 
                 CatalogCategory.ALBUMS -> {
                     val albumQuery = if (effectiveQuery.isNotEmpty()) effectiveQuery else cleanQ
                     val results = MetadataFetcher.searchAlbums(albumQuery)
-                    updateIfCurrent(generation) { it.copy(albums = results) }
+                    updateIfCurrent(generation) { it.copy(albums = results, canLoadMore = results.isNotEmpty()) }
                 }
 
                 CatalogCategory.PLAYLISTS -> {
@@ -166,6 +167,77 @@ class CatalogSearchCoordinator(
             updateIfCurrent(generation) { it.copy(isSearching = false) }
             if (_state.value.currentResultsAreEmpty() && !isOnline()) {
                 onNotifyToast("Sin conexión: no se pudo buscar en el catálogo")
+            }
+        }
+    }
+
+    fun searchMore() {
+        val current = _state.value
+        if (current.isSearching || current.isLoadingMore || !current.canLoadMore) return
+        val cleanQ = lastQuery.trim()
+        val normalizedFilters = lastFilters.normalized()
+        val effectiveQuery = IdentifyCatalogQuery.build(cleanQ, normalizedFilters)
+        if (effectiveQuery.isBlank() && cleanQ.isBlank()) return
+
+        val category = current.category
+        val generation = catalogSearchGeneration
+        scope.launch {
+            _state.update { it.copy(isLoadingMore = true) }
+            when (category) {
+                CatalogCategory.SONGS -> {
+                    val existingTracks = _state.value.tracks
+                    val existingKeys = existingTracks.map { it.identity.matchKey() }.toMutableSet()
+                    val newTracks = mutableListOf<OnlineCatalogTrack>()
+
+                    fun appendDeduplicated(source: Iterable<OnlineCatalogTrack>) {
+                        for (track in source) {
+                            val key = track.identity.matchKey()
+                            if (key.isNotBlank() && existingKeys.add(key)) {
+                                newTracks.add(track)
+                            }
+                        }
+                    }
+
+                    // 1. Next page from Deezer
+                    val nextPage = MetadataFetcher.searchOnlineCatalog(effectiveQuery, limit = 25, index = existingTracks.size)
+                    appendDeduplicated(nextPage)
+
+                    // 2. Also search YouTube and iTunes for deep search if Deezer provided few or none
+                    if (newTracks.size < 10) {
+                        val ytTracks = com.bestiapop.android.data.network.YouTubeExtractor.searchYouTube(effectiveQuery)
+                        appendDeduplicated(ytTracks)
+
+                        val itunesTracks = MetadataFetcher.searchItunesSongs(effectiveQuery, limit = 20)
+                        appendDeduplicated(itunesTracks)
+                    }
+
+                    updateIfCurrent(generation) { s ->
+                        s.copy(
+                            tracks = s.tracks + newTracks,
+                            isLoadingMore = false,
+                            canLoadMore = newTracks.isNotEmpty()
+                        )
+                    }
+                }
+
+                CatalogCategory.ALBUMS -> {
+                    val albumQuery = if (effectiveQuery.isNotEmpty()) effectiveQuery else cleanQ
+                    val existingAlbums = _state.value.albums
+                    val existingKeys = existingAlbums.map { it.matchKey() }.toMutableSet()
+                    val nextAlbums = MetadataFetcher.searchAlbums(albumQuery, limit = 15, index = existingAlbums.size)
+                    val newAlbums = nextAlbums.filter { existingKeys.add(it.matchKey()) }
+                    updateIfCurrent(generation) { s ->
+                        s.copy(
+                            albums = s.albums + newAlbums,
+                            isLoadingMore = false,
+                            canLoadMore = newAlbums.isNotEmpty()
+                        )
+                    }
+                }
+
+                else -> {
+                    updateIfCurrent(generation) { it.copy(isLoadingMore = false, canLoadMore = false) }
+                }
             }
         }
     }

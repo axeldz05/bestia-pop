@@ -18,6 +18,8 @@ data class CatalogSearchUiState(
     val playlists: List<CatalogPlaylist> = emptyList(),
     val genres: List<CatalogGenre> = emptyList(),
     val isSearching: Boolean = false,
+    val isLoadingMore: Boolean = false,
+    val canLoadMore: Boolean = true,
     val searchQueryDraft: String = "",
     val searchFilterArtist: String = "",
     val searchFilterAlbum: String = "",
@@ -51,7 +53,8 @@ data class CatalogSearchUiState(
 enum class CatalogCollectionKind {
     ALBUM,
     PLAYLIST,
-    GENRE
+    GENRE,
+    ARTIST
 }
 
 @Immutable
@@ -61,6 +64,8 @@ data class CatalogCollectionUiState(
     val kind: CatalogCollectionKind? = null,
     val coverUrl: String? = null,
     val candidates: List<CatalogTrackCandidate> = emptyList(),
+    val albums: List<CatalogAlbum> = emptyList(),
+    val parent: CatalogCollectionUiState? = null,
     val isLoading: Boolean = false
 ) {
     val isOpen: Boolean

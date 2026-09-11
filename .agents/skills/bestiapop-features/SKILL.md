@@ -281,6 +281,19 @@ Centro de descargas online → sección 2 (`DownloadsScreen`, tab Descargas).
 - En Descubrir, el usuario puede filtrar la fuente de recomendaciones entre **Ambos (Deezer + ListenBrainz)**, **Deezer**, y **ListenBrainz** (`DiscoverSourcePreference` en DataStore).
 - Al conectar ListenBrainz o cambiar credenciales, el feed de Descubrir y los relacionados se actualizan automáticamente.
 - Álbumes recomendados en Descubrir integran artistas y releases de ListenBrainz (además de Deezer).
+- **Inspección de artista en Descubrir:** Al tocar un artista en el feed, en un álbum o desde `NowPlayingScreen` en streaming remoto (`onGoToArtist`), se abre la vista dedicada `DiscoverArtistDetailView` (`CatalogCollectionKind.ARTIST`) que organiza:
+  - Hero del artista con foto y botón Radio.
+  - "En tu biblioteca": álbumes y canciones del artista existentes localmente, con distintivo de estado (`DOWNLOADED` vs `SAVED_REMOTE`).
+  - "Álbumes del artista": discografía completa obtenida vía Deezer `/artist/{id}/albums` con botón para guardar o descargar álbum completo.
+  - "Canciones populares": top tracks vía Deezer `/artist/{id}/top` con reproducción streaming y descarga individual o en lote.
+  - Pila de navegación anidada (`CatalogCollectionUiState.parent`) permitiendo navegar Artista → Álbum → Volver a Artista sin perder el estado.
+- **Feedback visual de descarga de álbum en Descubrir:**
+  - En la cabecera de detalle de colección (`DiscoverCollectionDetailView`), cuando un álbum se está descargando se muestra un indicador de carga circular y el porcentaje en vivo (`ActiveAlbumDownloadProgress` vía `findAlbumDownloadProgress`).
+  - Cada canción candidata muestra su estado de descarga individual en vivo (`DownloadStateTrailing` vía `activeDownloads`: En cola / Descargando % / Listo).
+  - Las tarjetas de álbum (`DiscoverAlbumCard` y `RelatedAlbumCard`) en el feed y resultados de búsqueda muestran un indicador de carga en segundo plano cuando hay una descarga activa asociada al álbum.
+- **Búsqueda profunda y paginación en catálogo ("Buscar más"):**
+  - En resultados de búsqueda de catálogo (`DiscoverSearchResultsView`), el botón "Buscar más resultados" invoca `CatalogSearchCoordinator.searchMore()`.
+  - Solicita la siguiente página a Deezer (`index`, `limit`) y, para canciones, ejecuta además búsqueda profunda en YouTube e iTunes deduplicando resultados mediante `TrackMatchKeys.downloadIdFor`.
 - Sección **"Buscar más relacionados"** (`GetTopRelatedItemsUseCase`) consolida los artistas, álbumes y canciones más escuchados de la biblioteca local (`playStats` / `lastPlayedAt`) y de ListenBrainz (stats de usuario / listens recientes), mostrando badges `Local`, `ListenBrainz` o `Local + ListenBrainz`, con acciones para explorar en catálogo o iniciar Radio.
 - Playlists Discover = `GET /1/user/{user}/playlists/createdfor`; detalle = `GET /1/playlist/{mbid}`.
 - CF Recomendados = `GET /1/cf/recommendation/user/{user}/recording` + metadata → match Local|Remote.

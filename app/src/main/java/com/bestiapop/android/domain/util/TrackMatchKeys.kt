@@ -1,5 +1,6 @@
 package com.bestiapop.android.domain.util
 
+import com.bestiapop.android.data.model.CatalogAlbum
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.data.model.TrackMeta
 import java.text.Normalizer
@@ -84,6 +85,9 @@ object TrackMatchKeys {
 
     /** L2: stable [ActiveDownload] / queue id from artist+title (empty if either blank). */
     fun downloadIdFor(artist: String, title: String): String = matchKey(artist, title)
+
+    /** Level 2: stable download id directly from [TrackMeta] without unpacking. */
+    fun downloadIdFor(meta: TrackMeta): String = meta.matchKey()
 
     /** Batch catalog job id; pairs with [downloadIdFor] for [findByTrack] lookup. */
     fun batchDownloadIdFor(artist: String, title: String): String {
@@ -179,3 +183,11 @@ inline fun <T> List<T>.distinctCatalogAlbums(
     crossinline artistOf: (T) -> String,
     crossinline titleOf: (T) -> String
 ): List<T> = distinctByTrackKey(limit) { TrackMatchKeys.matchKey(artistOf(it), titleOf(it)) }
+
+/** Level 2: Match key for [CatalogAlbum] using normalized artist + title. */
+fun CatalogAlbum.matchKey(): String = TrackMatchKeys.matchKey(artist, title)
+
+/** Level 2: Deduplicate catalog albums using their artist + title match key. */
+@JvmName("distinctCatalogAlbumsModel")
+fun List<CatalogAlbum>.distinctCatalogAlbums(limit: Int = size): List<CatalogAlbum> =
+    distinctCatalogAlbums(limit, artistOf = { it.artist }, titleOf = { it.title })

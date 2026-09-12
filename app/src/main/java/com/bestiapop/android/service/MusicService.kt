@@ -428,6 +428,10 @@ class MusicService : MediaLibraryService() {
                         delay(timeUntilFadeOut)
                         continue
                     }
+                } else if (durationMs <= 1500L || positionMs < 0L) {
+                    // Duration not yet known or short track: avoid spinning at 25Hz while metadata resolves.
+                    delay(1000L)
+                    continue
                 }
                 delay(40L)
             }
@@ -587,6 +591,7 @@ class MusicService : MediaLibraryService() {
         persistPlaybackEngaged(false)
         stopWatchingBackgroundAppOps()
         releaseTransientWakeLock()
+        serviceWakeLock = null
         clearListener()
         serviceScope.cancel()
         releaseLoudnessEnhancer()
@@ -616,16 +621,14 @@ class MusicService : MediaLibraryService() {
     private fun acquireTransientWakeLock(timeoutMs: Long = 10_000L) {
         val powerManager = getSystemService(PowerManager::class.java) ?: return
         try {
-            if (serviceWakeLock?.isHeld == true) {
-                serviceWakeLock?.release()
-            }
-            serviceWakeLock = powerManager.newWakeLock(
+            val lock = serviceWakeLock ?: powerManager.newWakeLock(
                 PowerManager.PARTIAL_WAKE_LOCK,
                 "BestiaPop:TransientTransition"
             ).apply {
                 setReferenceCounted(false)
-                acquire(timeoutMs)
+                serviceWakeLock = this
             }
+            lock.acquire(timeoutMs)
             PlaybackDiagnostics.log(PlaybackDiagnostics.TAG_SERVICE, "MusicService: Acquired transient WakeLock (${timeoutMs}ms)")
         } catch (e: Exception) {
             PlaybackDiagnostics.warn(PlaybackDiagnostics.TAG_SERVICE, "Failed to acquire transient WakeLock: ${e.message}")
@@ -634,12 +637,12 @@ class MusicService : MediaLibraryService() {
 
     private fun releaseTransientWakeLock() {
         try {
-            if (serviceWakeLock?.isHeld == true) {
-                serviceWakeLock?.release()
+            val lock = serviceWakeLock
+            if (lock != null && lock.isHeld) {
+                lock.release()
                 PlaybackDiagnostics.log(PlaybackDiagnostics.TAG_SERVICE, "MusicService: Released transient WakeLock")
             }
         } catch (_: Exception) {}
-        serviceWakeLock = null
     }
 
     private fun isPlaybackEngaged(): Boolean {

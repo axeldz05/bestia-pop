@@ -61,6 +61,9 @@ import com.bestiapop.android.data.util.SyncedLyrics
 import com.bestiapop.android.ui.components.PlaybackScrubber
 import com.bestiapop.android.ui.components.playPauseVector
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 
 @Composable
 fun EditLyricsDialog(
@@ -75,7 +78,6 @@ fun EditLyricsDialog(
     onSeek: (Long) -> Unit,
     onFetchOnline: ((String?) -> Unit) -> Unit
 ) {
-    val positionMs by positionMsFlow.collectAsStateWithLifecycle()
     val initialLines = remember(song.id, song.lyrics) { SyncedLyrics.parse(song.lyrics.orEmpty()) }
     var lines by remember(song.id, song.lyrics) { mutableStateOf(initialLines) }
     var text by remember(song.id, song.lyrics) { mutableStateOf(SyncedLyrics.plainText(initialLines)) }
@@ -83,7 +85,17 @@ fun EditLyricsDialog(
     var fetching by remember { mutableStateOf(false) }
     var confirmOverwrite by remember { mutableStateOf(false) }
     val thisPlaying = isCurrent && isPlaying
-    val highlightIndex = if (isCurrent) SyncedLyrics.currentLineIndex(lines, positionMs) else -1
+    val highlightIndex by remember(lines, positionMsFlow, isCurrent) {
+        if (!isCurrent) {
+            flowOf(-1)
+        } else {
+            positionMsFlow
+                .map { pos -> SyncedLyrics.currentLineIndex(lines, pos) }
+                .distinctUntilChanged()
+        }
+    }.collectAsStateWithLifecycle(
+        initialValue = if (isCurrent) SyncedLyrics.currentLineIndex(lines, positionMsFlow.value) else -1
+    )
 
     fun applyFetched(raw: String?) {
         fetching = false
@@ -170,8 +182,9 @@ fun EditLyricsDialog(
                         canStamp = isCurrent,
                         onStamp = { index ->
                             if (!isCurrent || lines.isEmpty()) return@LyricsSyncTab
+                            val currentPos = positionMsFlow.value
                             lines = lines.mapIndexed { i, line ->
-                                if (i == index) SyncedLyrics.stamp(line, positionMs) else line
+                                if (i == index) SyncedLyrics.stamp(line, currentPos) else line
                             }
                         },
                         onClearTime = { index ->

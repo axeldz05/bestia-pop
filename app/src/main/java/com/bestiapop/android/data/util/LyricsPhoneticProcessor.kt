@@ -96,14 +96,24 @@ object LyricsPhoneticProcessor {
         return sb.toString()
     }
 
+    @Volatile
+    private var cachedTransliterator: android.icu.text.Transliterator? = null
+    private val transliteratorLock = Any()
+
     /**
      * Transliteración offline usando Android ICU en API 29+ para alfabetos no latinos.
      */
     private fun transliterateOffline(text: String): String? {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return null
         return try {
-            val transliterator = android.icu.text.Transliterator.getInstance("Any-Latin; Latin-ASCII")
-            transliterator.transliterate(text)
+            val transliterator = cachedTransliterator ?: synchronized(transliteratorLock) {
+                cachedTransliterator ?: android.icu.text.Transliterator.getInstance("Any-Latin; Latin-ASCII").also {
+                    cachedTransliterator = it
+                }
+            }
+            synchronized(transliteratorLock) {
+                transliterator.transliterate(text)
+            }
         } catch (_: Throwable) {
             null
         }

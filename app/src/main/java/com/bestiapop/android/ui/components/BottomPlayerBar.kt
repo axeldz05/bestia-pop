@@ -145,10 +145,9 @@ private fun BottomPlayerProgress(
     positionMsFlow: StateFlow<Long>,
     durationMs: Long
 ) {
-    val positionMs by positionMsFlow.collectAsStateWithLifecycle()
-    val progressFraction = playbackProgressFraction(positionMs, durationMs)
+    val positionState = positionMsFlow.collectAsStateWithLifecycle()
     LinearProgressIndicator(
-        progress = { progressFraction },
+        progress = { playbackProgressFraction(positionState.value, durationMs) },
         modifier = Modifier
             .fillMaxWidth()
             .height(3.dp),

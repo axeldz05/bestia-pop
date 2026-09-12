@@ -971,10 +971,11 @@ private fun DockedProgressIndicator(
     positionMsFlow: StateFlow<Long>,
     modifier: Modifier = Modifier
 ) {
-    val positionMs by positionMsFlow.collectAsStateWithLifecycle()
-    val progress = if (durationMs > 0) (positionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f) else 0f
+    val positionState = positionMsFlow.collectAsStateWithLifecycle()
     LinearProgressIndicator(
-        progress = { progress },
+        progress = {
+            if (durationMs > 0) (positionState.value.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f) else 0f
+        },
         modifier = modifier
             .fillMaxWidth()
             .height(3.dp),

@@ -2355,7 +2355,9 @@ class MusicRepository private constructor(
 
                         body.byteStream().use { input ->
                             val baseBytes = downloadedBytes
-                            val cacheBuffer = java.io.ByteArrayOutputStream(512 * 1024)
+                            val cacheChunkCapacity = 512 * 1024
+                            val cacheChunkBuffer = ByteArray(cacheChunkCapacity)
+                            var cacheBufferCount = 0
                             var cacheBufferStartPos = baseBytes
                             copyTransferToFile(
                                 input = input,
@@ -2363,37 +2365,45 @@ class MusicRepository private constructor(
                                 append = resuming,
                                 bufferSize = 65536,
                                 onChunk = { relPos, buf, len ->
-                                    if (cacheBuffer.size() == 0) {
+                                    if (cacheBufferCount == 0) {
                                         cacheBufferStartPos = baseBytes + relPos
                                     }
-                                    cacheBuffer.write(buf, 0, len)
-                                    if (cacheBuffer.size() >= 512 * 1024) {
-                                        val chunkBytes = cacheBuffer.toByteArray()
-                                        com.bestiapop.android.data.stream.BestiaPopMediaCache.writeChunkToCache(
-                                            context = context,
-                                            videoId = ytStream.videoId,
-                                            position = cacheBufferStartPos,
-                                            bytes = chunkBytes,
-                                            offset = 0,
-                                            length = chunkBytes.size
-                                        )
-                                        cacheBuffer.reset()
+                                    var remainingLen = len
+                                    var bufOffset = 0
+                                    while (remainingLen > 0) {
+                                        val space = cacheChunkCapacity - cacheBufferCount
+                                        val toCopy = minOf(remainingLen, space)
+                                        System.arraycopy(buf, bufOffset, cacheChunkBuffer, cacheBufferCount, toCopy)
+                                        cacheBufferCount += toCopy
+                                        bufOffset += toCopy
+                                        remainingLen -= toCopy
+                                        if (cacheBufferCount >= cacheChunkCapacity) {
+                                            com.bestiapop.android.data.stream.BestiaPopMediaCache.writeChunkToCache(
+                                                context = context,
+                                                videoId = ytStream.videoId,
+                                                position = cacheBufferStartPos,
+                                                bytes = cacheChunkBuffer,
+                                                offset = 0,
+                                                length = cacheBufferCount
+                                            )
+                                            cacheBufferStartPos += cacheBufferCount
+                                            cacheBufferCount = 0
+                                        }
                                     }
                                 }
                             ) { copied ->
                                 downloadedBytes = baseBytes + copied
                             }
-                            if (cacheBuffer.size() > 0) {
-                                val remainingBytes = cacheBuffer.toByteArray()
+                            if (cacheBufferCount > 0) {
                                 com.bestiapop.android.data.stream.BestiaPopMediaCache.writeChunkToCache(
                                     context = context,
                                     videoId = ytStream.videoId,
                                     position = cacheBufferStartPos,
-                                    bytes = remainingBytes,
+                                    bytes = cacheChunkBuffer,
                                     offset = 0,
-                                    length = remainingBytes.size
+                                    length = cacheBufferCount
                                 )
-                                cacheBuffer.reset()
+                                cacheBufferCount = 0
                             }
                         }
                         // A clean EOF short of Content-Length is a truncated body, not a finished file.

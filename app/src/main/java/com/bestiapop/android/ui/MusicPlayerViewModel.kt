@@ -398,31 +398,6 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             initialValue = LibraryLookupIndex()
         )
 
-    val localLibraryIndex: StateFlow<Map<String, Song>> = libraryLookupIndex
-        .map { it.localSongsByMatchKey }
-        .distinctUntilChanged()
-        .stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5_000),
-            initialValue = emptyMap()
-        )
-    val allLibrarySongsIndex: StateFlow<Map<String, Song>> = libraryLookupIndex
-        .map { it.allSongsByMatchKey }
-        .distinctUntilChanged()
-        .stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5_000),
-            initialValue = emptyMap()
-        )
-    val allSongsById: StateFlow<Map<Long, Song>> = libraryLookupIndex
-        .map { it.allSongsById }
-        .distinctUntilChanged()
-        .stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5_000),
-            initialValue = emptyMap()
-        )
-
     /** Level 2: Resolves an iterable of song IDs into the corresponding Songs in O(1) per song. */
     fun songsForIds(ids: Iterable<Long>): List<Song> {
         val index = libraryLookupIndex.value.allSongsById
@@ -1231,10 +1206,9 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
-    val lyricsSettings: StateFlow<LyricsSettings> = lyricsPreferences.settingsFlow.stateIn(
+    val lyricsSettings: StateFlow<LyricsSettings> = lyricsPreferences.settingsFlow.stateInUi(
         scope = viewModelScope,
-        started = SharingStarted.Eagerly,
-        initialValue = LyricsSettings()
+        initial = LyricsSettings()
     )
 
     private val _isTranslationActive = MutableStateFlow(false)

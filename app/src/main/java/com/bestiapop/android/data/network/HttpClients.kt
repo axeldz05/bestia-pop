@@ -24,7 +24,7 @@ object HttpClients {
         .readTimeout(20, TimeUnit.SECONDS)
         .writeTimeout(20, TimeUnit.SECONDS)
         .callTimeout(45, TimeUnit.SECONDS)
-        .connectionPool(ConnectionPool(10, 5, TimeUnit.MINUTES))
+        .connectionPool(ConnectionPool(5, 30, TimeUnit.SECONDS))
 
     /** Catalog / API calls: short, bounded end to end, with HTTP disk caching when initialized. */
     var api: OkHttpClient = baseBuilder.build()

@@ -130,10 +130,14 @@ class BestiaPopApplication : Application(), ImageLoaderFactory {
     }
 
     override fun newImageLoader(): ImageLoader {
+        val activityManager = getSystemService(android.app.ActivityManager::class.java)
+        val isLowRam = activityManager?.isLowRamDevice == true
+        val maxMemoryPercent = if (isLowRam) 0.10 else 0.15
+
         return ImageLoader.Builder(this)
             .memoryCache {
                 MemoryCache.Builder(this)
-                    .maxSizePercent(0.25)
+                    .maxSizePercent(maxMemoryPercent)
                     .build()
             }
             .diskCache {

@@ -456,6 +456,10 @@ class PlaybackRuntime internal constructor(
         )
         ensureControllerConnection()
         maybeSeedIdlePlayer()
+        val curSong = _currentSong.value
+        if (curSong != null && curSong.lyrics.isNullOrEmpty()) {
+            hydrateCurrentSongLyrics(curSong.id)
+        }
         scope.launch { samplePositionAndOwnership() }
         updateTickerLifecycle()
     }
@@ -761,6 +765,24 @@ class PlaybackRuntime internal constructor(
         owned?.release()
     }
 
+    private fun postOrRunReleaseControllerIfIdle() {
+        val posted = try {
+            val looper = android.os.Looper.myLooper()
+            if (looper != null) {
+                android.os.Handler(looper).post {
+                    releaseControllerIfIdle()
+                }
+            } else {
+                false
+            }
+        } catch (_: Throwable) {
+            false
+        }
+        if (!posted) {
+            releaseControllerIfIdle()
+        }
+    }
+
     private fun updateTickerLifecycle() {
         val shouldTick = dependencies.startTicker &&
                 controller?.isPlaying == true &&
@@ -802,7 +824,7 @@ class PlaybackRuntime internal constructor(
                 persistPlaybackSession(force = true)
             }
             updateTickerLifecycle()
-            if (!isPlaying) releaseControllerIfIdle()
+            if (!isPlaying) postOrRunReleaseControllerIfIdle()
         }
 
         override fun onPlayWhenReadyChanged(playWhenReady: Boolean) {
@@ -1021,7 +1043,7 @@ class PlaybackRuntime internal constructor(
         }
         _currentSong.value = displayed
         dependencies.listenTracker.onTrackChanged(local, hint)
-        if (displayed != null && displayed.lyrics.isNullOrEmpty()) {
+        if (displayed != null && displayed.lyrics.isNullOrEmpty() && uiAttachments.get() > 0) {
             hydrateCurrentSongLyrics(displayed.id)
         }
         if (persistLastPlayed) {

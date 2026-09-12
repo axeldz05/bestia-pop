@@ -20,6 +20,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -106,16 +107,38 @@ fun PlaybackScrubber(
                 .padding(horizontal = 4.dp),
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Text(
-                text = formatDuration(displayPosition),
-                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+            ElapsedDurationText(
+                positionSeconds = displayPosition / 1000L,
                 color = MaterialTheme.colorScheme.primary
             )
-            Text(
-                text = formatDuration(durationMs),
-                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+            TotalDurationText(
+                durationMs = durationMs,
                 color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
             )
         }
     }
+}
+
+@Composable
+private fun ElapsedDurationText(
+    positionSeconds: Long,
+    color: Color
+) {
+    Text(
+        text = formatDuration(positionSeconds * 1000L),
+        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+        color = color
+    )
+}
+
+@Composable
+private fun TotalDurationText(
+    durationMs: Long,
+    color: Color
+) {
+    Text(
+        text = formatDuration(durationMs),
+        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+        color = color
+    )
 }

@@ -1,75 +1,50 @@
 package com.bestiapop.android.service
 
-import android.content.ComponentName
 import android.content.Context
-import android.os.Bundle
-import android.os.SystemClock
 import androidx.annotation.OptIn
-import androidx.core.content.ContextCompat
-import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.session.MediaController
-import androidx.media3.session.SessionCommand
-import androidx.media3.session.SessionToken
 import com.bestiapop.android.data.db.PendingListenDao
 import com.bestiapop.android.data.listenbrainz.ListenSyncCoordinator
 import com.bestiapop.android.data.listenbrainz.ListenTracker
 import com.bestiapop.android.data.listenbrainz.SaveWhileListeningEvent
-import com.bestiapop.android.data.listenbrainz.SaveWhileListeningPolicy
 import com.bestiapop.android.data.model.ActiveDownload
 import com.bestiapop.android.data.model.DiscoverPlaybackOrigin
 import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.data.model.RepeatMode
-import com.bestiapop.android.data.model.ResolvedStream
 import com.bestiapop.android.data.model.Song
+import com.bestiapop.android.data.model.ensureFreshQueueEntryIds
 import com.bestiapop.android.data.model.indexOfQueueEntry
-import com.bestiapop.android.data.model.indexOfRemoteSlot
 import com.bestiapop.android.data.model.toPlayable
 import com.bestiapop.android.data.model.withFreshQueueEntryIds
-import com.bestiapop.android.data.model.ensureFreshQueueEntryIds
 import com.bestiapop.android.data.network.ConnectivityObserver
 import com.bestiapop.android.data.playback.PlaybackChangeHint
 import com.bestiapop.android.data.playback.PlaybackFallbackPlanner
-import com.bestiapop.android.data.playback.PlaybackFallbackStep
 import com.bestiapop.android.data.playback.PlaybackQueueOrder
 import com.bestiapop.android.data.playback.PlaybackQueueSlots
 import com.bestiapop.android.data.playback.PlaybackSelectionIntentGate
 import com.bestiapop.android.data.preferences.HydratedQueue
-import com.bestiapop.android.data.preferences.LastPlayedSnapshot
 import com.bestiapop.android.data.preferences.ListenBrainzPreferencesRepository
 import com.bestiapop.android.data.preferences.ListenBrainzSettings
-import com.bestiapop.android.data.preferences.PlaybackHydration
 import com.bestiapop.android.data.preferences.PlaybackModeClear
 import com.bestiapop.android.data.preferences.PlaybackModeRestore
 import com.bestiapop.android.data.preferences.PlaybackPreferencesRepository
-import com.bestiapop.android.data.util.compareSongsWithinAlbum
 import com.bestiapop.android.data.preferences.PlaybackSessionStore
 import com.bestiapop.android.data.preferences.PlaybackSettings
-import com.bestiapop.android.data.preferences.PersistedQueueItem
-import com.bestiapop.android.data.preferences.QueueSnapshot
-import com.bestiapop.android.data.preferences.QueueSnapshotCodec
 import com.bestiapop.android.data.repository.MusicRepository
-import com.bestiapop.android.data.stream.StreamResolver
-import com.bestiapop.android.data.util.MusicFileStore
 import com.bestiapop.android.data.util.PlaybackDiagnostics
 import com.bestiapop.android.domain.radio.RadioEngine
 import com.bestiapop.android.domain.radio.RadioMode
 import com.bestiapop.android.domain.radio.RadioSuggestResult
-import com.bestiapop.android.domain.util.TrackMatchKeys
-import com.bestiapop.android.domain.util.albumNamesMatch
-import com.google.common.util.concurrent.ListenableFuture
-import com.google.common.util.concurrent.MoreExecutors
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
-import kotlinx.coroutines.CoroutineDispatcher
+import kotlin.coroutines.ContinuationInterceptor
+import kotlin.coroutines.EmptyCoroutineContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -77,18 +52,12 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import kotlin.coroutines.ContinuationInterceptor
-import kotlin.coroutines.EmptyCoroutineContext
 
 private const val INITIAL_PLAYBACK_WINDOW_SIZE = 30
 private const val QUEUE_APPEND_CHUNK_SIZE = 100
-
 
 /**
  * Process-scoped playback owner retained by BestiaPopApplication.
@@ -121,8 +90,89 @@ class PlaybackRuntime internal constructor(
     private val _discoverPlaybackOrigin =
         MutableStateFlow<DiscoverPlaybackOrigin>(DiscoverPlaybackOrigin.None)
     val discoverPlaybackOrigin = _discoverPlaybackOrigin.asStateFlow()
-    private val _resolvingRemote = MutableStateFlow(false)
-    val resolvingRemote = _resolvingRemote.asStateFlow()
+
+    private val sessionHydrator: PlaybackSessionHydrator = PlaybackSessionHydrator(
+        scope = scope,
+        dependencies = dependencies,
+        getCurrentItem = { _currentItem.value },
+        getQueue = { _queue.value },
+        getPlaybackPositionMs = { _playbackPositionMs.value },
+        getRepeatMode = { _repeatMode.value },
+        isShuffle = { _isShuffle.value },
+        getPreShuffleOrder = { queueCoordinator.preShuffleOrder },
+        getCurrentQueueIndex = ::currentQueueIndex,
+        isLibraryReady = { libraryReady.value },
+        getLibrary = { library },
+        getUiAttachments = { uiAttachments.get() },
+        isPlayWhenReadyIntent = { playWhenReadyIntent },
+        hasController = { controller != null },
+        getControllerMediaItemCount = { controller?.mediaItemCount ?: 0 },
+        onClearDiscoverPlaybackOrigin = ::clearDiscoverPlaybackOrigin,
+        onSetCurrentItem = { item, persist -> setCurrentItem(item, persistLastPlayed = persist) },
+        onSetPlaybackPositionMs = { _playbackPositionMs.value = it },
+        onSetIsPlaying = { _isPlaying.value = it },
+        onApplyHydratedQueue = ::applyHydratedQueue,
+        onTogglePlayPause = ::togglePlayPause
+    )
+
+    private val queueCoordinator: PlaybackQueueCoordinator = PlaybackQueueCoordinator(
+        scope = scope,
+        dependencies = dependencies,
+        getQueue = { _queue.value },
+        onSetQueue = { _queue.value = it },
+        getCurrentItem = { _currentItem.value },
+        onSetCurrentItem = { item, persist, hint -> setCurrentItem(item, persistLastPlayed = persist, hint = hint) },
+        getRepeatMode = { _repeatMode.value },
+        onSetRepeatModeState = { _repeatMode.value = it },
+        isShuffle = { _isShuffle.value },
+        onSetShuffleState = { _isShuffle.value = it },
+        getPlaybackPositionMs = { _playbackPositionMs.value },
+        onSetPlaybackPositionMs = { _playbackPositionMs.value = it },
+        isPlayWhenReadyIntent = { playWhenReadyIntent },
+        onSetPlayWhenReadyIntent = { playWhenReadyIntent = it },
+        getController = { controller },
+        hasMaterializedTimeline = ::hasMaterializedTimeline,
+        setTimelineMaterialized = { timelineMaterialized = it },
+        getLastMediaItemIndex = { lastMediaItemIndex },
+        setLastMediaItemIndex = { lastMediaItemIndex = it },
+        currentQueueIndex = ::currentQueueIndex,
+        onInvalidatePlaybackWork = ::invalidatePlaybackWork,
+        onRestartAsyncPlaybackWork = ::restartAsyncPlaybackWork,
+        onPersistPlaybackSession = { sessionHydrator.persistPlaybackSession(it) },
+        onBumpQueueFocus = ::bumpQueueFocus,
+        onStopRadio = ::stopRadio,
+        onCancelPendingPlayIntent = ::cancelPendingPlayIntent,
+        onClearDiscoverPlaybackOrigin = ::clearDiscoverPlaybackOrigin,
+        onReleaseControllerIfIdle = ::releaseControllerIfIdle,
+        onEnsureControllerConnection = ::ensureControllerConnection,
+        applyQueueReorder = ::applyQueueReorder,
+        mutateMaterializedTimeline = ::mutateMaterializedTimeline,
+        syncChangedTimelineItems = ::syncChangedTimelineItems,
+        onSetPendingExternalPlaybackModes = { sessionHydrator.setPendingExternalPlaybackModes(it) }
+    )
+
+    private val streamRecoveryCoordinator: PlaybackStreamRecoveryCoordinator = PlaybackStreamRecoveryCoordinator(
+        scope = scope,
+        dependencies = dependencies,
+        getQueue = { _queue.value },
+        onUpdateQueue = { _queue.value = it },
+        getCurrentItem = { _currentItem.value },
+        onSetCurrentItem = { item, persist, hint -> setCurrentItem(item, persistLastPlayed = persist, hint = hint) },
+        getPlaybackPositionMs = { _playbackPositionMs.value },
+        onSetPlaybackPositionMs = { _playbackPositionMs.value = it },
+        onSetIsPlaying = { _isPlaying.value = it },
+        isPlayWhenReadyIntent = { playWhenReadyIntent },
+        onSetPlayWhenReadyIntent = { playWhenReadyIntent = it },
+        getController = { controller },
+        setLastMediaItemIndex = { lastMediaItemIndex = it },
+        onEmitEvent = { _events.tryEmit(it) },
+        onCancelPendingPlayIntent = ::cancelPendingPlayIntent,
+        ensurePreparedForPlayback = ::ensurePreparedForPlayback,
+        getPlaybackGeneration = { playbackGeneration }
+    )
+
+    val resolvingRemote: StateFlow<Boolean> = streamRecoveryCoordinator.resolvingRemote
+
     private val radioCoordinator = PlaybackRadioCoordinator(
         scope = scope,
         dependencies = dependencies,
@@ -157,7 +207,6 @@ class PlaybackRuntime internal constructor(
 
     private val started = AtomicBoolean(false)
     private val uiAttachments = AtomicInteger(0)
-    private val resolvingCount = AtomicInteger(0)
     private var controller: PlaybackControllerFacade? = null
     private var controllerConnector: PlaybackControllerConnector? = null
     private var controllerFuture: PlaybackControllerConnection? = null
@@ -167,7 +216,6 @@ class PlaybackRuntime internal constructor(
     private var library: List<Song> = emptyList()
     private val libraryReady = MutableStateFlow(false)
 
-    private var preShuffleOrder: List<String>? = null
     private var lastMediaItemIndex = -1
     private var lastKnownQueueEntryId: String? = null
     private var timelineMaterialized = false
@@ -179,32 +227,12 @@ class PlaybackRuntime internal constructor(
     private var pendingPlayIntentEpoch: Long? = null
     private var lastTouchedSongId = -1L
     private var lyricsHydrateJob: Job? = null
-    private var liveSessionHydrated = false
-    private var idleSeedDone = false
-    private var persistedSessionRestored = false
-    private var autoplaySeedApplied = false
-    private var pendingExternalPlaybackModes: Pair<Boolean, RepeatMode>? = null
-    private val sessionRestoreMutex = Mutex()
-    private var lastPersistedPositionAtMs = 0L
     private var lastSeekTimestamp = 0L
-    private var seekPersistenceJob: Job? = null
-    private val persistenceRequests = Channel<PlaybackPersistenceRequest>(Channel.UNLIMITED)
 
     private var playbackGeneration = 0L
-    private var prefetchJob: Job? = null
-    private var remoteRecoveryJob: Job? = null
-    private var remoteRecoveryQueueEntryId: String? = null
-    private var remoteRecoveryDeadlineMs = 0L
-    private var resolvingTransitionJob: Job? = null
-    private var resolvingTransitionQueueEntryId: String? = null
     private var queueSelectionJob: Job? = null
     private var queueAppendJob: Job? = null
     private val selectionGate = PlaybackSelectionIntentGate()
-    private val rejectedQueueEntries = linkedSetOf<String>()
-
-    private val saveWhileListeningAttempted = mutableSetOf<String>()
-    private val saveWhileListeningFailures = mutableMapOf<String, Long>()
-    private val pendingSaveSettingsJobs = mutableMapOf<String, Job>()
 
     private val warmingUp = AtomicBoolean(false)
 
@@ -265,22 +293,11 @@ class PlaybackRuntime internal constructor(
         return dependencies.playbackSettings.value
     }
 
-    internal suspend fun systemResumptionMetadataSnapshot(): PlaybackCollectionSnapshot? {
-        dependencies.playbackSettingsReady.first { it }
-        return sessionRestoreMutex.withLock {
-            currentRuntimeSnapshot() ?: loadPersistedCollectionProjection()?.snapshot
-        }
-    }
+    internal suspend fun systemResumptionMetadataSnapshot(): PlaybackCollectionSnapshot? =
+        sessionHydrator.systemResumptionMetadataSnapshot()
 
-    internal suspend fun restoreSystemPlaybackSnapshot(): PlaybackCollectionSnapshot? {
-        dependencies.playbackSettingsReady.first { it }
-        return sessionRestoreMutex.withLock {
-            ensurePersistedSessionRestoredLocked()?.also {
-                autoplaySeedApplied = true
-                pendingExternalPlaybackModes = _isShuffle.value to _repeatMode.value
-            }
-        }
-    }
+    internal suspend fun restoreSystemPlaybackSnapshot(): PlaybackCollectionSnapshot? =
+        sessionHydrator.restoreSystemPlaybackSnapshot()
 
     internal fun attachControllerForTest(controller: PlaybackControllerFacade) {
         attachController(controller)
@@ -313,17 +330,6 @@ class PlaybackRuntime internal constructor(
 
     private fun start() {
         if (!started.compareAndSet(false, true)) return
-        scope.launch {
-            for (request in persistenceRequests) {
-                withContext(Dispatchers.IO) {
-                    dependencies.persistence.saveSession(
-                        lastPlayed = request.lastPlayed,
-                        queue = request.queue,
-                        clearQueue = request.clearQueue
-                    )
-                }
-            }
-        }
         scope.launch(libraryUpdateContext()) {
             dependencies.libraryUpdates.collectLatest { songs ->
                 library = songs
@@ -454,9 +460,7 @@ class PlaybackRuntime internal constructor(
         playWhenReadyIntent = true
         ensureControllerConnection()
         scope.launch {
-            sessionRestoreMutex.withLock {
-                ensurePersistedSessionRestoredLocked()
-            }
+            sessionHydrator.ensurePersistedSessionRestored()
             if (_currentItem.value != null) {
                 requestPlaybackForCurrent()
             }
@@ -474,7 +478,7 @@ class PlaybackRuntime internal constructor(
         if (controller !== disconnected) return
         controller = null
         timelineMaterialized = false
-        liveSessionHydrated = false
+        sessionHydrator.liveSessionHydrated = false
         _isPlaying.value = false
         tickerJob?.cancel()
         tickerJob = null
@@ -505,7 +509,7 @@ class PlaybackRuntime internal constructor(
         val owned = controller
         controller = null
         timelineMaterialized = false
-        liveSessionHydrated = false
+        sessionHydrator.liveSessionHydrated = false
         owned?.release()
     }
 
@@ -540,7 +544,7 @@ class PlaybackRuntime internal constructor(
         val owned = controller
         controller = null
         timelineMaterialized = false
-        liveSessionHydrated = false
+        sessionHydrator.liveSessionHydrated = false
         owned?.release()
     }
 
@@ -620,9 +624,7 @@ class PlaybackRuntime internal constructor(
                 prefetchAround(index)
             } else {
                 cancelPendingPlayIntent()
-                prefetchJob?.cancel()
-                prefetchJob = null
-                cancelRemoteRecoveryJob()
+                streamRecoveryCoordinator.invalidatePlaybackWork(clearRejectedEntries = false)
             }
         }
 
@@ -685,8 +687,8 @@ class PlaybackRuntime internal constructor(
         val rebuilt = player.items()
         if (rebuilt.isEmpty()) return
         timelineMaterialized = true
-        liveSessionHydrated = true
-        idleSeedDone = true
+        sessionHydrator.liveSessionHydrated = true
+        sessionHydrator.idleSeedDone = true
         val index = player.currentMediaItemIndex.coerceIn(0, rebuilt.lastIndex)
         _queue.value = rebuilt
         lastMediaItemIndex = index
@@ -761,7 +763,7 @@ class PlaybackRuntime internal constructor(
 
         _queue.value = liveQueue
         timelineMaterialized = true
-        liveSessionHydrated = true
+        sessionHydrator.liveSessionHydrated = true
         lastMediaItemIndex = liveQueue.indexOfFirst { it.queueEntryId == targetQueueEntryId }
             .takeIf { it >= 0 } ?: index
         _playbackPositionMs.value = player.currentPosition.coerceAtLeast(0L)
@@ -889,58 +891,12 @@ class PlaybackRuntime internal constructor(
         return items.indexOfFirst { it.queueEntryId == queueEntryId }.coerceAtLeast(0)
     }
 
-    private fun persistPlaybackSession(force: Boolean) {
-        // The production scope is Main.immediate: all mutable playback state is frozen here before
-        // the serialized writer crosses to IO.
-        scope.launch { captureAndQueuePlaybackSession(force) }
-    }
-
-    private fun captureAndQueuePlaybackSession(force: Boolean) {
-        val now = dependencies.clockMs()
-        if (!force && now - lastPersistedPositionAtMs < POSITION_SAVE_INTERVAL_MS) return
-        lastPersistedPositionAtMs = now
-        val position = _playbackPositionMs.value
-        val local = (_currentItem.value as? PlayableItem.Local)?.song
-        val items = _queue.value
-        val index = currentQueueIndex()
-        val last = local?.let { PlaybackHydration.snapshotFromSong(it, position) }
-        val request = if (items.isEmpty()) {
-            PlaybackPersistenceRequest(last, queue = null, clearQueue = true)
-        } else {
-            PlaybackPersistenceRequest(
-                lastPlayed = last,
-                queue = queueSnapshotForPersist(items, index, position),
-                clearQueue = false
-            )
-        }
-        persistenceRequests.trySend(request)
+    private fun persistPlaybackSession(force: Boolean = true) {
+        sessionHydrator.persistPlaybackSession(force)
     }
 
     private fun scheduleSeekPersistence() {
-        seekPersistenceJob?.cancel()
-        seekPersistenceJob = scope.launch {
-            delay(SEEK_PERSIST_DEBOUNCE_MS)
-            captureAndQueuePlaybackSession(force = true)
-            seekPersistenceJob = null
-        }
-    }
-
-    private fun queueSnapshotForPersist(
-        items: List<PlayableItem>,
-        index: Int,
-        positionMs: Long
-    ): QueueSnapshot {
-        val projection = PlaybackQueueSlots.projectSnapshot(
-            queue = items,
-            currentIndex = index,
-            preShuffleOrder = preShuffleOrder.takeIf { _isShuffle.value }
-        )
-        return QueueSnapshotCodec.fromPlayable(
-            items = projection.items,
-            currentIndex = projection.currentIndex,
-            positionMs = positionMs,
-            shufflePlayOrder = projection.shufflePlayOrder
-        )
+        sessionHydrator.scheduleSeekPersistence()
     }
 
     private fun restorePlaybackModes() {
@@ -950,9 +906,6 @@ class PlaybackRuntime internal constructor(
         val hasLiveSession = (player?.mediaItemCount ?: 0) > 0
         val liveRepeat = repeatModeFromPlayer(player?.repeatMode ?: Player.REPEAT_MODE_OFF)
         val resolved = PlaybackModeRestore.resolve(settings, hasLiveSession, liveRepeat)
-        // Live sessions keep prefs as shuffle source of truth (physical queue shuffle + identity
-        // Media3 ShuffleOrder). Reading player.shuffleModeEnabled can falsely clear the flag and
-        // drop shufflePlayOrder on the next persist.
         _isShuffle.value = resolved.shuffle
         _repeatMode.value = resolved.repeat
         if (resolved.applyRepeatToPlayer) applyRepeatModeToController(resolved.repeat)
@@ -960,152 +913,15 @@ class PlaybackRuntime internal constructor(
     }
 
     private fun applyPendingExternalPlaybackModes() {
-        val (shuffle, repeat) = pendingExternalPlaybackModes ?: return
-        pendingExternalPlaybackModes = null
+        val (shuffle, repeat) = sessionHydrator.consumePendingExternalPlaybackModes() ?: return
         _isShuffle.value = shuffle
         _repeatMode.value = repeat
         applyRepeatModeToController(repeat)
         syncShuffleToPlayer()
     }
 
-    private fun maybeSeedIdlePlayer() {
-        if (!dependencies.playbackSettingsReady.value || controller == null) {
-            return
-        }
-        if (liveSessionHydrated) return
-        if ((controller?.mediaItemCount ?: 0) > 0) return
-        scope.launch {
-            val restored = sessionRestoreMutex.withLock {
-                ensurePersistedSessionRestoredLocked()
-            } ?: return@launch
-            val settings = dependencies.playbackSettings.value
-            if (persistedSessionRestored &&
-                settings.autoplayOnLaunch &&
-                uiAttachments.get() > 0 &&
-                !autoplaySeedApplied &&
-                !playWhenReadyIntent &&
-                restored.items.isNotEmpty()
-            ) {
-                autoplaySeedApplied = true
-                togglePlayPause()
-            }
-        }
-    }
-
-    private suspend fun songsForHydration(
-        queue: QueueSnapshot?,
-        last: LastPlayedSnapshot?
-    ): List<Song> {
-        if (library.isNotEmpty()) return library
-        val ids = LinkedHashSet<Long>()
-        last?.songId?.takeIf { it > 0L }?.let { ids.add(it) }
-        queue?.items?.forEach { item ->
-            if (item is PersistedQueueItem.Local && item.songId > 0L) {
-                ids.add(item.songId)
-            }
-        }
-        if (ids.isEmpty()) return emptyList()
-        return dependencies.loadSongsByIds(ids.toList())
-    }
-
-    private suspend fun loadPersistedCollectionProjection(): PersistedCollectionProjection? {
-        val last = dependencies.persistence.loadLastPlayed()
-        val persistedQueue = dependencies.persistence.loadQueue()
-        val hydrationSongs = songsForHydration(persistedQueue, last)
-        val hydrated = PlaybackHydration.hydrateQueue(persistedQueue, hydrationSongs)
-        if (hydrated != null && hydrated.items.isNotEmpty()) {
-            val restoreShuffle = PlaybackModeRestore
-                .resolve(
-                    dependencies.playbackSettings.value,
-                    hasLiveSession = false,
-                    liveRepeat = _repeatMode.value
-                )
-                .shuffle
-            val order = PlaybackQueueOrder.validPlayOrderOrNull(
-                hydrated.shufflePlayOrder,
-                hydrated.items.size
-            )
-            if (order != null && restoreShuffle) {
-                val shuffled = PlaybackQueueOrder.applyPlayOrder(hydrated.items, order)
-                val index = PlaybackQueueOrder.toDisplayIndex(
-                    order,
-                    hydrated.currentIndex,
-                    hydrated.items.size
-                ).coerceIn(shuffled.indices)
-                return PersistedCollectionProjection(
-                    snapshot = PlaybackCollectionSnapshot(shuffled, index, hydrated.positionMs),
-                    hydratedQueue = hydrated,
-                    restoreShuffle = true
-                )
-            }
-            return PersistedCollectionProjection(
-                snapshot = PlaybackCollectionSnapshot(
-                    hydrated.items,
-                    hydrated.currentIndex,
-                    hydrated.positionMs
-                ),
-                hydratedQueue = hydrated,
-                restoreShuffle = false
-            )
-        }
-        val seed = PlaybackHydration.resolveIdleSeed(
-            library.ifEmpty { hydrationSongs },
-            last
-        ) ?: return null
-        return PersistedCollectionProjection(
-            snapshot = PlaybackCollectionSnapshot(
-                items = listOf(seed.toPlayable()),
-                currentIndex = 0,
-                positionMs = PlaybackHydration.resumePositionMs(seed, last)
-            )
-        )
-    }
-
-    private suspend fun ensurePersistedSessionRestoredLocked(): PlaybackCollectionSnapshot? {
-        currentRuntimeSnapshot()?.let { return it }
-        if (idleSeedDone) return null
-        val projection = loadPersistedCollectionProjection()
-        if (projection == null) {
-            if (!libraryReady.value) return null
-            idleSeedDone = true
-            return null
-        }
-        idleSeedDone = true
-
-        if (projection.hydratedQueue != null) {
-            applyHydratedQueue(projection.hydratedQueue, projection.restoreShuffle)
-            persistedSessionRestored = true
-            return currentRuntimeSnapshot()
-        }
-
-        val item = projection.snapshot.currentItem
-        clearDiscoverPlaybackOrigin()
-        setCurrentItem(item, persistLastPlayed = false)
-        _playbackPositionMs.value = projection.snapshot.positionMs
-        _isPlaying.value = false
-        persistedSessionRestored = true
-        return projection.snapshot
-    }
-
-    private fun currentRuntimeSnapshot(): PlaybackCollectionSnapshot? {
-        val queue = _queue.value
-        if (queue.isNotEmpty()) {
-            val currentQueueEntryId = _currentItem.value?.queueEntryId
-            val index = queue.indexOfFirst { it.queueEntryId == currentQueueEntryId }
-                .takeIf { it >= 0 }
-                ?: lastMediaItemIndex.coerceIn(queue.indices)
-            return PlaybackCollectionSnapshot(
-                items = queue,
-                currentIndex = index,
-                positionMs = _playbackPositionMs.value
-            )
-        }
-        val current = _currentItem.value ?: return null
-        return PlaybackCollectionSnapshot(
-            items = listOf(current),
-            currentIndex = 0,
-            positionMs = _playbackPositionMs.value
-        )
+    fun maybeSeedIdlePlayer() {
+        sessionHydrator.maybeSeedIdlePlayer()
     }
 
     private fun applyHydratedQueue(hydrated: HydratedQueue, restoreShuffle: Boolean) {
@@ -1116,7 +932,7 @@ class PlaybackRuntime internal constructor(
             hydrated.items.size
         )
         if (order != null && restoreShuffle) {
-            preShuffleOrder = PlaybackQueueSlots.capturePreShuffleOrder(hydrated.items)
+            queueCoordinator.preShuffleOrder = PlaybackQueueSlots.capturePreShuffleOrder(hydrated.items)
             val shuffled = PlaybackQueueOrder.applyPlayOrder(hydrated.items, order)
             val index = PlaybackQueueOrder.toDisplayIndex(
                 order,
@@ -1128,7 +944,7 @@ class PlaybackRuntime internal constructor(
             _isShuffle.value = true
             setCurrentItem(shuffled[index], persistLastPlayed = false)
         } else {
-            preShuffleOrder = null
+            queueCoordinator.preShuffleOrder = null
             _queue.value = hydrated.items
             lastMediaItemIndex = hydrated.currentIndex
             setCurrentItem(hydrated.items[hydrated.currentIndex], persistLastPlayed = false)
@@ -1176,7 +992,7 @@ class PlaybackRuntime internal constructor(
         val staged = items.ensureFreshQueueEntryIds()
         val index = startIndex.coerceIn(staged.indices)
         stageQueueCore(staged, index)
-        preShuffleOrder = null
+        queueCoordinator.preShuffleOrder = null
         applyManualPlayModes(deferPlayerSync = true)
         val snapshot = publishStagedCollectionCore(staged, index, startPositionMs)
         timelineMaterialized = false
@@ -1230,7 +1046,7 @@ class PlaybackRuntime internal constructor(
         val (playItems, playIndex) = if (startShuffled) {
             permuteQueueToPlayOrder(items, index, backupSource = true)
         } else {
-            if (!fromRadio && (applyManualModes || !_isShuffle.value)) preShuffleOrder = null
+            if (!fromRadio && (applyManualModes || !_isShuffle.value)) queueCoordinator.preShuffleOrder = null
             items to index
         }
         stageQueueCore(playItems, playIndex)
@@ -1289,8 +1105,8 @@ class PlaybackRuntime internal constructor(
         startPositionMs: Long
     ): PlaybackCollectionSnapshot {
         setCurrentItem(items[index], persistLastPlayed = false)
-        liveSessionHydrated = true
-        idleSeedDone = true
+        sessionHydrator.liveSessionHydrated = true
+        sessionHydrator.idleSeedDone = true
         bumpQueueFocus()
         val position = startPositionMs.coerceAtLeast(0L)
         _playbackPositionMs.value = position
@@ -1303,12 +1119,7 @@ class PlaybackRuntime internal constructor(
         if (playWhenReadyIntent || pendingPlayIntentEpoch != null) {
             playWhenReadyIntent = false
             cancelPendingPlayIntent()
-            prefetchJob?.cancel()
-            prefetchJob = null
-            cancelRemoteRecoveryJob()
-            resolvingTransitionJob?.cancel()
-            resolvingTransitionJob = null
-            resolvingTransitionQueueEntryId = null
+            streamRecoveryCoordinator.invalidatePlaybackWork(clearRejectedEntries = false)
             player?.pause()
             return
         }
@@ -1412,179 +1223,38 @@ class PlaybackRuntime internal constructor(
     }
 
     fun toggleRepeatMode() {
-        setRepeatMode(
-            when (_repeatMode.value) {
-                RepeatMode.OFF -> RepeatMode.ALL
-                RepeatMode.ALL -> RepeatMode.ONE
-                RepeatMode.ONE -> RepeatMode.OFF
-            }
-        )
+        queueCoordinator.toggleRepeatMode()
     }
 
     fun toggleShuffle() {
-        invalidatePlaybackWork(clearRejectedEntries = false)
-        val enabling = !_isShuffle.value
-        val items = _queue.value
-        val position = if (hasMaterializedTimeline()) {
-            controller?.currentPosition?.coerceAtLeast(0L) ?: _playbackPositionMs.value
-        } else {
-            _playbackPositionMs.value
-        }
-        val wasPlaying = playWhenReadyIntent
-        if (enabling) {
-            setShuffleEnabled(true)
-            if (items.isNotEmpty()) {
-                val (shuffled, index) = permuteQueueToPlayOrder(
-                    items,
-                    currentQueueIndex(),
-                    backupSource = true
-                )
-                applyQueueReorder(shuffled, index, position, wasPlaying)
-            }
-        } else {
-            val restored = preShuffleQueueOrNull()
-            val currentSlot = _currentItem.value?.queueEntryId
-            setShuffleEnabled(false)
-            if (!restored.isNullOrEmpty()) {
-                val index = restored.indexOfFirst { it.queueEntryId == currentSlot }
-                    .takeIf { it >= 0 } ?: 0
-                applyQueueReorder(restored, index, position, wasPlaying)
-            }
-        }
-        bumpQueueFocus()
-        persistPlaybackSession(force = true)
-        restartAsyncPlaybackWork()
+        queueCoordinator.toggleShuffle()
     }
 
     fun addPlayableBatch(items: List<PlayableItem>) {
-        if (items.isEmpty()) return
-        invalidatePlaybackWork(clearRejectedEntries = false)
-        val additions = items.withFreshQueueEntryIds()
-        _queue.value = _queue.value + additions
-        mutateMaterializedTimeline { it.addMediaItems(additions) }
-        ensureControllerConnection()
-        persistPlaybackSession(force = true)
-        restartAsyncPlaybackWork()
+        queueCoordinator.addPlayableBatch(items)
     }
 
     fun playNextBatch(items: List<PlayableItem>) {
-        if (items.isEmpty()) return
-        invalidatePlaybackWork(clearRejectedEntries = false)
-        val additions = items.withFreshQueueEntryIds()
-        val live = _queue.value.toMutableList()
-        val currentIndex = currentQueueIndex().coerceAtLeast(0)
-        val insertAt = (currentIndex + 1).coerceAtMost(live.size)
-        live.addAll(insertAt, additions)
-        _queue.value = live
-        mutateMaterializedTimeline { it.addMediaItems(insertAt, additions) }
-        ensureControllerConnection()
-        persistPlaybackSession(force = true)
-        restartAsyncPlaybackWork()
+        queueCoordinator.playNextBatch(items)
     }
 
     fun updateAlbumArtworkInQueue(albumKey: String, artworkUri: String?) {
-        val current = _currentItem.value
-        if (current is PlayableItem.Local &&
-            (current.song.album.equals(albumKey, ignoreCase = true) ||
-                com.bestiapop.android.domain.util.albumIdentityKey(current.song.album) == albumKey)
-        ) {
-            _currentItem.value = current.copy(resolvedArtworkUri = artworkUri)
-        }
-        val q = _queue.value
-        var changed = false
-        val newQ = q.map { item ->
-            if (item is PlayableItem.Local &&
-                (item.song.album.equals(albumKey, ignoreCase = true) ||
-                    com.bestiapop.android.domain.util.albumIdentityKey(item.song.album) == albumKey)
-            ) {
-                changed = true
-                item.copy(resolvedArtworkUri = artworkUri)
-            } else {
-                item
-            }
-        }
-        if (changed) {
-            _queue.value = newQ
-            syncChangedTimelineItems(q, newQ)
-        }
+        queueCoordinator.updateAlbumArtworkInQueue(albumKey, artworkUri)
     }
 
-    fun removeFromQueue(queueEntryId: String): Boolean {
-        val index = _queue.value.indexOfFirst { it.queueEntryId == queueEntryId }
-        if (index !in _queue.value.indices) return false
-        removeFromQueue(index)
-        return true
-    }
+    fun removeFromQueue(queueEntryId: String): Boolean =
+        queueCoordinator.removeFromQueue(queueEntryId)
 
     fun removeFromQueue(index: Int) {
-        val old = _queue.value
-        if (index !in old.indices) return
-        invalidatePlaybackWork(clearRejectedEntries = false)
-        val currentSlot = _currentItem.value?.queueEntryId
-        val currentIndex = currentQueueIndex().coerceIn(old.indices)
-        val live = old.toMutableList().apply { removeAt(index) }
-        _queue.value = live
-        if (live.isEmpty()) {
-            stopRadio()
-            playWhenReadyIntent = false
-            cancelPendingPlayIntent()
-            controller?.pause()
-            mutateMaterializedTimeline { it.removeMediaItem(index) }
-            lastMediaItemIndex = -1
-            _playbackPositionMs.value = 0L
-            clearDiscoverPlaybackOrigin()
-            setCurrentItem(null, persistLastPlayed = false)
-            timelineMaterialized = false
-        } else {
-            mutateMaterializedTimeline { it.removeMediaItem(index) }
-            val nextIndex = when {
-                index < currentIndex -> currentIndex - 1
-                index == currentIndex -> index.coerceAtMost(live.lastIndex)
-                else -> currentIndex
-            }.coerceIn(live.indices)
-            lastMediaItemIndex = nextIndex
-            if (currentSlot == old[index].queueEntryId) {
-                _playbackPositionMs.value = 0L
-                setCurrentItem(live[nextIndex], persistLastPlayed = false)
-            }
-        }
-        persistPlaybackSession(force = true)
-        if (live.isNotEmpty()) {
-            restartAsyncPlaybackWork()
-        }
-        releaseControllerIfIdle()
+        queueCoordinator.removeFromQueue(index)
     }
 
     fun clearQueue() {
-        invalidatePlaybackWork(clearRejectedEntries = false)
-        stopRadio()
-        playWhenReadyIntent = false
-        cancelPendingPlayIntent()
-        controller?.pause()
-        _queue.value = emptyList()
-        mutateMaterializedTimeline { it.clearMediaItems() }
-        lastMediaItemIndex = -1
-        _playbackPositionMs.value = 0L
-        clearDiscoverPlaybackOrigin()
-        setCurrentItem(null, persistLastPlayed = false)
-        timelineMaterialized = false
-        persistPlaybackSession(force = true)
-        releaseControllerIfIdle()
+        queueCoordinator.clearQueue()
     }
 
     fun moveQueueItem(fromIndex: Int, toIndex: Int) {
-        val live = _queue.value.toMutableList()
-        if (fromIndex !in live.indices || toIndex !in live.indices || fromIndex == toIndex) return
-        invalidatePlaybackWork(clearRejectedEntries = false)
-        val currentSlot = _currentItem.value?.queueEntryId
-        live.add(toIndex, live.removeAt(fromIndex))
-        _queue.value = live
-        mutateMaterializedTimeline { it.moveMediaItem(fromIndex, toIndex) }
-        lastMediaItemIndex = live.indexOfFirst { it.queueEntryId == currentSlot }
-            .takeIf { it >= 0 }
-            ?: lastMediaItemIndex.coerceIn(live.indices)
-        persistPlaybackSession(force = true)
-        restartAsyncPlaybackWork()
+        queueCoordinator.moveQueueItem(fromIndex, toIndex)
     }
 
     fun skipToQueueIndex(index: Int) {
@@ -1604,7 +1274,7 @@ class PlaybackRuntime internal constructor(
         val start = snapshot.indexOfQueueEntry(selected)
         if (start < 0) return
         queueSelectionJob = scope.launch {
-            beginResolving()
+            streamRecoveryCoordinator.beginResolving()
             try {
                 val online = dependencies.isOnline()
                 for (step in PlaybackFallbackPlanner.circularPlan(snapshot, start)) {
@@ -1669,7 +1339,7 @@ class PlaybackRuntime internal constructor(
                 }
             } finally {
                 if (pendingPlayIntentEpoch == playIntent) pendingPlayIntentEpoch = null
-                endResolving()
+                streamRecoveryCoordinator.endResolving()
             }
         }
     }
@@ -1853,374 +1523,32 @@ class PlaybackRuntime internal constructor(
     }
 
     private fun ensureRemoteReadyAt(index: Int, startPlaying: Boolean) {
-        if (!startPlaying || !playWhenReadyIntent) return
-        val item = _queue.value.getOrNull(index) as? PlayableItem.Remote ?: return
-        if (!dependencies.streamAccess.needsResolve(item)) return
-        resolvePlayableWithFallback(
-            startIndex = index,
-            triggerQueueEntryId = item.queueEntryId,
-            firstFailureMessage = "No se pudo resolver el audio online"
-        )
-    }
-
-    private fun resolvePlayableWithFallback(
-        startIndex: Int,
-        triggerQueueEntryId: String,
-        firstFailureMessage: String?
-    ) {
-        val expectedController = controller ?: return
-        if (!playWhenReadyIntent) return
-        if (resolvingTransitionJob?.isActive == true &&
-            resolvingTransitionQueueEntryId == triggerQueueEntryId
-        ) {
-            return
-        }
-        resolvingTransitionJob?.cancel()
-        val generation = playbackGeneration
-        val snapshot = _queue.value
-        if (snapshot.isEmpty()) return
-        resolvingTransitionQueueEntryId = triggerQueueEntryId
-        resolvingTransitionJob = scope.launch {
-            val ownJob = coroutineContext[Job]
-            beginResolving()
-            var failureAnnounced = false
-            try {
-                for (step in PlaybackFallbackPlanner.circularPlan(snapshot, startIndex)) {
-                    if (!isFallbackContextCurrent(
-                            generation,
-                            triggerQueueEntryId,
-                            expectedController
-                        )
-                    ) {
-                        return@launch
-                    }
-                    val queueEntryId = step.item.queueEntryId
-                    if (!playWhenReadyIntent && queueEntryId != triggerQueueEntryId) {
-                        return@launch
-                    }
-                    if (queueEntryId in rejectedQueueEntries) continue
-                    val liveIndex = _queue.value.indexOfQueueEntry(step.item)
-                    if (liveIndex < 0) continue
-                    when (val live = _queue.value.getOrNull(liveIndex) ?: continue) {
-                        is PlayableItem.Local -> {
-                            activateFallbackCandidate(
-                                queueEntryId = live.queueEntryId,
-                                expectedController = expectedController,
-                                generation = generation,
-                                triggerQueueEntryId = triggerQueueEntryId
-                            )
-                            return@launch
-                        }
-
-                        is PlayableItem.Remote -> {
-                            val ready = if (dependencies.streamAccess.needsResolve(live)) {
-                                dependencies.streamAccess.resolve(live)
-                            } else {
-                                live
-                            }
-                            if (!isFallbackContextCurrent(
-                                    generation,
-                                    triggerQueueEntryId,
-                                    expectedController
-                                )
-                            ) {
-                                return@launch
-                            }
-                            if (ready == null) {
-                                rejectedQueueEntries += live.queueEntryId
-                                if (!failureAnnounced) {
-                                    firstFailureMessage?.let(_events::tryEmit)
-                                    failureAnnounced = true
-                                }
-                                continue
-                            }
-                            val slot = if (ready === live) {
-                                _queue.value.indexOfQueueEntry(live)
-                            } else {
-                                applyResolvedRemote(live, ready)
-                            }
-                            if (slot < 0) continue
-                            activateFallbackCandidate(
-                                queueEntryId = ready.queueEntryId,
-                                expectedController = expectedController,
-                                generation = generation,
-                                triggerQueueEntryId = triggerQueueEntryId
-                            )
-                            return@launch
-                        }
-                    }
-                }
-                if (isFallbackContextCurrent(
-                        generation,
-                        triggerQueueEntryId,
-                        expectedController
-                    )
-                ) {
-                    pauseAfterFallbackExhausted(
-                        expectedController,
-                        firstFailureMessage.takeUnless { failureAnnounced }
-                    )
-                }
-            } finally {
-                endResolving()
-                if (resolvingTransitionJob === ownJob) {
-                    resolvingTransitionQueueEntryId = null
-                    resolvingTransitionJob = null
-                }
-            }
-        }
-    }
-
-    private fun activateFallbackCandidate(
-        queueEntryId: String,
-        expectedController: PlaybackControllerFacade,
-        generation: Long,
-        triggerQueueEntryId: String
-    ) {
-        if (!isFallbackContextCurrent(
-                generation,
-                triggerQueueEntryId,
-                expectedController
-            )
-        ) {
-            return
-        }
-        val slot = _queue.value.indexOfFirst { it.queueEntryId == queueEntryId }
-        if (slot < 0) return
-        if (slot != expectedController.currentMediaItemIndex) {
-            if (!playWhenReadyIntent) return
-            lastMediaItemIndex = slot
-            _playbackPositionMs.value = 0L
-            expectedController.seekTo(slot, 0L)
-        }
-        ensurePreparedForPlayback()
-        if (playWhenReadyIntent && controller === expectedController) {
-            expectedController.play()
-            prefetchAround(slot)
-        }
-    }
-
-    private fun isFallbackContextCurrent(
-        generation: Long,
-        triggerQueueEntryId: String,
-        expectedController: PlaybackControllerFacade
-    ): Boolean =
-        generation == playbackGeneration &&
-                controller === expectedController &&
-                _currentItem.value?.queueEntryId == triggerQueueEntryId
-
-    private fun pauseAfterFallbackExhausted(
-        expectedController: PlaybackControllerFacade,
-        firstFailureMessage: String?
-    ) {
-        if (controller !== expectedController || !playWhenReadyIntent) return
-        firstFailureMessage?.let(_events::tryEmit)
-        playWhenReadyIntent = false
-        cancelPendingPlayIntent()
-        expectedController.pause()
-        _events.tryEmit("No se encontró una canción reproducible en la cola")
+        streamRecoveryCoordinator.ensureRemoteReadyAt(index, startPlaying)
     }
 
     private fun prefetchAround(index: Int) {
-        if (!playWhenReadyIntent) {
-            prefetchJob?.cancel()
-            prefetchJob = null
-            return
-        }
-        prefetchJob?.cancel()
-        val generation = playbackGeneration
-        val expectedController = controller ?: return
-        prefetchJob = scope.launch {
-            val snapshot = _queue.value
-            val targets = listOfNotNull(
-                snapshot.getOrNull(index + 1),
-                snapshot.getOrNull(index + 2)
-            ).filterIsInstance<PlayableItem.Remote>()
-                .filter(dependencies.streamAccess::needsResolve)
-                .filterNot { it.queueEntryId in rejectedQueueEntries }
-            for (remote in targets) {
-                if (!isPlaybackGenerationCurrent(generation) ||
-                    !playWhenReadyIntent ||
-                    controller !== expectedController
-                ) {
-                    return@launch
-                }
-                val resolved = dependencies.streamAccess.resolve(remote) ?: continue
-                if (!isPlaybackGenerationCurrent(generation) ||
-                    !playWhenReadyIntent ||
-                    controller !== expectedController
-                ) {
-                    return@launch
-                }
-                applyResolvedRemote(remote, resolved)
-            }
-        }
+        streamRecoveryCoordinator.prefetchAround(index)
     }
 
     private fun applyResolvedRemote(
         original: PlayableItem.Remote,
         resolved: PlayableItem.Remote
-    ): Int {
-        val index = _queue.value.indexOfRemoteSlot(original)
-        if (index < 0) return -1
-        val live = _queue.value.toMutableList()
-        live[index] = resolved
-        _queue.value = live
-        val player = controller
-        val isCurrentPlaying = player != null &&
-            index == player.currentMediaItemIndex &&
-            (player.isPlaying || player.playbackState == Player.STATE_BUFFERING || player.playbackState == Player.STATE_READY)
-        val urlUnchanged = original.resolved?.audioUrl?.isNotBlank() == true &&
-            original.resolved?.audioUrl == resolved.resolved?.audioUrl
-        if (index < (player?.mediaItemCount ?: 0) && (!isCurrentPlaying || !urlUnchanged)) {
-            player?.replaceMediaItem(index, resolved)
-        }
-        if (_currentItem.value?.queueEntryId == resolved.queueEntryId ||
-            index == player?.currentMediaItemIndex
-        ) {
-            setCurrentItem(
-                resolved,
-                persistLastPlayed = false,
-                hint = PlaybackChangeHint.METADATA_UPDATE
-            )
-        }
-        return index
-    }
+    ): Int = streamRecoveryCoordinator.applyResolvedRemote(original, resolved)
 
     private fun handlePlayerError() {
-        val player = controller ?: return
-        val index = player.currentMediaItemIndex
-        val queued = _queue.value.getOrNull(index)
-        PlaybackDiagnostics.warn(
-            PlaybackDiagnostics.TAG_RUNTIME,
-            "PlaybackRuntime.handlePlayerError: index=$index, item='${queued?.title}', isRemote=${queued is PlayableItem.Remote}, playWhenReadyIntent=$playWhenReadyIntent"
-        )
-        if (!playWhenReadyIntent) {
-            _isPlaying.value = false
-            return
-        }
-        val remote = queued as? PlayableItem.Remote
-        if (remote == null) {
-            recoverAfterUnplayable(
-                (queued as? PlayableItem.Local)?.title
-                    ?.takeIf { it.isNotBlank() }
-                    ?.let { "No se pudo reproducir «$it»" }
-                    ?: "No se pudo reproducir"
-            )
-            return
-        }
-        if (remote.resolved == null || remote.resolved.audioUrl.isBlank()) {
-            ensureRemoteReadyAt(index, startPlaying = true)
-            return
-        }
-        val graceMs = dependencies.playbackSettings.value.streamSkipGraceSeconds
-            .coerceAtLeast(0)
-            .times(1000L)
-        if (graceMs <= 0L) {
-            recoverAfterUnplayable(unplayableRemoteMessage(remote))
-            return
-        }
-        if (remoteRecoveryQueueEntryId != remote.queueEntryId) {
-            remoteRecoveryQueueEntryId = remote.queueEntryId
-            remoteRecoveryDeadlineMs = dependencies.clockMs() + graceMs
-        }
-        if (dependencies.clockMs() >= remoteRecoveryDeadlineMs) {
-            cancelRemoteRecoveryJob()
-            recoverAfterUnplayable(unplayableRemoteMessage(remote))
-            return
-        }
-        if (remoteRecoveryJob?.isActive == true) return
-        val generation = playbackGeneration
-        val queueEntryId = remote.queueEntryId
-        val expectedController = player
-        val deadlineMs = remoteRecoveryDeadlineMs
-        remoteRecoveryJob = scope.launch {
-            val ownJob = coroutineContext[Job]
-            beginResolving()
-            try {
-                var attempt = 0
-                while (dependencies.clockMs() < deadlineMs) {
-                    if (!playWhenReadyIntent ||
-                        !isFallbackContextCurrent(
-                            generation,
-                            queueEntryId,
-                            expectedController
-                        )
-                    ) {
-                        return@launch
-                    }
-                    dependencies.streamAccess.invalidate(remote)
-                    val refreshed = dependencies.streamAccess.resolve(remote.copy(resolved = null))
-                    if (!playWhenReadyIntent ||
-                        !isFallbackContextCurrent(
-                            generation,
-                            queueEntryId,
-                            expectedController
-                        )
-                    ) {
-                        return@launch
-                    }
-                    if (refreshed != null && applyResolvedRemote(remote, refreshed) >= 0) {
-                        val resumePos = _playbackPositionMs.value.coerceAtLeast(0L)
-                        if (resumePos > 0L) {
-                            expectedController.seekTo(index, resumePos)
-                        }
-                        expectedController.prepare()
-                        if (playWhenReadyIntent) expectedController.play()
-                        return@launch
-                    }
-                    attempt++
-                    delay(minOf(REMOTE_RECOVERY_RETRY_MS * (1L shl (attempt - 1).coerceAtMost(3)), 3_000L))
-                }
-                if (playWhenReadyIntent &&
-                    isFallbackContextCurrent(
-                        generation,
-                        queueEntryId,
-                        expectedController
-                    )
-                ) {
-                    recoverAfterUnplayable(unplayableRemoteMessage(remote))
-                }
-            } finally {
-                endResolving()
-                if (remoteRecoveryJob === ownJob) {
-                    remoteRecoveryJob = null
-                }
-            }
-        }
-    }
-
-    private fun recoverAfterUnplayable(message: String?) {
-        val player = controller ?: return
-        if (!playWhenReadyIntent) return
-        message?.let(_events::tryEmit)
-        val items = _queue.value
-        if (items.isEmpty()) return
-        val index = player.currentMediaItemIndex.coerceIn(items.indices)
-        val failed = items[index]
-        rejectedQueueEntries += failed.queueEntryId
-        val nextIndex = (index + 1) % items.size
-        resolvePlayableWithFallback(
-            startIndex = nextIndex,
-            triggerQueueEntryId = failed.queueEntryId,
-            firstFailureMessage = null
-        )
+        streamRecoveryCoordinator.handlePlayerError()
     }
 
     private fun cancelRemoteRecoveryJob() {
-        remoteRecoveryJob?.cancel()
-        remoteRecoveryJob = null
+        streamRecoveryCoordinator.cancelRemoteRecoveryJob()
     }
 
     private fun clearRemoteRecovery() {
-        cancelRemoteRecoveryJob()
-        remoteRecoveryQueueEntryId = null
-        remoteRecoveryDeadlineMs = 0L
+        streamRecoveryCoordinator.clearRemoteRecovery()
     }
 
     private fun clearRemoteRecoveryAfterProgress() {
-        val currentQueueEntryId = _currentItem.value?.queueEntryId ?: return
-        if (remoteRecoveryQueueEntryId == currentQueueEntryId) clearRemoteRecovery()
+        streamRecoveryCoordinator.clearRemoteRecoveryAfterProgress()
     }
 
     fun isSongActiveInPlayback(songId: Long): Boolean {
@@ -2267,7 +1595,7 @@ class PlaybackRuntime internal constructor(
         val index = currentQueueIndex().coerceIn(queue.indices)
         val current = queue.getOrNull(index) ?: return
         if (current is PlayableItem.Remote &&
-            remoteRecoveryQueueEntryId == current.queueEntryId
+            streamRecoveryCoordinator.remoteRecoveryQueueEntryId == current.queueEntryId
         ) {
             handlePlayerError()
         } else {
@@ -2283,7 +1611,7 @@ class PlaybackRuntime internal constructor(
             _playbackPositionMs.value = player.currentPosition.coerceAtLeast(0L)
             if (_playbackPositionMs.value >= FALLBACK_SUCCESS_POSITION_MS) {
                 clearRemoteRecoveryAfterProgress()
-                rejectedQueueEntries.clear()
+                streamRecoveryCoordinator.clearRejectedQueueEntries()
             }
             val duration = player.duration
             val current = _currentItem.value
@@ -2335,65 +1663,7 @@ class PlaybackRuntime internal constructor(
         positionMs: Long,
         durationMs: Long = remote.durationMs
     ) {
-        if (!dependencies.listenSettingsReady.value) {
-            val queueEntryId = remote.queueEntryId
-            pendingSaveSettingsJobs.remove(queueEntryId)?.cancel()
-            pendingSaveSettingsJobs[queueEntryId] = scope.launch {
-                val ownJob = coroutineContext[Job]
-                try {
-                    dependencies.listenSettingsReady.first { it }
-                    maybeSaveWhileListening(remote, event, positionMs, durationMs)
-                } finally {
-                    if (pendingSaveSettingsJobs[queueEntryId] === ownJob) {
-                        pendingSaveSettingsJobs.remove(queueEntryId)
-                    }
-                }
-            }
-            return
-        }
-        val settings = dependencies.listenSettings.value
-        if (!settings.saveWhileListening) return
-        if (!SaveWhileListeningPolicy.shouldSave(
-                positionMs = positionMs,
-                durationMs = durationMs,
-                thresholdPercent = settings.saveWhileListeningPercent,
-                event = event
-            )
-        ) {
-            return
-        }
-        val key = TrackMatchKeys.downloadIdFor(remote.artist, remote.title)
-        if (key.isEmpty() || key in saveWhileListeningAttempted) return
-        val failedAt = saveWhileListeningFailures[key]
-        if (failedAt != null &&
-            dependencies.clockMs() - failedAt < SAVE_RETRY_COOLDOWN_MS
-        ) {
-            return
-        }
-        saveWhileListeningAttempted += key
-        scope.launch {
-            when (val result = dependencies.saveDownloads.save(remote)) {
-                is SaveWhileListeningDownloadResult.Saved -> {
-                    saveWhileListeningFailures.remove(key)
-                    _events.tryEmit("«${result.song.title}» guardada en la biblioteca")
-                }
-
-                is SaveWhileListeningDownloadResult.InFlight -> {
-                    // Neutral: another owner holds the claim. Clear attempted so autosave can retry
-                    // if that owner fails, is dismissed, or is cancelled.
-                    saveWhileListeningAttempted.remove(key)
-                }
-
-                is SaveWhileListeningDownloadResult.Failed -> {
-                    saveWhileListeningFailures[key] = dependencies.clockMs()
-                    saveWhileListeningAttempted.remove(key)
-                    _events.tryEmit(
-                        "No se pudo guardar «${remote.title}»: " +
-                                (result.error.localizedMessage ?: "error")
-                    )
-                }
-            }
-        }
+        streamRecoveryCoordinator.maybeSaveWhileListening(remote, event, positionMs, durationMs)
     }
 
     fun setRadioPreferredMode(mode: RadioMode) {
@@ -2447,13 +1717,11 @@ class PlaybackRuntime internal constructor(
                 player.playbackState != Player.STATE_IDLE
     }
 
-
     private fun clearDiscoverPlaybackOrigin() {
         if (_discoverPlaybackOrigin.value != DiscoverPlaybackOrigin.None) {
             _discoverPlaybackOrigin.value = DiscoverPlaybackOrigin.None
         }
     }
-
 
     private fun reloadPlayerTimeline(
         items: List<PlayableItem>,
@@ -2513,7 +1781,7 @@ class PlaybackRuntime internal constructor(
                     val tail = items.subList(windowEnd, items.size)
                     for (chunk in tail.chunked(QUEUE_APPEND_CHUNK_SIZE)) {
                         if (!isActive || !isPlaybackGenerationCurrent(generation)) break
-                        kotlinx.coroutines.delay(40L)
+                        delay(40L)
                         withContext(Dispatchers.Main.immediate) {
                             if (hasMaterializedTimeline() && isPlaybackGenerationCurrent(generation)) {
                                 mutateMaterializedTimeline(syncShuffle = false) { it.addMediaItems(chunk) }
@@ -2527,7 +1795,7 @@ class PlaybackRuntime internal constructor(
                     var insertIndex = 0
                     for (chunk in head.chunked(QUEUE_APPEND_CHUNK_SIZE)) {
                         if (!isActive || !isPlaybackGenerationCurrent(generation)) break
-                        kotlinx.coroutines.delay(40L)
+                        delay(40L)
                         withContext(Dispatchers.Main.immediate) {
                             if (hasMaterializedTimeline() && isPlaybackGenerationCurrent(generation)) {
                                 mutateMaterializedTimeline(syncShuffle = false) { it.addMediaItems(insertIndex, chunk) }
@@ -2563,8 +1831,6 @@ class PlaybackRuntime internal constructor(
         } finally {
             suppressPlaylistMutationCallbacks = false
         }
-        // Media3 regenerates ShuffleOrder after playlist mutations. Logical shuffle is already
-        // represented by the physical queue, so restore identity traversal after every mutation.
         if (syncShuffle) {
             syncShuffleToPlayer()
         }
@@ -2626,112 +1892,46 @@ class PlaybackRuntime internal constructor(
         items: List<PlayableItem>,
         currentIndex: Int,
         backupSource: Boolean
-    ): Pair<List<PlayableItem>, Int> {
-        if (items.isEmpty()) return items to 0
-        if (backupSource) preShuffleOrder = PlaybackQueueSlots.capturePreShuffleOrder(items)
-        val order = PlaybackQueueOrder.shufflePlayOrder(items.size, currentIndex)
-        return PlaybackQueueOrder.applyPlayOrder(items, order) to 0
-    }
+    ): Pair<List<PlayableItem>, Int> =
+        queueCoordinator.permuteQueueToPlayOrder(items, currentIndex, backupSource)
 
-    private fun preShuffleQueueOrNull(): List<PlayableItem>? {
-        val order = preShuffleOrder ?: return null
-        return PlaybackQueueSlots.restorePreShuffleOrder(_queue.value, order)
-    }
+    private fun preShuffleQueueOrNull(): List<PlayableItem>? =
+        queueCoordinator.preShuffleQueueOrNull()
 
     private fun setShuffleEnabled(enabled: Boolean) {
-        val wasEnabled = _isShuffle.value
-        _isShuffle.value = enabled
-        scope.launch { dependencies.persistShuffle(enabled) }
-        if (!enabled && wasEnabled) {
-            preShuffleOrder = null
-        }
-        syncShuffleToPlayer()
+        queueCoordinator.setShuffleEnabled(enabled)
     }
 
     private fun disableShuffleRestoringOrder() {
-        if (!_isShuffle.value) return
-        val restored = preShuffleQueueOrNull()
-        val currentSlot = _currentItem.value?.queueEntryId
-        val position = if (hasMaterializedTimeline()) {
-            controller?.currentPosition ?: _playbackPositionMs.value
-        } else {
-            _playbackPositionMs.value
-        }
-        val wasPlaying = playWhenReadyIntent
-        setShuffleEnabled(false)
-        if (!restored.isNullOrEmpty()) {
-            val index = restored.indexOfFirst { it.queueEntryId == currentSlot }
-                .takeIf { it >= 0 } ?: 0
-            applyQueueReorder(restored, index, position, wasPlaying)
-        }
+        queueCoordinator.disableShuffleRestoringOrder()
     }
 
     private fun syncShuffleToPlayer() {
-        if (hasMaterializedTimeline()) {
-            controller?.shuffleModeEnabled = _isShuffle.value
-        }
+        queueCoordinator.syncShuffleToPlayer()
     }
 
-    private fun setRepeatMode(mode: RepeatMode) {
-        _repeatMode.value = mode
-        applyRepeatModeToController(mode)
-        scope.launch { dependencies.persistRepeat(mode) }
+    fun setRepeatMode(mode: RepeatMode) {
+        queueCoordinator.setRepeatMode(mode)
     }
 
     private fun applyRepeatModeToController(mode: RepeatMode) {
-        controller?.repeatMode = when (mode) {
-            RepeatMode.OFF -> Player.REPEAT_MODE_OFF
-            RepeatMode.ALL -> Player.REPEAT_MODE_ALL
-            RepeatMode.ONE -> Player.REPEAT_MODE_ONE
-        }
+        queueCoordinator.applyRepeatModeToController(mode)
     }
 
     private fun applyManualPlayModes(deferPlayerSync: Boolean = false) {
-        val (shuffle, repeat) = PlaybackModeClear.afterManualPlay(
-            _isShuffle.value,
-            _repeatMode.value,
-            dependencies.playbackSettings.value
-        )
-        if (deferPlayerSync) {
-            _isShuffle.value = shuffle
-            _repeatMode.value = repeat
-            scope.launch { dependencies.persistShuffle(shuffle) }
-            scope.launch { dependencies.persistRepeat(repeat) }
-            pendingExternalPlaybackModes = shuffle to repeat
-        } else {
-            applyResolvedModes(shuffle, repeat)
-        }
+        queueCoordinator.applyManualPlayModes(deferPlayerSync)
     }
 
     private fun applySkipModes() {
-        val (shuffle, repeat) = PlaybackModeClear.afterSkip(
-            _isShuffle.value,
-            _repeatMode.value,
-            dependencies.playbackSettings.value
-        )
-        applyResolvedModes(shuffle, repeat)
+        queueCoordinator.applySkipModes()
     }
 
     private fun applyRadioStartModes() {
-        val (shuffle, repeat) = PlaybackModeClear.afterRadioStart(
-            _isShuffle.value,
-            _repeatMode.value
-        )
-        applyResolvedModes(shuffle, repeat)
+        queueCoordinator.applyRadioStartModes()
     }
 
-    private fun applyResolvedModes(shuffle: Boolean, repeat: RepeatMode) {
-        if (shuffle != _isShuffle.value) {
-            if (shuffle) setShuffleEnabled(true) else disableShuffleRestoringOrder()
-        }
-        if (repeat != _repeatMode.value) setRepeatMode(repeat)
-    }
-
-    private fun repeatModeFromPlayer(value: Int): RepeatMode = when (value) {
-        Player.REPEAT_MODE_ONE -> RepeatMode.ONE
-        Player.REPEAT_MODE_ALL -> RepeatMode.ALL
-        else -> RepeatMode.OFF
-    }
+    private fun repeatModeFromPlayer(value: Int): RepeatMode =
+        queueCoordinator.repeatModeFromPlayer(value)
 
     private fun invalidateQueueSelection() {
         selectionGate.invalidate()
@@ -2741,51 +1941,23 @@ class PlaybackRuntime internal constructor(
 
     private fun invalidatePlaybackWork(clearRejectedEntries: Boolean = true) {
         playbackGeneration++
-        resolvingTransitionJob?.cancel()
-        resolvingTransitionJob = null
-        resolvingTransitionQueueEntryId = null
-        cancelRemoteRecoveryJob()
-        prefetchJob?.cancel()
-        prefetchJob = null
+        streamRecoveryCoordinator.invalidatePlaybackWork(clearRejectedEntries)
         queueAppendJob?.cancel()
         queueAppendJob = null
         invalidateQueueSelection()
-        seekPersistenceJob?.cancel()
-        seekPersistenceJob = null
-        if (clearRejectedEntries) rejectedQueueEntries.clear()
+        sessionHydrator.cancelSeekPersistence()
     }
 
     private fun isPlaybackGenerationCurrent(generation: Long): Boolean =
         generation == playbackGeneration
 
-    private fun beginResolving() {
-        resolvingCount.incrementAndGet()
-        _resolvingRemote.value = true
-    }
-
-    private fun endResolving() {
-        if (resolvingCount.decrementAndGet() <= 0) {
-            resolvingCount.set(0)
-            _resolvingRemote.value = false
-        }
-    }
-
     private fun bumpQueueFocus() {
         _queueFocusEpoch.value += 1
     }
 
-    private fun unplayableRemoteMessage(remote: PlayableItem.Remote): String =
-        remote.title.takeIf { it.isNotBlank() }
-            ?.let { "No se pudo reproducir «$it»" }
-            ?: "No se pudo reproducir el audio online"
-
     companion object {
         private const val POSITION_TICK_MS = 200L
-        private const val POSITION_SAVE_INTERVAL_MS = 5_000L
-        private const val SEEK_PERSIST_DEBOUNCE_MS = 300L
         private const val FALLBACK_SUCCESS_POSITION_MS = 1_000L
-        private const val REMOTE_RECOVERY_RETRY_MS = 600L
-        private const val SAVE_RETRY_COOLDOWN_MS = 10 * 60 * 1000L
         private const val RADIO_BATCH_SIZE = 30
 
         internal fun create(
@@ -2895,4 +2067,3 @@ class PlaybackRuntime internal constructor(
         }
     }
 }
-

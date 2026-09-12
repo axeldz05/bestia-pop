@@ -45,6 +45,8 @@ import com.bestiapop.android.ui.components.HeaderActionIcon
 import com.bestiapop.android.ui.components.preloadArtwork
 import com.bestiapop.android.ui.components.EmptyListHint
 import com.bestiapop.android.ui.components.ScreenBackHeader
+import com.bestiapop.android.ui.components.SearchHistorySheet
+import com.bestiapop.android.ui.components.SearchRecentChipsRow
 import com.bestiapop.android.ui.components.TrackMetaRow
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import com.bestiapop.android.data.listenbrainz.MatchedCfRecommendations
@@ -116,6 +118,7 @@ fun DiscoverScreen(
 
     var searchInput by remember { mutableStateOf(catalogSearch.searchQueryDraft) }
     var isSearchFocused by remember { mutableStateOf(false) }
+    var showSearchHistorySheet by remember { mutableStateOf(false) }
 
     val feedScrollState = rememberSaveable(saver = ScrollState.Saver) { ScrollState(0) }
     val context = LocalContext.current
@@ -354,7 +357,8 @@ fun DiscoverScreen(
                         viewModel.refreshDiscoverFeed(forceRefresh = true)
                         viewModel.refreshTopRelatedFeed(forceRefresh = true)
                     },
-                    isLoading = isLoadingFeed || catalogSearch.isSearching
+                    isLoading = isLoadingFeed || catalogSearch.isSearching,
+                    onOpenHistory = { showSearchHistorySheet = true }
                 )
 
                 // Category Chips (when searching or active)
@@ -392,7 +396,8 @@ fun DiscoverScreen(
                             isSearchFocused = false
                         },
                         onRemoveQuery = { viewModel.removeRecentSearch(it) },
-                        onClearAll = { viewModel.clearRecentSearches() }
+                        onClearAll = { viewModel.clearRecentSearches() },
+                        onOpenFullHistory = { showSearchHistorySheet = true }
                     )
                 } else {
                     val catalogActions = remember(viewModel, catalogSearch.isLoadingMore, catalogSearch.canLoadMore, activeDownloads) {
@@ -484,6 +489,21 @@ fun DiscoverScreen(
             }
         }
     }
+
+    if (showSearchHistorySheet) {
+        SearchHistorySheet(
+            recentSearches = recentSearches,
+            onSelectQuery = { query ->
+                searchInput = query
+                viewModel.setCatalogSearchDraft(query)
+                viewModel.submitCatalogSearch(query = query)
+                isSearchFocused = false
+            },
+            onRemoveQuery = { viewModel.removeRecentSearch(it) },
+            onClearAll = { viewModel.clearRecentSearches() },
+            onDismiss = { showSearchHistorySheet = false }
+        )
+    }
 }
 
 @Composable
@@ -497,7 +517,8 @@ fun DiscoverTopSearchBar(
     hasActiveFilters: Boolean,
     onRefreshFeed: () -> Unit,
     isLoading: Boolean,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onOpenHistory: (() -> Unit)? = null
 ) {
     Row(
         modifier = modifier
@@ -538,6 +559,13 @@ fun DiscoverTopSearchBar(
                             Icon(
                                 imageVector = Icons.Default.Close,
                                 contentDescription = "Limpiar"
+                            )
+                        }
+                    } else if (onOpenHistory != null) {
+                        IconButton(onClick = onOpenHistory) {
+                            Icon(
+                                imageVector = Icons.Default.History,
+                                contentDescription = "Historial de búsqueda"
                             )
                         }
                     }
@@ -587,53 +615,17 @@ fun DiscoverRecentSearchesView(
     onSelectQuery: (String) -> Unit,
     onRemoveQuery: (String) -> Unit,
     onClearAll: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onOpenFullHistory: (() -> Unit)? = null
 ) {
-    Column(
+    SearchRecentChipsRow(
+        recentSearches = recentSearches,
+        onSelectQuery = onSelectQuery,
+        onRemoveQuery = onRemoveQuery,
+        onClearAll = onClearAll,
+        onOpenFullHistory = onOpenFullHistory,
         modifier = modifier
-            .fillMaxWidth()
-            .padding(16.dp)
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "Búsquedas recientes",
-                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
-            )
-            TextButton(onClick = onClearAll) {
-                Text("Borrar todo")
-            }
-        }
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            recentSearches.forEach { query ->
-                InputChip(
-                    selected = false,
-                    onClick = { onSelectQuery(query) },
-                    label = { Text(query) },
-                    trailingIcon = {
-                        Icon(
-                            imageVector = Icons.Default.Close,
-                            contentDescription = "Eliminar",
-                            modifier = Modifier
-                                .size(16.dp)
-                                .clickable { onRemoveQuery(query) }
-                        )
-                    }
-                )
-            }
-        }
-    }
+    )
 }
 
 /** Level 1: Reusable icon representation of an item's library status. */
@@ -2625,6 +2617,8 @@ fun DiscoverArtistDetailView(
                                     title = album.name,
                                     subtitle = "${album.songCount} canciones",
                                     artworkUri = album.artworkUri,
+                                    cardWidth = 150.dp,
+                                    imageSize = 134.dp,
                                     onClick = {
                                         onSelectAlbum(
                                             CatalogAlbum(

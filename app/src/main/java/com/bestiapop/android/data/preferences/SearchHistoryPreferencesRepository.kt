@@ -14,7 +14,7 @@ private val Context.searchHistoryDataStore: DataStore<Preferences> by preference
     name = "search_history"
 )
 
-private const val MAX_SEARCH_HISTORY_ITEMS = 20
+private const val MAX_SEARCH_HISTORY_ITEMS = 100
 
 class SearchHistoryPreferencesRepository internal constructor(
     private val dataStore: DataStore<Preferences>

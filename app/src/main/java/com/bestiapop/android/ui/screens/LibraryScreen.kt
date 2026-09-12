@@ -28,8 +28,14 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.ui.text.input.ImeAction
+import com.bestiapop.android.ui.components.SearchHistorySheet
+import com.bestiapop.android.ui.components.SearchRecentChipsRow
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
@@ -132,6 +138,8 @@ fun LibraryScreen(
 
     var showBrowseSortSheet by remember { mutableStateOf(false) }
     var searchExpanded by remember { mutableStateOf(false) }
+    val recentSearches by viewModel.recentSearches.collectAsStateWithLifecycle()
+    var showSearchHistorySheet by remember { mutableStateOf(false) }
     val searchFocusRequester = remember { FocusRequester() }
     val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
@@ -330,9 +338,12 @@ fun LibraryScreen(
         }
     }
 
-    val albumBrowseActions = remember(viewModel) {
+    val albumBrowseActions = remember(viewModel, searchQuery) {
         AlbumBrowseActions(
-            onAlbumClick = { album -> viewModel.openLibraryAlbum(album.name, fromNestedParent = false) },
+            onAlbumClick = { album ->
+                if (searchQuery.isNotBlank()) viewModel.addRecentSearch(searchQuery)
+                viewModel.openLibraryAlbum(album.name, fromNestedParent = false)
+            },
             onPlayAlbum = { album -> viewModel.playAlbum(album, startShuffled = false) },
             onShuffleAlbum = { album -> viewModel.playAlbum(album, startShuffled = true) },
             onEditAlbum = { album -> albumForEdit = album },
@@ -340,16 +351,22 @@ fun LibraryScreen(
             onIdentifyAlbum = { album -> viewModel.identifyAlbum(album) }
         )
     }
-    val artistBrowseActions = remember(viewModel) {
+    val artistBrowseActions = remember(viewModel, searchQuery) {
         AggregateBrowseActions<Artist>(
-            onClick = { artist -> viewModel.openLibraryArtist(artist.name) },
+            onClick = { artist ->
+                if (searchQuery.isNotBlank()) viewModel.addRecentSearch(searchQuery)
+                viewModel.openLibraryArtist(artist.name)
+            },
             onPlay = { artist -> viewModel.playArtist(artist.name, startShuffled = false) },
             onShuffle = { artist -> viewModel.playArtist(artist.name, startShuffled = true) }
         )
     }
-    val genreBrowseActions = remember(viewModel) {
+    val genreBrowseActions = remember(viewModel, searchQuery) {
         AggregateBrowseActions<GenreGroup>(
-            onClick = { genre -> viewModel.openLibraryGenre(genre.name) },
+            onClick = { genre ->
+                if (searchQuery.isNotBlank()) viewModel.addRecentSearch(searchQuery)
+                viewModel.openLibraryGenre(genre.name)
+            },
             onPlay = { genre -> viewModel.playGenre(genre.name, startShuffled = false) },
             onShuffle = { genre -> viewModel.playGenre(genre.name, startShuffled = true) }
         )
@@ -455,10 +472,30 @@ fun LibraryScreen(
                     placeholder = { Text("Buscar…") },
                     leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
                     trailingIcon = {
-                        IconButton(onClick = collapseSearch) {
-                            Icon(Icons.Default.Close, contentDescription = "Cerrar búsqueda")
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (searchQuery.isEmpty() && recentSearches.isNotEmpty()) {
+                                IconButton(onClick = { showSearchHistorySheet = true }) {
+                                    Icon(
+                                        imageVector = Icons.Default.History,
+                                        contentDescription = "Historial de búsqueda"
+                                    )
+                                }
+                            }
+                            IconButton(onClick = collapseSearch) {
+                                Icon(Icons.Default.Close, contentDescription = "Cerrar búsqueda")
+                            }
                         }
                     },
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    keyboardActions = KeyboardActions(
+                        onSearch = {
+                            if (searchQuery.isNotBlank()) {
+                                viewModel.addRecentSearch(searchQuery)
+                            }
+                            focusManager.clearFocus(force = true)
+                            keyboardController?.hide()
+                        }
+                    ),
                     singleLine = true,
                     modifier = Modifier
                         .weight(1f)
@@ -528,6 +565,19 @@ fun LibraryScreen(
                     )
                 }
             }
+        }
+
+        if (searchExpanded && searchQuery.isBlank() && recentSearches.isNotEmpty()) {
+            SearchRecentChipsRow(
+                recentSearches = recentSearches,
+                onSelectQuery = { query ->
+                    viewModel.setSearchQuery(query)
+                    viewModel.addRecentSearch(query)
+                },
+                onRemoveQuery = { viewModel.removeRecentSearch(it) },
+                onClearAll = { viewModel.clearRecentSearches() },
+                onOpenFullHistory = { showSearchHistorySheet = true }
+            )
         }
 
         // Hidden during multi-select: switching to Álbumes/Artistas/Géneros made "Seleccionar todo"
@@ -746,6 +796,19 @@ fun LibraryScreen(
             }
         )
     }
+
+    if (showSearchHistorySheet) {
+        SearchHistorySheet(
+            recentSearches = recentSearches,
+            onSelectQuery = { query ->
+                viewModel.setSearchQuery(query)
+                viewModel.addRecentSearch(query)
+            },
+            onRemoveQuery = { viewModel.removeRecentSearch(it) },
+            onClearAll = { viewModel.clearRecentSearches() },
+            onDismiss = { showSearchHistorySheet = false }
+        )
+    }
 }
 
 /**
@@ -850,12 +913,16 @@ private fun LibraryBrowsePane(
                 isPlaylistAdditionMode,
                 isMultiSelectMode,
                 songList,
+                searchQuery,
                 onToggleSelect
             ) {
                 { song: Song, index: Int ->
                     if (isPlaylistAdditionMode || isMultiSelectMode) {
                         onToggleSelect(song)
                     } else {
+                        if (searchQuery.isNotBlank()) {
+                            viewModel.addRecentSearch(searchQuery)
+                        }
                         viewModel.playCollection(songList.songsVisual, index)
                     }
                 }

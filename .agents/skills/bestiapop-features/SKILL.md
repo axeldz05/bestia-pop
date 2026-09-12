@@ -62,7 +62,7 @@ Modelo clave: `TrackIdentity` / `TrackMeta`, `OnlineCatalogTrack`, `CatalogTrack
 
 | Capacidad | API |
 |-----------|-----|
-| Query | `MusicPlayerViewModel.searchQuery` (no se persiste) |
+| Query e historial | `MusicPlayerViewModel.searchQuery` (sesión activa, no se persiste el texto actual); historial persistido en `SearchHistoryPreferencesRepository` (hasta 100 consultas en DataStore, compartido entre Biblioteca y Descubrir); sugerencias rápidas en chips `SearchRecentChipsRow` y vista completa en hoja modal `SearchHistorySheet` con eliminación individual y vaciado total |
 | Sort | `SortOption`: TITLE, ARTIST, ALBUM, GENRE, DATE_ADDED → `setSortOption` (DataStore; resetea dirección); labels en sheet vía `SortOption.sortLabel(browseFilter)` |
 | Dirección | `SortDirection` ASC/DESC → `setSortDirection` / `toggleSortDirection`; toggle **dentro** del sheet (no en header). ASC = flecha ↓ + `A–Z` (fecha: `Antiguo → reciente`); DESC = flecha ↑ + `Z–A` (fecha: `Reciente → antiguo`) vía `sortDirectionLabel` |
 | Vista+orden UI | Chips = forma (`LibraryBrowseFilter`); botón Tune → `LibraryBrowseSortSheet` (“Ver como” + “Ordenar por”); summary a11y `libraryOrderSummary` / `libraryTuneContentDescription`; play/shuffle header = `PlayShuffleIconPair`. Con headers de álbum: título “Ordenar álbumes por” + icono `ViewAgenda` + texto de que el orden es por álbum (`albumHeadersActive`) |

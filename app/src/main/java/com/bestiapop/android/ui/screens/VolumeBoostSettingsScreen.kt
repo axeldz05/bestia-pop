@@ -26,9 +26,7 @@ import kotlin.math.roundToInt
 
 @Composable
 fun VolumeBoostSettingsScreen(viewModel: MusicPlayerViewModel) {
-    val boostEnabled by viewModel.volumeBoostEnabled.collectAsStateWithLifecycle()
-    val leftGain by viewModel.stereoLeftGain.collectAsStateWithLifecycle()
-    val rightGain by viewModel.stereoRightGain.collectAsStateWithLifecycle()
+    val settings by viewModel.playbackSettings.collectAsStateWithLifecycle()
 
     SettingsScrollColumn(
         intro = "El volumen general se controla con los botones del dispositivo. Acá podés amplificar por encima del 100% y atenuar el canal izquierdo o derecho por separado."
@@ -48,12 +46,12 @@ fun VolumeBoostSettingsScreen(viewModel: MusicPlayerViewModel) {
 
         SettingsSwitchRow(
             title = "Amplificar volumen",
-            subtitle = if (boostEnabled) {
+            subtitle = if (settings.volumeBoostEnabled) {
                 "Activo — amplificación disponible hasta 200%"
             } else {
                 "Desactivado — volumen limitado al 100% del sistema"
             },
-            checked = boostEnabled,
+            checked = settings.volumeBoostEnabled,
             onCheckedChange = { viewModel.setVolumeBoostEnabled(it) }
         )
 
@@ -83,7 +81,7 @@ fun VolumeBoostSettingsScreen(viewModel: MusicPlayerViewModel) {
 
         StereoGainSlider(
             label = "Izquierdo",
-            value = leftGain,
+            value = settings.stereoLeftGain,
             onValueChange = { viewModel.setStereoLeftGain(it) }
         )
 
@@ -91,7 +89,7 @@ fun VolumeBoostSettingsScreen(viewModel: MusicPlayerViewModel) {
 
         StereoGainSlider(
             label = "Derecho",
-            value = rightGain,
+            value = settings.stereoRightGain,
             onValueChange = { viewModel.setStereoRightGain(it) }
         )
     }

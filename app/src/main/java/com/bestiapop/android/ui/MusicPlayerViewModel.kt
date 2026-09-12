@@ -138,7 +138,10 @@ import com.bestiapop.android.ui.state.LibraryListModel
 import com.bestiapop.android.ui.state.LibraryProjectionState
 import com.bestiapop.android.ui.state.LibraryViewMode
 import com.bestiapop.android.ui.state.LoadableUiState
+import com.bestiapop.android.ui.state.AudioVolumeCoordinator
 import com.bestiapop.android.ui.state.PlaylistDetailNav
+import com.bestiapop.android.ui.state.RadioPlaybackState
+import com.bestiapop.android.ui.state.SimilarPlaylistCoordinator
 import com.bestiapop.android.ui.state.SimilarPlaylistPreviewState
 import com.bestiapop.android.ui.state.SubmenuActionCoordinator
 import com.bestiapop.android.ui.state.UiNavigationState
@@ -570,6 +573,19 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     val radioLoading = playbackRuntime.radioLoading
     val radioMode = playbackRuntime.radioMode
     val radioStatusLabel = playbackRuntime.radioStatusLabel
+    val radioState: StateFlow<RadioPlaybackState> = combine(
+        radioActive,
+        radioLoading,
+        radioMode,
+        radioStatusLabel
+    ) { active, loading, mode, statusLabel ->
+        RadioPlaybackState(
+            active = active,
+            loading = loading,
+            mode = mode,
+            statusLabel = statusLabel
+        )
+    }.stateInUi(viewModelScope, RadioPlaybackState())
 
     /** Stable key of the catalog track being previewed inside Add Music (null = no catalog preview). */
     private val _catalogPreviewKey = MutableStateFlow<String?>(null)
@@ -581,23 +597,39 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private val buildSimilarPlaylistPreviewUseCase =
         BuildSimilarPlaylistPreviewUseCase(radioEngine, repository)
 
-    private val _similarPlaylistPreview = MutableStateFlow<SimilarPlaylistPreviewState?>(null)
-    val similarPlaylistPreview = _similarPlaylistPreview.asStateFlow()
-    private var similarPreviewJob: Job? = null
-    private var similarPreviewSeeds: List<PlayableItem> = emptyList()
+    private val similarPlaylistCoordinator = SimilarPlaylistCoordinator(
+        scope = viewModelScope,
+        useCase = buildSimilarPlaylistPreviewUseCase,
+        isNetworkOnline = { connectivityObserver.isCurrentlyOnline() },
+        resolvePreferredRadioMode = ::resolvePreferredRadioMode,
+        getListenBrainzSettings = { listenBrainzSettings.value },
+        getAllSongs = { repository.allSongsFlow.first() },
+        onPlaylistCreated = { playlistId, localCount, pendingCount, downloadMissing ->
+            toastPlaylistSaved(localCount, pending = pendingCount)
+            setSelectedNavIndex(NAV_PLAYLISTS)
+            openLocalPlaylist(playlistId)
+            if (downloadMissing && pendingCount > 0) {
+                downloadPlaylistPendingTracks(playlistId)
+            }
+        },
+        playPlayableCollection = { playPlayableCollection(it, startIndex = 0, rotate = false) },
+        addPlayableBatch = ::addPlayableBatch,
+        toast = ::toast
+    )
+    val similarPlaylistPreview: StateFlow<SimilarPlaylistPreviewState?> = similarPlaylistCoordinator.state
 
     val queueFocusEpoch = playbackRuntime.queueFocusEpoch
 
     private val audioManager = getApplication<Application>().getSystemService(Context.AUDIO_SERVICE) as AudioManager
-
-    private val _volumeLevel = MutableStateFlow(getDeviceVolumeRatio())
-    val volumeLevel = _volumeLevel.asStateFlow()
-
-    private val _volumeBoostHudVisible = MutableStateFlow(false)
-    val volumeBoostHudVisible = _volumeBoostHudVisible.asStateFlow()
-
-    private var hudHideJob: Job? = null
-    private var handledVolumeDownAction = false
+    private val audioVolumeCoordinator = AudioVolumeCoordinator(
+        audioManager = audioManager,
+        playbackPreferences = playbackPreferences,
+        scope = viewModelScope,
+        isBoostPrefEnabled = { volumeBoostEnabled.value },
+        getPlaybackSettings = { playbackSettings.value }
+    )
+    val volumeLevel: StateFlow<Float> = audioVolumeCoordinator.volumeLevel
+    val volumeBoostHudVisible: StateFlow<Boolean> = audioVolumeCoordinator.volumeBoostHudVisible
 
     private val searchHistoryPreferences = SearchHistoryPreferencesRepository(application)
     private val getDiscoverRecommendationsUseCase = GetDiscoverRecommendationsUseCase()
@@ -786,119 +818,14 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         _pendingOpenNowPlaying.value = false
     }
 
-    private fun getDeviceVolumeRatio(): Float {
-        val current = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
-        val max = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
-        return (current.toFloat() / max.toFloat()).coerceIn(0f, 1f)
-    }
-
-    private fun setSystemVolumeRatio(systemRatio: Float) {
-        val max = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
-        val targetVolume = (systemRatio.coerceIn(0f, 1f) * max).toInt().coerceIn(0, max)
-        try {
-            audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, targetVolume, 0)
-        } catch (_: Exception) {}
-    }
-
-    fun setVolume(ratio: Float) {
-        val boostEnabled = volumeBoostEnabled.value
-        val clamped = if (boostEnabled) ratio.coerceIn(0f, 2f) else ratio.coerceIn(0f, 1f)
-        val systemRatio = clamped.coerceAtMost(1f)
-        setSystemVolumeRatio(systemRatio)
-
-        val boostAmount = if (boostEnabled && clamped > 1f) (clamped - 1f).coerceIn(0f, 1f) else 0f
-        if (boostEnabled) {
-            _volumeLevel.value = clamped
-            persistPlayback { setVolumeBoostAmount(boostAmount) }
-        } else {
-            _volumeLevel.value = systemRatio
-        }
-    }
-
-    fun setVolumeBoostEnabled(enabled: Boolean) {
-        viewModelScope.launch {
-            playbackPreferences.setVolumeBoostEnabled(enabled)
-            if (enabled) {
-                val amount = playbackSettings.value.volumeBoostAmount.coerceIn(0f, 1f)
-                if (amount > 0f) {
-                    setSystemVolumeRatio(1f)
-                    _volumeLevel.value = 1f + amount
-                } else {
-                    _volumeLevel.value = getDeviceVolumeRatio().coerceAtMost(1f)
-                }
-            } else {
-                // Clearing amount in prefs is intentionally skipped so re-enable restores boost.
-                // Force MusicService to drop gain while disabled by writing amount unchanged + enabled flag.
-                _volumeLevel.value = getDeviceVolumeRatio().coerceAtMost(1f)
-            }
-        }
-    }
-
-    fun showVolumeBoostHud() {
-        hudHideJob?.cancel()
-        _volumeBoostHudVisible.value = true
-        hudHideJob = viewModelScope.launch {
-            delay(VOLUME_BOOST_HUD_DURATION_MS)
-            _volumeBoostHudVisible.value = false
-        }
-    }
-
-    fun hideVolumeBoostHud() {
-        hudHideJob?.cancel()
-        _volumeBoostHudVisible.value = false
-    }
-
-    fun handleVolumeUp(): Boolean {
-        val boostEnabled = volumeBoostEnabled.value
-        if (!boostEnabled) return false
-
-        val currentVol = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
-        val maxVol = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
-
-        if (currentVol < maxVol) {
-            if (playbackSettings.value.volumeBoostAmount > 0f) {
-                persistPlayback { setVolumeBoostAmount(0f) }
-            }
-            return false
-        }
-
-        // System volume is at 100%. Increase boost in steps of 10% (0.10f).
-        val currentBoost = playbackSettings.value.volumeBoostAmount.coerceIn(0f, 1f)
-        val newBoost = (currentBoost + VOLUME_BOOST_STEP).coerceIn(0f, 1f)
-        val newRatio = 1f + newBoost
-        _volumeLevel.value = newRatio
-        persistPlayback { setVolumeBoostAmount(newBoost) }
-        showVolumeBoostHud()
-        return true
-    }
-
-    fun handleVolumeDown(): Boolean {
-        val boostEnabled = volumeBoostEnabled.value
-        val currentBoost = if (boostEnabled) playbackSettings.value.volumeBoostAmount.coerceIn(0f, 1f) else 0f
-        if (boostEnabled && currentBoost > 0.001f) {
-            handledVolumeDownAction = true
-            val newBoost = (currentBoost - VOLUME_BOOST_STEP).coerceAtLeast(0f)
-            persistPlayback { setVolumeBoostAmount(newBoost) }
-            val newRatio = 1f + newBoost
-            _volumeLevel.value = newRatio
-            showVolumeBoostHud()
-            return true
-        }
-
-        hideVolumeBoostHud()
-        handledVolumeDownAction = false
-        return false
-    }
-
-    fun consumeVolumeDownUpAction(): Boolean {
-        val wasHandled = handledVolumeDownAction
-        handledVolumeDownAction = false
-        return wasHandled
-    }
-
-    fun isVolumeBoostActive(): Boolean {
-        return volumeBoostEnabled.value && _volumeLevel.value > 1.0f
-    }
+    fun setVolume(ratio: Float) = audioVolumeCoordinator.setVolume(ratio)
+    fun setVolumeBoostEnabled(enabled: Boolean) = audioVolumeCoordinator.setVolumeBoostEnabled(enabled)
+    fun showVolumeBoostHud() = audioVolumeCoordinator.showVolumeBoostHud()
+    fun hideVolumeBoostHud() = audioVolumeCoordinator.hideVolumeBoostHud()
+    fun handleVolumeUp(): Boolean = audioVolumeCoordinator.handleVolumeUp()
+    fun handleVolumeDown(): Boolean = audioVolumeCoordinator.handleVolumeDown()
+    fun consumeVolumeDownUpAction(): Boolean = audioVolumeCoordinator.consumeVolumeDownUpAction()
+    fun isVolumeBoostActive(): Boolean = audioVolumeCoordinator.isVolumeBoostActive()
 
     fun setDownloadOnMeteredNetwork(enabled: Boolean) {
         viewModelScope.launch {
@@ -988,17 +915,9 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         return v
     }
 
-    fun setStereoLeftGain(gain: Float) {
-        persistPlayback { setStereoLeftGain(gain) }
-    }
-
-    fun setStereoRightGain(gain: Float) {
-        persistPlayback { setStereoRightGain(gain) }
-    }
-
-    fun resetStereoBalance() {
-        persistPlayback { resetStereoBalance() }
-    }
+    fun setStereoLeftGain(gain: Float) = audioVolumeCoordinator.setStereoLeftGain(gain)
+    fun setStereoRightGain(gain: Float) = audioVolumeCoordinator.setStereoRightGain(gain)
+    fun resetStereoBalance() = audioVolumeCoordinator.resetStereoBalance()
 
     fun setRememberShuffleOnLaunch(enabled: Boolean) {
         persistPlayback { setRememberShuffleOnLaunch(enabled) }
@@ -1050,19 +969,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     private suspend fun restoreVolumeBoostIfNeeded() {
         val settings = playbackRuntime.awaitPlaybackSettings()
-        if (!settings.volumeBoostEnabled) {
-            if (_volumeLevel.value > 1f) {
-                _volumeLevel.value = getDeviceVolumeRatio().coerceAtMost(1f)
-            }
-            return
-        }
-        val amount = settings.volumeBoostAmount.coerceIn(0f, 1f)
-        if (amount > 0f) {
-            setSystemVolumeRatio(1f)
-            _volumeLevel.value = 1f + amount
-        } else {
-            _volumeLevel.value = getDeviceVolumeRatio().coerceAtMost(1f)
-        }
+        audioVolumeCoordinator.restoreVolumeBoost(settings)
     }
 
     private fun persistPlayback(block: suspend PlaybackPreferencesRepository.() -> Unit) {
@@ -1937,154 +1844,22 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             toastRadioNeedsSeed()
             return
         }
-        val networkOnline = connectivityObserver.isCurrentlyOnline()
-        val resolvedMode = resolvePreferredRadioMode(mode, networkOnline)
-        similarPreviewSeeds = seeds
-        val name = BuildSimilarPlaylistPreviewUseCase.defaultPlaylistName(seeds)
-        _similarPlaylistPreview.value = SimilarPlaylistPreviewState(
-            items = emptyList(),
-            selectedKeys = emptySet(),
-            mode = resolvedMode,
-            loading = true,
-            seedCount = seeds.size,
-            playlistName = name
-        )
-        runSimilarPreview(resolvedMode)
+        similarPlaylistCoordinator.open(seeds, mode)
     }
 
-    fun dismissSimilarPreview() {
-        similarPreviewJob?.cancel()
-        similarPreviewJob = null
-        similarPreviewSeeds = emptyList()
-        _similarPlaylistPreview.value = null
-    }
+    fun openSimilarPreview(seeds: List<PlayableItem>, mode: RadioMode? = null) =
+        similarPlaylistCoordinator.open(seeds, mode)
 
-    fun toggleSimilarPreviewItem(key: String) {
-        val state = _similarPlaylistPreview.value ?: return
-        if (state.loading || key.isBlank()) return
-        val next = state.selectedKeys.toMutableSet()
-        if (!next.add(key)) next.remove(key)
-        _similarPlaylistPreview.value = state.copy(selectedKeys = next)
-    }
-
-    /**
-     * Preview-local: the mode lives in [SimilarPlaylistPreviewState], not in `radioPreferredMode`.
-     * Writing the global one made picking "Solo nuevos" here silently change what a later tap on the
-     * Radio button would do.
-     */
-    fun setSimilarPreviewMode(mode: RadioMode) {
-        val state = _similarPlaylistPreview.value ?: return
-        if (state.mode == mode && !state.loading) return
-        _similarPlaylistPreview.value = state.copy(mode = mode, loading = true)
-        runSimilarPreview(mode)
-    }
-
-    fun setSimilarPreviewPlaylistName(name: String) {
-        val state = _similarPlaylistPreview.value ?: return
-        _similarPlaylistPreview.value = state.copy(playlistName = name)
-    }
-
+    fun dismissSimilarPreview() = similarPlaylistCoordinator.dismiss()
+    fun toggleSimilarPreviewItem(key: String) = similarPlaylistCoordinator.toggleItem(key)
+    fun setSimilarPreviewMode(mode: RadioMode) = similarPlaylistCoordinator.setMode(mode)
+    fun setSimilarPreviewPlaylistName(name: String) = similarPlaylistCoordinator.setPlaylistName(name)
     fun confirmSimilarPreviewAsPlaylist(
         name: String? = null,
         downloadMissing: Boolean = false
-    ) {
-        val state = _similarPlaylistPreview.value ?: return
-        if (state.loading) return
-        val selected = state.selectedItems
-        if (selected.isEmpty()) {
-            toast(DownloadMessages.selectAtLeastOneSong)
-            return
-        }
-        val playlistName = (name ?: state.playlistName).ifBlank {
-            BuildSimilarPlaylistPreviewUseCase.defaultPlaylistName(similarPreviewSeeds)
-        }
-        viewModelScope.launch {
-            val playlistId = buildSimilarPlaylistPreviewUseCase.createPlaylistFromPlayables(
-                name = playlistName,
-                items = selected
-            )
-            if (playlistId == null) {
-                toast(PlaylistMessages.createFailed)
-                return@launch
-            }
-            val localCount = selected.count { it is PlayableItem.Local }
-            val pendingCount = selected.count { it is PlayableItem.Remote }
-            toastPlaylistSaved(localCount, pending = pendingCount)
-            dismissSimilarPreview()
-            setSelectedNavIndex(NAV_PLAYLISTS)
-            openLocalPlaylist(playlistId)
-            if (downloadMissing && pendingCount > 0) {
-                downloadPlaylistPendingTracks(playlistId)
-            }
-        }
-    }
-
-    private inline fun withSelectedSimilarPreviewItems(action: (List<PlayableItem>) -> Unit) {
-        val state = _similarPlaylistPreview.value ?: return
-        if (state.loading) return
-        val selected = state.selectedItems
-        if (selected.isEmpty()) {
-            toast(DownloadMessages.selectAtLeastOneSong)
-            return
-        }
-        action(selected)
-        dismissSimilarPreview()
-    }
-
-    fun playSimilarPreview() {
-        withSelectedSimilarPreviewItems { selected ->
-            playPlayableCollection(selected, startIndex = 0, rotate = false)
-        }
-    }
-
-    fun enqueueSimilarPreview() {
-        withSelectedSimilarPreviewItems { selected ->
-            addPlayableBatch(selected)
-            toast("Agregadas a la cola (${selected.size})")
-        }
-    }
-
-    private fun runSimilarPreview(mode: RadioMode) {
-        val seeds = similarPreviewSeeds
-        if (seeds.isEmpty()) return
-        similarPreviewJob?.cancel()
-        similarPreviewJob = viewModelScope.launch {
-            val settings = listenBrainzSettings.value
-            val networkOnline = connectivityObserver.isCurrentlyOnline()
-            val canUseLb = settings.enabled &&
-                    settings.userToken.isNotBlank() &&
-                    networkOnline
-            val library = repository.allSongsFlow.first()
-            val preview = buildSimilarPlaylistPreviewUseCase.execute(
-                seeds = seeds,
-                library = library,
-                mode = mode,
-                lbToken = settings.userToken.takeIf { it.isNotBlank() },
-                lbAvailable = canUseLb,
-                lbUsername = settings.username,
-                networkAvailable = networkOnline
-            )
-            val current = _similarPlaylistPreview.value
-            if (current == null) return@launch
-            if (preview.items.isEmpty()) {
-                // Gated on failedOnline only, like the dialog body: keying it on mode == NEW made the
-                // toast claim the online radio was down (e.g. offline, where failedOnline is false)
-                // while the dialog underneath said "No encontré canciones parecidas".
-                toast(
-                    if (preview.failedOnline) "Radio online no disponible"
-                    else "No encontré canciones parecidas"
-                )
-            }
-            _similarPlaylistPreview.value = current.copy(
-                items = preview.items,
-                selectedKeys = SimilarPlaylistPreviewState.keysOf(preview.items),
-                mode = mode,
-                loading = false,
-                usedOnline = preview.usedOnline,
-                failedOnline = preview.failedOnline
-            )
-        }
-    }
+    ) = similarPlaylistCoordinator.confirmAsPlaylist(name, downloadMissing)
+    fun playSimilarPreview() = similarPlaylistCoordinator.play()
+    fun enqueueSimilarPreview() = similarPlaylistCoordinator.enqueue()
 
     fun stopRadio() {
         playbackRuntime.stopRadio()

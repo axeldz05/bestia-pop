@@ -33,6 +33,24 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.bestiapop.android.domain.radio.RadioMode
+import com.bestiapop.android.ui.state.RadioPlaybackState
+
+@Composable
+fun RadioModeControl(
+    state: RadioPlaybackState,
+    modifier: Modifier = Modifier,
+    onStartPreferred: () -> Unit = {},
+    onStartMode: (RadioMode) -> Unit,
+    onStop: () -> Unit
+) = RadioModeControl(
+    radioActive = state.active,
+    radioLoading = state.loading,
+    activeMode = state.mode,
+    onStartPreferred = onStartPreferred,
+    onStartMode = onStartMode,
+    onStop = onStop,
+    modifier = modifier
+)
 
 @Composable
 fun RadioModeControl(

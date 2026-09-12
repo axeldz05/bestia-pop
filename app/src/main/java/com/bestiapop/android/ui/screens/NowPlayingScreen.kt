@@ -130,6 +130,7 @@ import com.bestiapop.android.ui.components.formatDuration
 import com.bestiapop.android.ui.components.playPauseVector
 import com.bestiapop.android.ui.screens.library.AlbumEditDialogsHost
 import com.bestiapop.android.ui.screens.library.rememberSongActionDialogs
+import com.bestiapop.android.ui.state.NowPlayingTransportActions
 import com.bestiapop.android.ui.state.PlaylistDetailNav
 import com.bestiapop.android.ui.theme.ListDensity
 import kotlinx.coroutines.flow.StateFlow
@@ -152,10 +153,17 @@ fun NowPlayingScreen(
     val isShuffle by viewModel.isShuffle.collectAsStateWithLifecycle()
     val queueItems by viewModel.displayQueue.collectAsStateWithLifecycle()
     val resolvingRemote by viewModel.resolvingRemote.collectAsStateWithLifecycle()
-    val radioActive by viewModel.radioActive.collectAsStateWithLifecycle()
-    val radioLoading by viewModel.radioLoading.collectAsStateWithLifecycle()
-    val radioMode by viewModel.radioMode.collectAsStateWithLifecycle()
-    val radioStatusLabel by viewModel.radioStatusLabel.collectAsStateWithLifecycle()
+    val radioState by viewModel.radioState.collectAsStateWithLifecycle()
+    val transportActions = remember(viewModel) {
+        NowPlayingTransportActions(
+            onTogglePlayPause = viewModel::togglePlayPause,
+            onSkipNext = viewModel::skipToNext,
+            onSkipPrevious = viewModel::skipToPrevious,
+            onToggleShuffle = viewModel::toggleShuffle,
+            onToggleRepeatMode = viewModel::toggleRepeatMode,
+            onSeek = viewModel::seekTo
+        )
+    }
     val playlists by viewModel.playlists.collectAsStateWithLifecycle(initialValue = emptyList())
     val discoverOrigin by viewModel.discoverPlaybackOrigin.collectAsStateWithLifecycle()
     val isFetchingLyrics by viewModel.isFetchingLyrics.collectAsStateWithLifecycle()
@@ -368,9 +376,7 @@ fun NowPlayingScreen(
                 )
 
                 RadioModeControl(
-                    radioActive = radioActive,
-                    radioLoading = radioLoading,
-                    activeMode = radioMode,
+                    state = radioState,
                     onStartMode = { mode ->
                         viewModel.startRadio(mode = mode, announceMode = true)
                     },
@@ -457,17 +463,17 @@ fun NowPlayingScreen(
                                                     style = MaterialTheme.typography.labelSmall,
                                                     color = MaterialTheme.colorScheme.primary
                                                 )
-                                            } else if (radioLoading) {
+                                            } else if (radioState.loading) {
                                                 Spacer(modifier = Modifier.height(4.dp))
                                                 Text(
                                                     text = MusicPlayerViewModel.RADIO_LOADING_LABEL,
                                                     style = MaterialTheme.typography.labelSmall,
                                                     color = MaterialTheme.colorScheme.primary
                                                 )
-                                            } else if (radioStatusLabel != null) {
+                                            } else if (radioState.statusLabel != null) {
                                                 Spacer(modifier = Modifier.height(4.dp))
                                                 Text(
-                                                    text = radioStatusLabel!!,
+                                                    text = radioState.statusLabel!!,
                                                     style = MaterialTheme.typography.labelSmall,
                                                     color = MaterialTheme.colorScheme.primary
                                                 )
@@ -562,11 +568,7 @@ fun NowPlayingScreen(
                                         isPlaying = isPlaying,
                                         isShuffle = isShuffle,
                                         repeatMode = repeatMode,
-                                        onToggleShuffle = viewModel::toggleShuffle,
-                                        onSkipPrevious = viewModel::skipToPrevious,
-                                        onTogglePlayPause = viewModel::togglePlayPause,
-                                        onSkipNext = viewModel::skipToNext,
-                                        onToggleRepeatMode = viewModel::toggleRepeatMode,
+                                        actions = transportActions,
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .padding(horizontal = 20.dp, vertical = 8.dp)
@@ -603,7 +605,7 @@ fun NowPlayingScreen(
                                         }
 
                                         Row(verticalAlignment = Alignment.CenterVertically) {
-                                            if (radioActive) {
+                                            if (radioState.active) {
                                                 Text(
                                                     text = "Radio activa",
                                                     style = MaterialTheme.typography.labelSmall,
@@ -789,6 +791,29 @@ private fun NowPlayingTabPill(
 /**
  * Fila unificada de botones de transporte (Shuffle, Prev, Play/Pause, Next, Repeat).
  */
+@Composable
+private fun NowPlayingControlsRow(
+    isPlaying: Boolean,
+    isShuffle: Boolean,
+    repeatMode: RepeatMode,
+    actions: NowPlayingTransportActions,
+    modifier: Modifier = Modifier,
+    playFabSize: Dp = 64.dp,
+    playIconSize: Dp = 36.dp
+) = NowPlayingControlsRow(
+    isPlaying = isPlaying,
+    isShuffle = isShuffle,
+    repeatMode = repeatMode,
+    onToggleShuffle = actions.onToggleShuffle,
+    onSkipPrevious = actions.onSkipPrevious,
+    onTogglePlayPause = actions.onTogglePlayPause,
+    onSkipNext = actions.onSkipNext,
+    onToggleRepeatMode = actions.onToggleRepeatMode,
+    modifier = modifier,
+    playFabSize = playFabSize,
+    playIconSize = playIconSize
+)
+
 @Composable
 private fun NowPlayingControlsRow(
     isPlaying: Boolean,

@@ -48,6 +48,7 @@ import com.bestiapop.android.domain.usecase.DiscoverFeed
 import com.bestiapop.android.domain.usecase.RelatedAlbumItem
 import com.bestiapop.android.domain.usecase.TopRelatedFeed
 import com.bestiapop.android.data.model.toListenBrainzCatalogTrack
+import com.bestiapop.android.domain.model.PlaylistUpdate
 import com.bestiapop.android.data.preferences.DiscoverSourcePreference
 import com.bestiapop.android.data.preferences.FastScrollSettings
 import com.bestiapop.android.data.preferences.FastScrollSide
@@ -2725,7 +2726,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         coverUri: String? = null
     ) {
         viewModelScope.launch {
-            repository.updatePlaylist(id, name, description, coverUri)
+            repository.updatePlaylist(PlaylistUpdate(id, name, description, coverUri))
         }
     }
 

@@ -16,6 +16,7 @@ import com.bestiapop.android.data.model.PlaylistPendingTrack
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.data.model.SongPathRef
 import com.bestiapop.android.data.util.TagSyncSummary
+import com.bestiapop.android.domain.model.PlaylistUpdate
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 
@@ -170,7 +171,18 @@ interface IMusicRepository {
     fun saveAlbumCoverImage(sourceUriStr: String?): String?
 
     suspend fun createPlaylist(name: String, description: String? = null, coverUri: String? = null): Long
+    
+    /**
+     * Updates a playlist with the given [update] data class.
+     */
+    suspend fun updatePlaylist(update: PlaylistUpdate)
+    
+    @Deprecated(
+        "Use updatePlaylist(PlaylistUpdate) instead",
+        ReplaceWith("updatePlaylist(PlaylistUpdate(id, name, description, coverUri))")
+    )
     suspend fun updatePlaylist(id: Long, name: String, description: String? = null, coverUri: String? = null)
+    
     suspend fun deletePlaylist(id: Long)
     suspend fun addSongToPlaylist(playlistId: Long, songId: Long)
     suspend fun addSongsToPlaylist(playlistId: Long, songIds: List<Long>) {

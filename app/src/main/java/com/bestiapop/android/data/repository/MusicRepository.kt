@@ -62,6 +62,7 @@ import com.bestiapop.android.data.util.looksLikeStoragePath
 import com.bestiapop.android.data.util.copyTransferToFile
 import com.bestiapop.android.domain.repository.IMusicRepository
 import com.bestiapop.android.domain.repository.LibraryScanProgress
+import com.bestiapop.android.domain.model.PlaylistUpdate
 import com.bestiapop.android.domain.util.FilenameMetadataHints
 import com.bestiapop.android.domain.util.IdentifyCatalogQuery
 import com.bestiapop.android.domain.util.IdentifyRanking
@@ -2181,21 +2182,25 @@ class MusicRepository private constructor(
             )
         }
 
-    override suspend fun updatePlaylist(id: Long, name: String, description: String?, coverUri: String?) =
+    override suspend fun updatePlaylist(update: PlaylistUpdate) =
         withContext(Dispatchers.IO) {
-            val existing = musicDao.getPlaylistById(id) ?: return@withContext
-            val savedCover = if (!coverUri.isNullOrEmpty() && coverUri != existing.coverUri) {
-                savePlaylistCoverImage(coverUri)
+            val existing = musicDao.getPlaylistById(update.id) ?: return@withContext
+            val savedCover = if (!update.coverUri.isNullOrEmpty() && update.coverUri != existing.coverUri) {
+                savePlaylistCoverImage(update.coverUri)
             } else {
-                coverUri
+                update.coverUri
             }
             val updated = existing.copy(
-                name = name,
-                description = description?.ifBlank { null },
+                name = update.name,
+                description = update.description?.ifBlank { null },
                 coverUri = savedCover
             )
             musicDao.updatePlaylist(updated)
         }
+
+    @Suppress("DEPRECATION")
+    override suspend fun updatePlaylist(id: Long, name: String, description: String?, coverUri: String?) =
+        updatePlaylist(PlaylistUpdate(id, name, description, coverUri))
 
     override suspend fun deletePlaylist(id: Long) = withContext(Dispatchers.IO) {
         musicDao.clearPlaylistSongs(id)

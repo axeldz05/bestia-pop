@@ -86,6 +86,12 @@ object ThemeHarmonizer {
     /**
      * Converts HSL values to a Compose Color.
      */
+    fun hslToColor(hsl: HSL): Color = hsl.toColor()
+
+    @Deprecated(
+        "Use hslToColor(HSL) instead",
+        ReplaceWith("hslToColor(HSL(hue, saturation, lightness, alpha))")
+    )
     fun hslToColor(hue: Float, saturation: Float, lightness: Float, alpha: Float = 1f): Color {
         val h = (hue % 360f + 360f) % 360f
         val s = saturation.coerceIn(0f, 1f)
@@ -140,7 +146,7 @@ object ThemeHarmonizer {
 
         while (ratio < minRatio && iterations < 25) {
             l = (l + step).coerceIn(0.05f, 0.95f)
-            val candidate = hslToColor(h, s, l)
+            val candidate = HSL(h, s, l).toColor()
             ratio = calculateContrastRatio(candidate, background)
             if (ratio >= minRatio) {
                 return candidate
@@ -208,65 +214,65 @@ object ThemeHarmonizer {
         // Tonal containers
         val primaryHsl = rgbToHsl(primary)
         val primaryContainer = if (isDark) {
-            hslToColor(primaryHsl[0], (primaryHsl[1] * 0.45f).coerceIn(0.15f, 0.6f), 0.22f)
+            HSL(primaryHsl[0], (primaryHsl[1] * 0.45f).coerceIn(0.15f, 0.6f), 0.22f).toColor()
         } else {
-            hslToColor(primaryHsl[0], (primaryHsl[1] * 0.4f).coerceIn(0.15f, 0.5f), 0.90f)
+            HSL(primaryHsl[0], (primaryHsl[1] * 0.4f).coerceIn(0.15f, 0.5f), 0.90f).toColor()
         }
         val onPrimaryContainer = bestOnColor(primaryContainer)
 
         val secondaryHsl = rgbToHsl(secondary)
         val secondaryContainer = if (isDark) {
-            hslToColor(secondaryHsl[0], (secondaryHsl[1] * 0.4f).coerceIn(0.12f, 0.5f), 0.24f)
+            HSL(secondaryHsl[0], (secondaryHsl[1] * 0.4f).coerceIn(0.12f, 0.5f), 0.24f).toColor()
         } else {
-            hslToColor(secondaryHsl[0], (secondaryHsl[1] * 0.35f).coerceIn(0.12f, 0.45f), 0.92f)
+            HSL(secondaryHsl[0], (secondaryHsl[1] * 0.35f).coerceIn(0.12f, 0.45f), 0.92f).toColor()
         }
         val onSecondaryContainer = bestOnColor(secondaryContainer)
 
         val tertiaryHsl = rgbToHsl(tertiary)
         val tertiaryContainer = if (isDark) {
-            hslToColor(tertiaryHsl[0], (tertiaryHsl[1] * 0.4f).coerceIn(0.12f, 0.5f), 0.22f)
+            HSL(tertiaryHsl[0], (tertiaryHsl[1] * 0.4f).coerceIn(0.12f, 0.5f), 0.22f).toColor()
         } else {
-            hslToColor(tertiaryHsl[0], (tertiaryHsl[1] * 0.35f).coerceIn(0.12f, 0.45f), 0.90f)
+            HSL(tertiaryHsl[0], (tertiaryHsl[1] * 0.35f).coerceIn(0.12f, 0.45f), 0.90f).toColor()
         }
         val onTertiaryContainer = bestOnColor(tertiaryContainer)
 
         // Surface elevation containers
         val surfaceHsl = rgbToHsl(surface)
         val surfaceContainerLowest = if (isDark) {
-            hslToColor(surfaceHsl[0], surfaceHsl[1] * 0.8f, 0.05f)
+            HSL(surfaceHsl[0], surfaceHsl[1] * 0.8f, 0.05f).toColor()
         } else {
             Color.White
         }
         val surfaceContainerLow = if (isDark) {
-            hslToColor(surfaceHsl[0], surfaceHsl[1] * 0.85f, 0.09f)
+            HSL(surfaceHsl[0], surfaceHsl[1] * 0.85f, 0.09f).toColor()
         } else {
-            hslToColor(surfaceHsl[0], surfaceHsl[1] * 0.5f, 0.96f)
+            HSL(surfaceHsl[0], surfaceHsl[1] * 0.5f, 0.96f).toColor()
         }
         val surfaceContainer = if (isDark) {
-            hslToColor(surfaceHsl[0], surfaceHsl[1] * 0.9f, 0.12f)
+            HSL(surfaceHsl[0], surfaceHsl[1] * 0.9f, 0.12f).toColor()
         } else {
-            hslToColor(surfaceHsl[0], surfaceHsl[1] * 0.6f, 0.94f)
+            HSL(surfaceHsl[0], surfaceHsl[1] * 0.6f, 0.94f).toColor()
         }
         val surfaceContainerHigh = if (isDark) {
-            hslToColor(surfaceHsl[0], surfaceHsl[1] * 0.95f, 0.16f)
+            HSL(surfaceHsl[0], surfaceHsl[1] * 0.95f, 0.16f).toColor()
         } else {
-            hslToColor(surfaceHsl[0], surfaceHsl[1] * 0.7f, 0.92f)
+            HSL(surfaceHsl[0], surfaceHsl[1] * 0.7f, 0.92f).toColor()
         }
         val surfaceContainerHighest = if (isDark) {
-            hslToColor(surfaceHsl[0], surfaceHsl[1], 0.20f)
+            HSL(surfaceHsl[0], surfaceHsl[1], 0.20f).toColor()
         } else {
-            hslToColor(surfaceHsl[0], surfaceHsl[1] * 0.8f, 0.90f)
+            HSL(surfaceHsl[0], surfaceHsl[1] * 0.8f, 0.90f).toColor()
         }
 
         val outline = if (isDark) {
-            hslToColor(surfaceHsl[0], (surfaceHsl[1] * 0.3f), 0.45f)
+            HSL(surfaceHsl[0], (surfaceHsl[1] * 0.3f), 0.45f).toColor()
         } else {
-            hslToColor(surfaceHsl[0], (surfaceHsl[1] * 0.3f), 0.60f)
+            HSL(surfaceHsl[0], (surfaceHsl[1] * 0.3f), 0.60f).toColor()
         }
         val outlineVariant = if (isDark) {
-            hslToColor(surfaceHsl[0], (surfaceHsl[1] * 0.25f), 0.28f)
+            HSL(surfaceHsl[0], (surfaceHsl[1] * 0.25f), 0.28f).toColor()
         } else {
-            hslToColor(surfaceHsl[0], (surfaceHsl[1] * 0.25f), 0.80f)
+            HSL(surfaceHsl[0], (surfaceHsl[1] * 0.25f), 0.80f).toColor()
         }
 
         return if (isDark) {
@@ -341,9 +347,9 @@ object ThemeHarmonizer {
         val secondaryHue = (h + 30f) % 360f
         val accentHue = (h + 180f) % 360f
 
-        val primary = hslToColor(h, s.coerceIn(0.6f, 0.95f), if (isDark) 0.65f else 0.45f)
-        val secondary = hslToColor(secondaryHue, s.coerceIn(0.45f, 0.85f), if (isDark) 0.60f else 0.50f)
-        val accent = hslToColor(accentHue, s.coerceIn(0.55f, 0.95f), if (isDark) 0.70f else 0.45f)
+        val primary = HSL(h, s.coerceIn(0.6f, 0.95f), if (isDark) 0.65f else 0.45f).toColor()
+        val secondary = HSL(secondaryHue, s.coerceIn(0.45f, 0.85f), if (isDark) 0.60f else 0.50f).toColor()
+        val accent = HSL(accentHue, s.coerceIn(0.55f, 0.95f), if (isDark) 0.70f else 0.45f).toColor()
 
         val background: Color
         val surface: Color
@@ -351,13 +357,13 @@ object ThemeHarmonizer {
 
         if (isDark) {
             // Ambient dark tint
-            background = hslToColor(h, (s * 0.15f).coerceIn(0.04f, 0.12f), 0.05f)
-            surface = hslToColor(h, (s * 0.18f).coerceIn(0.05f, 0.15f), 0.10f)
-            surfaceVariant = hslToColor(h, (s * 0.22f).coerceIn(0.07f, 0.18f), 0.15f)
+            background = HSL(h, (s * 0.15f).coerceIn(0.04f, 0.12f), 0.05f).toColor()
+            surface = HSL(h, (s * 0.18f).coerceIn(0.05f, 0.15f), 0.10f).toColor()
+            surfaceVariant = HSL(h, (s * 0.22f).coerceIn(0.07f, 0.18f), 0.15f).toColor()
         } else {
-            background = hslToColor(h, (s * 0.08f).coerceIn(0.02f, 0.08f), 0.97f)
+            background = HSL(h, (s * 0.08f).coerceIn(0.02f, 0.08f), 0.97f).toColor()
             surface = Color.White
-            surfaceVariant = hslToColor(h, (s * 0.12f).coerceIn(0.03f, 0.10f), 0.92f)
+            surfaceVariant = HSL(h, (s * 0.12f).coerceIn(0.03f, 0.10f), 0.92f).toColor()
         }
 
         return ColorSchemeData(

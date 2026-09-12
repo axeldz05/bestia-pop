@@ -1,51 +1,42 @@
-# Gradle files
-.gradle/
+```
+# Kotlin/Android build artifacts
+*.class
+*.dex
+*.jar
+*.aar
+
+# Android specific
 build/
-
-# Local configuration file (sdk path, etc)
+.gradle/
 local.properties
+.pro
+captures/
 
-# Log/OS Files
+# Dependencies
+.libs/
+
+# IDE
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# Temporary files
+*.tmp
+*.temp
 *.log
 
-# Android Studio generated files and folders
-captures/
-.externalNativeBuild/
-.cxx/
-*.aab
-*.apk
-output-metadata.json
+# Environment
+.env
+.env.local
+.env.*
 
-# IntelliJ
-*.iml
-.idea/
-misc.xml
-deploymentTargetDropDown.xml
-render.experimental.xml
+# Coverage
+coverage/
+*.gcda
+*.gcno
 
-# Keystore files
-*.jks
-*.keystore
-keystore.properties
-
-# Play Console upload
-play-service-account.json
-dist/
-
-# Google Services (e.g. APIs or Firebase)
-google-services.json
-
-# Android Profiling
-*.hprof
-.android-user/*
-
-# Kotlin incremental / sessions (local tooling)
-.kotlin/
-
-# Changelog local (user-facing pending → release notes; ver skill bestiapop-release-changelog)
-CHANGELOG.pending.md
-CHANGELOG.release-notes.md
-
-# Planes locales de producto/UX (fuera de git)
-.plans/
-TEST_COVERAGE_ROADMAP.md
+# System files
+.DS_Store
+Thumbs.db
+```

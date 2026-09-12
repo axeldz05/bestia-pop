@@ -30,6 +30,7 @@ sealed class PlayableItem : TrackMeta {
         val recordingMbid: String? = null,
         val youtubeQueryOrId: String? = null,
         val resolved: ResolvedStream? = null,
+        val lyrics: String? = null,
         override val queueEntryId: String = newQueueEntryId()
     ) : PlayableItem(), TrackMeta by identity {
         override val mediaId: String

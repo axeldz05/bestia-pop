@@ -1074,6 +1074,14 @@ class PlaybackRuntime internal constructor(
         applyLyricsToCurrent(songId, lyrics)
     }
 
+    fun updateCurrentItemLyrics(lyrics: String?) {
+        val cur = _currentItem.value ?: return
+        when (cur) {
+            is PlayableItem.Local -> applyLyricsToCurrent(cur.song.id, lyrics)
+            is PlayableItem.Remote -> _currentItem.value = cur.copy(lyrics = lyrics)
+        }
+    }
+
     private fun applyLyricsToCurrent(songId: Long, lyrics: String?) {
         val current = _currentSong.value
         if (current?.id == songId) {
@@ -1082,6 +1090,8 @@ class PlaybackRuntime internal constructor(
         val curItem = _currentItem.value
         if (curItem is PlayableItem.Local && curItem.song.id == songId) {
             _currentItem.value = curItem.copy(song = curItem.song.copy(lyrics = lyrics))
+        } else if (curItem is PlayableItem.Remote && songId < 0) {
+            _currentItem.value = curItem.copy(lyrics = lyrics)
         }
     }
 

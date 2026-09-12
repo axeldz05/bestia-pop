@@ -194,8 +194,25 @@ fun NowPlayingScreen(
         )
     }
 
-    LaunchedEffect(localSong?.id) {
+    val lyricsSong: Song = localSong ?: Song(
+        id = -kotlin.math.abs(item.mediaId.hashCode().toLong().takeIf { it != 0L } ?: 1L),
+        title = item.title,
+        artist = item.artist,
+        album = item.album,
+        durationMs = item.durationMs,
+        artworkUri = item.artworkUri,
+        uriString = item.mediaId,
+        lyrics = (item as? PlayableItem.Remote)?.lyrics?.trim()?.takeIf { it.isNotBlank() && !it.equals("null", ignoreCase = true) }
+    )
+
+    LaunchedEffect(lyricsSong.id) {
         viewModel.clearLyricsFetchError()
+    }
+    LaunchedEffect(pagerState.currentPage, pagerState.targetPage, lyricsSong.id) {
+        val isLyricsTab = pagerState.currentPage == 1 || pagerState.targetPage == 1
+        if (isLyricsTab && lyricsSong.lyrics.isNullOrBlank()) {
+            viewModel.ensureLyrics(lyricsSong)
+        }
     }
     val albumLabel = when (item) {
         is PlayableItem.Local -> item.song.album
@@ -663,7 +680,7 @@ fun NowPlayingScreen(
                     1 -> {
                         // Page 1: Letra a pantalla completa con controles anclados abajo
                         NowPlayingLyricsView(
-                            localSong = localSong,
+                            song = lyricsSong,
                             viewModel = viewModel,
                             positionMsFlow = viewModel.playbackPositionMs,
                             durationMs = item.durationMs,
@@ -989,7 +1006,7 @@ private fun DockedProgressIndicator(
  */
 @Composable
 private fun NowPlayingLyricsView(
-    localSong: Song?,
+    song: Song,
     viewModel: MusicPlayerViewModel,
     positionMsFlow: StateFlow<Long>,
     durationMs: Long,
@@ -1008,7 +1025,7 @@ private fun NowPlayingLyricsView(
     onRetryFetchLyrics: (Song) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val rawLyrics = localSong?.lyrics?.trim()?.takeIf { it.isNotBlank() && !it.equals("null", ignoreCase = true) }
+    val rawLyrics = song.lyrics?.trim()?.takeIf { it.isNotBlank() && !it.equals("null", ignoreCase = true) }
 
     Column(modifier = modifier.fillMaxSize()) {
         Box(
@@ -1032,9 +1049,9 @@ private fun NowPlayingLyricsView(
                 val translationVersion by viewModel.translationVersion.collectAsStateWithLifecycle()
                 val context = LocalContext.current
 
-                LaunchedEffect(localSong.id, plainLines, lyricsSettings.phoneticGuideEnabled) {
+                LaunchedEffect(song.id, plainLines, lyricsSettings.phoneticGuideEnabled) {
                     if (lyricsSettings.phoneticGuideEnabled) {
-                        viewModel.ensureRomanization(localSong.id, plainLines)
+                        viewModel.ensureRomanization(song.id, plainLines)
                     }
                 }
 
@@ -1046,11 +1063,11 @@ private fun NowPlayingLyricsView(
                     lyricsSettings
                 ) {
                     val translated = if (isTranslationActive) {
-                        viewModel.getTranslatedLines(localSong.id)
+                        viewModel.getTranslatedLines(song.id)
                     } else {
                         null
                     }
-                    val romanized = viewModel.getRomanizedLines(localSong.id)
+                    val romanized = viewModel.getRomanizedLines(song.id)
 
                     parsedLrc.mapIndexed { idx, line ->
                         val formattedTime = line.timeMs?.let { formatLyricStamp(it) }
@@ -1097,7 +1114,7 @@ private fun NowPlayingLyricsView(
                         confirmButton = {
                             Button(
                                 onClick = {
-                                    viewModel.confirmGoogleTranslate(localSong, plainLines)
+                                    viewModel.confirmGoogleTranslate(song, plainLines)
                                 }
                             ) {
                                 Text("Traducir con Google")
@@ -1149,7 +1166,7 @@ private fun NowPlayingLyricsView(
 
                         FilledTonalButton(
                             onClick = {
-                                viewModel.toggleLyricsTranslation(localSong, plainLines)
+                                viewModel.toggleLyricsTranslation(song, plainLines)
                             },
                             enabled = !isFetchingTranslation,
                             shape = RoundedCornerShape(16.dp),
@@ -1257,6 +1274,24 @@ private fun NowPlayingLyricsView(
                         }
                     }
                 }
+            } else if (isFetchingLyrics) {
+                // Buscando letra (local o en línea)
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(36.dp),
+                        strokeWidth = 3.dp,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        text = "Buscando letra…",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                    )
+                }
             } else {
                 // Estado sin letra
                 Column(
@@ -1264,43 +1299,30 @@ private fun NowPlayingLyricsView(
                     verticalArrangement = Arrangement.Center
                 ) {
                     Text(
-                        text = if (localSong == null) "Letra no disponible en stream" else "Sin letra disponible",
+                        text = "Sin letra disponible",
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                     )
-                    if (localSong != null) {
-                        Spacer(modifier = Modifier.height(14.dp))
-                        Button(
-                            onClick = { onRetryFetchLyrics(localSong) },
-                            enabled = !isFetchingLyrics,
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            if (isFetchingLyrics) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(16.dp),
-                                    strokeWidth = 2.dp,
-                                    color = MaterialTheme.colorScheme.onPrimary
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text("Buscando en línea…")
-                            } else {
-                                Icon(
-                                    imageVector = Icons.Default.Refresh,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text("Buscar en línea")
-                            }
-                        }
-                        if (!lyricsFetchError.isNullOrBlank()) {
-                            Spacer(modifier = Modifier.height(10.dp))
-                            Text(
-                                text = lyricsFetchError,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.error
-                            )
-                        }
+                    Spacer(modifier = Modifier.height(14.dp))
+                    Button(
+                        onClick = { onRetryFetchLyrics(song) },
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Buscar en línea")
+                    }
+                    if (!lyricsFetchError.isNullOrBlank()) {
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Text(
+                            text = lyricsFetchError,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
                     }
                 }
             }

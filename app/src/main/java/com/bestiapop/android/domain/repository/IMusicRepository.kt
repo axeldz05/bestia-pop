@@ -119,6 +119,12 @@ interface IMusicRepository {
 
     suspend fun updateSongLyrics(songId: Long, lyrics: String?)
 
+    /** Local lyrics lookup from Room or local file/companion .lrc. */
+    suspend fun findLocalLyrics(song: Song): String?
+
+    /** Save downloaded companion .lrc file next to local song file if possible. */
+    suspend fun saveCompanionLrc(song: Song, lyrics: String): Boolean
+
     /** Online lyrics lookup; does not persist. Null if none found. */
     suspend fun fetchSongLyrics(song: Song): String?
 

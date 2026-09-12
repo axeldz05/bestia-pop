@@ -1923,6 +1923,46 @@ class MusicRepository private constructor(
             musicDao.updateSongLyrics(songId, cleanLyrics)
         }
 
+    override suspend fun findLocalLyrics(song: Song): String? =
+        withContext(Dispatchers.IO) {
+            val dbSong = if (song.id > 0L) musicDao.getSongById(song.id) else null
+            val dbLyrics = dbSong?.lyrics?.trim()?.takeIf { it.isNotBlank() && !it.equals("null", ignoreCase = true) }
+            if (dbLyrics != null) return@withContext dbLyrics
+
+            val file: File? = audioStore.readableFile(song.uriString, song.folderPath)
+            val parent = file?.parentFile
+            if (file != null && file.isFile && parent != null) {
+                val companionText = readCleanTextFile(File(parent, "${file.nameWithoutExtension}.lrc"))
+                    ?: readCleanTextFile(File(parent, "${song.title}.lrc"))
+                if (companionText != null) return@withContext companionText
+
+                val rawTags = AudioTagReader.read(file)
+                val tagLyrics = rawTags?.lyrics?.trim()
+                    ?.takeIf { it.isNotBlank() && !it.equals("null", ignoreCase = true) }
+                if (tagLyrics != null) return@withContext tagLyrics
+            }
+            null
+        }
+
+    private fun readCleanTextFile(file: File?): String? {
+        if (file == null || !file.isFile || !file.canRead()) return null
+        return runCatching { file.readText(Charsets.UTF_8).trim() }.getOrNull()
+            ?.takeIf { it.isNotBlank() && !it.equals("null", ignoreCase = true) }
+    }
+
+    override suspend fun saveCompanionLrc(song: Song, lyrics: String): Boolean =
+        withContext(Dispatchers.IO) {
+            if (lyrics.isBlank()) return@withContext false
+            val file: File = audioStore.readableFile(song.uriString, song.folderPath) ?: return@withContext false
+            val parent = file.parentFile ?: return@withContext false
+            if (!parent.canWrite()) return@withContext false
+            val lrcFile = File(parent, "${file.nameWithoutExtension}.lrc")
+            runCatching {
+                lrcFile.writeText(lyrics.trim(), Charsets.UTF_8)
+                true
+            }.getOrDefault(false)
+        }
+
     override suspend fun fetchSongLyrics(song: Song): String? =
         withContext(Dispatchers.IO) {
             metadataSource.fetchLyrics(song.artist, song.title)

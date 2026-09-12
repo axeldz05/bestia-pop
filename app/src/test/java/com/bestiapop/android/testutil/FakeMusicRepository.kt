@@ -77,6 +77,8 @@ open class FakeMusicRepository : IMusicRepository {
         trackNumber: Int
     ) = Unit
     override suspend fun updateSongLyrics(songId: Long, lyrics: String?) = Unit
+    override suspend fun findLocalLyrics(song: Song): String? = null
+    override suspend fun saveCompanionLrc(song: Song, lyrics: String): Boolean = false
     override suspend fun fetchSongLyrics(song: Song): String? = null
     override suspend fun upsertAlbumOverride(override: AlbumOverride) = Unit
     override suspend fun updateAlbumMetadataPropagateToSongs(override: AlbumOverride) = Unit

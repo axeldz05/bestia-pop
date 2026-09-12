@@ -1355,25 +1355,65 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         _lyricsFetchError.value = null
     }
 
-    fun retryFetchLyrics(song: Song) {
+    private val lyricsLookupAttempted = object : LinkedHashSet<Long>() {
+        override fun add(element: Long): Boolean {
+            if (size >= 300) {
+                val first = iterator().next()
+                remove(first)
+            }
+            return super.add(element)
+        }
+    }
+
+    fun ensureLyrics(song: Song, force: Boolean = false) {
+        if (song.id == 0L) return
+        val currentLyrics = song.lyrics?.trim()?.takeIf { it.isNotBlank() && !it.equals("null", ignoreCase = true) }
+        if (currentLyrics != null && !force) return
+        if (!force && lyricsLookupAttempted.contains(song.id)) return
         if (_isFetchingLyrics.value) return
+
+        val isRemoteStream = song.id < 0L
+
+        lyricsLookupAttempted.add(song.id)
         viewModelScope.launch {
             _isFetchingLyrics.value = true
             _lyricsFetchError.value = null
             try {
-                val lyrics = repository.fetchSongLyrics(song)?.trim()?.takeIf { it.isNotBlank() && !it.equals("null", ignoreCase = true) }
-                if (lyrics != null) {
-                    repository.updateSongLyrics(song.id, lyrics)
-                    playbackRuntime.updateCurrentSongLyrics(song.id, lyrics)
+                if (!isRemoteStream) {
+                    val localLyrics = repository.findLocalLyrics(song)?.trim()?.takeIf {
+                        it.isNotBlank() && !it.equals("null", ignoreCase = true)
+                    }
+                    if (localLyrics != null) {
+                        repository.updateSongLyrics(song.id, localLyrics)
+                        playbackRuntime.updateCurrentSongLyrics(song.id, localLyrics)
+                        return@launch
+                    }
+                }
+
+                val onlineLyrics = repository.fetchSongLyrics(song)?.trim()?.takeIf {
+                    it.isNotBlank() && !it.equals("null", ignoreCase = true)
+                }
+                if (onlineLyrics != null) {
+                    if (isRemoteStream) {
+                        playbackRuntime.updateCurrentItemLyrics(onlineLyrics)
+                    } else {
+                        repository.updateSongLyrics(song.id, onlineLyrics)
+                        playbackRuntime.updateCurrentSongLyrics(song.id, onlineLyrics)
+                        repository.saveCompanionLrc(song, onlineLyrics)
+                    }
                 } else {
-                    _lyricsFetchError.value = "No se encontró letra en línea"
+                    _lyricsFetchError.value = "No se encontró letra"
                 }
             } catch (_: Exception) {
-                _lyricsFetchError.value = "Error al buscar letra en línea"
+                _lyricsFetchError.value = "Error al buscar letra"
             } finally {
                 _isFetchingLyrics.value = false
             }
         }
+    }
+
+    fun retryFetchLyrics(song: Song) {
+        ensureLyrics(song, force = true)
     }
 
     fun enhanceSongMetadataAndLyrics(song: Song) {

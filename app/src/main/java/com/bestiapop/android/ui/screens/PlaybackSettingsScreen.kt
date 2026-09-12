@@ -29,18 +29,7 @@ import kotlin.math.roundToInt
 
 @Composable
 fun PlaybackSettingsScreen(viewModel: MusicPlayerViewModel) {
-    val rememberShuffle by viewModel.rememberShuffleOnLaunch.collectAsStateWithLifecycle()
-    val rememberRepeat by viewModel.rememberRepeatOnLaunch.collectAsStateWithLifecycle()
-    val autoplayOnLaunch by viewModel.autoplayOnLaunch.collectAsStateWithLifecycle()
-    val clearShuffleOnManualPlay by viewModel.clearShuffleOnManualPlay.collectAsStateWithLifecycle()
-    val clearRepeatAllOnManualPlay by viewModel.clearRepeatAllOnManualPlay.collectAsStateWithLifecycle()
-    val clearRepeatOneOnManualPlay by viewModel.clearRepeatOneOnManualPlay.collectAsStateWithLifecycle()
-    val clearShuffleOnSkip by viewModel.clearShuffleOnSkip.collectAsStateWithLifecycle()
-    val clearRepeatOneOnSkip by viewModel.clearRepeatOneOnSkip.collectAsStateWithLifecycle()
-    val streamGraceSeconds by viewModel.streamSkipGraceSeconds.collectAsStateWithLifecycle()
-    val openNowPlayingOnPlay by viewModel.openNowPlayingOnPlay.collectAsStateWithLifecycle()
-    val crossfadeEnabled by viewModel.crossfadeEnabled.collectAsStateWithLifecycle()
-    val crossfadeDurationSeconds by viewModel.crossfadeDurationSeconds.collectAsStateWithLifecycle()
+    val settings by viewModel.playbackSettings.collectAsStateWithLifecycle()
     val backgroundExecutionStatus by viewModel.backgroundExecutionStatus.collectAsStateWithLifecycle()
 
     val context = LocalContext.current
@@ -56,12 +45,12 @@ fun PlaybackSettingsScreen(viewModel: MusicPlayerViewModel) {
     ) {
         SettingsSwitchRow(
             title = "Reproducir al abrir",
-            subtitle = if (autoplayOnLaunch) {
+            subtitle = if (settings.autoplayOnLaunch) {
                 "Al abrir la app, seguir la última cola automáticamente (local o stream)"
             } else {
                 "Al abrir la app, mostrar la última canción sin reproducir"
             },
-            checked = autoplayOnLaunch,
+            checked = settings.autoplayOnLaunch,
             onCheckedChange = { viewModel.setAutoplayOnLaunch(it) }
         )
 
@@ -69,12 +58,12 @@ fun PlaybackSettingsScreen(viewModel: MusicPlayerViewModel) {
 
         SettingsSwitchRow(
             title = "Recordar aleatorio",
-            subtitle = if (rememberShuffle) {
+            subtitle = if (settings.rememberShuffleOnLaunch) {
                 "Al abrir la app, conservar si el modo aleatorio estaba activo"
             } else {
                 "Al abrir la app, el aleatorio arranca apagado"
             },
-            checked = rememberShuffle,
+            checked = settings.rememberShuffleOnLaunch,
             onCheckedChange = { viewModel.setRememberShuffleOnLaunch(it) }
         )
 
@@ -82,7 +71,7 @@ fun PlaybackSettingsScreen(viewModel: MusicPlayerViewModel) {
 
         SettingsSwitchRow(
             title = "Recordar repetición",
-            checked = rememberRepeat,
+            checked = settings.rememberRepeatOnLaunch,
             onCheckedChange = { viewModel.setRememberRepeatOnLaunch(it) },
             onSubtitle = "Al abrir la app, conservar el último modo (todo / una / off)",
             offSubtitle = "Al abrir la app, la repetición arranca apagada"
@@ -100,7 +89,7 @@ fun PlaybackSettingsScreen(viewModel: MusicPlayerViewModel) {
 
         SettingsSwitchRow(
             title = "Abrir reproductor",
-            checked = openNowPlayingOnPlay,
+            checked = settings.openNowPlayingOnPlay,
             onCheckedChange = { viewModel.setOpenNowPlayingOnPlay(it) },
             onSubtitle = "Al elegir qué reproducir, se abre automáticamente la pantalla de reproducción",
             offSubtitle = "La reproducción inicia en la barra inferior sin abrir la pantalla completa"
@@ -110,7 +99,7 @@ fun PlaybackSettingsScreen(viewModel: MusicPlayerViewModel) {
 
         SettingsSwitchRow(
             title = "Salir del aleatorio",
-            checked = clearShuffleOnManualPlay,
+            checked = settings.clearShuffleOnManualPlay,
             onCheckedChange = { viewModel.setClearShuffleOnManualPlay(it) },
             onSubtitle = "Al elegir qué reproducir, se apaga el aleatorio",
             offSubtitle = "El aleatorio se mantiene si ya estaba activo"
@@ -120,7 +109,7 @@ fun PlaybackSettingsScreen(viewModel: MusicPlayerViewModel) {
 
         SettingsSwitchRow(
             title = "Salir de repetir todo",
-            checked = clearRepeatAllOnManualPlay,
+            checked = settings.clearRepeatAllOnManualPlay,
             onCheckedChange = { viewModel.setClearRepeatAllOnManualPlay(it) },
             onSubtitle = "Al elegir qué reproducir, se apaga repetir todo",
             offSubtitle = "Repetir todo se mantiene si ya estaba activo"
@@ -130,7 +119,7 @@ fun PlaybackSettingsScreen(viewModel: MusicPlayerViewModel) {
 
         SettingsSwitchRow(
             title = "Salir de repetir una",
-            checked = clearRepeatOneOnManualPlay,
+            checked = settings.clearRepeatOneOnManualPlay,
             onCheckedChange = { viewModel.setClearRepeatOneOnManualPlay(it) },
             onSubtitle = "Al elegir qué reproducir, se apaga repetir una",
             offSubtitle = "Repetir una se mantiene si ya estaba activo"
@@ -142,7 +131,7 @@ fun PlaybackSettingsScreen(viewModel: MusicPlayerViewModel) {
 
         SettingsSwitchRow(
             title = "Salir del aleatorio",
-            checked = clearShuffleOnSkip,
+            checked = settings.clearShuffleOnSkip,
             onCheckedChange = { viewModel.setClearShuffleOnSkip(it) },
             onSubtitle = "Siguiente o anterior apaga el aleatorio (la cola no se reordena)",
             offSubtitle = "Siguiente o anterior no cambia el aleatorio"
@@ -152,7 +141,7 @@ fun PlaybackSettingsScreen(viewModel: MusicPlayerViewModel) {
 
         SettingsSwitchRow(
             title = "Salir de repetir una",
-            checked = clearRepeatOneOnSkip,
+            checked = settings.clearRepeatOneOnSkip,
             onCheckedChange = { viewModel.setClearRepeatOneOnSkip(it) },
             onSubtitle = "Siguiente o anterior sale de repetir una y pasa de tema",
             offSubtitle = "Se mantiene repetir una"
@@ -168,15 +157,16 @@ fun PlaybackSettingsScreen(viewModel: MusicPlayerViewModel) {
         )
         Spacer(modifier = Modifier.height(12.dp))
 
+        val crossfadeDurationSeconds = settings.crossfadeDurationSeconds
         SettingsSwitchRow(
             title = "Crossfade activo",
-            checked = crossfadeEnabled,
+            checked = settings.crossfadeEnabled,
             onCheckedChange = { viewModel.setCrossfadeEnabled(it) },
             onSubtitle = "Transición fluida de $crossfadeDurationSeconds s (${crossfadeDurationSeconds * 1000} ms)",
             offSubtitle = "Reproducción sin fundido de volumen"
         )
 
-        if (crossfadeEnabled) {
+        if (settings.crossfadeEnabled) {
             Spacer(modifier = Modifier.height(12.dp))
             Text(
                 text = "Duración: $crossfadeDurationSeconds ${if (crossfadeDurationSeconds == 1) "segundo" else "segundos"} (${crossfadeDurationSeconds * 1000} ms)",
@@ -201,6 +191,7 @@ fun PlaybackSettingsScreen(viewModel: MusicPlayerViewModel) {
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Spacer(modifier = Modifier.height(12.dp))
+        val streamGraceSeconds = settings.streamSkipGraceSeconds
         Text(
             text = if (streamGraceSeconds <= 0) {
                 "Saltear al primer error"

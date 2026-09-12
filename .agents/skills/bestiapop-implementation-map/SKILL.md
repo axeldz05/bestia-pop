@@ -103,6 +103,7 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 | NP song/album actions | `ui/screens/NowPlayingActions.kt` (`NowPlayingActionsMenu` L1/L2, `NowPlayingNavigationActions`, `NowPlayingSongActions` + `from`, `NowPlayingMenuActions`) |
 | Identify review state | `ui/state/IdentifyReviewState.kt` (`IdentifyReviewItem`, `IdentifyReviewPhase`, `IdentifyReviewState` `isVisible` / `isApplying` / `pendingCount` / `albumGroups` / `canApplyRemaining` / `canApplySelected` / `identifyHydrationSongIds` / `identifyPersistEcho` / `identifyReviewFromPersisted` / `attachKnownAlbumMatches` / `leftoverIdentifyReview` / `identifySearchDraft` / `withItemSearchChrome` / `mergeIncomingReviewItems` / `Song.forIdentifyReview`); VM `applyPersistedIdentifyQueue` (eco Skip sin Room; extras `getSongsByIds`; hydrate IO fuera de `identifyMutex`) |
 | Catalog search coordinator | `ui/state/CatalogSearchCoordinator.kt` (`search` / `searchDebounced` / `submitSearch`, `IdentifySearchFilters`, `CatalogCategory`, StateFlow reactivo) |
+| Submenu action coordinator | `ui/state/SubmenuActionCoordinator.kt` (orquesta `executeForPlayables`, `executeForSong`, `executeForCandidates`, `executeForTrack`, `executeForAlbum` L1/L2 con `CatalogAlbum` y `Album`, `executeForArtist`, centralizando dispatching de `SubmenuSwipeAction`, formateo de toasts y resolución de playables) |
 | Theme Compose | `ui/theme/Theme.kt`, `ThemePresets.kt`, `ListDensity.kt` (row/artwork/chip density tokens) |
 
 ## Domain

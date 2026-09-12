@@ -140,6 +140,7 @@ import com.bestiapop.android.ui.state.LibraryViewMode
 import com.bestiapop.android.ui.state.LoadableUiState
 import com.bestiapop.android.ui.state.PlaylistDetailNav
 import com.bestiapop.android.ui.state.SimilarPlaylistPreviewState
+import com.bestiapop.android.ui.state.SubmenuActionCoordinator
 import com.bestiapop.android.ui.state.UiNavigationState
 import com.bestiapop.android.ui.state.lbMbidOrNull
 import com.bestiapop.android.ui.state.mapToUiState
@@ -261,7 +262,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         listenBrainzPreferences.settingsFlow
             .stateInUi(viewModelScope, ListenBrainzSettings())
 
-    private val playbackSettings: StateFlow<PlaybackSettings> = playbackRuntime.playbackSettings
+    val playbackSettings: StateFlow<PlaybackSettings> = playbackRuntime.playbackSettings
 
     val downloadSettings: StateFlow<DownloadSettings> =
         downloadPreferences.settingsFlow
@@ -640,6 +641,24 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         onSaveRecentSearch = ::addRecentSearch
     )
     val catalogSearch: StateFlow<CatalogSearchUiState> = catalogSearchCoordinator.state
+
+    private val submenuActionCoordinator = SubmenuActionCoordinator(
+        scope = viewModelScope,
+        addPlayableBatch = ::addPlayableBatch,
+        playNextPlayableBatch = ::playNextPlayableBatch,
+        startRadioForSong = { startRadio(it) },
+        startRadioForStream = { startRadio() },
+        playPlayableCollection = { items, index -> playPlayableCollection(items, startIndex = index) },
+        searchCatalog = ::searchCatalog,
+        navigateToDiscover = { setSelectedNavIndex(NAV_DISCOVER) },
+        toast = ::toast,
+        getLibrarySongs = { libraryProjection.songs.value },
+        resolveAlbumArtwork = { libraryProjection.resolveAlbumArtwork(it) },
+        getLocalSongsByMatchKey = { libraryLookupIndex.value.localSongsByMatchKey },
+        getAllSongsByMatchKey = { libraryLookupIndex.value.allSongsByMatchKey },
+        getCatalogCollection = { _catalogCollection.value },
+        findLocalSongFor = ::findLocalSongFor
+    )
 
     private val _catalogCollection = MutableStateFlow(CatalogCollectionUiState())
     val catalogCollection = _catalogCollection.asStateFlow()
@@ -1591,6 +1610,14 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             ?: indices.albumStatusByTitle[albumKey]
             ?: ItemLibraryStatus.NOT_IN_LIBRARY
     }
+
+    /** Level 2: Returns status of album in library for a [CatalogAlbum]. */
+    fun getAlbumLibraryStatus(album: CatalogAlbum): ItemLibraryStatus =
+        getAlbumLibraryStatus(album.title, album.artist)
+
+    /** Level 2: Returns status of album in library for a local [Album]. */
+    fun getAlbumLibraryStatus(album: Album): ItemLibraryStatus =
+        getAlbumLibraryStatus(album.name, album.artist)
 
     /** Preview local file while reviewing identify candidates (toggle if already current). */
     fun previewIdentifyLocalSong(song: Song) {
@@ -3282,106 +3309,46 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         viewModelScope.launch { libraryPreferences.setSubmenuSwipeLeftAction(action) }
     }
 
-    private fun enqueueToastMessage(count: Int): String =
-        if (count == 1) "Canción añadida a la cola" else "$count canciones añadidas a la cola"
-
-    private fun playNextToastMessage(count: Int): String =
-        if (count == 1) "Se reproducirá a continuación" else "$count canciones se reproducirán a continuación"
 
     fun executeSubmenuActionForPlayables(
         action: SubmenuSwipeAction,
         items: List<PlayableItem>,
         onAddToPlaylist: ((List<PlayableItem>) -> Unit)? = null
-    ) {
-        if (items.isEmpty() || action == SubmenuSwipeAction.DISABLED) return
-        when (action) {
-            SubmenuSwipeAction.ENQUEUE_ALL -> {
-                addPlayableBatch(items)
-                toast(enqueueToastMessage(items.size))
-            }
-            SubmenuSwipeAction.PLAY_NEXT -> {
-                playNextPlayableBatch(items)
-                toast(playNextToastMessage(items.size))
-            }
-            SubmenuSwipeAction.START_RADIO -> {
-                val seed = items.firstOrNull()
-                if (seed != null) {
-                    if (seed is PlayableItem.Local) {
-                        startRadio(seed.song)
-                    } else {
-                        val local = TrackMatchKeys.lookupLocalSong(libraryLookupIndex.value.allSongsByMatchKey, seed)
-                        if (local != null) {
-                            startRadio(local)
-                        } else {
-                            playPlayableCollection(listOf(seed), startIndex = 0)
-                            startRadio()
-                        }
-                    }
-                    val artist = seed.artist
-                    toast(if (artist.isNotBlank()) "Iniciando radio de $artist" else "Iniciando radio")
-                }
-            }
-            SubmenuSwipeAction.SEARCH_SIMILAR -> {
-                val artist = items.firstOrNull()?.artist.orEmpty()
-                if (artist.isNotBlank()) {
-                    searchCatalog(artist)
-                    setSelectedNavIndex(NAV_DISCOVER)
-                }
-            }
-            SubmenuSwipeAction.ADD_TO_PLAYLIST -> {
-                onAddToPlaylist?.invoke(items)
-            }
-            SubmenuSwipeAction.DISABLED -> Unit
-        }
-    }
+    ) = submenuActionCoordinator.executeForPlayables(action, items, onAddToPlaylist)
 
     fun executeSubmenuActionForSongs(
         action: SubmenuSwipeAction,
         songs: List<Song>,
         onAddToPlaylist: ((List<Song>) -> Unit)? = null
-    ) {
-        if (songs.isEmpty() || action == SubmenuSwipeAction.DISABLED) return
-        if (action == SubmenuSwipeAction.ADD_TO_PLAYLIST) {
-            onAddToPlaylist?.invoke(songs)
-            return
-        }
-        val playables = songs.toPlayableItems { libraryProjection.resolveAlbumArtwork(it) }
-        executeSubmenuActionForPlayables(action, playables)
-    }
+    ) = submenuActionCoordinator.executeForSongs(action, songs, onAddToPlaylist)
 
     fun executeSubmenuActionForCandidates(
         action: SubmenuSwipeAction,
         candidates: List<CatalogTrackCandidate>,
         onAddToPlaylist: ((List<CatalogTrackCandidate>) -> Unit)? = null
-    ) {
-        if (candidates.isEmpty() || action == SubmenuSwipeAction.DISABLED) return
-        if (action == SubmenuSwipeAction.ADD_TO_PLAYLIST) {
-            onAddToPlaylist?.invoke(candidates)
-            return
-        }
-        val playables = candidates.toPlayableItems(libraryLookupIndex.value.localSongsByMatchKey)
-        executeSubmenuActionForPlayables(action, playables)
-    }
+    ) = submenuActionCoordinator.executeForCandidates(action, candidates, onAddToPlaylist)
 
     fun executeSubmenuActionForTrack(
         action: SubmenuSwipeAction,
         track: TrackMeta,
         onAddToPlaylist: ((Song) -> Unit)? = null
-    ) {
-        if (action == SubmenuSwipeAction.DISABLED) return
-        val local = if (track is Song) track else findLocalSongFor(track)
-        if (action == SubmenuSwipeAction.ADD_TO_PLAYLIST) {
-            if (local != null) {
-                onAddToPlaylist?.invoke(local)
-            } else {
-                toast("Descarga la canción para añadirla a playlists")
-            }
-            return
-        }
-        val playable = PlayableItem.fromLibraryOrRemote(local, track.toIdentity())
-        executeSubmenuActionForPlayables(action, listOf(playable))
-    }
+    ) = submenuActionCoordinator.executeForTrack(action, track, onAddToPlaylist)
 
+    /** Level 2: Execute submenu action for a [CatalogAlbum]. */
+    fun executeSubmenuActionForAlbum(
+        action: SubmenuSwipeAction,
+        album: CatalogAlbum,
+        onAddToPlaylist: ((List<Song>) -> Unit)? = null
+    ) = submenuActionCoordinator.executeForAlbum(action, album, onAddToPlaylist)
+
+    /** Level 2: Execute submenu action for a local [Album]. */
+    fun executeSubmenuActionForAlbum(
+        action: SubmenuSwipeAction,
+        album: Album,
+        onAddToPlaylist: ((List<Song>) -> Unit)? = null
+    ) = submenuActionCoordinator.executeForAlbum(action, album, onAddToPlaylist)
+
+    /** Level 1: Execute submenu action for an album with raw string parameters. */
     fun executeSubmenuActionForAlbum(
         action: SubmenuSwipeAction,
         albumTitle: String,
@@ -3389,73 +3356,13 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         albumId: String = "",
         coverUrl: String? = null,
         onAddToPlaylist: ((List<Song>) -> Unit)? = null
-    ) {
-        if (action == SubmenuSwipeAction.DISABLED) return
-        val cleanTitle = albumTitle.trim()
-        if (cleanTitle.isEmpty()) return
-
-        val localSongs = songsForAlbum(libraryProjection.songs.value, cleanTitle)
-        if (localSongs.isNotEmpty()) {
-            executeSubmenuActionForSongs(action, localSongs, onAddToPlaylist)
-            return
-        }
-
-        val currentCollection = _catalogCollection.value
-        if (currentCollection.isOpen && currentCollection.title.equals(cleanTitle, ignoreCase = true) && currentCollection.candidates.isNotEmpty()) {
-            executeSubmenuActionForCandidates(action, currentCollection.candidates)
-            return
-        }
-
-        viewModelScope.launch {
-            val candidates = MetadataFetcher.fetchAlbumTrackCandidates(albumId, cleanTitle, artistName, coverUrl)
-            if (candidates.isNotEmpty()) {
-                executeSubmenuActionForCandidates(action, candidates)
-            }
-        }
-    }
+    ) = submenuActionCoordinator.executeForAlbum(action, albumTitle, artistName, albumId, coverUrl, onAddToPlaylist)
 
     fun executeSubmenuActionForArtist(
         action: SubmenuSwipeAction,
         artistName: String,
         onAddToPlaylist: ((List<Song>) -> Unit)? = null
-    ) {
-        if (action == SubmenuSwipeAction.DISABLED) return
-        val cleanArtist = artistName.trim()
-        if (cleanArtist.isEmpty()) return
-
-        if (action == SubmenuSwipeAction.SEARCH_SIMILAR) {
-            searchCatalog(cleanArtist)
-            setSelectedNavIndex(NAV_DISCOVER)
-            return
-        }
-
-        val localSongs = songsForArtist(libraryProjection.songs.value, cleanArtist)
-        if (localSongs.isNotEmpty()) {
-            executeSubmenuActionForSongs(action, localSongs, onAddToPlaylist)
-            return
-        }
-
-        if (action == SubmenuSwipeAction.START_RADIO) {
-            startRadio()
-            toast("Iniciando radio de $cleanArtist")
-            return
-        }
-
-        val currentCollection = _catalogCollection.value
-        if (currentCollection.isOpen && currentCollection.title.equals(cleanArtist, ignoreCase = true) && currentCollection.candidates.isNotEmpty()) {
-            executeSubmenuActionForCandidates(action, currentCollection.candidates)
-            return
-        }
-
-        viewModelScope.launch {
-            val deezerHit = MetadataFetcher.searchDeezerArtist(cleanArtist)
-            val topTracks = MetadataFetcher.fetchArtistTopTracks(cleanArtist, deezerHit?.id)
-            val candidates = topTracks.map { MetadataFetcher.toCatalogCandidate(it) }
-            if (candidates.isNotEmpty()) {
-                executeSubmenuActionForCandidates(action, candidates)
-            }
-        }
-    }
+    ) = submenuActionCoordinator.executeForArtist(action, artistName, onAddToPlaylist)
 
     fun setLibraryBlobsSettings(settings: LibraryBlobsSettings) {
         viewModelScope.launch {
@@ -3606,6 +3513,12 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             }
         }
     }
+
+    /** Level 2: Remove saved album using a [CatalogAlbum]. */
+    fun removeSavedAlbum(album: CatalogAlbum) = removeSavedAlbum(album.title, album.artist)
+
+    /** Level 2: Remove saved album using an [Album]. */
+    fun removeSavedAlbum(album: Album) = removeSavedAlbum(album.name, album.artist)
 
     /** Level 2: Debounced search for live typing in search bars without spamming HTTP or canceling early. */
     fun searchCatalogDebounced(

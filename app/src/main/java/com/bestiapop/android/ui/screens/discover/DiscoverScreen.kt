@@ -194,10 +194,7 @@ fun DiscoverScreen(
             onSwipeAlbum = { album ->
                 viewModel.executeSubmenuActionForAlbum(
                     gestureSettings.swipeLeftAction,
-                    albumTitle = album.title,
-                    artistName = album.artist,
-                    albumId = album.id,
-                    coverUrl = album.coverUrl
+                    album
                 )
             },
             onSwipeArtist = { artistName ->
@@ -1084,7 +1081,7 @@ fun DiscoverAlbumCard(
     album: CatalogAlbum,
     onClick: () -> Unit,
     onSave: () -> Unit,
-    status: ItemLibraryStatus = LocalDiscoverContext.current.getAlbumStatus(album.title, album.artist),
+    status: ItemLibraryStatus = LocalDiscoverContext.current.getAlbumStatus(album),
     activeDownloads: List<ActiveDownload>? = LocalDiscoverContext.current.activeDownloads,
     isDownloading: Boolean = activeDownloads?.isAlbumDownloading(album) ?: false,
     onNotifyStatus: ((String) -> Unit)? = LocalDiscoverContext.current.onNotifyStatus,
@@ -1203,6 +1200,7 @@ data class DiscoverContext(
     val getAlbumStatus: (String, String) -> ItemLibraryStatus = { _, _ -> ItemLibraryStatus.NOT_IN_LIBRARY },
     val onNotifyStatus: ((String) -> Unit)? = null
 ) {
+    fun getAlbumStatus(album: CatalogAlbum): ItemLibraryStatus = getAlbumStatus(album.title, album.artist)
     fun withoutSwipeActions(): DiscoverContext = copy(swipeActions = DiscoverSwipeActions())
 }
 

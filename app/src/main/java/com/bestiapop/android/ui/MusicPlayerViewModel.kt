@@ -1396,7 +1396,8 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     fun playSong(
         song: Song,
         playlistOrQueue: List<Song> = emptyList(),
-        applyManualModes: Boolean = true
+        applyManualModes: Boolean = true,
+        openNowPlaying: Boolean = true
     ) {
         _catalogPreviewKey.value = null
         val baseList = when {
@@ -1412,7 +1413,8 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         playPlayableCollection(
             targetQueue.toPlayableItemsWithFreshIds { libraryProjection.resolveAlbumArtwork(it) },
             index,
-            applyManualModes = applyManualModes
+            applyManualModes = applyManualModes,
+            openNowPlaying = openNowPlaying
         )
     }
 
@@ -1447,7 +1449,10 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             ?: "${track.artist.trim().lowercase()}|${track.title.trim().lowercase()}"
     }
 
-    fun playOnlineCatalogTrackAsStream(track: OnlineCatalogTrack) {
+    fun playOnlineCatalogTrackAsStream(
+        track: OnlineCatalogTrack,
+        openNowPlaying: Boolean = true
+    ) {
         val key = catalogPreviewKeyFor(track)
         if (_catalogPreviewKey.value == key && currentItem.value != null) {
             togglePlayPause()
@@ -1459,7 +1464,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             identity = track.identity,
             youtubeQueryOrId = queryOrId
         )
-        playPlayableCollection(listOf(remote), 0, openNowPlaying = false)
+        playPlayableCollection(listOf(remote), 0, openNowPlaying = openNowPlaying)
     }
 
     /** Returns matched local (non-remote) Song from library index in O(1) time. */
@@ -1469,12 +1474,15 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     /** Plays local version if available in library; otherwise falls back to online stream. */
-    fun playCatalogOrLocalTrack(track: OnlineCatalogTrack) {
+    fun playCatalogOrLocalTrack(
+        track: OnlineCatalogTrack,
+        openNowPlaying: Boolean = true
+    ) {
         val local = findLocalSongFor(track.identity)
         if (local != null) {
-            playSong(local)
+            playSong(local, openNowPlaying = openNowPlaying)
         } else {
-            playOnlineCatalogTrackAsStream(track)
+            playOnlineCatalogTrackAsStream(track, openNowPlaying = openNowPlaying)
         }
     }
 
@@ -1482,15 +1490,25 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     fun playCatalogCandidates(
         candidates: List<CatalogTrackCandidate>,
         startIndex: Int = 0,
-        startShuffled: Boolean = false
+        startShuffled: Boolean = false,
+        openNowPlaying: Boolean = true
     ) {
+        _catalogPreviewKey.value = null
         val playables = candidates.toPlayableItems(libraryLookupIndex.value.localSongsByMatchKey)
-        playPlayableCollection(playables, startIndex = startIndex, startShuffled = startShuffled)
+        playPlayableCollection(
+            playables,
+            startIndex = startIndex,
+            startShuffled = startShuffled,
+            openNowPlaying = openNowPlaying
+        )
     }
 
     /** Plays a single catalog candidate using local file if present, or streaming. */
-    fun playCatalogCandidate(candidate: CatalogTrackCandidate) {
-        playCatalogOrLocalTrack(candidate.effectiveTrack)
+    fun playCatalogCandidate(
+        candidate: CatalogTrackCandidate,
+        openNowPlaying: Boolean = true
+    ) {
+        playCatalogOrLocalTrack(candidate.effectiveTrack, openNowPlaying = openNowPlaying)
     }
 
     /** Level 2: Downloads a single catalog candidate preserving all candidate matches and identity. */
@@ -1556,7 +1574,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     /** Stream-preview a ranked identify candidate via YouTube (same path as catalog). */
     fun previewIdentifyCandidate(candidate: IdentifyCandidate) {
-        playOnlineCatalogTrackAsStream(candidate.track)
+        playOnlineCatalogTrackAsStream(candidate.track, openNowPlaying = false)
     }
 
     fun clearCatalogPreview() {
@@ -2904,6 +2922,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         origin: DiscoverPlaybackOrigin = DiscoverPlaybackOrigin.None
     ): Boolean {
         if (items.isEmpty() || startIndex !in items.indices) return false
+        _catalogPreviewKey.value = null
         playPlayableCollection(items, startIndex, origin = origin)
         return true
     }
@@ -3640,7 +3659,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             if (expanded.isEmpty()) return@launch
             val previewTrack = apply(expanded)
             if (wasPreviewing && previewTrack != null) {
-                playOnlineCatalogTrackAsStream(previewTrack)
+                playOnlineCatalogTrackAsStream(previewTrack, openNowPlaying = false)
             }
         }
     }
@@ -3850,7 +3869,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     fun previewActiveDownload(id: String) {
         val track = activeDownloads.value.find { it.id == id }?.currentTrack ?: return
-        playOnlineCatalogTrackAsStream(track)
+        playOnlineCatalogTrackAsStream(track, openNowPlaying = false)
     }
 
     fun playActiveDownload(id: String) {

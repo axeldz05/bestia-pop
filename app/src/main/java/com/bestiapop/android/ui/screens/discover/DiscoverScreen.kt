@@ -238,7 +238,12 @@ fun DiscoverScreen(
                                 viewModel.downloadSelectedCandidatesBatch()
                             },
                             onPlayCandidate = { candidate ->
-                                viewModel.playCatalogCandidate(candidate)
+                                val index = activeCandidates.indexOf(candidate)
+                                if (index >= 0) {
+                                    viewModel.playCatalogCandidates(activeCandidates, startIndex = index, startShuffled = false)
+                                } else {
+                                    viewModel.playCatalogCandidate(candidate)
+                                }
                             },
                             onDownloadCandidate = { candidate ->
                                 viewModel.downloadCatalogCandidate(candidate)
@@ -2380,7 +2385,12 @@ private fun DiscoverArtistDetailSection(
                 viewModel.saveAlbumToLibrary(album)
             },
             onPlayTrack = { candidate ->
-                viewModel.playCatalogCandidate(candidate)
+                val index = candidates.indexOf(candidate)
+                if (index >= 0) {
+                    viewModel.playCatalogCandidates(candidates, startIndex = index, startShuffled = false)
+                } else {
+                    viewModel.playCatalogCandidate(candidate)
+                }
             },
             onDownloadTrack = { candidate ->
                 viewModel.downloadCatalogCandidate(candidate)

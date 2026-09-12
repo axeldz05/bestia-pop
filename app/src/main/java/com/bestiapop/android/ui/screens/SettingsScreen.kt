@@ -19,6 +19,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.material.icons.filled.Analytics
 import androidx.compose.material.icons.filled.AudioFile
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Headset
@@ -64,6 +65,7 @@ private enum class SettingsSection {
     Sound,
     Downloads,
     LibraryTags,
+    Telemetry,
     Update
 }
 
@@ -105,6 +107,7 @@ fun SettingsScreen(viewModel: MusicPlayerViewModel, appUpdateViewModel: AppUpdat
             onOpenSound = { section = SettingsSection.Sound },
             onOpenDownloads = { section = SettingsSection.Downloads },
             onOpenLibraryTags = { section = SettingsSection.LibraryTags },
+            onOpenTelemetry = { section = SettingsSection.Telemetry },
             onOpenUpdate = { section = SettingsSection.Update }
         )
         SettingsSection.Themes -> SettingsSectionPage("Temas", onBack = closeSection) {
@@ -130,6 +133,9 @@ fun SettingsScreen(viewModel: MusicPlayerViewModel, appUpdateViewModel: AppUpdat
         }
         SettingsSection.LibraryTags -> SettingsSectionPage("Archivos", onBack = closeSection) {
             LibraryTagWriteSettingsScreen(viewModel = viewModel)
+        }
+        SettingsSection.Telemetry -> SettingsSectionPage("Telemetría y estabilidad", onBack = closeSection) {
+            TelemetrySettingsScreen(viewModel = viewModel)
         }
         SettingsSection.Update -> SettingsSectionPage("Actualización", onBack = closeSection) {
             AppUpdateScreen(viewModel = appUpdateViewModel)
@@ -164,6 +170,7 @@ private fun SettingsHome(
     onOpenSound: () -> Unit,
     onOpenDownloads: () -> Unit,
     onOpenLibraryTags: () -> Unit,
+    onOpenTelemetry: () -> Unit,
     onOpenUpdate: () -> Unit
 ) {
     val context = LocalContext.current
@@ -264,6 +271,12 @@ private fun SettingsHome(
                 "Escribir metadata de la app a los archivos",
                 Icons.Default.AudioFile,
                 onOpenLibraryTags
+            ),
+            SettingsHomeEntry(
+                "Telemetría y estabilidad",
+                "Diagnósticos anónimos de cierres y memoria",
+                Icons.Default.Analytics,
+                onOpenTelemetry
             ),
             SettingsHomeEntry(
                 "Actualización",

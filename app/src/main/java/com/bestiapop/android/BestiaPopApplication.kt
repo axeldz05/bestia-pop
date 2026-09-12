@@ -103,8 +103,13 @@ class BestiaPopApplication : Application(), ImageLoaderFactory {
         super.onCreate()
         com.bestiapop.android.data.network.HttpClients.initialize(this)
         PlaybackDiagnostics.init(this)
-        // Collect crashes/non-fatals on release/beta builds only (not local debug noise).
-        FirebaseCrashlytics.getInstance().setCrashlyticsCollectionEnabled(!BuildConfig.DEBUG)
+        // Collect crashes/non-fatals on release/beta builds only when telemetry is enabled by user.
+        val telemetryEnabled = com.bestiapop.android.data.preferences.TelemetryPreferencesRepository.isTelemetryEnabledSync(this)
+        CrashReporter.isEnabled = telemetryEnabled
+        FirebaseCrashlytics.getInstance().setCrashlyticsCollectionEnabled(telemetryEnabled && !BuildConfig.DEBUG)
+        if (telemetryEnabled) {
+            com.bestiapop.android.data.system.SystemStabilityMonitor.checkHistoricalExitReasons(this)
+        }
         PlaybackDiagnostics.log(PlaybackDiagnostics.TAG_LIFECYCLE, "BestiaPopApplication.onCreate version=${BuildConfig.VERSION_NAME}")
         registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
             override fun onActivityCreated(activity: android.app.Activity, savedInstanceState: android.os.Bundle?) {
@@ -157,6 +162,7 @@ class BestiaPopApplication : Application(), ImageLoaderFactory {
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
         PlaybackDiagnostics.log(PlaybackDiagnostics.TAG_LIFECYCLE, "BestiaPopApplication.onTrimMemory(level=$level)")
+        com.bestiapop.android.data.system.SystemStabilityMonitor.recordMemoryTrim(level)
         if (level >= ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN) {
             trimCaches()
         }
@@ -165,6 +171,7 @@ class BestiaPopApplication : Application(), ImageLoaderFactory {
     override fun onLowMemory() {
         super.onLowMemory()
         PlaybackDiagnostics.warn(PlaybackDiagnostics.TAG_LIFECYCLE, "BestiaPopApplication.onLowMemory() received")
+        com.bestiapop.android.data.system.SystemStabilityMonitor.recordLowMemory()
         trimCaches()
     }
 

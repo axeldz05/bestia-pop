@@ -11,7 +11,11 @@ object CrashReporter {
 
     private const val TAG = "BestiaPop"
 
+    @Volatile
+    var isEnabled: Boolean = true
+
     fun setKey(key: String, value: String) {
+        if (!isEnabled) return
         runCatching {
             FirebaseCrashlytics.getInstance().setCustomKey(key, value.take(MAX_VALUE_LEN))
         }
@@ -19,6 +23,7 @@ object CrashReporter {
 
     fun log(message: String) {
         runCatching { Log.d(TAG, message) }
+        if (!isEnabled) return
         runCatching {
             FirebaseCrashlytics.getInstance().log(message.take(MAX_LOG_LEN))
         }
@@ -27,6 +32,7 @@ object CrashReporter {
     fun recordNonFatal(throwable: Throwable, keys: Map<String, String> = emptyMap()) {
         val details = if (keys.isNotEmpty()) " keys=$keys" else ""
         runCatching { Log.w(TAG, "Non-fatal exception recorded: ${throwable.message}$details", throwable) }
+        if (!isEnabled) return
         runCatching {
             val crashlytics = FirebaseCrashlytics.getInstance()
             keys.forEach { (k, v) ->

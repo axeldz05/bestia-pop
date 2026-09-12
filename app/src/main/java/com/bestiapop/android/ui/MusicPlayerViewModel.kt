@@ -62,6 +62,7 @@ import com.bestiapop.android.data.preferences.LyricsSettings
 import com.bestiapop.android.data.preferences.JapanesePhoneticMode
 import com.bestiapop.android.data.preferences.PlaybackPreferencesRepository
 import com.bestiapop.android.data.preferences.PlaybackSettings
+import com.bestiapop.android.data.preferences.TelemetryPreferencesRepository
 import com.bestiapop.android.data.preferences.ThemePreferencesRepository
 import com.bestiapop.android.data.network.LyricsTranslationService
 import com.bestiapop.android.data.network.LyricsTranslationResult
@@ -224,6 +225,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private val libraryTagWritePreferences = LibraryTagWritePreferencesRepository(application)
     private val libraryPreferences = LibraryPreferencesRepository(application)
     private val lyricsPreferences = LyricsPreferencesRepository(application)
+    private val telemetryPreferences = TelemetryPreferencesRepository(application)
     private val identifyReviewStore = IdentifyReviewStore(application)
     private val pendingListenDao = AppDatabase.getDatabase(application).pendingListenDao()
     private val connectivityObserver = ConnectivityObserver(application)
@@ -276,6 +278,10 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     val libraryTagWriteSettings: StateFlow<LibraryTagWriteSettings> =
         libraryTagWritePreferences.settingsFlow
             .stateInUi(viewModelScope, LibraryTagWriteSettings())
+
+    val telemetryEnabled: StateFlow<Boolean> =
+        telemetryPreferences.telemetryEnabledFlow
+            .stateInUi(viewModelScope, telemetryPreferences.initialTelemetryEnabled)
 
     val downloadOnMeteredNetwork: StateFlow<Boolean> =
         downloadSettings.mapToUiState(viewModelScope, true) { it.downloadOnMeteredNetwork }
@@ -884,6 +890,12 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     fun setAutoWriteTagsEnabled(enabled: Boolean) {
         viewModelScope.launch {
             libraryTagWritePreferences.setAutoWriteTagsEnabled(enabled)
+        }
+    }
+
+    fun setTelemetryEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            telemetryPreferences.setTelemetryEnabled(enabled)
         }
     }
 

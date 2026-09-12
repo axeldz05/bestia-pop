@@ -44,8 +44,8 @@ import com.bestiapop.android.ui.components.CatalogCategoryChipsRow
 import com.bestiapop.android.ui.components.CircleActionBox
 import com.bestiapop.android.ui.components.HeaderActionIcon
 import com.bestiapop.android.ui.components.LocalSubmenuGestureSettings
-import com.bestiapop.android.ui.components.preloadArtwork
 import com.bestiapop.android.ui.components.EmptyListHint
+import com.bestiapop.android.ui.components.preloadArtwork
 import com.bestiapop.android.ui.components.ScreenBackHeader
 import com.bestiapop.android.ui.components.SearchHistorySheet
 import com.bestiapop.android.ui.components.SearchRecentChipsRow
@@ -182,38 +182,47 @@ fun DiscoverScreen(
         }
     }
 
-    val onSwipeTrack: (TrackMeta) -> Unit = remember(viewModel, gestureSettings.swipeLeftAction) {
-        { track ->
-            viewModel.executeSubmenuActionForTrack(
-                gestureSettings.swipeLeftAction,
-                track,
-                onAddToPlaylist = { song -> songItemActions.onAddToPlaylist?.invoke(song) }
-            )
-        }
+    val swipeActions = remember(viewModel, gestureSettings.swipeLeftAction) {
+        DiscoverSwipeActions(
+            onSwipeTrack = { track ->
+                viewModel.executeSubmenuActionForTrack(
+                    gestureSettings.swipeLeftAction,
+                    track,
+                    onAddToPlaylist = { song -> songItemActions.onAddToPlaylist?.invoke(song) }
+                )
+            },
+            onSwipeAlbum = { album ->
+                viewModel.executeSubmenuActionForAlbum(
+                    gestureSettings.swipeLeftAction,
+                    albumTitle = album.title,
+                    artistName = album.artist,
+                    albumId = album.id,
+                    coverUrl = album.coverUrl
+                )
+            },
+            onSwipeArtist = { artistName ->
+                viewModel.executeSubmenuActionForArtist(
+                    gestureSettings.swipeLeftAction,
+                    artistName = artistName
+                )
+            }
+        )
     }
 
-    val onSwipeAlbum: (CatalogAlbum) -> Unit = remember(viewModel, gestureSettings.swipeLeftAction) {
-        { album ->
-            viewModel.executeSubmenuActionForAlbum(
-                gestureSettings.swipeLeftAction,
-                albumTitle = album.title,
-                artistName = album.artist,
-                albumId = album.id,
-                coverUrl = album.coverUrl
-            )
-        }
+    val discoverContext = remember(swipeActions, activeDownloads, viewModel) {
+        DiscoverContext(
+            swipeActions = swipeActions,
+            activeDownloads = activeDownloads,
+            getTrackStatus = viewModel::getTrackLibraryStatus,
+            getAlbumStatus = viewModel::getAlbumLibraryStatus,
+            onNotifyStatus = { viewModel.toast(it) }
+        )
     }
 
-    val onSwipeArtist: (String) -> Unit = remember(viewModel, gestureSettings.swipeLeftAction) {
-        { artistName ->
-            viewModel.executeSubmenuActionForArtist(
-                gestureSettings.swipeLeftAction,
-                artistName = artistName
-            )
-        }
-    }
-
-    CompositionLocalProvider(LocalSubmenuGestureSettings provides gestureSettings) {
+    CompositionLocalProvider(
+        LocalSubmenuGestureSettings provides gestureSettings,
+        LocalDiscoverContext provides discoverContext
+    ) {
         Box(modifier = modifier.fillMaxSize()) {
             if (selectedCollectionTitle != null) {
                 SubmenuSwipeBox(
@@ -221,7 +230,7 @@ fun DiscoverScreen(
                     onSwipeRight = { viewModel.clearSelectedCollection() },
                     onSwipeLeft = {
                         if (catalogCollection.kind == CatalogCollectionKind.ARTIST) {
-                            onSwipeArtist(selectedCollectionTitle)
+                            swipeActions.onSwipeArtist?.invoke(selectedCollectionTitle)
                         } else {
                             viewModel.executeSubmenuActionForAlbum(
                                 gestureSettings.swipeLeftAction,
@@ -248,10 +257,7 @@ fun DiscoverScreen(
                         candidates = activeCandidates,
                         albums = catalogCollection.albums,
                         isLoading = isLoadingCollection,
-                        currentItem = currentItem,
-                        activeDownloads = activeDownloads,
-                        onSwipeTrack = onSwipeTrack,
-                        onSwipeAlbum = onSwipeAlbum
+                        currentItem = currentItem
                     )
                 } else {
                     val albumStatus = viewModel.getAlbumLibraryStatus(
@@ -262,9 +268,7 @@ fun DiscoverScreen(
                     val collectionActions = remember(
                         activeCandidates,
                         selectedCollectionTitle,
-                        albumProgress,
-                        activeDownloads,
-                        onSwipeTrack
+                        albumProgress
                     ) {
                         DiscoverCollectionActions(
                             onBack = { viewModel.clearSelectedCollection() },
@@ -300,11 +304,7 @@ fun DiscoverScreen(
                             onSelectArtist = { artistName ->
                                 viewModel.selectArtistForInspection(artistName)
                             },
-                            albumDownloadProgress = albumProgress,
-                            activeDownloads = activeDownloads,
-                            getTrackStatus = viewModel::getTrackLibraryStatus,
-                            onAlreadyInLibrary = { viewModel.toast(it) },
-                            onSwipeTrack = onSwipeTrack
+                            albumDownloadProgress = albumProgress
                         )
                     }
 
@@ -438,7 +438,7 @@ fun DiscoverScreen(
                         onOpenFullHistory = { showSearchHistorySheet = true }
                     )
                 } else {
-                    val catalogActions = remember(viewModel, catalogSearch.isLoadingMore, catalogSearch.canLoadMore, activeDownloads, onSwipeTrack, onSwipeAlbum) {
+                    val catalogActions = remember(viewModel, catalogSearch.isLoadingMore, catalogSearch.canLoadMore) {
                         DiscoverCatalogActions(
                             onPlayTrack = viewModel::playCatalogOrLocalTrack,
                             onDownloadTrack = viewModel::downloadOnlineTrack,
@@ -449,17 +449,11 @@ fun DiscoverScreen(
                             onSearchMore = viewModel::searchMore,
                             onSelectArtist = viewModel::selectArtistForInspection,
                             isLoadingMore = catalogSearch.isLoadingMore,
-                            canLoadMore = catalogSearch.canLoadMore,
-                            activeDownloads = activeDownloads,
-                            getTrackStatus = viewModel::getTrackLibraryStatus,
-                            getAlbumStatus = viewModel::getAlbumLibraryStatus,
-                            onAlreadyInLibrary = { viewModel.toast(it) },
-                            onSwipeTrack = onSwipeTrack,
-                            onSwipeAlbum = onSwipeAlbum
+                            canLoadMore = catalogSearch.canLoadMore
                         )
                     }
 
-                    val topRelatedActions = remember(viewModel, onSwipeTrack, onSwipeArtist) {
+                    val topRelatedActions = remember(viewModel) {
                         DiscoverTopRelatedActions(
                             onSelectArtist = { artistName ->
                                 viewModel.selectArtistForInspection(artistName)
@@ -482,17 +476,7 @@ fun DiscoverScreen(
                                     viewModel.submitCatalogSearch(item.title)
                                 }
                             },
-                            onRefresh = { viewModel.refreshTopRelatedFeed(forceRefresh = true) },
-                            onSwipeTrack = onSwipeTrack,
-                            onSwipeAlbum = { album ->
-                                viewModel.executeSubmenuActionForAlbum(
-                                    gestureSettings.swipeLeftAction,
-                                    albumTitle = album.title,
-                                    artistName = album.artist,
-                                    coverUrl = album.artworkUri
-                                )
-                            },
-                            onSwipeArtist = { artist -> onSwipeArtist(artist.name) }
+                            onRefresh = { viewModel.refreshTopRelatedFeed(forceRefresh = true) }
                         )
                     }
 
@@ -1033,12 +1017,13 @@ fun DiscoverTrackCard(
     track: OnlineCatalogTrack,
     onPlay: () -> Unit,
     onDownload: () -> Unit = {},
-    status: ItemLibraryStatus = ItemLibraryStatus.NOT_IN_LIBRARY,
-    onNotifyStatus: ((String) -> Unit)? = null,
+    status: ItemLibraryStatus = LocalDiscoverContext.current.getTrackStatus(track.identity),
+    onNotifyStatus: ((String) -> Unit)? = LocalDiscoverContext.current.onNotifyStatus,
     onAlreadyInLibrary: () -> Unit = { onNotifyStatus?.invoke(status.trackMessage) },
     onSwipeAction: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
+    val resolvedSwipeAction = onSwipeAction ?: LocalDiscoverContext.current.swipeActions.onSwipeTrack?.let { cb -> { cb(track) } }
     DiscoverMediaCard(
         title = track.title,
         subtitle = track.artist,
@@ -1046,7 +1031,7 @@ fun DiscoverTrackCard(
         cardWidth = 140.dp,
         imageSize = 124.dp,
         onClick = onPlay,
-        onSwipeAction = onSwipeAction,
+        onSwipeAction = resolvedSwipeAction,
         modifier = modifier,
         topEndBadge = {
             if (status.isPresent) {
@@ -1099,20 +1084,21 @@ fun DiscoverAlbumCard(
     album: CatalogAlbum,
     onClick: () -> Unit,
     onSave: () -> Unit,
-    status: ItemLibraryStatus = ItemLibraryStatus.NOT_IN_LIBRARY,
-    activeDownloads: List<ActiveDownload>? = null,
+    status: ItemLibraryStatus = LocalDiscoverContext.current.getAlbumStatus(album.title, album.artist),
+    activeDownloads: List<ActiveDownload>? = LocalDiscoverContext.current.activeDownloads,
     isDownloading: Boolean = activeDownloads?.isAlbumDownloading(album) ?: false,
-    onNotifyStatus: ((String) -> Unit)? = null,
+    onNotifyStatus: ((String) -> Unit)? = LocalDiscoverContext.current.onNotifyStatus,
     onAlreadySaved: () -> Unit = { onNotifyStatus?.invoke(status.albumMessage) },
     onSwipeAction: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
+    val resolvedSwipeAction = onSwipeAction ?: LocalDiscoverContext.current.swipeActions.onSwipeAlbum?.let { cb -> { cb(album) } }
     DiscoverAlbumCard(
         title = album.title,
         artist = album.artist,
         coverUrl = album.coverUrl,
         onClick = onClick,
-        onSwipeAction = onSwipeAction,
+        onSwipeAction = resolvedSwipeAction,
         modifier = modifier,
         bottomEndAction = {
             if (isDownloading) {
@@ -1140,16 +1126,17 @@ fun DiscoverTrackListItem(
     onPlay: () -> Unit,
     onDownload: () -> Unit = {},
     activeDownload: ActiveDownload? = null,
-    status: ItemLibraryStatus = ItemLibraryStatus.NOT_IN_LIBRARY,
+    status: ItemLibraryStatus = LocalDiscoverContext.current.getTrackStatus(track),
     highlighted: Boolean = false,
     subtitle: String? = null,
     leading: (@Composable RowScope.() -> Unit)? = null,
     trailing: (@Composable RowScope.() -> Unit)? = null,
-    onNotifyStatus: ((String) -> Unit)? = null,
+    onNotifyStatus: ((String) -> Unit)? = LocalDiscoverContext.current.onNotifyStatus,
     onAlreadyInLibrary: () -> Unit = { onNotifyStatus?.invoke(status.trackMessage) },
     onSwipeAction: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
+    val resolvedSwipeAction = onSwipeAction ?: LocalDiscoverContext.current.swipeActions.onSwipeTrack?.let { cb -> { cb(track) } }
     val rowContent = @Composable {
         TrackMetaRow(
             artworkUri = track.artworkUri,
@@ -1176,9 +1163,9 @@ fun DiscoverTrackListItem(
         )
     }
 
-    if (onSwipeAction != null) {
+    if (resolvedSwipeAction != null) {
         ItemSwipeBox(
-            onSwipeAction = onSwipeAction,
+            onSwipeAction = resolvedSwipeAction,
             shape = RoundedCornerShape(12.dp),
             modifier = modifier
         ) {
@@ -1190,6 +1177,36 @@ fun DiscoverTrackListItem(
         }
     }
 }
+
+/**
+ * Contextual swipe actions for Discover screen items.
+ */
+@Immutable
+data class DiscoverSwipeActions(
+    val onSwipeTrack: ((TrackMeta) -> Unit)? = null,
+    val onSwipeAlbum: ((CatalogAlbum) -> Unit)? = null,
+    val onSwipeArtist: ((String) -> Unit)? = null
+)
+
+/**
+ * Contextual single source of truth for Discover screen interactions:
+ * - Swipe gestures (tracks, albums, artists)
+ * - Library presence lookups (track and album)
+ * - Active downloads tracking
+ * - Status feedback toasts
+ */
+@Immutable
+data class DiscoverContext(
+    val swipeActions: DiscoverSwipeActions = DiscoverSwipeActions(),
+    val activeDownloads: List<ActiveDownload> = emptyList(),
+    val getTrackStatus: (TrackMeta) -> ItemLibraryStatus = { ItemLibraryStatus.NOT_IN_LIBRARY },
+    val getAlbumStatus: (String, String) -> ItemLibraryStatus = { _, _ -> ItemLibraryStatus.NOT_IN_LIBRARY },
+    val onNotifyStatus: ((String) -> Unit)? = null
+) {
+    fun withoutSwipeActions(): DiscoverContext = copy(swipeActions = DiscoverSwipeActions())
+}
+
+val LocalDiscoverContext = staticCompositionLocalOf { DiscoverContext() }
 
 /**
  * Level 2: Shared stack frame bundling user interaction callbacks across Discover feed and search.
@@ -1205,13 +1222,7 @@ data class DiscoverCatalogActions(
     val onSearchMore: () -> Unit = {},
     val onSelectArtist: (String) -> Unit = {},
     val isLoadingMore: Boolean = false,
-    val canLoadMore: Boolean = true,
-    val activeDownloads: List<ActiveDownload> = emptyList(),
-    val getTrackStatus: (TrackMeta) -> ItemLibraryStatus = { ItemLibraryStatus.NOT_IN_LIBRARY },
-    val getAlbumStatus: (String, String) -> ItemLibraryStatus = { _, _ -> ItemLibraryStatus.NOT_IN_LIBRARY },
-    val onAlreadyInLibrary: (String) -> Unit = {},
-    val onSwipeTrack: ((TrackMeta) -> Unit)? = null,
-    val onSwipeAlbum: ((CatalogAlbum) -> Unit)? = null
+    val canLoadMore: Boolean = true
 )
 
 /**
@@ -1223,10 +1234,7 @@ data class DiscoverTopRelatedActions(
     val onStartRadioForArtist: (String) -> Unit = {},
     val onSelectAlbum: (RelatedAlbumItem) -> Unit = {},
     val onPlayTrack: (RelatedTrackItem) -> Unit = {},
-    val onRefresh: () -> Unit = {},
-    val onSwipeTrack: ((TrackMeta) -> Unit)? = null,
-    val onSwipeAlbum: ((RelatedAlbumItem) -> Unit)? = null,
-    val onSwipeArtist: ((RelatedArtistItem) -> Unit)? = null
+    val onRefresh: () -> Unit = {}
 )
 
 /**
@@ -1270,7 +1278,30 @@ fun DiscoverSectionHeader(
     }
 }
 
-/** Level 2: Shared horizontal section (header + spaced LazyRow) for Discover feed carousels. */
+/**
+ * Level 2: Shared horizontal carousel wrapper that suppresses swipe-left gestures
+ * on child items to avoid gesture conflicts with horizontal carousel scrolling.
+ */
+@Composable
+fun DiscoverCarouselRow(
+    modifier: Modifier = Modifier,
+    contentPadding: PaddingValues = PaddingValues(0.dp),
+    horizontalArrangement: Arrangement.Horizontal = Arrangement.Start,
+    content: LazyListScope.() -> Unit
+) {
+    CompositionLocalProvider(
+        LocalDiscoverContext provides LocalDiscoverContext.current.withoutSwipeActions()
+    ) {
+        LazyRow(
+            modifier = modifier,
+            contentPadding = contentPadding,
+            horizontalArrangement = horizontalArrangement,
+            content = content
+        )
+    }
+}
+
+/** Level 2: Shared horizontal section (header + spaced carousel) for Discover feed carousels. */
 @Composable
 fun DiscoverFeedHorizontalSection(
     title: String,
@@ -1287,7 +1318,7 @@ fun DiscoverFeedHorizontalSection(
             badgeColor = badgeColor,
             trailing = trailing
         )
-        LazyRow(
+        DiscoverCarouselRow(
             contentPadding = PaddingValues(horizontal = 16.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             content = content
@@ -1331,12 +1362,6 @@ fun DiscoverHomeFeedView(
         onDownloadTrack = actions.onDownloadTrack,
         onSelectAlbum = actions.onSelectAlbum,
         onSaveAlbum = actions.onSaveAlbum,
-        activeDownloads = actions.activeDownloads,
-        getTrackStatus = actions.getTrackStatus,
-        getAlbumStatus = actions.getAlbumStatus,
-        onAlreadyInLibrary = actions.onAlreadyInLibrary,
-        onSwipeTrack = actions.onSwipeTrack,
-        onSwipeAlbum = actions.onSwipeAlbum,
         scrollState = scrollState,
         modifier = modifier
     )
@@ -1361,12 +1386,6 @@ fun DiscoverHomeFeedView(
     onDownloadTrack: (OnlineCatalogTrack) -> Unit,
     onSelectAlbum: (CatalogAlbum) -> Unit,
     onSaveAlbum: (CatalogAlbum) -> Unit,
-    activeDownloads: List<ActiveDownload> = emptyList(),
-    getTrackStatus: (TrackMeta) -> ItemLibraryStatus = { ItemLibraryStatus.NOT_IN_LIBRARY },
-    getAlbumStatus: (String, String) -> ItemLibraryStatus = { _, _ -> ItemLibraryStatus.NOT_IN_LIBRARY },
-    onAlreadyInLibrary: (String) -> Unit = {},
-    onSwipeTrack: ((TrackMeta) -> Unit)? = null,
-    onSwipeAlbum: ((CatalogAlbum) -> Unit)? = null,
     scrollState: ScrollState = rememberSaveable(saver = ScrollState.Saver) { ScrollState(0) },
     modifier: Modifier = Modifier
 ) {
@@ -1379,17 +1398,17 @@ fun DiscoverHomeFeedView(
             .padding(bottom = 80.dp),
         verticalArrangement = Arrangement.spacedBy(20.dp)
     ) {
-        // Section: Source Selector
+        // Section: Fuente del catálogo (Ambos / Deezer / ListenBrainz)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 2.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                .padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
                 text = "Fuente:",
-                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+                style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             FilterChip(
@@ -1416,8 +1435,7 @@ fun DiscoverHomeFeedView(
         DiscoverTopRelatedSection(
             feed = topRelatedFeed,
             isLoading = isLoadingTopRelated,
-            actions = topRelatedActions,
-            activeDownloads = activeDownloads
+            actions = topRelatedActions
         )
 
         // Section: Recomendados para vos (CF)
@@ -1473,14 +1491,10 @@ fun DiscoverHomeFeedView(
                     key = { "rec-track-${it.id.ifEmpty { "${it.artist}|${it.title}" }}" },
                     contentType = { "rec-track-card" }
                 ) { track ->
-                    val trackStatus = getTrackStatus(track.identity)
                     DiscoverTrackCard(
                         track = track,
                         onPlay = { onPlayTrack(track) },
-                        onDownload = { onDownloadTrack(track) },
-                        status = trackStatus,
-                        onNotifyStatus = onAlreadyInLibrary,
-                        onSwipeAction = onSwipeTrack?.let { cb -> { cb(track) } }
+                        onDownload = { onDownloadTrack(track) }
                     )
                 }
             }
@@ -1499,11 +1513,7 @@ fun DiscoverHomeFeedView(
                     DiscoverAlbumCard(
                         album = album,
                         onClick = { onSelectAlbum(album) },
-                        onSave = { onSaveAlbum(album) },
-                        status = getAlbumStatus(album.title, album.artist),
-                        activeDownloads = activeDownloads,
-                        onNotifyStatus = onAlreadyInLibrary,
-                        onSwipeAction = onSwipeAlbum?.let { cb -> { cb(album) } }
+                        onSave = { onSaveAlbum(album) }
                     )
                 }
             }
@@ -1519,15 +1529,11 @@ fun DiscoverHomeFeedView(
 
             feed.chartTracks.take(8).forEach { track ->
                 key("chart-track-${track.id}") {
-                    val trackStatus = getTrackStatus(track.identity)
                     Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp)) {
                         DiscoverTrackListItem(
                             track = track,
                             onPlay = { onPlayTrack(track) },
-                            onDownload = { onDownloadTrack(track) },
-                            status = trackStatus,
-                            onNotifyStatus = onAlreadyInLibrary,
-                            onSwipeAction = onSwipeTrack?.let { cb -> { cb(track) } }
+                            onDownload = { onDownloadTrack(track) }
                         )
                     }
                 }
@@ -1563,7 +1569,6 @@ fun DiscoverTopRelatedSection(
     feed: TopRelatedFeed,
     isLoading: Boolean,
     actions: DiscoverTopRelatedActions,
-    activeDownloads: List<ActiveDownload> = emptyList(),
     modifier: Modifier = Modifier
 ) {
     DiscoverTopRelatedSection(
@@ -1574,10 +1579,6 @@ fun DiscoverTopRelatedSection(
         onStartRadioForArtist = actions.onStartRadioForArtist,
         onSelectAlbum = actions.onSelectAlbum,
         onPlayTrack = actions.onPlayTrack,
-        activeDownloads = activeDownloads,
-        onSwipeTrack = actions.onSwipeTrack,
-        onSwipeAlbum = actions.onSwipeAlbum,
-        onSwipeArtist = actions.onSwipeArtist,
         modifier = modifier
     )
 }
@@ -1592,10 +1593,6 @@ fun DiscoverTopRelatedSection(
     onStartRadioForArtist: (String) -> Unit,
     onSelectAlbum: (RelatedAlbumItem) -> Unit,
     onPlayTrack: (RelatedTrackItem) -> Unit,
-    activeDownloads: List<ActiveDownload> = emptyList(),
-    onSwipeTrack: ((TrackMeta) -> Unit)? = null,
-    onSwipeAlbum: ((RelatedAlbumItem) -> Unit)? = null,
-    onSwipeArtist: ((RelatedArtistItem) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     var selectedTabIndex by remember { mutableIntStateOf(0) }
@@ -1691,7 +1688,7 @@ fun DiscoverTopRelatedSection(
                             modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp)
                         )
                     } else {
-                        LazyRow(
+                        DiscoverCarouselRow(
                             horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
                             items(
@@ -1702,8 +1699,7 @@ fun DiscoverTopRelatedSection(
                                 RelatedArtistCard(
                                     artist = artist,
                                     onSelect = { onSelectArtist(artist.name) },
-                                    onRadio = { onStartRadioForArtist(artist.name) },
-                                    onSwipeAction = onSwipeArtist?.let { cb -> { cb(artist) } }
+                                    onRadio = { onStartRadioForArtist(artist.name) }
                                 )
                             }
                         }
@@ -1716,7 +1712,7 @@ fun DiscoverTopRelatedSection(
                             modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp)
                         )
                     } else {
-                        LazyRow(
+                        DiscoverCarouselRow(
                             horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
                             items(
@@ -1726,9 +1722,7 @@ fun DiscoverTopRelatedSection(
                             ) { album ->
                                 RelatedAlbumCard(
                                     album = album,
-                                    onSelect = { onSelectAlbum(album) },
-                                    activeDownloads = activeDownloads,
-                                    onSwipeAction = onSwipeAlbum?.let { cb -> { cb(album) } }
+                                    onSelect = { onSelectAlbum(album) }
                                 )
                             }
                         }
@@ -1745,8 +1739,7 @@ fun DiscoverTopRelatedSection(
                             feed.topTracks.take(8).forEach { track ->
                                 RelatedTrackRow(
                                     track = track,
-                                    onPlay = { onPlayTrack(track) },
-                                    onSwipeAction = onSwipeTrack?.let { cb -> { cb(track) } }
+                                    onPlay = { onPlayTrack(track) }
                                 )
                             }
                         }
@@ -1858,9 +1851,10 @@ internal fun RelatedArtistCard(
         }
     }
 
-    if (onSwipeAction != null) {
+    val resolvedSwipeAction = onSwipeAction ?: LocalDiscoverContext.current.swipeActions.onSwipeArtist?.let { cb -> { cb(artist.name) } }
+    if (resolvedSwipeAction != null) {
         ItemSwipeBox(
-            onSwipeAction = onSwipeAction,
+            onSwipeAction = resolvedSwipeAction,
             shape = RoundedCornerShape(12.dp),
             modifier = modifier.width(136.dp)
         ) {
@@ -1878,11 +1872,23 @@ internal fun RelatedArtistCard(
 internal fun RelatedAlbumCard(
     album: RelatedAlbumItem,
     onSelect: () -> Unit,
-    activeDownloads: List<ActiveDownload>? = null,
+    activeDownloads: List<ActiveDownload>? = LocalDiscoverContext.current.activeDownloads,
     isDownloading: Boolean = activeDownloads?.isAlbumDownloading(album) ?: false,
     onSwipeAction: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
+    val resolvedSwipeAction = onSwipeAction ?: LocalDiscoverContext.current.swipeActions.onSwipeAlbum?.let { cb ->
+        {
+            cb(
+                CatalogAlbum(
+                    id = "",
+                    title = album.title,
+                    artist = album.artist,
+                    coverUrl = album.artworkUri
+                )
+            )
+        }
+    }
     DiscoverAlbumCard(
         title = album.title,
         artist = album.artist,
@@ -1890,7 +1896,7 @@ internal fun RelatedAlbumCard(
         cardWidth = 136.dp,
         imageSize = 116.dp,
         onClick = onSelect,
-        onSwipeAction = onSwipeAction,
+        onSwipeAction = resolvedSwipeAction,
         modifier = modifier,
         topEndBadge = {
             SourceBadge(
@@ -1964,12 +1970,6 @@ fun DiscoverSearchResultsView(
         onSelectPlaylist = actions.onSelectPlaylist,
         onSelectGenre = actions.onSelectGenre,
         onSearchMore = actions.onSearchMore,
-        activeDownloads = actions.activeDownloads,
-        getTrackStatus = actions.getTrackStatus,
-        getAlbumStatus = actions.getAlbumStatus,
-        onAlreadyInLibrary = actions.onAlreadyInLibrary,
-        onSwipeTrack = actions.onSwipeTrack,
-        onSwipeAlbum = actions.onSwipeAlbum,
         modifier = modifier
     )
 }
@@ -1992,12 +1992,6 @@ fun DiscoverSearchResultsView(
     onSelectPlaylist: (CatalogPlaylist) -> Unit = {},
     onSelectGenre: (CatalogGenre) -> Unit = {},
     onSearchMore: () -> Unit = {},
-    activeDownloads: List<ActiveDownload> = emptyList(),
-    getTrackStatus: (TrackMeta) -> ItemLibraryStatus = { ItemLibraryStatus.NOT_IN_LIBRARY },
-    getAlbumStatus: (String, String) -> ItemLibraryStatus = { _, _ -> ItemLibraryStatus.NOT_IN_LIBRARY },
-    onAlreadyInLibrary: (String) -> Unit = {},
-    onSwipeTrack: ((TrackMeta) -> Unit)? = null,
-    onSwipeAlbum: ((CatalogAlbum) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     if (isSearching) {
@@ -2045,16 +2039,12 @@ fun DiscoverSearchResultsView(
                         key = { "search-track-${it.id}" },
                         contentType = { "search-track-item" }
                     ) { track ->
-                        val trackStatus = getTrackStatus(track.identity)
-                        val activeDownload = activeDownloads.findUiDownloadByTrack(track.artist, track.title)
+                        val activeDownload = LocalDiscoverContext.current.activeDownloads.findUiDownloadByTrack(track.artist, track.title)
                         DiscoverTrackListItem(
                             track = track,
                             onPlay = { onPlayTrack(track) },
                             onDownload = { onDownloadTrack(track) },
-                            activeDownload = activeDownload,
-                            status = trackStatus,
-                            onNotifyStatus = onAlreadyInLibrary,
-                            onSwipeAction = onSwipeTrack?.let { cb -> { cb(track) } }
+                            activeDownload = activeDownload
                         )
                     }
 
@@ -2125,11 +2115,7 @@ fun DiscoverSearchResultsView(
                         DiscoverAlbumCard(
                             album = album,
                             onClick = { onSelectAlbum(album) },
-                            onSave = { onSaveAlbum(album) },
-                            status = getAlbumStatus(album.title, album.artist),
-                            activeDownloads = activeDownloads,
-                            onNotifyStatus = onAlreadyInLibrary,
-                            onSwipeAction = onSwipeAlbum?.let { cb -> { cb(album) } }
+                            onSave = { onSaveAlbum(album) }
                         )
                     }
 
@@ -2237,6 +2223,7 @@ fun DiscoverSearchResultsView(
 /**
  * Level 2: Shared stack frame bundling user interaction callbacks for collection detail views.
  */
+@Immutable
 data class DiscoverCollectionActions(
     val onBack: () -> Unit,
     val onPlayAll: () -> Unit,
@@ -2246,11 +2233,7 @@ data class DiscoverCollectionActions(
     val onPlayCandidate: (CatalogTrackCandidate) -> Unit,
     val onDownloadCandidate: (CatalogTrackCandidate) -> Unit,
     val onSelectArtist: (String) -> Unit = {},
-    val albumDownloadProgress: ActiveAlbumDownloadProgress = ActiveAlbumDownloadProgress(),
-    val activeDownloads: List<ActiveDownload> = emptyList(),
-    val getTrackStatus: (TrackMeta) -> ItemLibraryStatus = { ItemLibraryStatus.NOT_IN_LIBRARY },
-    val onAlreadyInLibrary: (String) -> Unit = {},
-    val onSwipeTrack: ((TrackMeta) -> Unit)? = null
+    val albumDownloadProgress: ActiveAlbumDownloadProgress = ActiveAlbumDownloadProgress()
 )
 
 /** Level 2: Collection drill-down view using bundled [DiscoverCollectionActions]. */
@@ -2274,7 +2257,6 @@ fun DiscoverCollectionDetailView(
         isLoading = isLoading,
         albumStatus = albumStatus,
         albumDownloadProgress = actions.albumDownloadProgress,
-        activeDownloads = actions.activeDownloads,
         currentItem = currentItem,
         onBack = actions.onBack,
         onPlayAll = actions.onPlayAll,
@@ -2284,9 +2266,6 @@ fun DiscoverCollectionDetailView(
         onPlayCandidate = actions.onPlayCandidate,
         onDownloadCandidate = actions.onDownloadCandidate,
         onSelectArtist = actions.onSelectArtist,
-        getTrackStatus = actions.getTrackStatus,
-        onAlreadyInLibrary = actions.onAlreadyInLibrary,
-        onSwipeTrack = actions.onSwipeTrack,
         modifier = modifier
     )
 }
@@ -2309,11 +2288,7 @@ fun DiscoverCollectionDetailView(
     onSelectArtist: (String) -> Unit = {},
     albumStatus: ItemLibraryStatus = ItemLibraryStatus.NOT_IN_LIBRARY,
     albumDownloadProgress: ActiveAlbumDownloadProgress = ActiveAlbumDownloadProgress(),
-    activeDownloads: List<ActiveDownload> = emptyList(),
     currentItem: PlayableItem? = null,
-    getTrackStatus: (TrackMeta) -> ItemLibraryStatus = { ItemLibraryStatus.NOT_IN_LIBRARY },
-    onAlreadyInLibrary: (String) -> Unit = {},
-    onSwipeTrack: ((TrackMeta) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     Column(modifier = modifier.fillMaxSize()) {
@@ -2348,71 +2323,74 @@ fun DiscoverCollectionDetailView(
                     ArtworkThumbnail(
                         artworkUri = coverUrl,
                         size = 100.dp,
-                        cornerRadius = 16.dp
+                        cornerRadius = 12.dp
                     )
-
                     Spacer(modifier = Modifier.width(16.dp))
-
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
                             text = title,
-                            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
+                            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
                         )
                         val artistName = candidates.firstOrNull()?.artist.orEmpty()
-                        if (artistName.isNotBlank()) {
+                        if (artistName.isNotEmpty()) {
                             Text(
                                 text = artistName,
                                 style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(4.dp))
-                                    .clickable { onSelectArtist(artistName) }
-                                    .padding(vertical = 2.dp)
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.clickable { onSelectArtist(artistName) }
                             )
                         }
+                        Spacer(modifier = Modifier.height(8.dp))
                         Text(
                             text = "${candidates.size} canciones",
-                            style = MaterialTheme.typography.bodySmall,
+                            style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                    }
+                }
 
-                        Spacer(modifier = Modifier.height(8.dp))
+                // Action Buttons
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    FilledTonalButton(
+                        onClick = onPlayAll,
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                    ) {
+                        Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Play")
+                    }
 
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            FilledTonalButton(
-                                onClick = onPlayAll,
-                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-                            ) {
-                                Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Play")
-                            }
+                    FilledTonalButton(
+                        onClick = onShuffle,
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                    ) {
+                        Icon(Icons.Default.Shuffle, contentDescription = null, modifier = Modifier.size(18.dp))
+                    }
 
-                            FilledTonalButton(
-                                onClick = onShuffle,
-                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-                            ) {
-                                Icon(Icons.Default.Shuffle, contentDescription = null, modifier = Modifier.size(18.dp))
-                            }
+                    if (kind == CatalogCollectionKind.ALBUM) {
+                        AlbumLibraryActionButton(
+                            status = albumStatus,
+                            onSave = onSaveAlbum,
+                            onAlreadySaved = {},
+                            modifier = Modifier.size(36.dp)
+                        )
+                    }
 
-                            if (kind == CatalogCollectionKind.ALBUM) {
-                                AlbumLibraryHeaderButton(
-                                    status = albumStatus,
-                                    onSaveAlbum = onSaveAlbum,
-                                    onAlreadyInLibrary = onAlreadyInLibrary
-                                )
-                            }
-
-                            if (albumStatus != ItemLibraryStatus.DOWNLOADED) {
-                                AlbumDownloadStateButton(
-                                    progress = albumDownloadProgress,
-                                    onDownload = onDownloadAll
-                                )
-                            }
-                        }
+                    if (albumStatus != ItemLibraryStatus.DOWNLOADED) {
+                        AlbumDownloadStateButton(
+                            progress = albumDownloadProgress,
+                            onDownload = onDownloadAll
+                        )
                     }
                 }
             }
@@ -2422,8 +2400,7 @@ fun DiscoverCollectionDetailView(
                 key = { index, it -> "candidate-${it.trackNumber}-${it.identity.artist}-${it.identity.title}-$index" },
                 contentType = { _, _ -> "candidate-track-item" }
             ) { _, candidate ->
-                val trackStatus = getTrackStatus(candidate.identity)
-                val activeDownload = activeDownloads.findUiDownloadByTrack(candidate.artist, candidate.title)
+                val activeDownload = LocalDiscoverContext.current.activeDownloads.findUiDownloadByTrack(candidate.artist, candidate.title)
                 val isPlaying = isCurrentPlaying(currentItem, candidate.identity.artist, candidate.identity.title)
                 Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp)) {
                     DiscoverTrackListItem(
@@ -2431,7 +2408,6 @@ fun DiscoverCollectionDetailView(
                         onPlay = { onPlayCandidate(candidate) },
                         onDownload = { onDownloadCandidate(candidate) },
                         activeDownload = activeDownload,
-                        status = trackStatus,
                         highlighted = isPlaying,
                         leading = {
                             val num = candidate.trackNumber.takeIf { it > 0 }
@@ -2443,9 +2419,7 @@ fun DiscoverCollectionDetailView(
                                     modifier = Modifier.width(28.dp)
                                 )
                             }
-                        },
-                        onNotifyStatus = onAlreadyInLibrary,
-                        onSwipeAction = onSwipeTrack?.let { cb -> { cb(candidate) } }
+                        }
                     )
                 }
             }
@@ -2466,12 +2440,7 @@ data class DiscoverArtistActions(
     val onSaveAlbum: (CatalogAlbum) -> Unit,
     val onPlayTrack: (CatalogTrackCandidate) -> Unit,
     val onDownloadTrack: (CatalogTrackCandidate) -> Unit,
-    val onPlayLocalSong: (Song) -> Unit,
-    val getTrackStatus: (TrackMeta) -> ItemLibraryStatus = { ItemLibraryStatus.NOT_IN_LIBRARY },
-    val getAlbumStatus: (String, String) -> ItemLibraryStatus = { _, _ -> ItemLibraryStatus.NOT_IN_LIBRARY },
-    val onAlreadyInLibrary: (String) -> Unit = {},
-    val onSwipeTrack: ((TrackMeta) -> Unit)? = null,
-    val onSwipeAlbum: ((CatalogAlbum) -> Unit)? = null
+    val onPlayLocalSong: (Song) -> Unit
 )
 
 /** Level 3: Stateful artist detail section that collects library songs and albums only when mounted. */
@@ -2484,9 +2453,6 @@ private fun DiscoverArtistDetailSection(
     albums: List<CatalogAlbum>,
     isLoading: Boolean,
     currentItem: PlayableItem?,
-    activeDownloads: List<ActiveDownload>,
-    onSwipeTrack: ((TrackMeta) -> Unit)? = null,
-    onSwipeAlbum: ((CatalogAlbum) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val librarySongs by viewModel.libraryProjection.songs.collectAsStateWithLifecycle()
@@ -2502,7 +2468,7 @@ private fun DiscoverArtistDetailSection(
         }
     }
 
-    val artistActions = remember(candidates, artistName, artistLocalSongs, onSwipeTrack, onSwipeAlbum) {
+    val artistActions = remember(candidates, artistName, artistLocalSongs) {
         DiscoverArtistActions(
             onBack = { viewModel.clearSelectedCollection() },
             onPlayAll = {
@@ -2538,12 +2504,7 @@ private fun DiscoverArtistDetailSection(
             },
             onPlayLocalSong = { song ->
                 viewModel.playSong(song)
-            },
-            getTrackStatus = viewModel::getTrackLibraryStatus,
-            getAlbumStatus = viewModel::getAlbumLibraryStatus,
-            onAlreadyInLibrary = { viewModel.toast(it) },
-            onSwipeTrack = onSwipeTrack,
-            onSwipeAlbum = onSwipeAlbum
+            }
         )
     }
 
@@ -2556,7 +2517,6 @@ private fun DiscoverArtistDetailSection(
         localSongs = artistLocalSongs,
         localAlbums = artistLocalAlbums,
         currentItem = currentItem,
-        activeDownloads = activeDownloads,
         actions = artistActions,
         modifier = modifier
     )
@@ -2573,7 +2533,6 @@ fun DiscoverArtistDetailView(
     localSongs: List<Song>,
     localAlbums: List<Album>,
     currentItem: PlayableItem?,
-    activeDownloads: List<ActiveDownload>,
     actions: DiscoverArtistActions,
     modifier: Modifier = Modifier
 ) {
@@ -2586,7 +2545,6 @@ fun DiscoverArtistDetailView(
         localSongs = localSongs,
         localAlbums = localAlbums,
         currentItem = currentItem,
-        activeDownloads = activeDownloads,
         onBack = actions.onBack,
         onPlayAll = actions.onPlayAll,
         onShuffle = actions.onShuffle,
@@ -2596,11 +2554,6 @@ fun DiscoverArtistDetailView(
         onPlayTrack = actions.onPlayTrack,
         onDownloadTrack = actions.onDownloadTrack,
         onPlayLocalSong = actions.onPlayLocalSong,
-        getTrackStatus = actions.getTrackStatus,
-        getAlbumStatus = actions.getAlbumStatus,
-        onAlreadyInLibrary = actions.onAlreadyInLibrary,
-        onSwipeTrack = actions.onSwipeTrack,
-        onSwipeAlbum = actions.onSwipeAlbum,
         modifier = modifier
     )
 }
@@ -2616,7 +2569,6 @@ fun DiscoverArtistDetailView(
     localSongs: List<Song>,
     localAlbums: List<Album>,
     currentItem: PlayableItem?,
-    activeDownloads: List<ActiveDownload>,
     onBack: () -> Unit,
     onPlayAll: () -> Unit,
     onShuffle: () -> Unit,
@@ -2626,11 +2578,6 @@ fun DiscoverArtistDetailView(
     onPlayTrack: (CatalogTrackCandidate) -> Unit,
     onDownloadTrack: (CatalogTrackCandidate) -> Unit,
     onPlayLocalSong: (Song) -> Unit,
-    getTrackStatus: (TrackMeta) -> ItemLibraryStatus,
-    getAlbumStatus: (String, String) -> ItemLibraryStatus,
-    onAlreadyInLibrary: (String) -> Unit,
-    onSwipeTrack: ((TrackMeta) -> Unit)? = null,
-    onSwipeAlbum: ((CatalogAlbum) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     Column(modifier = modifier.fillMaxSize()) {
@@ -2759,7 +2706,7 @@ fun DiscoverArtistDetailView(
             } else {
                 if (localAlbums.isNotEmpty()) {
                     item {
-                        LazyRow(
+                        DiscoverCarouselRow(
                             contentPadding = PaddingValues(horizontal = 16.dp),
                             horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
@@ -2768,36 +2715,20 @@ fun DiscoverArtistDetailView(
                                 key = { "local-alb-${it.name}" }
                             ) { album ->
                                 val isDownloaded = localSongs.any { it.album == album.name && !it.isRemote }
+                                val catalogAlbum = CatalogAlbum(
+                                    id = "",
+                                    title = album.name,
+                                    artist = artistName,
+                                    coverUrl = album.artworkUri,
+                                    trackCount = album.songCount
+                                )
                                 DiscoverMediaCard(
                                     title = album.name,
                                     subtitle = "${album.songCount} canciones",
                                     artworkUri = album.artworkUri,
                                     cardWidth = 150.dp,
                                     imageSize = 134.dp,
-                                    onClick = {
-                                        onSelectAlbum(
-                                            CatalogAlbum(
-                                                id = "",
-                                                title = album.name,
-                                                artist = artistName,
-                                                coverUrl = album.artworkUri,
-                                                trackCount = album.songCount
-                                            )
-                                        )
-                                    },
-                                    onSwipeAction = onSwipeAlbum?.let { cb ->
-                                        {
-                                            cb(
-                                                CatalogAlbum(
-                                                    id = "",
-                                                    title = album.name,
-                                                    artist = artistName,
-                                                    coverUrl = album.artworkUri,
-                                                    trackCount = album.songCount
-                                                )
-                                            )
-                                        }
-                                    },
+                                    onClick = { onSelectAlbum(catalogAlbum) },
                                     topEndBadge = {
                                         Box(
                                             modifier = Modifier
@@ -2831,8 +2762,7 @@ fun DiscoverArtistDetailView(
                                 onPlay = { onPlayLocalSong(song) },
                                 status = if (song.isRemote) ItemLibraryStatus.SAVED_REMOTE else ItemLibraryStatus.DOWNLOADED,
                                 highlighted = isPlaying,
-                                subtitle = if (song.isRemote) "${song.album} • Guardado" else "${song.album} • Descargado",
-                                onSwipeAction = onSwipeTrack?.let { cb -> { cb(song) } }
+                                subtitle = if (song.isRemote) "${song.album} • Guardado" else "${song.album} • Descargado"
                             )
                         }
                     }
@@ -2851,7 +2781,7 @@ fun DiscoverArtistDetailView(
                 }
 
                 item {
-                    LazyRow(
+                    DiscoverCarouselRow(
                         contentPadding = PaddingValues(horizontal = 16.dp),
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
@@ -2862,11 +2792,7 @@ fun DiscoverArtistDetailView(
                             DiscoverAlbumCard(
                                 album = album,
                                 onClick = { onSelectAlbum(album) },
-                                onSave = { onSaveAlbum(album) },
-                                status = getAlbumStatus(album.title, album.artist),
-                                activeDownloads = activeDownloads,
-                                onNotifyStatus = onAlreadyInLibrary,
-                                onSwipeAction = onSwipeAlbum?.let { cb -> { cb(album) } }
+                                onSave = { onSaveAlbum(album) }
                             )
                         }
                     }
@@ -2888,8 +2814,7 @@ fun DiscoverArtistDetailView(
                     items = candidates,
                     key = { index, it -> "top-cand-${it.trackNumber}-${it.identity.artist}-${it.identity.title}-$index" }
                 ) { _, candidate ->
-                    val trackStatus = getTrackStatus(candidate.identity)
-                    val activeDownload = activeDownloads.findUiDownloadByTrack(candidate.artist, candidate.title)
+                    val activeDownload = LocalDiscoverContext.current.activeDownloads.findUiDownloadByTrack(candidate.artist, candidate.title)
                     val isPlaying = isCurrentPlaying(currentItem, candidate.identity.artist, candidate.identity.title)
                     Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp)) {
                         DiscoverTrackListItem(
@@ -2897,7 +2822,6 @@ fun DiscoverArtistDetailView(
                             onPlay = { onPlayTrack(candidate) },
                             onDownload = { onDownloadTrack(candidate) },
                             activeDownload = activeDownload,
-                            status = trackStatus,
                             highlighted = isPlaying,
                             leading = {
                                 val num = candidate.trackNumber.takeIf { it > 0 }
@@ -2909,9 +2833,7 @@ fun DiscoverArtistDetailView(
                                         modifier = Modifier.width(28.dp)
                                     )
                                 }
-                            },
-                            onNotifyStatus = onAlreadyInLibrary,
-                            onSwipeAction = onSwipeTrack?.let { cb -> { cb(candidate) } }
+                            }
                         )
                     }
                 }

@@ -1,71 +1,101 @@
 package com.bestiapop.android.ui.screens.discover
 
 import com.bestiapop.android.data.model.CatalogAlbum
+import com.bestiapop.android.data.model.OnlineCatalogTrack
 import com.bestiapop.android.data.model.TrackIdentity
 import com.bestiapop.android.data.model.TrackMeta
 import com.bestiapop.android.data.model.toIdentity
 import com.bestiapop.android.domain.usecase.RelatedAlbumItem
 import com.bestiapop.android.domain.usecase.RelatedArtistItem
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 class DiscoverSwipeActionsTest {
 
     @Test
-    fun catalogActions_supportsSwipeTrackAndAlbumCallbacks() {
+    fun discoverSwipeActions_andContext_supportSwipeTrackAlbumAndArtistCallbacks() {
         var swipedTrack: TrackMeta? = null
         var swipedAlbum: CatalogAlbum? = null
+        var swipedArtist: String? = null
 
-        val actions = DiscoverCatalogActions(
-            onPlayTrack = {},
-            onDownloadTrack = {},
-            onSelectAlbum = {},
-            onSaveAlbum = {},
+        val swipeActions = DiscoverSwipeActions(
             onSwipeTrack = { swipedTrack = it },
-            onSwipeAlbum = { swipedAlbum = it }
+            onSwipeAlbum = { swipedAlbum = it },
+            onSwipeArtist = { swipedArtist = it }
+        )
+
+        val context = DiscoverContext(
+            swipeActions = swipeActions
         )
 
         val track = TrackIdentity(title = "Test Song", artist = "Test Artist", album = "Test Album")
         val album = CatalogAlbum(id = "123", title = "Test Album", artist = "Test Artist", coverUrl = null)
 
-        actions.onSwipeTrack?.invoke(track)
-        actions.onSwipeAlbum?.invoke(album)
+        context.swipeActions.onSwipeTrack?.invoke(track)
+        context.swipeActions.onSwipeAlbum?.invoke(album)
+        context.swipeActions.onSwipeArtist?.invoke("Related Artist")
 
         assertEquals("Test Song", swipedTrack?.title)
         assertEquals("Test Artist", swipedTrack?.artist)
         assertEquals("123", swipedAlbum?.id)
         assertEquals("Test Album", swipedAlbum?.title)
+        assertEquals("Related Artist", swipedArtist)
     }
 
     @Test
-    fun collectionActions_supportsSwipeTrackCallback() {
-        var swipedTrack: TrackMeta? = null
+    fun discoverContext_withoutSwipeActions_clearsAllSwipeActionsForCarousels() {
+        val swipeActions = DiscoverSwipeActions(
+            onSwipeTrack = {},
+            onSwipeAlbum = {},
+            onSwipeArtist = {}
+        )
+        val context = DiscoverContext(swipeActions = swipeActions)
+        val carouselContext = context.withoutSwipeActions()
 
+        assertNull(carouselContext.swipeActions.onSwipeTrack)
+        assertNull(carouselContext.swipeActions.onSwipeAlbum)
+        assertNull(carouselContext.swipeActions.onSwipeArtist)
+    }
+
+    @Test
+    fun catalogActions_focusedOnCatalogInteractions() {
+        var playedTrack = false
+        val actions = DiscoverCatalogActions(
+            onPlayTrack = { playedTrack = true },
+            onDownloadTrack = {},
+            onSelectAlbum = {},
+            onSaveAlbum = {}
+        )
+        val track = OnlineCatalogTrack(
+            identity = TrackIdentity(title = "Song", artist = "Artist", album = "Album"),
+            id = "track-1"
+        )
+        actions.onPlayTrack(track)
+        assertEquals(true, playedTrack)
+    }
+
+    @Test
+    fun collectionActions_focusedOnCollectionInteractions() {
+        var backPressed = false
         val actions = DiscoverCollectionActions(
-            onBack = {},
+            onBack = { backPressed = true },
             onPlayAll = {},
             onShuffle = {},
             onSaveAlbum = {},
             onDownloadAll = {},
             onPlayCandidate = {},
-            onDownloadCandidate = {},
-            onSwipeTrack = { swipedTrack = it }
+            onDownloadCandidate = {}
         )
-
-        val track = TrackIdentity(title = "Candidate Song", artist = "Candidate Artist")
-        actions.onSwipeTrack?.invoke(track)
-
-        assertEquals("Candidate Song", swipedTrack?.title)
-        assertEquals("Candidate Artist", swipedTrack?.artist)
+        actions.onBack()
+        assertEquals(true, backPressed)
     }
 
     @Test
-    fun artistActions_supportsSwipeTrackAndAlbumCallbacks() {
-        var swipedTrack: TrackMeta? = null
-        var swipedAlbum: CatalogAlbum? = null
-
+    fun artistActions_focusedOnArtistInteractions() {
+        var backPressed = false
         val actions = DiscoverArtistActions(
-            onBack = {},
+            onBack = { backPressed = true },
             onPlayAll = {},
             onShuffle = {},
             onStartRadio = {},
@@ -73,44 +103,10 @@ class DiscoverSwipeActionsTest {
             onSaveAlbum = {},
             onPlayTrack = {},
             onDownloadTrack = {},
-            onPlayLocalSong = {},
-            onSwipeTrack = { swipedTrack = it },
-            onSwipeAlbum = { swipedAlbum = it }
+            onPlayLocalSong = {}
         )
-
-        val track = TrackIdentity(title = "Artist Top Track", artist = "Artist Name")
-        val album = CatalogAlbum(id = "alb-1", title = "Artist Album", artist = "Artist Name", coverUrl = null)
-
-        actions.onSwipeTrack?.invoke(track)
-        actions.onSwipeAlbum?.invoke(album)
-
-        assertEquals("Artist Top Track", swipedTrack?.title)
-        assertEquals("alb-1", swipedAlbum?.id)
-    }
-
-    @Test
-    fun topRelatedActions_supportsSwipeTrackAlbumAndArtistCallbacks() {
-        var swipedTrack: TrackMeta? = null
-        var swipedAlbum: RelatedAlbumItem? = null
-        var swipedArtist: RelatedArtistItem? = null
-
-        val actions = DiscoverTopRelatedActions(
-            onSwipeTrack = { swipedTrack = it },
-            onSwipeAlbum = { swipedAlbum = it },
-            onSwipeArtist = { swipedArtist = it }
-        )
-
-        val track = TrackIdentity(title = "Related Track", artist = "Related Artist")
-        val album = RelatedAlbumItem(title = "Related Album", artist = "Related Artist", artworkUri = null, source = "Local")
-        val artist = RelatedArtistItem(name = "Related Artist", artworkUri = null, source = "ListenBrainz")
-
-        actions.onSwipeTrack?.invoke(track)
-        actions.onSwipeAlbum?.invoke(album)
-        actions.onSwipeArtist?.invoke(artist)
-
-        assertEquals("Related Track", swipedTrack?.title)
-        assertEquals("Related Album", swipedAlbum?.title)
-        assertEquals("Related Artist", swipedArtist?.name)
+        actions.onBack()
+        assertEquals(true, backPressed)
     }
 
     @Test

@@ -34,7 +34,7 @@ fun TrackIdentity.mergePreferring(other: TrackIdentity): TrackIdentity = copy(
     trackNumber = if (trackNumber > 0) trackNumber else other.trackNumber
 )
 
-fun Song.toIdentity(): TrackIdentity = TrackIdentity(
+fun TrackMeta.toIdentity(): TrackIdentity = (this as? TrackIdentity) ?: TrackIdentity(
     title = title,
     artist = artist,
     album = album,
@@ -42,6 +42,8 @@ fun Song.toIdentity(): TrackIdentity = TrackIdentity(
     durationMs = durationMs,
     trackNumber = trackNumber
 )
+
+fun Song.toIdentity(): TrackIdentity = (this as TrackMeta).toIdentity()
 
 /** Apply shared identity fields; leaves genre/year/lyrics/uri/folder untouched. */
 fun Song.withIdentity(identity: TrackIdentity): Song = copy(

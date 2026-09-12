@@ -3363,6 +3363,100 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         executeSubmenuActionForPlayables(action, playables)
     }
 
+    fun executeSubmenuActionForTrack(
+        action: SubmenuSwipeAction,
+        track: TrackMeta,
+        onAddToPlaylist: ((Song) -> Unit)? = null
+    ) {
+        if (action == SubmenuSwipeAction.DISABLED) return
+        val local = if (track is Song) track else findLocalSongFor(track)
+        if (action == SubmenuSwipeAction.ADD_TO_PLAYLIST) {
+            if (local != null) {
+                onAddToPlaylist?.invoke(local)
+            } else {
+                toast("Descarga la canción para añadirla a playlists")
+            }
+            return
+        }
+        val playable = PlayableItem.fromLibraryOrRemote(local, track.toIdentity())
+        executeSubmenuActionForPlayables(action, listOf(playable))
+    }
+
+    fun executeSubmenuActionForAlbum(
+        action: SubmenuSwipeAction,
+        albumTitle: String,
+        artistName: String = "",
+        albumId: String = "",
+        coverUrl: String? = null,
+        onAddToPlaylist: ((List<Song>) -> Unit)? = null
+    ) {
+        if (action == SubmenuSwipeAction.DISABLED) return
+        val cleanTitle = albumTitle.trim()
+        if (cleanTitle.isEmpty()) return
+
+        val localSongs = songsForAlbum(libraryProjection.songs.value, cleanTitle)
+        if (localSongs.isNotEmpty()) {
+            executeSubmenuActionForSongs(action, localSongs, onAddToPlaylist)
+            return
+        }
+
+        val currentCollection = _catalogCollection.value
+        if (currentCollection.isOpen && currentCollection.title.equals(cleanTitle, ignoreCase = true) && currentCollection.candidates.isNotEmpty()) {
+            executeSubmenuActionForCandidates(action, currentCollection.candidates)
+            return
+        }
+
+        viewModelScope.launch {
+            val candidates = MetadataFetcher.fetchAlbumTrackCandidates(albumId, cleanTitle, artistName, coverUrl)
+            if (candidates.isNotEmpty()) {
+                executeSubmenuActionForCandidates(action, candidates)
+            }
+        }
+    }
+
+    fun executeSubmenuActionForArtist(
+        action: SubmenuSwipeAction,
+        artistName: String,
+        onAddToPlaylist: ((List<Song>) -> Unit)? = null
+    ) {
+        if (action == SubmenuSwipeAction.DISABLED) return
+        val cleanArtist = artistName.trim()
+        if (cleanArtist.isEmpty()) return
+
+        if (action == SubmenuSwipeAction.SEARCH_SIMILAR) {
+            searchCatalog(cleanArtist)
+            setSelectedNavIndex(NAV_DISCOVER)
+            return
+        }
+
+        val localSongs = songsForArtist(libraryProjection.songs.value, cleanArtist)
+        if (localSongs.isNotEmpty()) {
+            executeSubmenuActionForSongs(action, localSongs, onAddToPlaylist)
+            return
+        }
+
+        if (action == SubmenuSwipeAction.START_RADIO) {
+            startRadio()
+            toast("Iniciando radio de $cleanArtist")
+            return
+        }
+
+        val currentCollection = _catalogCollection.value
+        if (currentCollection.isOpen && currentCollection.title.equals(cleanArtist, ignoreCase = true) && currentCollection.candidates.isNotEmpty()) {
+            executeSubmenuActionForCandidates(action, currentCollection.candidates)
+            return
+        }
+
+        viewModelScope.launch {
+            val deezerHit = MetadataFetcher.searchDeezerArtist(cleanArtist)
+            val topTracks = MetadataFetcher.fetchArtistTopTracks(cleanArtist, deezerHit?.id)
+            val candidates = topTracks.map { MetadataFetcher.toCatalogCandidate(it) }
+            if (candidates.isNotEmpty()) {
+                executeSubmenuActionForCandidates(action, candidates)
+            }
+        }
+    }
+
     fun setLibraryBlobsSettings(settings: LibraryBlobsSettings) {
         viewModelScope.launch {
             libraryPreferences.setLibraryBlobsSettings(settings)

@@ -25,6 +25,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.bestiapop.android.data.preferences.SubmenuSwipeAction
 import com.bestiapop.android.ui.theme.ListDensity
 
 /** L1: placeholder row for a remote/unmatched track (stream + optional download). */
@@ -39,18 +40,29 @@ fun RemoteTrackPlaceholderRow(
     onDownload: (() -> Unit)? = null,
     download: ActiveDownload? = null,
     onRetry: (() -> Unit)? = null,
-    onCancelDownload: (() -> Unit)? = null
+    onCancelDownload: (() -> Unit)? = null,
+    swipeAction: SubmenuSwipeAction = LocalSubmenuGestureSettings.current.swipeLeftAction,
+    onSwipeAction: (() -> Unit)? = null,
+    modifier: Modifier = Modifier
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .alpha(if (onClick == null && onDownload == null) 0.55f else 0.85f)
-            .padding(
-                horizontal = ListDensity.rowHorizontalPadding,
-                vertical = ListDensity.rowVerticalPadding
-            ),
-        verticalAlignment = Alignment.CenterVertically
+    val canSwipe = onSwipeAction != null && swipeAction != SubmenuSwipeAction.DISABLED
+
+    ItemSwipeBox(
+        action = swipeAction,
+        onSwipeAction = { onSwipeAction?.invoke() },
+        enabled = canSwipe,
+        modifier = modifier
     ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .alpha(if (onClick == null && onDownload == null) 0.55f else 0.85f)
+                .padding(
+                    horizontal = ListDensity.rowHorizontalPadding,
+                    vertical = ListDensity.rowVerticalPadding
+                ),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
         Row(
             modifier = Modifier
                 .weight(1f)
@@ -110,4 +122,5 @@ fun RemoteTrackPlaceholderRow(
             )
         }
     }
+}
 }

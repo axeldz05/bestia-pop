@@ -78,7 +78,8 @@ fun MatchedTrackRow(
     onRetryDownload: ((String) -> Unit)? = null,
     onCancelDownload: ((String) -> Unit)? = null,
     songActions: SongItemActions,
-    leadingIcon: ImageVector = Icons.Default.PlayArrow
+    leadingIcon: ImageVector = Icons.Default.PlayArrow,
+    onSwipeRemote: ((PlayableItem.Remote) -> Unit)? = null
 ) {
     val local = localSong
     if (local != null) {
@@ -102,7 +103,8 @@ fun MatchedTrackRow(
             onRetry = download?.id?.let { id -> onRetryDownload?.let { retry -> { retry(id) } } },
             onCancelDownload = download?.id?.let { id ->
                 onCancelDownload?.let { cancel -> { cancel(id) } }
-            }
+            },
+            onSwipeAction = onSwipeRemote?.let { cb -> { cb(remote) } }
         )
     }
 }

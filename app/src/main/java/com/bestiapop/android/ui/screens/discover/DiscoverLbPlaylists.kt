@@ -205,7 +205,8 @@ data class DiscoverMatchedTrackActions(
     val songActions: SongItemActions = SongItemActions.from(
         queueActions = queueActions,
         onEditLyrics = onEditLyrics
-    )
+    ),
+    val onSwipeRemote: ((PlayableItem.Remote) -> Unit)? = null
 )
 
 /**
@@ -270,7 +271,8 @@ internal fun MatchedPlaylistContent(
             onDownloadRemote = actions.onDownloadRemote,
             onRetryDownload = actions.onRetryDownload,
             onCancelDownload = actions.onCancelDownload,
-            songActions = actions.songActions
+            songActions = actions.songActions,
+            onSwipeRemote = actions.onSwipeRemote
         )
     }
 }
@@ -537,7 +539,8 @@ fun DiscoverPlaylistDetailHost(
     onSaveLbAsLocal: ((Long) -> Unit) -> Unit,
     onOpenLocalPlaylist: (Long) -> Unit,
     onImportLbWithDownloads: () -> Unit,
-    songItemActions: SongItemActions? = null
+    songItemActions: SongItemActions? = null,
+    onSwipeRemote: ((PlayableItem.Remote) -> Unit)? = null
 ) {
     val makeActions: ((Int) -> Unit) -> DiscoverMatchedTrackActions = { onPlayAt ->
         DiscoverMatchedTrackActions(
@@ -552,7 +555,8 @@ fun DiscoverPlaylistDetailHost(
             songActions = songItemActions ?: SongItemActions.from(
                 queueActions = songActions,
                 onEditLyrics = onEditLyrics
-            )
+            ),
+            onSwipeRemote = onSwipeRemote
         )
     }
 

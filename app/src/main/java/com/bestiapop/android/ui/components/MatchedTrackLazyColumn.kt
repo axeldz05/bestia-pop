@@ -39,7 +39,8 @@ fun MatchedTrackLazyColumn(
     onRetryDownload: (String) -> Unit,
     onCancelDownload: (String) -> Unit,
     songActions: SongItemActions,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onSwipeRemote: ((PlayableItem.Remote) -> Unit)? = null
 ) {
     LazyColumn(modifier = modifier.fillMaxSize()) {
         itemsIndexed(
@@ -65,7 +66,8 @@ fun MatchedTrackLazyColumn(
                 onDownloadRemote = onDownloadRemote,
                 onRetryDownload = onRetryDownload,
                 onCancelDownload = onCancelDownload,
-                songActions = songActions
+                songActions = songActions,
+                onSwipeRemote = onSwipeRemote
             )
         }
     }
@@ -90,7 +92,8 @@ fun MatchedTrackLazyColumn(
     onEditMetadata: ((Song) -> Unit)? = null,
     onEditLyrics: ((Song) -> Unit)? = null,
     onIdentify: ((Song) -> Unit)? = null,
-    onDelete: ((Song) -> Unit)? = null
+    onDelete: ((Song) -> Unit)? = null,
+    onSwipeRemote: ((PlayableItem.Remote) -> Unit)? = null
 ) = MatchedTrackLazyColumn(
     matches = matches,
     remoteBadge = remoteBadge,
@@ -108,5 +111,6 @@ fun MatchedTrackLazyColumn(
         onIdentify = onIdentify,
         onDelete = onDelete
     ),
-    modifier = modifier
+    modifier = modifier,
+    onSwipeRemote = onSwipeRemote
 )

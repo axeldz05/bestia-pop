@@ -138,6 +138,9 @@ import com.bestiapop.android.ui.state.PendingAlbumMerge
 import com.bestiapop.android.ui.state.LyricsCoordinator
 import com.bestiapop.android.ui.state.LyricsTranslationState
 import com.bestiapop.android.ui.state.AudioVolumeCoordinator
+import com.bestiapop.android.ui.state.CatalogDownloadCoordinator
+import com.bestiapop.android.ui.state.CatalogInspectionCoordinator
+import com.bestiapop.android.ui.state.PlaylistCoordinator
 import com.bestiapop.android.ui.state.PlaylistDetailNav
 import com.bestiapop.android.ui.state.RadioPlaybackState
 import com.bestiapop.android.ui.state.SimilarPlaylistCoordinator
@@ -685,6 +688,41 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     )
     val catalogSearch: StateFlow<CatalogSearchUiState> = catalogSearchCoordinator.state
 
+    private val playlistCoordinator = PlaylistCoordinator(
+        scope = viewModelScope,
+        repository = repository,
+        onPlaylistDeleted = { id ->
+            val detail = _navigation.value.playlistDetail
+            if (detail is PlaylistDetailNav.Local && detail.id == id) {
+                closePlaylistDetail()
+            }
+        }
+    )
+
+    private val catalogInspectionCoordinator: CatalogInspectionCoordinator = CatalogInspectionCoordinator(
+        scope = viewModelScope,
+        playOnlineCatalogTrackAsStream = ::playOnlineCatalogTrackAsStream,
+        onResetBatchPlaylistTarget = { catalogDownloadCoordinator.resetBatchPlaylistTarget() }
+    )
+    val catalogCollection: StateFlow<CatalogCollectionUiState> = catalogInspectionCoordinator.catalogCollection
+
+    private val catalogDownloadCoordinator: CatalogDownloadCoordinator = CatalogDownloadCoordinator(
+        scope = viewModelScope,
+        processDownloadRuntime = processDownloadRuntime,
+        repository = repository,
+        toast = ::toast,
+        toastDownloadsQueued = { alreadyQueued, count ->
+            toastDownloadsQueued(count = count.takeIf { it > 1 }, alreadyQueued = alreadyQueued)
+        },
+        toastSongAlreadyInLibrary = { toastSongInLibrary(it, LibraryToastKind.ALREADY) },
+        playOnlineCatalogTrackAsStream = ::playOnlineCatalogTrackAsStream,
+        playSong = ::playSong,
+        rematchDiscover = ::rematchDiscoverAfterLibraryChange,
+        launchCycleYouTubeMatch = { query, current, wasPreviewing, apply ->
+            catalogInspectionCoordinator.launchCycleYouTubeMatch(query, current, wasPreviewing, apply)
+        }
+    )
+
     private val submenuActionCoordinator = SubmenuActionCoordinator(
         scope = viewModelScope,
         addPlayableBatch = ::addPlayableBatch,
@@ -699,25 +737,9 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         resolveAlbumArtwork = { libraryProjection.resolveAlbumArtwork(it) },
         getLocalSongsByMatchKey = { libraryLookupIndex.value.localSongsByMatchKey },
         getAllSongsByMatchKey = { libraryLookupIndex.value.allSongsByMatchKey },
-        getCatalogCollection = { _catalogCollection.value },
+        getCatalogCollection = { catalogInspectionCoordinator.catalogCollection.value },
         findLocalSongFor = ::findLocalSongFor
     )
-
-    private val _catalogCollection = MutableStateFlow(CatalogCollectionUiState())
-    val catalogCollection = _catalogCollection.asStateFlow()
-
-    private data class CatalogBatchPlaylistTarget(
-        val selectionKey: String,
-        val playlistId: Long
-    )
-
-    /** Local playlist created when batch-downloading a catalog playlist (reuse across single/batch). */
-    private var catalogBatchPlaylistTarget: CatalogBatchPlaylistTarget? = null
-    private val catalogBatchPlaylistMutex = Mutex()
-    private var catalogCollectionJob: Job? = null
-    private var catalogCollectionGeneration = 0L
-    private var catalogSearchJob: Job? = null
-    private var catalogSearchGeneration = 0L
 
     val activeDownloads: StateFlow<List<ActiveDownload>> = processDownloadRuntime.downloads
     val activeDownloadBadgeCount: StateFlow<Int> = activeDownloads
@@ -1261,10 +1283,8 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
-    fun catalogPreviewKeyFor(track: OnlineCatalogTrack): String {
-        return track.id.takeIf { it.isNotBlank() }
-            ?: "${track.artist.trim().lowercase()}|${track.title.trim().lowercase()}"
-    }
+    fun catalogPreviewKeyFor(track: OnlineCatalogTrack): String =
+        com.bestiapop.android.data.model.catalogPreviewKeyFor(track)
 
     fun playOnlineCatalogTrackAsStream(
         track: OnlineCatalogTrack,
@@ -1335,8 +1355,8 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         targetPlaylistId: Long? = null
     ) {
         val targetTrack = candidate.currentTrack ?: candidate.effectiveTrack
-        val resolvedPlaylistId = targetPlaylistId ?: (_catalogCollection.value.takeIf { it.kind == CatalogCollectionKind.PLAYLIST }?.let {
-            catalogBatchPlaylistTarget?.playlistId
+        val resolvedPlaylistId = targetPlaylistId ?: (catalogCollection.value.takeIf { it.kind == CatalogCollectionKind.PLAYLIST }?.let {
+            catalogDownloadCoordinator.currentBatchPlaylistId
         })
         val explicitId = if (source == ActiveDownloadSource.BATCH) {
             TrackMatchKeys.batchDownloadIdFor(candidate.artist, candidate.title)
@@ -2293,17 +2313,14 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         identifyCoordinator.applyRemainingIdentifySuggestions()
 
     // Playlists
-    fun getPlaylistSongsFlow(playlistId: Long): Flow<List<Song>> {
-        return repository.getPlaylistSongsFlow(playlistId)
-    }
+    fun getPlaylistSongsFlow(playlistId: Long): Flow<List<Song>> =
+        playlistCoordinator.getPlaylistSongsFlow(playlistId)
 
-    fun getPlaylistDetailsFlow(playlistId: Long): Flow<Pair<Playlist, List<Song>>?> {
-        return repository.getPlaylistDetailsFlow(playlistId)
-    }
+    fun getPlaylistDetailsFlow(playlistId: Long): Flow<Pair<Playlist, List<Song>>?> =
+        playlistCoordinator.getPlaylistDetailsFlow(playlistId)
 
-    fun getPlaylistPendingTracksFlow(playlistId: Long): Flow<List<PlaylistPendingTrack>> {
-        return repository.getPlaylistPendingTracksFlow(playlistId)
-    }
+    fun getPlaylistPendingTracksFlow(playlistId: Long): Flow<List<PlaylistPendingTrack>> =
+        playlistCoordinator.getPlaylistPendingTracksFlow(playlistId)
 
     fun createPlaylist(
         name: String,
@@ -2311,63 +2328,28 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         coverUri: String? = null,
         initialSongIds: List<Long> = emptyList(),
         onCreated: ((Long) -> Unit)? = null
-    ) {
-        viewModelScope.launch {
-            val id = repository.createPlaylist(name, description, coverUri)
-            if (initialSongIds.isNotEmpty()) {
-                repository.addSongsToPlaylist(id, initialSongIds)
-            }
-            onCreated?.invoke(id)
-        }
-    }
+    ) = playlistCoordinator.createPlaylist(name, description, coverUri, initialSongIds, onCreated)
 
     fun updatePlaylist(
         id: Long,
         name: String,
         description: String? = null,
         coverUri: String? = null
-    ) {
-        viewModelScope.launch {
-            repository.updatePlaylist(id, name, description, coverUri)
-        }
-    }
+    ) = playlistCoordinator.updatePlaylist(id, name, description, coverUri)
 
-    fun deletePlaylist(id: Long) {
-        val detail = _navigation.value.playlistDetail
-        if (detail is PlaylistDetailNav.Local && detail.id == id) {
-            closePlaylistDetail()
-        }
-        viewModelScope.launch {
-            repository.deletePlaylist(id)
-        }
-    }
+    fun deletePlaylist(id: Long) = playlistCoordinator.deletePlaylist(id)
 
-    fun addSongToPlaylist(playlistId: Long, song: Song) {
-        viewModelScope.launch {
-            repository.addSongToPlaylist(playlistId, song.id)
-        }
-    }
+    fun addSongToPlaylist(playlistId: Long, song: Song) =
+        playlistCoordinator.addSongToPlaylist(playlistId, song)
 
-    fun removeSongFromPlaylist(playlistId: Long, songId: Long) {
-        viewModelScope.launch {
-            repository.removeSongFromPlaylist(playlistId, songId)
-        }
-    }
+    fun removeSongFromPlaylist(playlistId: Long, songId: Long) =
+        playlistCoordinator.removeSongFromPlaylist(playlistId, songId)
 
-    fun reorderPlaylistSongs(playlistId: Long, songIds: List<Long>) {
-        viewModelScope.launch {
-            repository.reorderPlaylistSongs(playlistId, songIds)
-        }
-    }
+    fun reorderPlaylistSongs(playlistId: Long, songIds: List<Long>) =
+        playlistCoordinator.reorderPlaylistSongs(playlistId, songIds)
 
-    private inline fun runWithPlaylistSongs(playlistId: Long, crossinline action: (List<Song>) -> Unit) {
-        viewModelScope.launch {
-            val songs = repository.getPlaylistSongsOrdered(playlistId)
-            if (songs.isNotEmpty()) {
-                action(songs)
-            }
-        }
-    }
+    private fun runWithPlaylistSongs(playlistId: Long, action: (List<Song>) -> Unit) =
+        playlistCoordinator.runWithPlaylistSongs(playlistId, action)
 
     fun playPlaylist(playlistId: Long, startShuffled: Boolean = false) {
         runWithPlaylistSongs(playlistId) { songs ->
@@ -2665,90 +2647,11 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private fun toastRadioNeedsSeed() {
         toast(DownloadMessages.radioNeedsSeed)
     }
-
-    private data class TrackedBatchItem(
-        val track: OnlineCatalogTrack,
-        val candidates: List<OnlineCatalogTrack> = listOf(track),
-        val currentCandidateIndex: Int = 0,
-        val idHint: String? = null,
-        val lookupIdentity: TrackIdentity? = null
-    )
-
-    private suspend fun enqueueTrackedBatch(
-        items: List<TrackedBatchItem>,
-        source: ActiveDownloadSource,
-        idStrategy: (TrackedBatchItem) -> String,
-        playlistId: Long?,
-        toastQueued: Boolean = false
-    ) {
-        if (items.isEmpty()) return
-        if (toastQueued) {
-            toastDownloadsQueued(count = items.size)
-        }
-        val batchId = "${source.name}:${System.nanoTime()}"
-
-        val queued = items.mapNotNull { item ->
-            val downloadId = idStrategy(item)
-            if (downloadId.isBlank()) return@mapNotNull null
-            val lookup = item.lookupIdentity ?: item.track.identity
-            if (processDownloadRuntime.isRunning(downloadId, lookup.artist, lookup.title)) {
-                // Handoff and the claim completion are linearized by the coordinator. If the owner
-                // completed between this hint and the attach, continue into execute() instead of
-                // dropping the pending destination.
-                val attached = playlistId != null &&
-                        processDownloadRuntime.attachPlaylistDestination(
-                            downloadId = downloadId,
-                            artist = lookup.artist,
-                            title = lookup.title,
-                            destination = DownloadPlaylistDestination(
-                                playlistId = playlistId,
-                                identity = lookup
-                            )
-                        )
-                if (playlistId == null || attached) return@mapNotNull null
-            }
-            val candidates = item.candidates.ifEmpty { listOf(item.track) }
-            val safeIndex = item.currentCandidateIndex.coerceIn(0, candidates.lastIndex)
-            Triple(item, downloadId, safeIndex)
-        }
-
-        val successCount = AtomicInteger(0)
-        coroutineScope {
-            queued.map { (item, downloadId, safeIndex) ->
-                async {
-                    val result = runTrackedDownload(
-                        downloadId = downloadId,
-                        source = source,
-                        track = item.track,
-                        existingCandidates = item.candidates,
-                        currentCandidateIndex = safeIndex,
-                        targetPlaylistId = playlistId,
-                        lookupIdentity = item.lookupIdentity,
-                        batchId = batchId
-                    )
-                    if (result.isSuccess) successCount.incrementAndGet()
-                }
-            }.awaitAll()
-        }
-
-        // Denominator is what this batch actually ran: counting items already downloading under
-        // another job read as "9 de 10 procesadas" with nothing to explain the missing one.
-        toast(DownloadMessages.batchProcessed(successCount.get(), queued.size))
-    }
-
     private suspend fun enqueuePendingDownloads(
         playlistId: Long,
         tracks: List<OnlineCatalogTrack>,
         toastQueued: Boolean
-    ) = enqueueTrackedBatch(
-        items = tracks.map { TrackedBatchItem(track = it) },
-        source = ActiveDownloadSource.LB_IMPORT,
-        idStrategy = {
-            TrackMatchKeys.downloadIdFor(it.track.artist, it.track.title)
-        },
-        playlistId = playlistId,
-        toastQueued = toastQueued
-    )
+    ) = catalogDownloadCoordinator.enqueuePendingDownloads(playlistId, tracks, toastQueued)
 
     private fun clearDiscoverState() {
         discoverFeedCoordinator.clearDiscoverState()
@@ -2981,256 +2884,56 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         artist: String,
         coverUrl: String? = null,
         albumId: String = ""
-    ) {
-        val key = if (albumId.isNotBlank()) "album:$albumId" else "album:$artist:$title"
-        selectCollectionForInspection(
-            selectionKey = key,
-            title = title,
-            kind = CatalogCollectionKind.ALBUM,
-            coverUrl = coverUrl
-        ) {
-            MetadataFetcher.fetchAlbumTrackCandidates(albumId, title, artist, coverUrl)
-        }
-    }
+    ) = catalogInspectionCoordinator.selectAlbumForInspection(title, artist, coverUrl, albumId)
 
     /** Level 2: Inspect a [CatalogAlbum]. */
-    fun selectAlbumForInspection(album: CatalogAlbum) {
-        selectAlbumForInspection(
-            title = album.title,
-            artist = album.artist,
-            coverUrl = album.coverUrl,
-            albumId = album.id
-        )
-    }
+    fun selectAlbumForInspection(album: CatalogAlbum) =
+        catalogInspectionCoordinator.selectAlbumForInspection(album)
 
     /** Level 2: Inspect a [RelatedAlbumItem] without converting to a dummy [CatalogAlbum]. */
-    fun selectAlbumForInspection(album: RelatedAlbumItem) {
-        selectAlbumForInspection(
-            title = album.title,
-            artist = album.artist,
-            coverUrl = album.artworkUri,
-            albumId = ""
-        )
-    }
+    fun selectAlbumForInspection(album: RelatedAlbumItem) =
+        catalogInspectionCoordinator.selectAlbumForInspection(album)
 
-    fun selectPlaylistForInspection(playlist: CatalogPlaylist) {
-        selectCollectionForInspection(
-            selectionKey = "playlist:${playlist.id}",
-            title = playlist.title,
-            kind = CatalogCollectionKind.PLAYLIST,
-            coverUrl = playlist.coverUrl
-        ) {
-            MetadataFetcher.fetchPlaylistTrackCandidates(playlist.id, playlist.title)
-        }
-    }
+    fun selectPlaylistForInspection(playlist: CatalogPlaylist) =
+        catalogInspectionCoordinator.selectPlaylistForInspection(playlist)
 
-    fun selectGenreForInspection(genre: CatalogGenre) {
-        selectCollectionForInspection(
-            selectionKey = "genre:${genre.id}",
-            title = genre.name,
-            kind = CatalogCollectionKind.GENRE,
-            coverUrl = genre.pictureUrl
-        ) {
-            MetadataFetcher.searchTracksByGenre(genre.id, genre.name)
-                .map { MetadataFetcher.toCatalogCandidate(it) }
-        }
-    }
+    fun selectGenreForInspection(genre: CatalogGenre) =
+        catalogInspectionCoordinator.selectGenreForInspection(genre)
 
-    fun selectArtistForInspection(artistName: String) {
-        val cleanArtist = artistName.trim()
-        if (cleanArtist.isEmpty()) return
-        val current = _catalogCollection.value
-        val parent = if (current.isOpen && current.kind != CatalogCollectionKind.ARTIST) current else null
-        val requestKey = "artist:$cleanArtist#${++catalogCollectionGeneration}"
-        catalogCollectionJob?.cancel()
-        catalogBatchPlaylistTarget = null
-        _catalogCollection.value = CatalogCollectionUiState(
-            selectionKey = requestKey,
-            title = cleanArtist,
-            kind = CatalogCollectionKind.ARTIST,
-            parent = parent,
-            isLoading = true
-        )
-        catalogCollectionJob = viewModelScope.launch {
-            val deezerHit = MetadataFetcher.searchDeezerArtist(cleanArtist)
-            val albums = MetadataFetcher.fetchArtistAlbums(cleanArtist, deezerHit?.id)
-            val topTracks = MetadataFetcher.fetchArtistTopTracks(cleanArtist, deezerHit?.id)
-            val candidates = topTracks.map { MetadataFetcher.toCatalogCandidate(it) }
-            val coverUrl = deezerHit?.pictureUrl ?: albums.firstOrNull()?.coverUrl
-            updateCatalogCollection(requestKey) { state ->
-                state.copy(
-                    coverUrl = coverUrl,
-                    candidates = candidates,
-                    albums = albums,
-                    isLoading = false
-                )
-            }
-        }
-    }
+    fun selectArtistForInspection(artistName: String) =
+        catalogInspectionCoordinator.selectArtistForInspection(artistName)
 
-    private fun updateCatalogCollection(
-        selectionKey: String,
-        transform: (CatalogCollectionUiState) -> CatalogCollectionUiState
-    ): Boolean {
-        while (true) {
-            val current = _catalogCollection.value
-            if (current.selectionKey != selectionKey) return false
-            val updated = transform(current)
-            if (updated == current) return true
-            if (_catalogCollection.compareAndSet(current, updated)) return true
-        }
-    }
+    fun toggleTrackSelection(index: Int) =
+        catalogInspectionCoordinator.toggleTrackSelection(index)
 
-    private fun selectCollectionForInspection(
-        selectionKey: String,
-        title: String,
-        kind: CatalogCollectionKind,
-        coverUrl: String?,
-        fetch: suspend () -> List<CatalogTrackCandidate>
-    ) {
-        val current = _catalogCollection.value
-        val parent = if (current.isOpen && current.kind != kind) current else null
-        val requestKey = "$selectionKey#${++catalogCollectionGeneration}"
-        catalogCollectionJob?.cancel()
-        catalogBatchPlaylistTarget = null
-        _catalogCollection.value = CatalogCollectionUiState(
-            selectionKey = requestKey,
-            title = title,
-            kind = kind,
-            coverUrl = coverUrl,
-            parent = parent,
-            isLoading = true
-        )
-        catalogCollectionJob = viewModelScope.launch {
-            val candidates = fetch()
-            updateCatalogCollection(requestKey) { state ->
-                state.copy(candidates = candidates, isLoading = false)
-            }
-        }
-    }
+    fun setAllTrackCandidatesSelection(selected: Boolean) =
+        catalogInspectionCoordinator.setAllTrackCandidatesSelection(selected)
 
-    private suspend fun expandCandidates(
-        query: String,
-        current: List<OnlineCatalogTrack>
-    ): List<OnlineCatalogTrack> {
-        if (current.size > 1 || query.isBlank()) return current
-        return YouTubeExtractor.searchYouTube(query).ifEmpty { current }
-    }
+    fun toggleAllTrackCandidatesSelection() =
+        catalogInspectionCoordinator.toggleAllTrackCandidatesSelection()
 
-    /**
-     * Shared "Buscar otro" skeleton: expand YT matches → apply mutation → optional re-preview.
-     * Callers keep domain-specific list updates in [apply].
-     */
-    private fun launchCycleYouTubeMatch(
-        query: String,
-        current: List<OnlineCatalogTrack>,
-        wasPreviewing: Boolean,
-        apply: suspend (expanded: List<OnlineCatalogTrack>) -> OnlineCatalogTrack?
-    ) {
-        viewModelScope.launch {
-            val expanded = expandCandidates(query, current)
-            if (expanded.isEmpty()) return@launch
-            val previewTrack = apply(expanded)
-            if (wasPreviewing && previewTrack != null) {
-                playOnlineCatalogTrackAsStream(previewTrack, openNowPlaying = false)
-            }
-        }
-    }
-
-
-    fun toggleTrackSelection(index: Int) {
-        val collection = _catalogCollection.value
-        val selectionKey = collection.selectionKey ?: return
-        val list = collection.candidates.toMutableList()
-        if (index in list.indices) {
-            val item = list[index]
-            list[index] = item.copy(isSelected = !item.isSelected)
-            updateCatalogCollection(selectionKey) { it.copy(candidates = list) }
-        }
-    }
-
-    fun setAllTrackCandidatesSelection(selected: Boolean) {
-        val collection = _catalogCollection.value
-        val selectionKey = collection.selectionKey ?: return
-        val list = collection.candidates.map { it.copy(isSelected = selected) }
-        updateCatalogCollection(selectionKey) { it.copy(candidates = list) }
-    }
-
-    fun toggleAllTrackCandidatesSelection() {
-        val collection = _catalogCollection.value
-        val allSelected = collection.candidates.isNotEmpty() && collection.candidates.all { it.isSelected }
-        setAllTrackCandidatesSelection(!allSelected)
-    }
-
-    fun clearSelectedCollection() {
-        catalogCollectionJob?.cancel()
-        catalogCollectionJob = null
-        catalogBatchPlaylistTarget = null
-        val parent = _catalogCollection.value.parent
-        if (parent != null) {
-            _catalogCollection.value = parent
-        } else {
-            _catalogCollection.value = CatalogCollectionUiState()
-        }
-    }
+    fun clearSelectedCollection() =
+        catalogInspectionCoordinator.clearSelectedCollection()
 
     fun searchMore() {
         catalogSearchCoordinator.searchMore()
     }
 
     fun resolveDownloadConflictOverwrite(applyToRemainingBatch: Boolean = false) {
-        processDownloadRuntime.resolveConflictOverwrite(applyToRemainingBatch)
+        catalogDownloadCoordinator.resolveDownloadConflictOverwrite(applyToRemainingBatch)
     }
 
     fun resolveDownloadConflictSaveAs(newTitle: String, applyToRemainingBatch: Boolean = false) {
-        processDownloadRuntime.resolveConflictSaveAs(newTitle, applyToRemainingBatch)
+        catalogDownloadCoordinator.resolveDownloadConflictSaveAs(newTitle, applyToRemainingBatch)
     }
 
     fun cancelDownloadConflict() {
-        processDownloadRuntime.cancelConflict()
+        catalogDownloadCoordinator.cancelDownloadConflict()
     }
 
     fun clearBatchConflictPolicy() {
-        processDownloadRuntime.clearBatchConflictPolicy()
+        catalogDownloadCoordinator.clearBatchConflictPolicy()
     }
-
-    private fun activeDownloadIdFor(
-        track: OnlineCatalogTrack,
-        source: ActiveDownloadSource,
-        explicitId: String? = null
-    ): String {
-        explicitId?.takeIf { it.isNotBlank() }?.let { return it }
-        val match = TrackMatchKeys.downloadIdFor(track.artist, track.title)
-        if (match.isNotEmpty()) return match
-        return catalogPreviewKeyFor(track).ifBlank { track.audioUrl.ifBlank { track.id } }
-    }
-
-    /** Submit to the process runtime; cancelling this caller only stops waiting for the result. */
-    private suspend fun runTrackedDownload(
-        downloadId: String,
-        source: ActiveDownloadSource,
-        track: OnlineCatalogTrack,
-        existingCandidates: List<OnlineCatalogTrack>? = null,
-        currentCandidateIndex: Int = 0,
-        targetPlaylistId: Long? = null,
-        conflictPolicy: DownloadConflictPolicy? = null,
-        lookupIdentity: TrackIdentity? = null,
-        batchId: String? = null,
-        titleOverride: String? = null
-    ): Result<Song> = processDownloadRuntime.submit(
-        ProcessDownloadRequest(
-            downloadId = downloadId,
-            source = source,
-            track = track,
-            candidates = existingCandidates?.takeIf { it.isNotEmpty() } ?: listOf(track),
-            currentCandidateIndex = currentCandidateIndex,
-            targetPlaylistId = targetPlaylistId,
-            conflictPolicy = conflictPolicy,
-            lookupIdentity = lookupIdentity,
-            batchId = batchId,
-            titleOverride = titleOverride
-        )
-    ).await()
 
     private suspend fun rematchDiscoverAfterLibraryChange(extraSong: Song? = null) {
         val library = libraryWithExtra(extraSong)
@@ -3248,193 +2951,52 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             else list + extraSong
         }
 
-    /**
-     * Level 2: Shared pre-flight validation, status checks, and feedback toast for downloading any online track.
-     */
-    private fun preflightOnlineTrackDownload(
-        meta: TrackMeta,
-        source: ActiveDownloadSource,
-        enqueue: suspend () -> Unit
-    ): Boolean {
-        val key = TrackMatchKeys.downloadIdFor(meta.artist, meta.title)
-        if (key.isEmpty()) {
-            toast(DownloadMessages.missingArtistOrTitle)
-            return false
-        }
-        val existing = processDownloadRuntime.findClaimedDownload(
-            key,
-            meta.artist,
-            meta.title
-        )
-        if (processDownloadRuntime.isRunning(key, meta.artist, meta.title)) {
-            toastDownloadsQueued(alreadyQueued = true)
-            return false
-        }
-        when (existing?.state) {
-            CandidateDownloadState.SUCCESS -> {
-                toastSongInLibrary(meta.title, LibraryToastKind.ALREADY)
-                viewModelScope.launch {
-                    rematchDiscoverAfterLibraryChange()
-                }
-                return false
-            }
-            else -> Unit
-        }
-
-        viewModelScope.launch {
-            toastDownloadsQueued()
-            enqueue()
-        }
-        return true
-    }
-
-    /**
-     * Manual download of a streamed remote (Para Ti / Recomendados / Now Playing) into the library.
-     * Enqueues via [runTrackedDownload] ([ActiveDownloadSource.DISCOVER]); progress in Descargas.
-     */
     fun downloadRemoteItem(remote: PlayableItem.Remote) {
-        preflightOnlineTrackDownload(remote, ActiveDownloadSource.DISCOVER) {
-            enqueueRemoteDownload(remote, ActiveDownloadSource.DISCOVER)
-        }
-    }
-
-    private suspend fun enqueueRemoteDownload(
-        remote: PlayableItem.Remote,
-        source: ActiveDownloadSource
-    ): Result<Song> {
-        val key = TrackMatchKeys.downloadIdFor(remote.artist, remote.title)
-        val track = remote.toOnlineCatalogTrack(provider = "YouTube")
-        return runTrackedDownload(downloadId = key, source = source, track = track)
+        catalogDownloadCoordinator.downloadRemoteItem(remote)
     }
 
     fun retryActiveDownload(id: String) {
-        processDownloadRuntime.retry(id)
+        catalogDownloadCoordinator.retryActiveDownload(id)
     }
 
     fun resumeAllDownloads() {
-        processDownloadRuntime.resumeAllErrors()
+        catalogDownloadCoordinator.resumeAllDownloads()
     }
 
     fun cycleActiveDownload(id: String) {
-        val download = activeDownloads.value.find { it.id == id } ?: return
-        val current = download.currentTrack ?: return
-        val wasPreviewing = _catalogPreviewKey.value == catalogPreviewKeyFor(current) ||
-                download.candidates.any { catalogPreviewKeyFor(it) == _catalogPreviewKey.value }
-        val query = download.youtubeSearchQuery()
-            .ifBlank { current.title.trim() }
-            .ifBlank { current.id.ifBlank { current.audioUrl } }
-        if (query.isBlank()) return
-
-        launchCycleYouTubeMatch(
-            query = query,
-            current = download.candidates,
-            wasPreviewing = wasPreviewing
-        ) { candidatesList ->
-            val cycled = ActiveDownload.withCycledCandidate(download, candidatesList)
-            processDownloadRuntime.upsertRow(cycled)
-            cycled.currentTrack
-        }
+        catalogDownloadCoordinator.cycleActiveDownload(
+            id = id,
+            activeDownloads = activeDownloads.value,
+            catalogPreviewKey = _catalogPreviewKey.value
+        )
     }
 
     fun previewActiveDownload(id: String) {
-        val track = activeDownloads.value.find { it.id == id }?.currentTrack ?: return
-        playOnlineCatalogTrackAsStream(track, openNowPlaying = false)
+        catalogDownloadCoordinator.previewActiveDownload(id, activeDownloads.value)
     }
 
     fun playActiveDownload(id: String) {
-        val download = activeDownloads.value.find { it.id == id } ?: return
-        val songId = download.resultSongId ?: return
-        viewModelScope.launch {
-            val song = repository.getSongById(songId) ?: return@launch
-            playSong(song)
-        }
+        catalogDownloadCoordinator.playActiveDownload(id, activeDownloads.value)
     }
 
     fun dismissActiveDownload(id: String) {
-        processDownloadRuntime.dismiss(id)
+        catalogDownloadCoordinator.dismissActiveDownload(id)
     }
 
     fun dismissAllActiveDownloads() {
-        processDownloadRuntime.dismissAll()
+        catalogDownloadCoordinator.dismissAllActiveDownloads()
     }
 
     fun downloadSingleCandidate(index: Int) {
-        val collection = _catalogCollection.value
-        val list = collection.candidates
-        if (index !in list.indices) return
-        val candidate = list[index]
-        viewModelScope.launch {
-            val targetPlaylistId = ensureCatalogPlaylistForBatch(collection)
-            downloadCatalogCandidate(
-                candidate = candidate,
-                source = ActiveDownloadSource.BATCH,
-                targetPlaylistId = targetPlaylistId
-            )
-        }
+        catalogDownloadCoordinator.downloadSingleCandidate(index, catalogCollection.value)
     }
 
     fun downloadSelectedCandidatesBatch() {
-        val collection = _catalogCollection.value
-        val selected = collection.candidates.filter {
-            it.isSelected && it.currentTrack != null
-        }
-        if (selected.isEmpty()) return
-
-        viewModelScope.launch {
-            clearBatchConflictPolicy()
-            val targetPlaylistId = ensureCatalogPlaylistForBatch(collection)
-            val items = selected.mapNotNull { candidate ->
-                val track = candidate.currentTrack ?: return@mapNotNull null
-                TrackedBatchItem(
-                    track = track,
-                    candidates = candidate.candidates,
-                    currentCandidateIndex = candidate.currentCandidateIndex,
-                    idHint = TrackMatchKeys.batchDownloadIdFor(candidate.artist, candidate.title),
-                    lookupIdentity = candidate.identity
-                )
-            }
-            enqueueTrackedBatch(
-                items = items,
-                source = ActiveDownloadSource.BATCH,
-                idStrategy = {
-                    activeDownloadIdFor(
-                        it.track,
-                        ActiveDownloadSource.BATCH,
-                        explicitId = it.idHint
-                    )
-                },
-                playlistId = targetPlaylistId
-            )
-        }
-    }
-
-    /**
-     * When downloading from a catalog playlist inspection, create a matching local playlist
-     * once per batch session and return its id for [ActiveDownload.targetPlaylistId].
-     */
-    private suspend fun ensureCatalogPlaylistForBatch(
-        collection: CatalogCollectionUiState
-    ): Long? = catalogBatchPlaylistMutex.withLock {
-        val selectionKey = collection.selectionKey ?: return@withLock null
-        if (collection.kind != CatalogCollectionKind.PLAYLIST) return@withLock null
-        catalogBatchPlaylistTarget
-            ?.takeIf { it.selectionKey == selectionKey }
-            ?.let { return@withLock it.playlistId }
-        val name = collection.title?.takeIf { it.isNotBlank() } ?: "Playlist"
-        val id = repository.createPlaylist(name, coverUri = collection.coverUrl)
-        if (_catalogCollection.value.selectionKey == selectionKey) {
-            catalogBatchPlaylistTarget = CatalogBatchPlaylistTarget(selectionKey, id)
-        }
-        id
+        catalogDownloadCoordinator.downloadSelectedCandidatesBatch(catalogCollection.value)
     }
 
     fun downloadFromUrl(url: String) {
-        val trimmed = url.trim()
-        if (trimmed.isBlank()) return
-        downloadOnlineTrack(
-            OnlineCatalogTrack.fromUrl(trimmed),
-            source = ActiveDownloadSource.LINK
-        )
+        catalogDownloadCoordinator.downloadFromUrl(url)
     }
 
     /**
@@ -3449,18 +3011,15 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         lookupIdentity: TrackIdentity? = null,
         explicitId: String? = null
     ) {
-        preflightOnlineTrackDownload(lookupIdentity ?: track.identity, source) {
-            val downloadId = activeDownloadIdFor(track, source, explicitId)
-            runTrackedDownload(
-                downloadId = downloadId,
-                source = source,
-                track = track,
-                existingCandidates = existingCandidates,
-                currentCandidateIndex = currentCandidateIndex,
-                targetPlaylistId = targetPlaylistId,
-                lookupIdentity = lookupIdentity
-            )
-        }
+        catalogDownloadCoordinator.downloadOnlineTrack(
+            track = track,
+            source = source,
+            targetPlaylistId = targetPlaylistId,
+            existingCandidates = existingCandidates,
+            currentCandidateIndex = currentCandidateIndex,
+            lookupIdentity = lookupIdentity,
+            explicitId = explicitId
+        )
     }
 
     override fun onCleared() {

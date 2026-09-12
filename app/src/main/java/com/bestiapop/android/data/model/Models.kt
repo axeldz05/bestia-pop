@@ -312,6 +312,9 @@ data class OnlineCatalogTrack(
     }
 }
 
+fun catalogPreviewKeyFor(track: OnlineCatalogTrack): String =
+    track.id.takeIf { it.isNotBlank() }
+        ?: "${track.artist.trim().lowercase()}|${track.title.trim().lowercase()}"
 
 enum class CatalogCategory {
     SONGS,

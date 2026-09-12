@@ -17,7 +17,6 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.UnfoldLess
 import androidx.compose.material.icons.filled.UnfoldMore
 import androidx.compose.material.icons.filled.ViewAgenda
@@ -91,7 +90,9 @@ import com.bestiapop.android.ui.screens.library.LibraryGenreList
 import com.bestiapop.android.ui.screens.library.LibraryProgressBanner
 import com.bestiapop.android.ui.screens.library.LibrarySongListActions
 import com.bestiapop.android.ui.screens.library.LibrarySongListHost
+import com.bestiapop.android.ui.screens.library.LibraryFilterButton
 import com.bestiapop.android.ui.screens.library.SetAlbumArtworkDialog
+import com.bestiapop.android.ui.screens.library.libraryFilterButtonLabel
 import com.bestiapop.android.ui.screens.library.libraryOrderSummary
 import com.bestiapop.android.ui.screens.library.libraryTuneContentDescription
 import com.bestiapop.android.ui.screens.library.rememberSongActionDialogs
@@ -163,6 +164,9 @@ fun LibraryScreen(
     }
     val orderSummary = remember(activeFilter, sortOption, sortDirection, showAlbumHeaders) {
         libraryOrderSummary(activeFilter, sortOption, sortDirection, showAlbumHeaders)
+    }
+    val filterButtonLabel = remember(activeFilter, sortOption, sortDirection, showAlbumHeaders) {
+        libraryFilterButtonLabel(activeFilter, sortOption, sortDirection, showAlbumHeaders)
     }
 
     var collapsedAlbumNames by remember { mutableStateOf(setOf<String>()) }
@@ -543,6 +547,13 @@ fun LibraryScreen(
                         modifier = Modifier.weight(1f)
                     )
                 } else {
+                    if (!isPlaylistAdditionMode && !hasNestedDetail) {
+                        LibraryFilterButton(
+                            label = filterButtonLabel,
+                            contentDescription = libraryTuneContentDescription(orderSummary),
+                            onClick = { showBrowseSortSheet = true }
+                        )
+                    }
                     Spacer(modifier = Modifier.weight(1f))
                 }
                 IconButton(onClick = { searchExpanded = true }) {
@@ -555,15 +566,6 @@ fun LibraryScreen(
             if (selectedAlbumName != null) {
                 IconButton(onClick = { onEditAlbumByKey(selectedAlbumName!!) }) {
                     Icon(Icons.Default.Edit, contentDescription = "Editar álbum")
-                }
-            }
-
-            if (!searchExpanded && !isPlaylistAdditionMode && !hasNestedDetail) {
-                IconButton(onClick = { showBrowseSortSheet = true }) {
-                    Icon(
-                        imageVector = Icons.Default.Tune,
-                        contentDescription = libraryTuneContentDescription(orderSummary)
-                    )
                 }
             }
 

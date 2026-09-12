@@ -8,13 +8,16 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.ViewAgenda
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -22,6 +25,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -31,6 +35,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.bestiapop.android.ui.SortDirection
 import com.bestiapop.android.ui.SortOption
@@ -272,3 +277,67 @@ private fun sortSectionTitle(
 /** Compact contentDescription / a11y for the Tune header button. */
 fun libraryTuneContentDescription(summary: String): String =
     "Vista y orden. $summary"
+
+/** Compact label for the extended library filter/sort button in the header. */
+fun libraryFilterButtonLabel(
+    browseFilter: LibraryBrowseFilter,
+    sortOption: SortOption,
+    sortDirection: SortDirection,
+    albumHeadersActive: Boolean = false
+): String {
+    if (browseFilter == LibraryBrowseFilter.RECENT) return "Recientes"
+    val arrow = if (sortDirection == SortDirection.ASC) "↓" else "↑"
+    val sortLabel = when (sortOption) {
+        SortOption.TITLE -> "Título"
+        SortOption.ARTIST -> "Artista"
+        SortOption.ALBUM -> "Álbum"
+        SortOption.GENRE -> "Género"
+        SortOption.DATE_ADDED -> "Fecha"
+    }
+    return if (albumHeadersActive) {
+        "Álbum · $sortLabel $arrow"
+    } else {
+        "$sortLabel $arrow"
+    }
+}
+
+/** Extended filter button in library header displaying the active filter/sort status. */
+@Composable
+fun LibraryFilterButton(
+    label: String,
+    contentDescription: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(10.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = modifier
+            .height(34.dp)
+            .semantics {
+                this.contentDescription = contentDescription
+            }
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.Tune,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(16.dp)
+            )
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}

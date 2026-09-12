@@ -174,5 +174,6 @@ class BestiaPopApplication : Application(), ImageLoaderFactory {
         } catch (_: Exception) {
         }
         DynamicThemeEngine.clearCache()
+        com.bestiapop.android.data.network.HttpClients.evictIdleConnections()
     }
 }

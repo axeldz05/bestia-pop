@@ -60,4 +60,16 @@ object HttpClients {
         } catch (_: Exception) {
         }
     }
+
+    /**
+     * Evicts idle sockets from connection pools to free kernel/network buffers when the app
+     * goes to the background or enters low-memory states.
+     */
+    fun evictIdleConnections() {
+        try {
+            api.connectionPool.evictAll()
+            transfer.connectionPool.evictAll()
+        } catch (_: Exception) {
+        }
+    }
 }

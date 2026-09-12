@@ -85,14 +85,15 @@ class PlaybackNotificationContractTest {
     }
 
     @Test
-    fun localPlayback_usesNoJavaWakeLock() {
+    fun localPlayback_usesNoJavaWakeLockEvenWhenNextIsRemote() {
         assertEquals(C.WAKE_MODE_NONE, playbackWakeMode(currentIsRemote = false, nextIsRemote = false))
+        assertEquals(C.WAKE_MODE_NONE, playbackWakeMode(currentIsRemote = false, nextIsRemote = true))
     }
 
     @Test
-    fun remoteOrUpcomingRemote_usesNetworkWakeMode() {
+    fun remotePlayback_usesNetworkWakeMode() {
         assertEquals(C.WAKE_MODE_NETWORK, playbackWakeMode(currentIsRemote = true, nextIsRemote = false))
-        assertEquals(C.WAKE_MODE_NETWORK, playbackWakeMode(currentIsRemote = false, nextIsRemote = true))
+        assertEquals(C.WAKE_MODE_NETWORK, playbackWakeMode(currentIsRemote = true, nextIsRemote = true))
     }
 
     @Test

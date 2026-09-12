@@ -70,6 +70,7 @@ private const val EXOPLAYER_MIN_BUFFER_MS = 15_000
 private const val EXOPLAYER_MAX_BUFFER_MS = 50_000
 private const val EXOPLAYER_BUFFER_FOR_PLAYBACK_MS = 250
 private const val EXOPLAYER_BUFFER_FOR_PLAYBACK_AFTER_REBUFFER_MS = 500
+private const val EXOPLAYER_TARGET_AUDIO_BUFFER_BYTES = 1024 * 1024 // 1 MB
 
 @OptIn(UnstableApi::class)
 class MusicService : MediaLibraryService() {
@@ -133,10 +134,12 @@ class MusicService : MediaLibraryService() {
                     if (mimeType.startsWith("audio/")) {
                         decoders.sortedWith(
                             compareBy { info ->
+                                val isUnisoc = info.name.startsWith("c2.unisoc.") || info.name.startsWith("OMX.unisoc.")
+                                val isSoftware = info.softwareOnly || info.name.startsWith("c2.android.") || info.name.startsWith("OMX.google.")
                                 when {
-                                    info.name.startsWith("c2.android.") || info.name.startsWith("OMX.google.") -> 0
-                                    info.name.startsWith("c2.unisoc.") -> 2
-                                    else -> 1
+                                    !isSoftware && !isUnisoc -> 0
+                                    isSoftware && !isUnisoc -> 1
+                                    else -> 2
                                 }
                             }
                         )
@@ -166,6 +169,7 @@ class MusicService : MediaLibraryService() {
                 EXOPLAYER_BUFFER_FOR_PLAYBACK_MS,
                 EXOPLAYER_BUFFER_FOR_PLAYBACK_AFTER_REBUFFER_MS
             )
+            .setTargetBufferBytes(EXOPLAYER_TARGET_AUDIO_BUFFER_BYTES)
             .setPrioritizeTimeOverSizeThresholds(true)
             .build()
 
@@ -964,8 +968,8 @@ internal fun shouldResumeAfterStickyRestart(
 @OptIn(UnstableApi::class)
 internal fun playbackWakeMode(
     currentIsRemote: Boolean,
-    nextIsRemote: Boolean
-): Int = if (currentIsRemote || nextIsRemote) C.WAKE_MODE_NETWORK else C.WAKE_MODE_NONE
+    nextIsRemote: Boolean = false
+): Int = if (currentIsRemote) C.WAKE_MODE_NETWORK else C.WAKE_MODE_NONE
 
 internal fun playbackForegroundRequired(
     startInForegroundRequired: Boolean,

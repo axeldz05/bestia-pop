@@ -309,6 +309,7 @@ internal data class PlaybackRuntimeDependencies(
     val loadSongsByIds: suspend (List<Long>) -> List<Song> = { emptyList() },
     val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     val requestListenSync: () -> Unit = {},
+    val flushPostponedTagWrites: suspend (Long?) -> Unit = {},
     val clockMs: () -> Long = System::currentTimeMillis,
     val elapsedRealtimeMs: () -> Long = SystemClock::elapsedRealtime,
     val controllerReconnectBackoffMs: (attempt: Int) -> Long = ::controllerReconnectBackoffMs,
@@ -345,6 +346,7 @@ class PlaybackRuntime internal constructor(
     val currentSong = _currentSong.asStateFlow()
     private val _isPlaying = MutableStateFlow(false)
     val isPlaying = _isPlaying.asStateFlow()
+    val isPlaybackActive: Boolean get() = _isPlaying.value || playWhenReadyIntent
     private val _playbackPositionMs = MutableStateFlow(0L)
     val playbackPositionMs = _playbackPositionMs.asStateFlow()
     private val _repeatMode = MutableStateFlow(RepeatMode.OFF)
@@ -557,14 +559,18 @@ class PlaybackRuntime internal constructor(
                 withContext(scope.coroutineContext) {
                     libraryReady.value = true
                     if (updated !== oldQueue) {
-                        val sortedByTrack = reorderAlbumQueueByTrackNumber(updated, _isShuffle.value)
+                        val isPlaying = _isPlaying.value || playWhenReadyIntent
+                        val sortedByTrack = if (!isPlaying) {
+                            reorderAlbumQueueByTrackNumber(updated, _isShuffle.value)
+                        } else {
+                            null
+                        }
                         if (sortedByTrack != null) {
                             val currentSlot = _currentItem.value?.queueEntryId
                             val newIndex = sortedByTrack.indexOfFirst { it.queueEntryId == currentSlot }
                                 .takeIf { it >= 0 } ?: 0
                             val position = _playbackPositionMs.value
-                            val wasPlaying = _isPlaying.value || playWhenReadyIntent
-                            applyQueueReorder(sortedByTrack, newIndex, position, wasPlaying)
+                            applyQueueReorder(sortedByTrack, newIndex, position, isPlaying)
                             persistPlaybackSession(force = true)
                         } else {
                             _queue.value = updated
@@ -822,6 +828,7 @@ class PlaybackRuntime internal constructor(
                 }
                 dependencies.listenTracker.onStopped()
                 persistPlaybackSession(force = true)
+                triggerFlushPostponedTagWrites()
             }
             updateTickerLifecycle()
             if (!isPlaying) postOrRunReleaseControllerIfIdle()
@@ -2023,6 +2030,7 @@ class PlaybackRuntime internal constructor(
                 }
                 _playbackPositionMs.value = 0L
                 invalidatePlaybackWork(clearRejectedEntries = false)
+                triggerFlushPostponedTagWrites()
             }
             setCurrentItem(
                 playable,
@@ -2430,6 +2438,34 @@ class PlaybackRuntime internal constructor(
     private fun clearRemoteRecoveryAfterProgress() {
         val currentQueueEntryId = _currentItem.value?.queueEntryId ?: return
         if (remoteRecoveryQueueEntryId == currentQueueEntryId) clearRemoteRecovery()
+    }
+
+    fun isSongActiveInPlayback(songId: Long): Boolean {
+        val current = _currentItem.value
+        if (current is PlayableItem.Local && current.song.id == songId) {
+            return true
+        }
+        val q = _queue.value
+        if (q.isNotEmpty()) {
+            val currentIndex = currentQueueIndex()
+            for (offset in -1..1) {
+                val idx = currentIndex + offset
+                if (idx in q.indices) {
+                    val item = q[idx]
+                    if (item is PlayableItem.Local && item.song.id == songId) {
+                        return true
+                    }
+                }
+            }
+        }
+        return false
+    }
+
+    private fun triggerFlushPostponedTagWrites() {
+        val activeId = (_currentItem.value as? PlayableItem.Local)?.song?.id
+        scope.launch(dependencies.ioDispatcher) {
+            dependencies.flushPostponedTagWrites(activeId)
+        }
     }
 
     private fun ensurePreparedForPlayback() {
@@ -2926,7 +2962,7 @@ class PlaybackRuntime internal constructor(
     }
 
     private fun syncChangedTimelineItems(oldQueue: List<PlayableItem>, newQueue: List<PlayableItem>) {
-        mutateMaterializedTimeline { player ->
+        mutateMaterializedTimeline(syncShuffle = false) { player ->
             newQueue.forEachIndexed { index, item ->
                 if (item !== oldQueue.getOrNull(index)) {
                     player.replaceMediaItem(index, item)
@@ -3236,9 +3272,11 @@ class PlaybackRuntime internal constructor(
                     updateSongDuration = repository::updateSongDuration,
                     loadSongById = repository::getSongById,
                     loadSongsByIds = repository::getSongsByIds,
-                    requestListenSync = sync::requestSync
+                    requestListenSync = sync::requestSync,
+                    flushPostponedTagWrites = { activeId -> repository.flushPostponedTagWrites(activeId) }
                 )
             )
+            repository.isSongActiveInPlayback = { songId -> runtime.isSongActiveInPlayback(songId) }
             runtime.connect(context)
             scope.launch {
                 connectivity.isOnline.collectLatest { if (it) sync.requestSync() }

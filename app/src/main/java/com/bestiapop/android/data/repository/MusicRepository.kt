@@ -2594,7 +2594,7 @@ class MusicRepository private constructor(
                 onProgress?.invoke(index, total, song.title)
                 when (writeTagsToFile(song)) {
                     TagWriteResult.Success -> updated++
-                    TagWriteResult.Unsupported, TagWriteResult.NotWritable -> skipped++
+                    TagWriteResult.Unsupported, TagWriteResult.NotWritable, TagWriteResult.PostponedActivePlayback -> skipped++
                     is TagWriteResult.IoError -> errors++
                 }
             }
@@ -2636,7 +2636,23 @@ class MusicRepository private constructor(
         songs.forEach { writeTagsToFile(it) }
     }
 
+    private val postponedTagWrites = java.util.concurrent.ConcurrentHashMap<Long, Song>()
+    var isSongActiveInPlayback: (Long) -> Boolean = { false }
+
+    suspend fun flushPostponedTagWrites(activeSongId: Long? = null) = withContext(Dispatchers.IO) {
+        if (postponedTagWrites.isEmpty()) return@withContext
+        val toWrite = postponedTagWrites.filterKeys { it != activeSongId }
+        for ((id, song) in toWrite) {
+            postponedTagWrites.remove(id)
+            writeTagsToFile(song)
+        }
+    }
+
     private fun writeTagsToFile(song: Song): TagWriteResult {
+        if (isSongActiveInPlayback(song.id)) {
+            postponedTagWrites[song.id] = song
+            return TagWriteResult.PostponedActivePlayback
+        }
         val file = audioStore.writableFile(song.uriString, song.folderPath)
             ?: return TagWriteResult.NotWritable
         val result = AudioTagWriter.write(song, file)

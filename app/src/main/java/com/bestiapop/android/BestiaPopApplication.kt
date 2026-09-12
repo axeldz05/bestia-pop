@@ -70,7 +70,10 @@ class BestiaPopApplication : Application(), ImageLoaderFactory {
             context = this,
             scope = processScope,
             repository = musicRepository,
-            acquireExecutionLease = { IdentifyExecutionLauncher.acquire(this) }
+            acquireExecutionLease = { IdentifyExecutionLauncher.acquire(this) },
+            isPlaybackActive = { playbackRuntime.isPlaybackActive },
+            isResolvingStream = { playbackRuntime.resolvingRemote.value },
+            isSongActiveInPlayback = { songId -> playbackRuntime.isSongActiveInPlayback(songId) }
         )
     }
 

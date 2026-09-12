@@ -10,6 +10,7 @@ sealed class TagWriteResult {
     data object Success : TagWriteResult()
     data object Unsupported : TagWriteResult()
     data object NotWritable : TagWriteResult()
+    data object PostponedActivePlayback : TagWriteResult()
     data class IoError(val message: String) : TagWriteResult()
 }
 

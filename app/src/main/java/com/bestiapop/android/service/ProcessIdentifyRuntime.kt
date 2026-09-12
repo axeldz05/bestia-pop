@@ -37,6 +37,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -101,7 +102,10 @@ internal class ProcessIdentifyRuntime(
         val loadScopedAlbumTracks: suspend (artist: String, album: String) -> KnownAlbumTracks? =
             { _, _ -> null },
         val setAlbumArtwork: (suspend (albumKey: String, artworkUri: String?) -> Unit)? = null,
-        val searchAlbums: (suspend (query: String) -> List<CatalogAlbum>)? = null
+        val searchAlbums: (suspend (query: String) -> List<CatalogAlbum>)? = null,
+        val isPlaybackActive: () -> Boolean = { false },
+        val isResolvingStream: () -> Boolean = { false },
+        val isSongActiveInPlayback: (Long) -> Boolean = { false }
     )
 
     private val workMutex = Mutex()
@@ -295,12 +299,20 @@ internal class ProcessIdentifyRuntime(
             coroutineScope {
                 val inFlight = mutableSetOf<Long>()
                 val token = dependencies.listenBrainzToken()
-                repeat(IDENTIFY_PARALLEL) {
+                val workerCount = if (dependencies.isPlaybackActive()) 1 else IDENTIFY_PARALLEL
+                repeat(workerCount) { workerIndex ->
                     launch(ioDispatcher) {
                         while (true) {
                             if (!dependencies.isOnline()) {
                                 workMutex.withLock { markInterruptedLocked() }
                                 break
+                            }
+                            while (dependencies.isResolvingStream()) {
+                                delay(STREAM_RESOLVE_WAIT_MS)
+                            }
+                            if (workerIndex > 0 && dependencies.isPlaybackActive()) {
+                                delay(200L)
+                                if (dependencies.isPlaybackActive()) break
                             }
                             val task: WorkTask = workMutex.withLock {
                                 val currentSnap = snapshot ?: return@withLock null
@@ -349,6 +361,11 @@ internal class ProcessIdentifyRuntime(
                                         workMutex.withLock { inFlight.remove(task.songId) }
                                     }
                                 }
+                            }
+                            if (dependencies.isPlaybackActive()) {
+                                delay(IDENTIFY_DELAY_PLAYING_MS)
+                            } else {
+                                delay(IDENTIFY_DELAY_IDLE_MS)
                             }
                         }
                     }
@@ -804,14 +821,20 @@ internal class ProcessIdentifyRuntime(
     }
 
     companion object {
-        internal const val IDENTIFY_PARALLEL = 3
+        internal const val IDENTIFY_PARALLEL = 2
         internal const val PERSIST_EVERY = 8
+        private const val IDENTIFY_DELAY_IDLE_MS = 60L
+        private const val IDENTIFY_DELAY_PLAYING_MS = 450L
+        private const val STREAM_RESOLVE_WAIT_MS = 120L
 
         fun create(
             context: Context,
             scope: CoroutineScope,
             repository: MusicRepository,
-            acquireExecutionLease: suspend () -> AutoCloseable = { AutoCloseable {} }
+            acquireExecutionLease: suspend () -> AutoCloseable = { AutoCloseable {} },
+            isPlaybackActive: () -> Boolean = { false },
+            isResolvingStream: () -> Boolean = { false },
+            isSongActiveInPlayback: (Long) -> Boolean = { false }
         ): ProcessIdentifyRuntime {
             val workStore = IdentifyWorkStore(context)
             val reviewStore = IdentifyReviewStore(context)
@@ -870,7 +893,10 @@ internal class ProcessIdentifyRuntime(
                     },
                     searchAlbums = { query ->
                         repository.searchAlbums(query)
-                    }
+                    },
+                    isPlaybackActive = isPlaybackActive,
+                    isResolvingStream = isResolvingStream,
+                    isSongActiveInPlayback = isSongActiveInPlayback
                 )
             )
         }

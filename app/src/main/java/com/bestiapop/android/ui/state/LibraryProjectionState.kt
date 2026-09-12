@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.conflate
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.flowOf
@@ -74,6 +75,7 @@ class LibraryProjectionState internal constructor(
 
     private val catalogSongs: Flow<List<Song>> = rawSongs
         .distinctUntilChanged(::sameLibraryCatalog)
+        .conflate()
 
     private val catalogQuery: Flow<String> = searchQuery
         .transformLatest { query ->
@@ -106,6 +108,7 @@ class LibraryProjectionState internal constructor(
     ) { songs, query, sort, paused ->
         CatalogFilter(songs, query, sort, paused)
     }.distinctUntilChanged()
+        .conflate()
 
     private val specFlow: Flow<SongListSpec> = combine(
         displaySpec,

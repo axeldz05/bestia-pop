@@ -52,6 +52,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.bestiapop.android.data.model.Album
 import com.bestiapop.android.data.model.Playlist
+import com.bestiapop.android.data.preferences.SubmenuSwipeAction
 import com.bestiapop.android.ui.screens.library.AlbumEditCoverMenuItems
 import com.bestiapop.android.ui.screens.library.AlbumHeaderSelectionState
 import com.bestiapop.android.ui.theme.ListDensity
@@ -130,7 +131,9 @@ fun CollectionHeader(
     onLongClick: () -> Unit = {},
     onToggleCollapse: () -> Unit = {},
     onOpen: () -> Unit = {},
-    menuContent: (@Composable ColumnScope.(dismissMenu: () -> Unit) -> Unit)? = null
+    menuContent: (@Composable ColumnScope.(dismissMenu: () -> Unit) -> Unit)? = null,
+    swipeAction: SubmenuSwipeAction = SubmenuSwipeAction.DISABLED,
+    onSwipeAction: (() -> Unit)? = null
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
     val handleHeaderClick = remember(isSelectionMode, onToggleSelect, onOpen) {
@@ -139,22 +142,30 @@ fun CollectionHeader(
     val onOpenMenu = remember { { menuExpanded = true } }
     val onDismissMenu = remember { { menuExpanded = false } }
 
-    Row(
+    val canSwipe = !isSelectionMode && onSwipeAction != null && swipeAction != SubmenuSwipeAction.DISABLED
+
+    ItemSwipeBox(
+        action = swipeAction,
+        onSwipeAction = { onSwipeAction?.invoke() },
+        enabled = canSwipe,
         modifier = modifier
-            .fillMaxWidth()
-            .padding(
-                horizontal = ListDensity.rowHorizontalPadding,
-                vertical = ListDensity.rowVerticalPadding
-            )
-            .clip(RoundedCornerShape(ListDensity.corner))
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-            .combinedClickable(
-                onClick = handleHeaderClick,
-                onLongClick = onLongClick
-            )
-            .padding(ListDensity.rowInnerPadding),
-        verticalAlignment = Alignment.CenterVertically
     ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(
+                    horizontal = ListDensity.rowHorizontalPadding,
+                    vertical = ListDensity.rowVerticalPadding
+                )
+                .clip(RoundedCornerShape(ListDensity.corner))
+                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                .combinedClickable(
+                    onClick = handleHeaderClick,
+                    onLongClick = onLongClick
+                )
+                .padding(ListDensity.rowInnerPadding),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
         if (isSelectionMode) {
             TriStateCheckbox(
                 state = selectionState,
@@ -228,6 +239,7 @@ fun CollectionHeader(
         }
     }
 }
+}
 
 /**
  * Level 2: Bundled action callbacks for [AlbumHeader].
@@ -242,7 +254,9 @@ data class AlbumHeaderActions(
     val onIdentify: (() -> Unit)? = null,
     val onToggleSelect: () -> Unit = {},
     val onLongClick: () -> Unit = {},
-    val onToggleCollapse: () -> Unit = {}
+    val onToggleCollapse: () -> Unit = {},
+    val onSwipeAction: (() -> Unit)? = null,
+    val swipeAction: SubmenuSwipeAction = SubmenuSwipeAction.ENQUEUE_ALL
 )
 
 /**
@@ -312,6 +326,8 @@ fun AlbumHeader(
         onChangeAlbumCover = actions.onChangeCover,
         onIdentifyAlbum = actions.onIdentify,
         onOpenAlbum = actions.onOpen,
+        swipeAction = actions.swipeAction,
+        onSwipeAction = actions.onSwipeAction,
         modifier = modifier
     )
 }
@@ -340,6 +356,8 @@ fun AlbumHeader(
     onChangeAlbumCover: () -> Unit = {},
     onIdentifyAlbum: (() -> Unit)? = null,
     onOpenAlbum: () -> Unit = {},
+    swipeAction: SubmenuSwipeAction = SubmenuSwipeAction.DISABLED,
+    onSwipeAction: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val toggleState = when (selectionState) {
@@ -369,6 +387,8 @@ fun AlbumHeader(
         onLongClick = onLongClick,
         onToggleCollapse = onToggleCollapse,
         onOpen = onOpenAlbum,
+        swipeAction = swipeAction,
+        onSwipeAction = onSwipeAction,
         menuContent = { dismissMenu ->
             AlbumEditCoverMenuItems(
                 onEditAlbum = {
@@ -401,7 +421,9 @@ data class PlaylistHeaderActions(
     val onEdit: (Playlist) -> Unit,
     val onDelete: (Playlist) -> Unit,
     val onPlayNext: ((Playlist) -> Unit)? = null,
-    val onAddToQueue: ((Playlist) -> Unit)? = null
+    val onAddToQueue: ((Playlist) -> Unit)? = null,
+    val onSwipeAction: (() -> Unit)? = null,
+    val swipeAction: SubmenuSwipeAction = SubmenuSwipeAction.ENQUEUE_ALL
 )
 
 /**
@@ -413,6 +435,11 @@ fun PlaylistHeader(
     actions: PlaylistHeaderActions,
     modifier: Modifier = Modifier
 ) {
+    val resolvedSwipeAction = actions.onSwipeAction ?: when (actions.swipeAction) {
+        SubmenuSwipeAction.ENQUEUE_ALL -> actions.onAddToQueue?.let { cb -> { cb(playlist) } }
+        SubmenuSwipeAction.PLAY_NEXT -> actions.onPlayNext?.let { cb -> { cb(playlist) } }
+        else -> null
+    }
     PlaylistHeader(
         playlist = playlist,
         onPlayPlaylist = { actions.onPlay(playlist) },
@@ -422,6 +449,8 @@ fun PlaylistHeader(
         onDeletePlaylist = { actions.onDelete(playlist) },
         onPlayNext = actions.onPlayNext?.let { action -> { action(playlist) } },
         onAddToQueue = actions.onAddToQueue?.let { action -> { action(playlist) } },
+        swipeAction = actions.swipeAction,
+        onSwipeAction = resolvedSwipeAction,
         modifier = modifier
     )
 }
@@ -439,7 +468,9 @@ fun PlaylistHeader(
     onDeletePlaylist: () -> Unit,
     modifier: Modifier = Modifier,
     onPlayNext: (() -> Unit)? = null,
-    onAddToQueue: (() -> Unit)? = null
+    onAddToQueue: (() -> Unit)? = null,
+    swipeAction: SubmenuSwipeAction = SubmenuSwipeAction.DISABLED,
+    onSwipeAction: (() -> Unit)? = null
 ) {
     val subtitle = remember(playlist.songCount, playlist.description) {
         val countText = if (playlist.songCount == 1) "1 canción" else "${playlist.songCount} canciones"
@@ -460,7 +491,14 @@ fun PlaylistHeader(
         menuContentDescription = "Opciones de playlist",
         onPlay = onPlayPlaylist,
         onShuffle = onShufflePlaylist,
+        onToggleCollapse = {},
         onOpen = onOpenPlaylist,
+        swipeAction = swipeAction,
+        onSwipeAction = onSwipeAction ?: when (swipeAction) {
+            SubmenuSwipeAction.ENQUEUE_ALL -> onAddToQueue
+            SubmenuSwipeAction.PLAY_NEXT -> onPlayNext
+            else -> null
+        },
         menuContent = { dismissMenu ->
             DropdownMenuItem(
                 text = { Text("Editar playlist") },

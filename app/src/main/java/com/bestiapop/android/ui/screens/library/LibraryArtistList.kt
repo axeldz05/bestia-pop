@@ -9,6 +9,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import com.bestiapop.android.data.model.Artist
 import com.bestiapop.android.data.preferences.FastScrollSettings
+import com.bestiapop.android.data.preferences.SubmenuSwipeAction
 import com.bestiapop.android.ui.SortOption
 import com.bestiapop.android.ui.components.FastScrollLazyColumn
 import com.bestiapop.android.ui.components.FastScrollSections
@@ -43,7 +44,9 @@ fun LibraryArtistList(
             sortOption = sortOption,
             onClick = { actions.onClick(artist) },
             onPlay = { actions.onPlay(artist) },
-            onShuffle = { actions.onShuffle(artist) }
+            onShuffle = { actions.onShuffle(artist) },
+            swipeAction = actions.swipeAction,
+            onSwipeAction = actions.onSwipeAction?.let { cb -> { cb(artist) } }
         )
     }
 }
@@ -83,7 +86,9 @@ fun ArtistListItem(
     sortOption: SortOption = SortOption.TITLE,
     onClick: () -> Unit,
     onPlay: () -> Unit,
-    onShuffle: () -> Unit
+    onShuffle: () -> Unit,
+    swipeAction: SubmenuSwipeAction = SubmenuSwipeAction.DISABLED,
+    onSwipeAction: (() -> Unit)? = null
 ) {
     val sortInfo = remember(artist.genre, artist.dateAdded, sortOption) {
         formatSortRelevantInfo(
@@ -110,6 +115,8 @@ fun ArtistListItem(
         shuffleDescription = "Mezclar artista",
         onClick = onClick,
         onPlay = onPlay,
-        onShuffle = onShuffle
+        onShuffle = onShuffle,
+        swipeAction = swipeAction,
+        onSwipeAction = onSwipeAction
     )
 }

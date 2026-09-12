@@ -185,13 +185,7 @@ fun DiscoverScreen(
             SubmenuSwipeBox(
                 settings = gestureSettings,
                 onSwipeRight = { viewModel.clearSelectedCollection() },
-                onSwipeLeft = {
-                    viewModel.executeSubmenuActionForCandidates(
-                        action = gestureSettings.swipeLeftAction,
-                        candidates = activeCandidates
-                    )
-                },
-                canExecuteAction = activeCandidates.isNotEmpty()
+                canSwipeBack = true
             ) {
                 val albumProgress = activeDownloads.findAlbumDownloadProgress(
                     albumTitle = selectedCollectionTitle,
@@ -283,20 +277,7 @@ fun DiscoverScreen(
             SubmenuSwipeBox(
                 settings = gestureSettings,
                 onSwipeRight = { viewModel.closePlaylistDetail() },
-                onSwipeLeft = {
-                    viewModel.executeSubmenuActionForPlayables(
-                        action = gestureSettings.swipeLeftAction,
-                        items = currentItems,
-                        onAddToPlaylist = {
-                            if (selectedLbPlaylistMbid != null) {
-                                viewModel.saveListenBrainzPlaylistAsLocal { newId ->
-                                    viewModel.openLocalPlaylist(newId)
-                                }
-                            }
-                        }
-                    )
-                },
-                canExecuteAction = currentItems.isNotEmpty()
+                canSwipeBack = true
             ) {
                 DiscoverPlaylistDetailHost(
                     selectedLbPlaylistMbid = selectedLbPlaylistMbid,

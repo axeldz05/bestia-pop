@@ -47,6 +47,8 @@ import java.util.Locale
  * Level 2: Bundled actions for a song row item.
  * Encapsulates playback/queue actions as well as metadata/playlist/deletion callbacks.
  */
+import com.bestiapop.android.data.preferences.SubmenuSwipeAction
+
 @Immutable
 data class SongItemActions(
     val onPlayNext: ((Song) -> Unit)? = null,
@@ -57,7 +59,8 @@ data class SongItemActions(
     val onEditLyrics: ((Song) -> Unit)? = null,
     val onIdentify: ((Song) -> Unit)? = null,
     val onDelete: ((Song) -> Unit)? = null,
-    val deleteLabel: String = "Eliminar"
+    val deleteLabel: String = "Eliminar",
+    val swipeAction: SubmenuSwipeAction = SubmenuSwipeAction.ENQUEUE_ALL
 ) {
     companion object {
         fun from(
@@ -67,7 +70,8 @@ data class SongItemActions(
             onEditLyrics: ((Song) -> Unit)? = null,
             onIdentify: ((Song) -> Unit)? = null,
             onDelete: ((Song) -> Unit)? = null,
-            deleteLabel: String = "Eliminar"
+            deleteLabel: String = "Eliminar",
+            swipeAction: SubmenuSwipeAction = SubmenuSwipeAction.ENQUEUE_ALL
         ): SongItemActions = SongItemActions(
             onPlayNext = queueActions.onPlayNext,
             onAddToQueue = queueActions.onAddToQueue,
@@ -77,7 +81,8 @@ data class SongItemActions(
             onEditLyrics = onEditLyrics,
             onIdentify = onIdentify,
             onDelete = onDelete,
-            deleteLabel = deleteLabel
+            deleteLabel = deleteLabel,
+            swipeAction = swipeAction
         )
 
         fun from(
@@ -85,7 +90,8 @@ data class SongItemActions(
             dialogs: SongActionDialogsController,
             onIdentify: ((Song) -> Unit)? = dialogs.onIdentify,
             onDelete: ((Song) -> Unit)? = dialogs.onDelete,
-            deleteLabel: String = "Eliminar"
+            deleteLabel: String = "Eliminar",
+            swipeAction: SubmenuSwipeAction = SubmenuSwipeAction.ENQUEUE_ALL
         ): SongItemActions = SongItemActions(
             onPlayNext = queueActions.onPlayNext,
             onAddToQueue = queueActions.onAddToQueue,
@@ -95,7 +101,8 @@ data class SongItemActions(
             onEditLyrics = dialogs.onEditLyrics,
             onIdentify = onIdentify,
             onDelete = onDelete,
-            deleteLabel = deleteLabel
+            deleteLabel = deleteLabel,
+            swipeAction = swipeAction
         )
 
     }
@@ -125,7 +132,9 @@ fun SongListItem(
     onClick: () -> Unit,
     onLongClick: () -> Unit = {},
     onToggleSelect: () -> Unit = {},
-    onOptionsClick: (() -> Unit)? = null
+    onOptionsClick: (() -> Unit)? = null,
+    swipeAction: SubmenuSwipeAction = actions.swipeAction,
+    onSwipeAction: (() -> Unit)? = null
 ) = SongListItem(
     song = song,
     modifier = modifier,
@@ -154,7 +163,9 @@ fun SongListItem(
     onEditLyrics = actions.onEditLyrics?.let { cb -> { cb(song) } },
     onIdentify = actions.onIdentify?.let { cb -> { cb(song) } },
     onDelete = actions.onDelete?.let { cb -> { cb(song) } },
-    deleteLabel = actions.deleteLabel
+    deleteLabel = actions.deleteLabel,
+    swipeAction = swipeAction,
+    onSwipeAction = onSwipeAction
 )
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -187,7 +198,9 @@ fun SongListItem(
     onEditLyrics: (() -> Unit)? = null,
     onIdentify: (() -> Unit)? = null,
     onDelete: (() -> Unit)? = null,
-    deleteLabel: String = "Eliminar"
+    deleteLabel: String = "Eliminar",
+    swipeAction: SubmenuSwipeAction = SubmenuSwipeAction.ENQUEUE_ALL,
+    onSwipeAction: (() -> Unit)? = null
 ) {
     val colors = playingRowColors(highlighted = isCurrentPlaying, selected = isSelected)
     val displayTitle = title ?: song.title
@@ -205,38 +218,54 @@ fun SongListItem(
     val rowDragModifier = drag.rowModifier
     val handleModifier = drag.handleModifier
 
-    Row(
+    val resolvedSwipeAction: (() -> Unit)? = onSwipeAction ?: when (swipeAction) {
+        SubmenuSwipeAction.ENQUEUE_ALL -> onAddToQueue
+        SubmenuSwipeAction.PLAY_NEXT -> onPlayNext
+        SubmenuSwipeAction.START_RADIO -> onStartRadio
+        SubmenuSwipeAction.ADD_TO_PLAYLIST -> onAddToPlaylist
+        SubmenuSwipeAction.SEARCH_SIMILAR -> null
+        SubmenuSwipeAction.DISABLED -> null
+    }
+    val canSwipe = !isSelectionMode && !isReorderMode && resolvedSwipeAction != null && swipeAction != SubmenuSwipeAction.DISABLED
+
+    ItemSwipeBox(
+        action = swipeAction,
+        onSwipeAction = { resolvedSwipeAction?.invoke() },
+        enabled = canSwipe,
         modifier = modifier
-            .fillMaxWidth()
-            .then(rowDragModifier)
-            .padding(
-                horizontal = ListDensity.rowHorizontalPadding,
-                vertical = ListDensity.rowVerticalPadding
-            )
-            .then(
-                if (colors.background != Color.Transparent) {
-                    Modifier
-                        .clip(RoundedCornerShape(ListDensity.corner))
-                        .background(colors.background)
-                } else {
-                    Modifier
-                }
-            )
-            .combinedClickable(
-                onClick = {
-                    if (isReorderMode) {
-                        // no-op while reordering
-                    } else if (isSelectionMode) {
-                        onToggleSelect()
-                    } else {
-                        onClick()
-                    }
-                },
-                onLongClick = if (isReorderMode) null else onLongClick
-            )
-            .padding(ListDensity.rowInnerPadding),
-        verticalAlignment = Alignment.CenterVertically
     ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .then(rowDragModifier)
+                .padding(
+                    horizontal = ListDensity.rowHorizontalPadding,
+                    vertical = ListDensity.rowVerticalPadding
+                )
+                .then(
+                    if (colors.background != Color.Transparent) {
+                        Modifier
+                            .clip(RoundedCornerShape(ListDensity.corner))
+                            .background(colors.background)
+                    } else {
+                        Modifier
+                    }
+                )
+                .combinedClickable(
+                    onClick = {
+                        if (isReorderMode) {
+                            // no-op while reordering
+                        } else if (isSelectionMode) {
+                            onToggleSelect()
+                        } else {
+                            onClick()
+                        }
+                    },
+                    onLongClick = if (isReorderMode) null else onLongClick
+                )
+                .padding(ListDensity.rowInnerPadding),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
         if (isSelectionMode) {
             Checkbox(
                 checked = isSelected,
@@ -321,6 +350,7 @@ fun SongListItem(
             }
         }
     }
+}
 }
 
 @Composable

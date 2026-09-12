@@ -78,9 +78,9 @@ enum class SubmenuSwipeAction {
     }
 
     fun description(): String = when (this) {
-        ENQUEUE_ALL -> "Añade todas las canciones de la colección al final de la cola"
-        PLAY_NEXT -> "Inserta las canciones para reproducirlas a continuación"
-        START_RADIO -> "Inicia una sesión de radio con sugerencias basadas en la colección"
+        ENQUEUE_ALL -> "Añade la canción o colección al final de la cola activa"
+        PLAY_NEXT -> "Inserta la canción o colección para reproducir a continuación"
+        START_RADIO -> "Inicia una sesión de radio con sugerencias basadas en el elemento"
         SEARCH_SIMILAR -> "Abre la pestaña Descubrir buscando contenido relacionado"
         ADD_TO_PLAYLIST -> "Abre el selector para guardar las canciones en una playlist"
         DISABLED -> "No realiza ninguna acción al deslizar hacia la izquierda"

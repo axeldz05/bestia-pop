@@ -12,6 +12,7 @@ import com.bestiapop.android.ui.SortOption
 import com.bestiapop.android.ui.components.AlbumHeader
 import com.bestiapop.android.ui.components.AlbumHeaderActions
 import com.bestiapop.android.ui.components.FastScrollLazyColumn
+import com.bestiapop.android.data.preferences.SubmenuSwipeAction
 import com.bestiapop.android.ui.components.FastScrollSections
 import com.bestiapop.android.ui.components.formatSortRelevantInfo
 
@@ -23,7 +24,9 @@ data class AlbumBrowseActions(
     val onShuffleAlbum: (Album) -> Unit,
     val onEditAlbum: (Album) -> Unit,
     val onChangeAlbumCover: (Album) -> Unit,
-    val onIdentifyAlbum: (Album) -> Unit = {}
+    val onIdentifyAlbum: (Album) -> Unit = {},
+    val onSwipeAlbum: ((Album) -> Unit)? = null,
+    val swipeAction: SubmenuSwipeAction = SubmenuSwipeAction.ENQUEUE_ALL
 )
 
 /**
@@ -69,7 +72,9 @@ fun LibraryAlbumBrowseList(
                 onOpen = { actions.onAlbumClick(album) },
                 onEdit = { actions.onEditAlbum(album) },
                 onChangeCover = { actions.onChangeAlbumCover(album) },
-                onIdentify = { actions.onIdentifyAlbum(album) }
+                onIdentify = { actions.onIdentifyAlbum(album) },
+                onSwipeAction = actions.onSwipeAlbum?.let { action -> { action(album) } },
+                swipeAction = actions.swipeAction
             )
         }
         AlbumHeader(

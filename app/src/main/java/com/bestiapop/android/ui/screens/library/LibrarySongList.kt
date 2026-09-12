@@ -211,6 +211,7 @@ fun LibrarySongList(
                         val song = item.song
                         SongListItem(
                             song = song,
+                            actions = actionsState.value.songActions,
                             artworkUri = item.artworkUri,
                             isCurrentPlaying = playingIdState.value == song.id,
                             isSelectionMode = isSelectionMode,
@@ -352,7 +353,11 @@ private fun LibraryAlbumHeaderRow(
             onIdentify = { albumActionsState.value.onIdentifyAlbum(item.albumName) },
             onToggleSelect = { albumActionsState.value.onToggleSelectAlbum(item.songIds) },
             onLongClick = { albumActionsState.value.onAlbumLongClick(item.songIds) },
-            onToggleCollapse = { albumActionsState.value.onToggleCollapseAlbum(item.albumName) }
+            onToggleCollapse = { albumActionsState.value.onToggleCollapseAlbum(item.albumName) },
+            onSwipeAction = albumActionsState.value.onSwipeAction?.let { action ->
+                { action(item.albumName, item.songIds) }
+            },
+            swipeAction = albumActionsState.value.swipeAction
         )
     }
     AlbumHeader(

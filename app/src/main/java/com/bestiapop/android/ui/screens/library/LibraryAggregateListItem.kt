@@ -20,7 +20,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.Immutable
+import com.bestiapop.android.data.preferences.SubmenuSwipeAction
 import com.bestiapop.android.ui.components.ArtworkThumbnail
+import com.bestiapop.android.ui.components.ItemSwipeBox
 import com.bestiapop.android.ui.components.PlayShuffleIconPair
 import com.bestiapop.android.ui.theme.ListDensity
 
@@ -29,7 +31,9 @@ import com.bestiapop.android.ui.theme.ListDensity
 data class AggregateBrowseActions<T>(
     val onClick: (T) -> Unit,
     val onPlay: (T) -> Unit,
-    val onShuffle: (T) -> Unit
+    val onShuffle: (T) -> Unit,
+    val onSwipeAction: ((T) -> Unit)? = null,
+    val swipeAction: SubmenuSwipeAction = SubmenuSwipeAction.ENQUEUE_ALL
 )
 
 /** Shared row chrome for artist / genre browse aggregates. */
@@ -44,19 +48,30 @@ fun LibraryAggregateListItem(
     shuffleDescription: String,
     onClick: () -> Unit,
     onPlay: () -> Unit,
-    onShuffle: () -> Unit
+    onShuffle: () -> Unit,
+    modifier: Modifier = Modifier,
+    swipeAction: SubmenuSwipeAction = SubmenuSwipeAction.DISABLED,
+    onSwipeAction: (() -> Unit)? = null
 ) {
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(
-                horizontal = ListDensity.rowHorizontalPadding,
-                vertical = ListDensity.rowVerticalPadding
-            )
-            .clickable { onClick() },
-        shape = RoundedCornerShape(ListDensity.corner),
-        color = MaterialTheme.colorScheme.surface
+    val canSwipe = onSwipeAction != null && swipeAction != SubmenuSwipeAction.DISABLED
+
+    ItemSwipeBox(
+        action = swipeAction,
+        onSwipeAction = { onSwipeAction?.invoke() },
+        enabled = canSwipe,
+        modifier = modifier
     ) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(
+                    horizontal = ListDensity.rowHorizontalPadding,
+                    vertical = ListDensity.rowVerticalPadding
+                )
+                .clickable { onClick() },
+            shape = RoundedCornerShape(ListDensity.corner),
+            color = MaterialTheme.colorScheme.surface
+        ) {
         Row(
             modifier = Modifier.padding(ListDensity.rowInnerPadding),
             verticalAlignment = Alignment.CenterVertically
@@ -95,4 +110,5 @@ fun LibraryAggregateListItem(
             )
         }
     }
+}
 }

@@ -57,10 +57,30 @@ private val MAX_DRAG_OFFSET = 120.dp
 fun SubmenuSwipeBox(
     settings: SubmenuGestureSettings,
     onSwipeRight: (() -> Unit)?,
+    modifier: Modifier = Modifier,
+    canSwipeBack: Boolean = true,
+    content: @Composable () -> Unit
+) = SubmenuSwipeBox(
+    onSwipeRight = onSwipeRight,
+    onSwipeLeft = null,
+    modifier = modifier,
+    swipeRightEnabled = canSwipeBack && settings.swipeBackEnabled,
+    swipeLeftEnabled = false,
+    content = content
+)
+
+/**
+ * Level 2 compressed wrapper: binds directly to [SubmenuGestureSettings],
+ * automatically managing enabled flags based on gesture settings and caller prerequisites.
+ */
+@Composable
+fun SubmenuSwipeBox(
+    settings: SubmenuGestureSettings,
+    onSwipeRight: (() -> Unit)?,
     onSwipeLeft: (() -> Unit)?,
     modifier: Modifier = Modifier,
     canSwipeBack: Boolean = true,
-    canExecuteAction: Boolean = true,
+    canExecuteAction: Boolean = false,
     content: @Composable () -> Unit
 ) = SubmenuSwipeBox(
     onSwipeRight = onSwipeRight,

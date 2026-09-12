@@ -192,7 +192,7 @@ fun LibrarySettingsScreen(viewModel: MusicPlayerViewModel) {
         )
         Spacer(modifier = Modifier.height(6.dp))
         Text(
-            text = "Elegí qué acción realizar al deslizar hacia la izquierda dentro de una colección o detalle.",
+            text = "Elegí qué acción realizar al deslizar hacia la izquierda sobre una canción, álbum o artista.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )

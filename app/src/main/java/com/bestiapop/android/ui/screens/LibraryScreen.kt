@@ -338,7 +338,9 @@ fun LibraryScreen(
         }
     }
 
-    val albumBrowseActions = remember(viewModel, searchQuery) {
+    val gestureSettings by viewModel.submenuGestureSettings.collectAsStateWithLifecycle()
+
+    val albumBrowseActions = remember(viewModel, searchQuery, gestureSettings) {
         AlbumBrowseActions(
             onAlbumClick = { album ->
                 if (searchQuery.isNotBlank()) viewModel.addRecentSearch(searchQuery)
@@ -348,27 +350,42 @@ fun LibraryScreen(
             onShuffleAlbum = { album -> viewModel.playAlbum(album, startShuffled = true) },
             onEditAlbum = { album -> albumForEdit = album },
             onChangeAlbumCover = { album -> albumForCoverChange = album },
-            onIdentifyAlbum = { album -> viewModel.identifyAlbum(album) }
+            onIdentifyAlbum = { album -> viewModel.identifyAlbum(album) },
+            onSwipeAlbum = { album ->
+                val songs = viewModel.songsForAlbum(viewModel.libraryProjection.songs.value, album.name)
+                viewModel.executeSubmenuActionForSongs(gestureSettings.swipeLeftAction, songs)
+            },
+            swipeAction = gestureSettings.swipeLeftAction
         )
     }
-    val artistBrowseActions = remember(viewModel, searchQuery) {
+    val artistBrowseActions = remember(viewModel, searchQuery, gestureSettings) {
         AggregateBrowseActions<Artist>(
             onClick = { artist ->
                 if (searchQuery.isNotBlank()) viewModel.addRecentSearch(searchQuery)
                 viewModel.openLibraryArtist(artist.name)
             },
             onPlay = { artist -> viewModel.playArtist(artist.name, startShuffled = false) },
-            onShuffle = { artist -> viewModel.playArtist(artist.name, startShuffled = true) }
+            onShuffle = { artist -> viewModel.playArtist(artist.name, startShuffled = true) },
+            onSwipeAction = { artist ->
+                val songs = viewModel.songsForArtist(viewModel.libraryProjection.songs.value, artist.name)
+                viewModel.executeSubmenuActionForSongs(gestureSettings.swipeLeftAction, songs)
+            },
+            swipeAction = gestureSettings.swipeLeftAction
         )
     }
-    val genreBrowseActions = remember(viewModel, searchQuery) {
+    val genreBrowseActions = remember(viewModel, searchQuery, gestureSettings) {
         AggregateBrowseActions<GenreGroup>(
             onClick = { genre ->
                 if (searchQuery.isNotBlank()) viewModel.addRecentSearch(searchQuery)
                 viewModel.openLibraryGenre(genre.name)
             },
             onPlay = { genre -> viewModel.playGenre(genre.name, startShuffled = false) },
-            onShuffle = { genre -> viewModel.playGenre(genre.name, startShuffled = true) }
+            onShuffle = { genre -> viewModel.playGenre(genre.name, startShuffled = true) },
+            onSwipeAction = { genre ->
+                val songs = viewModel.songsForGenre(viewModel.libraryProjection.songs.value, genre.name)
+                viewModel.executeSubmenuActionForSongs(gestureSettings.swipeLeftAction, songs)
+            },
+            swipeAction = gestureSettings.swipeLeftAction
         )
     }
 
@@ -394,7 +411,8 @@ fun LibraryScreen(
     val songListActions = remember(
         onPlayNext, onAddToQueue, onStartRadio, onAddToPlaylist, onEditMetadata, onEditLyrics, onIdentify, onDeleteSong,
         onPlayAlbum, onShuffleAlbum, toggleSelectSong, toggleSelectAlbum, onAlbumLongClick,
-        toggleCollapseAlbum, onEditAlbumByKey, onChangeAlbumCoverByKey, onIdentifyAlbumByKey, selectedArtistName, selectedGenreName
+        toggleCollapseAlbum, onEditAlbumByKey, onChangeAlbumCoverByKey, onIdentifyAlbumByKey, selectedArtistName, selectedGenreName,
+        gestureSettings
     ) {
         LibrarySongListActions(
             onPlayNext = onPlayNext,
@@ -419,7 +437,16 @@ fun LibraryScreen(
                     albumName,
                     fromNestedParent = selectedArtistName != null || selectedGenreName != null
                 )
-            }
+            },
+            onSwipeAlbum = { _, albumIds ->
+                val songs = songList.songsForIds(albumIds)
+                viewModel.executeSubmenuActionForSongs(
+                    action = gestureSettings.swipeLeftAction,
+                    songs = songs,
+                    onAddToPlaylist = { songDialogs.onAddManyToPlaylist(it) }
+                )
+            },
+            swipeAction = gestureSettings.swipeLeftAction
         )
     }
 
@@ -880,14 +907,7 @@ private fun LibraryBrowsePane(
             SubmenuSwipeBox(
                 settings = gestureSettings,
                 onSwipeRight = { viewModel.popLibraryNested() },
-                onSwipeLeft = {
-                    viewModel.executeSubmenuActionForSongs(
-                        action = gestureSettings.swipeLeftAction,
-                        songs = nestedSongs,
-                        onAddToPlaylist = onAddManyToPlaylist
-                    )
-                },
-                canExecuteAction = nestedSongs.isNotEmpty()
+                canSwipeBack = true
             ) {
                 NestedLibraryBrowse(
                     selectedAlbumName = selectedAlbumName,

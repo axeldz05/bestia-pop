@@ -17,6 +17,7 @@ import com.bestiapop.android.data.model.Playlist
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.data.preferences.FastScrollSettings
 import com.bestiapop.android.ui.MusicPlayerViewModel
+import com.bestiapop.android.data.preferences.SubmenuSwipeAction
 import com.bestiapop.android.ui.SortOption
 import com.bestiapop.android.ui.components.SongItemActions
 import com.bestiapop.android.ui.state.LibraryListModel
@@ -33,7 +34,9 @@ data class LibraryAlbumGroupActions(
     val onEditAlbum: (String) -> Unit = {},
     val onChangeAlbumCover: (String) -> Unit = {},
     val onIdentifyAlbum: (String) -> Unit = {},
-    val onOpenAlbum: (String) -> Unit = {}
+    val onOpenAlbum: (String) -> Unit = {},
+    val onSwipeAction: ((String, List<Long>) -> Unit)? = null,
+    val swipeAction: SubmenuSwipeAction = SubmenuSwipeAction.ENQUEUE_ALL
 )
 
 /** Shared song/album action callbacks for [LibrarySongList]. */
@@ -61,6 +64,7 @@ data class LibrarySongListActions(
     val onChangeAlbumCover: (String) -> Unit get() = albumActions.onChangeAlbumCover
     val onIdentifyAlbum: (String) -> Unit get() = albumActions.onIdentifyAlbum
     val onOpenAlbum: (String) -> Unit get() = albumActions.onOpenAlbum
+    val onSwipeAlbum: ((String, List<Long>) -> Unit)? get() = albumActions.onSwipeAction
 
     /** Level 1: Flat parameter constructor for backward compatibility and continuous granularity. */
     constructor(
@@ -81,7 +85,9 @@ data class LibrarySongListActions(
         onEditAlbum: (String) -> Unit = {},
         onChangeAlbumCover: (String) -> Unit = {},
         onIdentifyAlbum: (String) -> Unit = {},
-        onOpenAlbum: (String) -> Unit = {}
+        onOpenAlbum: (String) -> Unit = {},
+        onSwipeAlbum: ((String, List<Long>) -> Unit)? = null,
+        swipeAction: SubmenuSwipeAction = SubmenuSwipeAction.ENQUEUE_ALL
     ) : this(
         songActions = SongItemActions(
             onPlayNext = onPlayNext,
@@ -91,7 +97,8 @@ data class LibrarySongListActions(
             onEditMetadata = onEditMetadata,
             onEditLyrics = onEditLyrics,
             onIdentify = onIdentify,
-            onDelete = onDeleteSong
+            onDelete = onDeleteSong,
+            swipeAction = swipeAction
         ),
         albumActions = LibraryAlbumGroupActions(
             onPlayAlbum = onPlayAlbum,
@@ -102,7 +109,9 @@ data class LibrarySongListActions(
             onEditAlbum = onEditAlbum,
             onChangeAlbumCover = onChangeAlbumCover,
             onIdentifyAlbum = onIdentifyAlbum,
-            onOpenAlbum = onOpenAlbum
+            onOpenAlbum = onOpenAlbum,
+            onSwipeAction = onSwipeAlbum,
+            swipeAction = swipeAction
         ),
         onToggleSelect = onToggleSelect
     )

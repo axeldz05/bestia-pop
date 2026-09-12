@@ -137,7 +137,9 @@ fun PlaylistsScreen(
         viewModel.closePlaylistDetail()
     }
 
-    val playlistActions = remember(viewModel) {
+    val gestureSettings by viewModel.submenuGestureSettings.collectAsStateWithLifecycle()
+
+    val playlistActions = remember(viewModel, gestureSettings) {
         PlaylistHeaderActions(
             onPlay = { viewModel.playPlaylist(it.id, startShuffled = false) },
             onShuffle = { viewModel.playPlaylist(it.id, startShuffled = true) },
@@ -145,7 +147,8 @@ fun PlaylistsScreen(
             onEdit = { playlistToEdit = it },
             onDelete = { playlistToDelete = it },
             onPlayNext = { viewModel.playPlaylistNext(it.id) },
-            onAddToQueue = { viewModel.enqueuePlaylist(it.id) }
+            onAddToQueue = { viewModel.enqueuePlaylist(it.id) },
+            swipeAction = gestureSettings.swipeLeftAction
         )
     }
 
@@ -224,18 +227,10 @@ fun PlaylistsScreen(
                     val songsInPlaylist = pair.second
                     val pendingTracks by viewModel.getPlaylistPendingTracksFlow(playlistId)
                         .collectAsStateWithLifecycle(initialValue = emptyList())
-                    val gestureSettings by viewModel.submenuGestureSettings.collectAsStateWithLifecycle()
                     SubmenuSwipeBox(
                         settings = gestureSettings,
                         onSwipeRight = { viewModel.closePlaylistDetail() },
-                        onSwipeLeft = {
-                            viewModel.executeSubmenuActionForSongs(
-                                action = gestureSettings.swipeLeftAction,
-                                songs = songsInPlaylist,
-                                onAddToPlaylist = { songDialogs.onAddManyToPlaylist(it) }
-                            )
-                        },
-                        canExecuteAction = songsInPlaylist.isNotEmpty()
+                        canSwipeBack = true
                     ) {
                         PlaylistDetailScreen(
                             playlist = playlist,
@@ -405,8 +400,9 @@ private fun PlaylistDetailScreen(
     }
 
     val totalCount = localSongs.size + pendingTracks.size
+    val gestureSettings by viewModel.submenuGestureSettings.collectAsStateWithLifecycle()
     val songActions = rememberSongQueueActions(viewModel)
-    val playlistSongActions = remember(songActions, onAddToPlaylist, onEditMetadata, onIdentify, onEditLyrics, playlist.id) {
+    val playlistSongActions = remember(songActions, onAddToPlaylist, onEditMetadata, onIdentify, onEditLyrics, playlist.id, gestureSettings) {
         SongItemActions.from(
             queueActions = songActions,
             onAddToPlaylist = onAddToPlaylist,
@@ -414,7 +410,8 @@ private fun PlaylistDetailScreen(
             onEditLyrics = onEditLyrics,
             onIdentify = onIdentify,
             onDelete = { viewModel.removeSongFromPlaylist(playlist.id, it.id) },
-            deleteLabel = PlaylistMessages.removeFromPlaylist
+            deleteLabel = PlaylistMessages.removeFromPlaylist,
+            swipeAction = gestureSettings.swipeLeftAction
         )
     }
     val currentSong by viewModel.currentSong.collectAsStateWithLifecycle()

@@ -15,6 +15,7 @@ Leer y seguir estos skills del repo **antes** de diseñar o implementar cambios 
 | **Release changelog** | `.agents/skills/bestiapop-release-changelog/SKILL.md` | Anotar cambios user-facing y armar notas del APK |
 | **Linter management** | `.agents/skills/kotlin-linter-management/SKILL.md` | Diagnóstico, ejecución y resolución de errores de linter sin supresiones |
 | **Device debugging** | `.agents/skills/android-device-debugging/SKILL.md` | Depuración en dispositivo físico USB, memoria, Doze, LMK, servicios e input |
+| **Music catalog toolkit** | `.agents/skills/music-catalog-toolkit/SKILL.md` | Scripts CLI para inspeccionar Deezer/iTunes, extraer streams de YouTube y descargar canciones/álbumes |
 
 Resumen histórico de principios (mantener alineado con features): `.agents/AGENTS.md`
 
@@ -69,6 +70,12 @@ Una regla de oro para saber si tenes comportamiento repetido es pensar en cuanto
   - **ktlint:** El linter y formateador estandarizado para Kotlin proviene exclusivamente de `https://github.com/ktlint/ktlint` (nunca de repositorios obsoletos de terceros).
   - **Kotlin compiler:** Compilar con `-Pkotlin.compiler.allWarningsAsErrors=true` para garantizar código libre de advertencias de compilación.
 - **Invariante de entrega:** Todo cambio debe finalizar con **0 errores y 0 warnings en el código base** reportados por Android Lint, compilador de Kotlin y ktlint en los bloques de código modificados. Consulta el skill `.agents/skills/kotlin-linter-management/SKILL.md`.
+
+## Herramientas de diagnóstico y catálogo (scripts externos)
+
+El skill `music-catalog-toolkit` (`.agents/skills/music-catalog-toolkit/SKILL.md`) contiene herramientas CLI ejecutables en Python (`scripts/catalog_tool.py`) para inspeccionar APIs de música (Deezer, iTunes, YouTube), simular resoluciones de catálogo y descargar canciones o álbumes con parametrización completa.
+- **Evolución continua:** Los agentes pueden y deben modificar o ampliar este script y su skill en futuras tareas según surjan nuevos endpoints, cambios en APIs o necesidades de depuración.
+- **Diferencias funcionales:** Este script es una herramienta de soporte/diagnóstico externa de línea de comandos; sus particularidades y diferencias frente a la implementación nativa Android (`MetadataFetcher.kt`, `YouTubeExtractor.kt`, `ProcessDownloadCoordinator.kt`) están documentadas en su respectivo `SKILL.md`.
 
 ## Limpieza obligatoria al terminar
 

@@ -13,6 +13,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.foundation.ScrollState
@@ -2273,11 +2274,11 @@ fun DiscoverCollectionDetailView(
                 }
             }
 
-            items(
+            itemsIndexed(
                 items = candidates,
-                key = { "candidate-${it.trackNumber}-${it.identity.artist}-${it.identity.title}" },
-                contentType = { "candidate-track-item" }
-            ) { candidate ->
+                key = { index, it -> "candidate-${it.trackNumber}-${it.identity.artist}-${it.identity.title}-$index" },
+                contentType = { _, _ -> "candidate-track-item" }
+            ) { _, candidate ->
                 val trackStatus = getTrackStatus(candidate.identity)
                 val activeDownload = activeDownloads.findUiDownloadByTrack(candidate.artist, candidate.title)
                 val isPlaying = isCurrentPlaying(currentItem, candidate.identity.artist, candidate.identity.title)
@@ -2686,10 +2687,10 @@ fun DiscoverArtistDetailView(
                         contentPadding = PaddingValues(horizontal = 16.dp),
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        items(
+                        itemsIndexed(
                             items = albums,
-                            key = { "online-alb-${it.id.ifEmpty { it.title }}" }
-                        ) { album ->
+                            key = { index, it -> "online-alb-${it.id.ifEmpty { it.title }}-$index" }
+                        ) { _, album ->
                             DiscoverAlbumCard(
                                 album = album,
                                 onClick = { onSelectAlbum(album) },
@@ -2714,10 +2715,10 @@ fun DiscoverArtistDetailView(
                     )
                 }
 
-                items(
+                itemsIndexed(
                     items = candidates,
-                    key = { "top-cand-${it.trackNumber}-${it.identity.artist}-${it.identity.title}" }
-                ) { candidate ->
+                    key = { index, it -> "top-cand-${it.trackNumber}-${it.identity.artist}-${it.identity.title}-$index" }
+                ) { _, candidate ->
                     val trackStatus = getTrackStatus(candidate.identity)
                     val activeDownload = activeDownloads.findUiDownloadByTrack(candidate.artist, candidate.title)
                     val isPlaying = isCurrentPlaying(currentItem, candidate.identity.artist, candidate.identity.title)

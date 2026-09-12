@@ -881,78 +881,284 @@ object MetadataFetcher {
         return@withContext list
     }
 
+    private fun normalizeTextForComparison(raw: String): String =
+        raw.lowercase()
+            .replace(Regex("[^\\p{L}\\p{Nd}]+"), " ")
+            .trim()
+
+    private fun isAlbumMatching(
+        candidateTitle: String,
+        candidateArtist: String,
+        targetTitle: String,
+        targetArtist: String
+    ): Boolean {
+        val cTitle = normalizeTextForComparison(candidateTitle)
+        val tTitle = normalizeTextForComparison(targetTitle)
+        if (cTitle.isBlank() || tTitle.isBlank()) return false
+        val titleMatch = cTitle == tTitle || cTitle.contains(tTitle) || tTitle.contains(cTitle)
+        if (!titleMatch) return false
+        val cArtist = normalizeTextForComparison(candidateArtist)
+        val tArtist = normalizeTextForComparison(targetArtist)
+        if (cArtist.isNotBlank() && tArtist.isNotBlank()) {
+            val artistMatch = cArtist == tArtist || cArtist.contains(tArtist) || tArtist.contains(cArtist)
+            if (!artistMatch) return false
+        }
+        return true
+    }
+
+    private fun searchDeezerAlbumId(cleanArtist: String, cleanAlbum: String): String? {
+        val query = if (cleanArtist.isNotBlank()) "artist:\"$cleanArtist\" album:\"$cleanAlbum\"" else "album:\"$cleanAlbum\""
+        var url = endpoint(endpoints.deezerBaseUrl, "search/album?q=${encodeQuery(query)}&limit=5")
+        var data = getJson(url, userAgent = "Mozilla/5.0")?.optJSONArray("data")
+        if (data == null || data.length() == 0) {
+            val fallbackQuery = if (cleanArtist.isNotBlank()) "$cleanArtist $cleanAlbum" else cleanAlbum
+            url = endpoint(endpoints.deezerBaseUrl, "search/album?q=${encodeQuery(fallbackQuery)}&limit=5")
+            data = getJson(url, userAgent = "Mozilla/5.0")?.optJSONArray("data")
+        }
+        if (data == null || data.length() == 0) return null
+
+        for (i in 0 until data.length()) {
+            val obj = data.getJSONObject(i)
+            val title = obj.optString("title").trim()
+            val artistObj = obj.optJSONObject("artist")
+            val artist = artistObj?.optString("name").orEmpty().trim()
+            if (isAlbumMatching(candidateTitle = title, candidateArtist = artist, targetTitle = cleanAlbum, targetArtist = cleanArtist)) {
+                return obj.optLong("id").takeIf { it > 0 }?.toString()
+            }
+        }
+        val firstObj = data.optJSONObject(0) ?: return null
+        return firstObj.optLong("id").takeIf { it > 0 }?.toString()
+    }
+
+    private fun findMatchingItunesCollectionId(
+        results: JSONArray?,
+        cleanArtist: String,
+        cleanAlbum: String
+    ): Long? {
+        if (results == null || results.length() == 0) return null
+        for (i in 0 until results.length()) {
+            val obj = results.getJSONObject(i)
+            val collectionName = obj.optString("collectionName").trim()
+            val artistName = obj.optString("artistName").trim()
+            val collectionId = obj.optLong("collectionId")
+            if (collectionId > 0 && isAlbumMatching(
+                    candidateTitle = collectionName,
+                    candidateArtist = artistName,
+                    targetTitle = cleanAlbum,
+                    targetArtist = cleanArtist
+                )
+            ) {
+                return collectionId
+            }
+        }
+        val first = results.optJSONObject(0)
+        return first?.optLong("collectionId")?.takeIf { it > 0 }
+    }
+
+    fun parseDeezerAlbumTracks(
+        data: JSONArray?,
+        albumTitle: String,
+        artistName: String,
+        albumCoverUrl: String? = null
+    ): List<CatalogTrackCandidate> {
+        if (data == null || data.length() == 0) return emptyList()
+        val list = ArrayList<CatalogTrackCandidate>(data.length())
+        for (i in 0 until data.length()) {
+            val obj = data.getJSONObject(i)
+            val base = obj.toDeezerTrackIdentity(
+                defaultTitle = "Pista ${i + 1}",
+                defaultArtist = artistName,
+                defaultAlbum = albumTitle
+            ) ?: continue
+            val trackNum = if (base.trackNumber > 0) {
+                base.trackNumber
+            } else {
+                deezerAlbumTrackNumber(obj).takeIf { it > 0 } ?: (i + 1)
+            }
+            val identity = base.copy(
+                album = albumTitle.ifBlank { base.album },
+                artist = if (base.artist.isNotBlank() && base.artist != "Artista") base.artist else artistName,
+                artworkUri = albumCoverUrl ?: base.artworkUri,
+                trackNumber = trackNum
+            )
+            list.add(
+                toCatalogCandidate(
+                    identity.toCatalogTrack(
+                        provider = "Deezer/YouTube",
+                        audioUrl = identity.youtubeSearchQuery()
+                    )
+                )
+            )
+        }
+        return list
+    }
+
+    fun parseItunesAlbumLookupTracks(
+        results: JSONArray?,
+        expectedAlbumTitle: String,
+        expectedArtist: String,
+        albumCoverUrl: String? = null
+    ): List<CatalogTrackCandidate> {
+        if (results == null || results.length() == 0) return emptyList()
+        val list = ArrayList<CatalogTrackCandidate>(results.length())
+        var fallbackIndex = 1
+        for (i in 0 until results.length()) {
+            val obj = results.getJSONObject(i)
+            val wrapperType = obj.optString("wrapperType")
+            if (wrapperType != "track") continue
+
+            val rawTitle = obj.optString("trackName").trim()
+            if (rawTitle.isBlank()) continue
+
+            val artist = obj.optString("artistName", expectedArtist).trim().ifBlank { expectedArtist }
+            val album = obj.optString("collectionName", expectedAlbumTitle).trim().ifBlank { expectedAlbumTitle }
+            val cover = albumCoverUrl ?: normalizeItunesArtwork(obj.optString("artworkUrl100"))
+            val rawTrackNum = obj.optInt("trackNumber", 0)
+            val rawDiscNum = obj.optInt("discNumber", 0)
+            val trackNum = if (rawTrackNum > 0) {
+                encodeAlbumTrack(rawTrackNum, rawDiscNum)
+            } else {
+                fallbackIndex
+            }
+            fallbackIndex++
+            val durationMs = obj.optLong("trackTimeMillis", 180000L)
+
+            val identity = TrackIdentity(
+                title = rawTitle,
+                artist = artist,
+                album = album,
+                artworkUri = cover,
+                durationMs = durationMs,
+                trackNumber = trackNum
+            )
+            val track = OnlineCatalogTrack(
+                identity = identity,
+                id = obj.optString("trackId").ifBlank { "${identity.youtubeSearchQuery()}#$i" },
+                audioUrl = identity.youtubeSearchQuery(),
+                provider = "iTunes/YouTube",
+                year = parseReleaseYear(obj.optString("releaseDate"))
+            )
+            list.add(toCatalogCandidate(track))
+        }
+        return list
+    }
+
+    fun mergeAlbumTrackCandidates(
+        primary: List<CatalogTrackCandidate>,
+        fallback: List<CatalogTrackCandidate>
+    ): List<CatalogTrackCandidate> {
+        if (primary.isEmpty()) return fallback
+        if (fallback.isEmpty()) return primary
+
+        val merged = primary.toMutableList()
+        val existingTrackNumbers = primary.mapNotNull { it.trackNumber.takeIf { n -> n > 0 } }.toSet()
+        val existingTitles = primary.map { normalizeTextForComparison(it.title) }.filter { it.isNotBlank() }.toSet()
+
+        for (track in fallback) {
+            val trackNum = track.trackNumber
+            val normTitle = normalizeTextForComparison(track.title)
+            val matchesByNumber = trackNum > 0 && trackNum in existingTrackNumbers
+            val matchesByTitle = normTitle.isNotBlank() && normTitle in existingTitles
+
+            if (!matchesByNumber && !matchesByTitle) {
+                merged.add(track)
+            } else {
+                val matchIndex = merged.indexOfFirst {
+                    (trackNum > 0 && it.trackNumber == trackNum) ||
+                        (normTitle.isNotBlank() && normalizeTextForComparison(it.title) == normTitle)
+                }
+                if (matchIndex >= 0) {
+                    val existing = merged[matchIndex]
+                    val combined = (existing.candidates + track.candidates).distinctBy { it.id }
+                    merged[matchIndex] = existing.copy(candidates = combined)
+                }
+            }
+        }
+        return merged.sortedWith(
+            compareBy(
+                { if (it.trackNumber > 0) it.trackNumber else Int.MAX_VALUE },
+                { it.title }
+            )
+        )
+    }
+
     suspend fun fetchAlbumTrackCandidates(
         albumId: String,
         albumTitle: String,
         artistName: String,
         albumCoverUrl: String?
     ): List<CatalogTrackCandidate> = withContext(Dispatchers.IO) {
-        val resultCandidates = mutableListOf<CatalogTrackCandidate>()
-        try {
-            val url = endpoint(
-                endpoints.deezerBaseUrl,
-                "album/$albumId/tracks?limit=50"
-            )
-            val data = getJson(url, userAgent = "Mozilla/5.0")?.optJSONArray("data")
-            if (data != null && data.length() > 0) {
-                for (i in 0 until data.length()) {
-                    val obj = data.getJSONObject(i)
-                    val identity = obj.toDeezerTrackIdentity(
-                        defaultTitle = "Pista ${i + 1}",
-                        defaultArtist = artistName,
-                        defaultAlbum = albumTitle
-                    )?.let { base ->
-                        base.copy(artworkUri = albumCoverUrl ?: base.artworkUri)
-                    } ?: continue
-                    val isrc = obj.optString("isrc").trim().takeIf { it.isNotBlank() }
-                    resultCandidates.add(
-                        toCatalogCandidate(
-                            identity.toCatalogTrack(
-                                provider = "YouTube",
-                                audioUrl = identity.youtubeSearchQuery()
-                            )
-                        )
-                    )
-                }
+        val cleanArtist = cleanArtist(artistName)
+        val cleanAlbum = albumTitle.trim()
+
+        var deezerTracks = emptyList<CatalogTrackCandidate>()
+        if (albumId.isNotBlank() && albumId.all { it.isDigit() }) {
+            try {
+                val url = endpoint(
+                    endpoints.deezerBaseUrl,
+                    "album/$albumId/tracks?limit=100"
+                )
+                val data = getJson(url, userAgent = "Mozilla/5.0")?.optJSONArray("data")
+                deezerTracks = parseDeezerAlbumTracks(data, cleanAlbum, cleanArtist, albumCoverUrl)
+            } catch (e: Exception) {
+                e.printStackTrace()
             }
-        } catch (e: Exception) {
-            e.printStackTrace()
         }
 
-        // Fallback to iTunes song search if Deezer album tracks returned empty
-        if (resultCandidates.isEmpty()) {
+        if (deezerTracks.isEmpty() && cleanAlbum.isNotBlank()) {
             try {
-                val queryTerm = "$artistName $albumTitle".trim()
-                val url = endpoint(
-                    endpoints.itunesBaseUrl,
-                    "search?term=${encodeQuery(queryTerm)}&entity=song&limit=30"
-                )
-                val tracks = parseItunesSongResults(
-                    getJson(url, userAgent = "Mozilla/5.0")?.optJSONArray("results"),
-                    provider = "YouTube",
-                    limit = 30,
-                    defaultAlbum = albumTitle,
-                    defaultArtist = artistName
-                )
-                for (track in tracks) {
-                    val cover = track.artworkUri ?: albumCoverUrl
-                    resultCandidates.add(
-                        toCatalogCandidate(
-                            track.copy(
-                                identity = track.identity.copy(artworkUri = cover),
-                                id = track.youtubeSearchQuery(),
-                                audioUrl = track.youtubeSearchQuery(),
-                                provider = "YouTube"
-                            )
-                        )
+                val deezerAlbumId = searchDeezerAlbumId(cleanArtist, cleanAlbum)
+                if (deezerAlbumId != null && deezerAlbumId != albumId) {
+                    val url = endpoint(
+                        endpoints.deezerBaseUrl,
+                        "album/$deezerAlbumId/tracks?limit=100"
                     )
+                    val data = getJson(url, userAgent = "Mozilla/5.0")?.optJSONArray("data")
+                    deezerTracks = parseDeezerAlbumTracks(data, cleanAlbum, cleanArtist, albumCoverUrl)
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
             }
         }
 
-        return@withContext resultCandidates
+        var itunesTracks = emptyList<CatalogTrackCandidate>()
+        if (albumId.isNotBlank() && albumId.all { it.isDigit() }) {
+            try {
+                val url = endpoint(
+                    endpoints.itunesBaseUrl,
+                    "lookup?id=$albumId&entity=song&limit=100"
+                )
+                val results = getJson(url, userAgent = "Mozilla/5.0")?.optJSONArray("results")
+                itunesTracks = parseItunesAlbumLookupTracks(results, cleanAlbum, cleanArtist, albumCoverUrl)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+
+        if (itunesTracks.isEmpty() && cleanAlbum.isNotBlank()) {
+            try {
+                val queryTerm = "$cleanArtist $cleanAlbum".trim()
+                val url = endpoint(
+                    endpoints.itunesBaseUrl,
+                    "search?term=${encodeQuery(queryTerm)}&entity=album&limit=5"
+                )
+                val results = getJson(url, userAgent = "Mozilla/5.0")?.optJSONArray("results")
+                val itunesCollectionId = findMatchingItunesCollectionId(results, cleanArtist, cleanAlbum)
+                if (itunesCollectionId != null && itunesCollectionId.toString() != albumId) {
+                    val lookupUrl = endpoint(
+                        endpoints.itunesBaseUrl,
+                        "lookup?id=$itunesCollectionId&entity=song&limit=100"
+                    )
+                    val lookupResults = getJson(lookupUrl, userAgent = "Mozilla/5.0")?.optJSONArray("results")
+                    itunesTracks = parseItunesAlbumLookupTracks(lookupResults, cleanAlbum, cleanArtist, albumCoverUrl)
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+
+        val merged = mergeAlbumTrackCandidates(primary = deezerTracks, fallback = itunesTracks)
+        return@withContext merged
     }
 
     suspend fun fetchPlaylistTrackCandidates(

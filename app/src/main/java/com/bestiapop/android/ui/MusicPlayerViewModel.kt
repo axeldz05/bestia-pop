@@ -64,18 +64,12 @@ import com.bestiapop.android.data.preferences.PlaybackPreferencesRepository
 import com.bestiapop.android.data.preferences.PlaybackSettings
 import com.bestiapop.android.data.preferences.TelemetryPreferencesRepository
 import com.bestiapop.android.data.preferences.ThemePreferencesRepository
-import com.bestiapop.android.data.network.LyricsTranslationService
-import com.bestiapop.android.data.network.LyricsTranslationResult
 import com.bestiapop.android.data.network.LyricsTranslationSource
-import com.bestiapop.android.data.util.LyricsPhoneticProcessor
-import com.bestiapop.android.data.model.DisplayLyricLine
-import java.util.Collections
 import com.bestiapop.android.data.system.BACKGROUND_RESTRICTION_CONFIRM_MS
 import com.bestiapop.android.data.system.BackgroundExecutionProbe
 import com.bestiapop.android.data.system.BackgroundExecutionStatus
 import com.bestiapop.android.data.util.CrashReporter
 import com.bestiapop.android.data.util.PlaybackDiagnostics
-import com.bestiapop.android.data.util.SongPathNormalizer
 import com.bestiapop.android.data.util.looksLikeStoragePath
 import com.bestiapop.android.domain.radio.RadioMode
 import com.bestiapop.android.domain.radio.RadioEngine
@@ -138,6 +132,8 @@ import com.bestiapop.android.ui.state.LibraryListModel
 import com.bestiapop.android.ui.state.LibraryProjectionState
 import com.bestiapop.android.ui.state.LibraryViewMode
 import com.bestiapop.android.ui.state.LoadableUiState
+import com.bestiapop.android.ui.state.LyricsCoordinator
+import com.bestiapop.android.ui.state.LyricsTranslationState
 import com.bestiapop.android.ui.state.AudioVolumeCoordinator
 import com.bestiapop.android.ui.state.PlaylistDetailNav
 import com.bestiapop.android.ui.state.RadioPlaybackState
@@ -630,6 +626,18 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     )
     val volumeLevel: StateFlow<Float> = audioVolumeCoordinator.volumeLevel
     val volumeBoostHudVisible: StateFlow<Boolean> = audioVolumeCoordinator.volumeBoostHudVisible
+
+    val lyricsCoordinator = LyricsCoordinator(
+        scope = viewModelScope,
+        repository = repository,
+        lyricsPreferences = lyricsPreferences,
+        updateCurrentSongLyrics = { songId, lyrics -> playbackRuntime.updateCurrentSongLyrics(songId, lyrics) },
+        updateCurrentItemLyrics = { lyrics -> playbackRuntime.updateCurrentItemLyrics(lyrics) }
+    )
+    val lyricsSettings: StateFlow<LyricsSettings> = lyricsCoordinator.settings
+    val lyricsTranslationState: StateFlow<LyricsTranslationState> = lyricsCoordinator.translationState
+    val isFetchingLyrics: StateFlow<Boolean> = lyricsCoordinator.isFetching
+    val lyricsFetchError: StateFlow<String?> = lyricsCoordinator.fetchError
 
     private val searchHistoryPreferences = SearchHistoryPreferencesRepository(application)
     private val getDiscoverRecommendationsUseCase = GetDiscoverRecommendationsUseCase()
@@ -1144,219 +1152,59 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
-    val lyricsSettings: StateFlow<LyricsSettings> = lyricsPreferences.settingsFlow.stateInUi(
-        scope = viewModelScope,
-        initial = LyricsSettings()
-    )
-
-    private val _isTranslationActive = MutableStateFlow(false)
-    val isTranslationActive: StateFlow<Boolean> = _isTranslationActive.asStateFlow()
-
-    private val _isFetchingTranslation = MutableStateFlow(false)
-    val isFetchingTranslation: StateFlow<Boolean> = _isFetchingTranslation.asStateFlow()
-
-    private val _translationSource = MutableStateFlow<LyricsTranslationSource?>(null)
-    val translationSource: StateFlow<LyricsTranslationSource?> = _translationSource.asStateFlow()
-
-    private val _pendingGoogleTranslatePrompt = MutableStateFlow(false)
-    val pendingGoogleTranslatePrompt: StateFlow<Boolean> = _pendingGoogleTranslatePrompt.asStateFlow()
-
-    private val _romanizationVersion = MutableStateFlow(0)
-    val romanizationVersion: StateFlow<Int> = _romanizationVersion.asStateFlow()
-
-    private val _translationVersion = MutableStateFlow(0)
-    val translationVersion: StateFlow<Int> = _translationVersion.asStateFlow()
-
-    private val translationCache: MutableMap<Long, LyricsTranslationResult> = Collections.synchronizedMap(
-        object : LinkedHashMap<Long, LyricsTranslationResult>(32, 0.75f, true) {
-            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Long, LyricsTranslationResult>?): Boolean {
-                return size > 50
-            }
-        }
-    )
-    private val romanizationCache: MutableMap<Long, List<String>> = Collections.synchronizedMap(
-        object : LinkedHashMap<Long, List<String>>(32, 0.75f, true) {
-            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Long, List<String>>?): Boolean {
-                return size > 50
-            }
-        }
-    )
+    val isTranslationActive: StateFlow<Boolean> = lyricsCoordinator.isTranslationActive
+    val isFetchingTranslation: StateFlow<Boolean> = lyricsCoordinator.isFetchingTranslation
+    val translationSource: StateFlow<LyricsTranslationSource?> = lyricsCoordinator.translationSource
+    val pendingGoogleTranslatePrompt: StateFlow<Boolean> = lyricsCoordinator.pendingGoogleTranslatePrompt
+    val romanizationVersion: StateFlow<Int> = lyricsCoordinator.romanizationVersion
+    val translationVersion: StateFlow<Int> = lyricsCoordinator.translationVersion
 
     fun setPhoneticGuideEnabled(enabled: Boolean) {
-        viewModelScope.launch { lyricsPreferences.setPhoneticGuideEnabled(enabled) }
+        lyricsCoordinator.setPhoneticGuideEnabled(enabled)
     }
 
     fun setJapanesePhoneticMode(mode: JapanesePhoneticMode) {
-        viewModelScope.launch { lyricsPreferences.setJapanesePhoneticMode(mode) }
+        lyricsCoordinator.setJapanesePhoneticMode(mode)
     }
 
     fun setAskBeforeGoogleTranslate(ask: Boolean) {
-        viewModelScope.launch { lyricsPreferences.setAskBeforeGoogleTranslate(ask) }
+        lyricsCoordinator.setAskBeforeGoogleTranslate(ask)
     }
 
     fun cancelGoogleTranslatePrompt() {
-        _pendingGoogleTranslatePrompt.value = false
+        lyricsCoordinator.cancelGoogleTranslatePrompt()
     }
 
     fun confirmGoogleTranslate(song: Song, lines: List<String>) {
-        _pendingGoogleTranslatePrompt.value = false
-        translateWithGoogleInternal(song, lines)
+        lyricsCoordinator.confirmGoogleTranslate(song, lines)
     }
 
     fun toggleLyricsTranslation(song: Song, lines: List<String>) {
-        if (_isTranslationActive.value) {
-            _isTranslationActive.value = false
-            return
-        }
-
-        val cached = translationCache[song.id]
-        if (cached != null) {
-            _translationSource.value = LyricsTranslationSource(cached.sourceName, cached.sourceUrl)
-            _isTranslationActive.value = true
-            return
-        }
-
-        viewModelScope.launch {
-            _isFetchingTranslation.value = true
-            val community = LyricsTranslationService.fetchCommunityTranslation(song.artist, song.title)
-            _isFetchingTranslation.value = false
-            if (community != null) {
-                translationCache[song.id] = community
-                _translationSource.value = LyricsTranslationSource(community.sourceName, community.sourceUrl)
-                _isTranslationActive.value = true
-                _translationVersion.value++
-            } else {
-                if (lyricsSettings.value.askBeforeGoogleTranslate) {
-                    _pendingGoogleTranslatePrompt.value = true
-                } else {
-                    translateWithGoogleInternal(song, lines)
-                }
-            }
-        }
-    }
-
-    private fun translateWithGoogleInternal(song: Song, lines: List<String>) {
-        viewModelScope.launch {
-            _isFetchingTranslation.value = true
-            val gResult = LyricsTranslationService.translateWithGoogle(lines)
-            _isFetchingTranslation.value = false
-            if (gResult != null) {
-                translationCache[song.id] = gResult
-                _translationSource.value = LyricsTranslationSource(gResult.sourceName, gResult.sourceUrl)
-                _isTranslationActive.value = true
-                _translationVersion.value++
-            }
-        }
+        lyricsCoordinator.toggleLyricsTranslation(song, lines)
     }
 
     fun ensureRomanization(songId: Long, lines: List<String>) {
-        if (romanizationCache.containsKey(songId)) return
-        val hasNonLatin = lines.any { LyricsPhoneticProcessor.hasNonLatinScript(it) }
-        if (!hasNonLatin) {
-            romanizationCache[songId] = emptyList()
-            return
-        }
-
-        viewModelScope.launch {
-            val res = LyricsTranslationService.fetchRomanization(lines)
-            romanizationCache[songId] = res?.lines ?: emptyList()
-            if (res != null) {
-                _romanizationVersion.value++
-            }
-        }
+        lyricsCoordinator.ensureRomanization(songId, lines)
     }
 
-    fun getTranslatedLines(songId: Long): List<String>? = translationCache[songId]?.lines
+    fun getTranslatedLines(songId: Long): List<String>? = lyricsCoordinator.getTranslatedLines(songId)
 
-    fun getRomanizedLines(songId: Long): List<String>? =
-        romanizationCache[songId]?.takeIf { it.isNotEmpty() }
-
-    private val _isFetchingLyrics = MutableStateFlow(false)
-    val isFetchingLyrics: StateFlow<Boolean> = _isFetchingLyrics.asStateFlow()
-
-    private val _lyricsFetchError = MutableStateFlow<String?>(null)
-    val lyricsFetchError: StateFlow<String?> = _lyricsFetchError.asStateFlow()
+    fun getRomanizedLines(songId: Long): List<String>? = lyricsCoordinator.getRomanizedLines(songId)
 
     fun clearLyricsFetchError() {
-        _lyricsFetchError.value = null
-    }
-
-    private val lyricsLookupAttempted = object : LinkedHashSet<Long>() {
-        override fun add(element: Long): Boolean {
-            if (size >= 300) {
-                val first = iterator().next()
-                remove(first)
-            }
-            return super.add(element)
-        }
+        lyricsCoordinator.clearFetchError()
     }
 
     fun ensureLyrics(song: Song, force: Boolean = false) {
-        if (song.id == 0L) return
-        val currentLyrics = song.lyrics?.trim()?.takeIf { it.isNotBlank() && !it.equals("null", ignoreCase = true) }
-        if (currentLyrics != null && !force) return
-        if (!force && lyricsLookupAttempted.contains(song.id)) return
-        if (_isFetchingLyrics.value) return
-
-        val isRemoteStream = song.id < 0L
-
-        lyricsLookupAttempted.add(song.id)
-        viewModelScope.launch {
-            _isFetchingLyrics.value = true
-            _lyricsFetchError.value = null
-            try {
-                if (!isRemoteStream) {
-                    val localLyrics = repository.findLocalLyrics(song)?.trim()?.takeIf {
-                        it.isNotBlank() && !it.equals("null", ignoreCase = true)
-                    }
-                    if (localLyrics != null) {
-                        repository.updateSongLyrics(song.id, localLyrics)
-                        playbackRuntime.updateCurrentSongLyrics(song.id, localLyrics)
-                        return@launch
-                    }
-                }
-
-                val onlineLyrics = repository.fetchSongLyrics(song)?.trim()?.takeIf {
-                    it.isNotBlank() && !it.equals("null", ignoreCase = true)
-                }
-                if (onlineLyrics != null) {
-                    if (isRemoteStream) {
-                        playbackRuntime.updateCurrentItemLyrics(onlineLyrics)
-                    } else {
-                        repository.updateSongLyrics(song.id, onlineLyrics)
-                        playbackRuntime.updateCurrentSongLyrics(song.id, onlineLyrics)
-                        repository.saveCompanionLrc(song, onlineLyrics)
-                    }
-                } else {
-                    _lyricsFetchError.value = "No se encontró letra"
-                }
-            } catch (_: Exception) {
-                _lyricsFetchError.value = "Error al buscar letra"
-            } finally {
-                _isFetchingLyrics.value = false
-            }
-        }
+        lyricsCoordinator.ensureLyrics(song, force)
     }
 
     fun retryFetchLyrics(song: Song) {
-        ensureLyrics(song, force = true)
+        lyricsCoordinator.retryFetchLyrics(song)
     }
 
     fun enhanceSongMetadataAndLyrics(song: Song) {
-        requestMetadataEnhancement(song, force = true)
-    }
-
-    private fun songNeedsMetadataEnhancement(song: Song): Boolean {
-        val artMissing = !SongPathNormalizer.hasUsableArtwork(song.artworkUri)
-        val durationMissing = song.durationMs <= 0
-        return artMissing || durationMissing
-    }
-
-    private fun requestMetadataEnhancement(song: Song, force: Boolean = false) {
-        if (!force && !songNeedsMetadataEnhancement(song)) return
-        viewModelScope.launch {
-            repository.enhanceSongMetadataAndLyrics(song)
-        }
+        lyricsCoordinator.enhanceSongMetadataAndLyrics(song)
     }
 
     fun playSong(
@@ -1930,19 +1778,13 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     fun updateSongLyrics(songId: Long, lyrics: String?) {
-        viewModelScope.launch {
-            repository.updateSongLyrics(songId, lyrics)
-            playbackRuntime.updateCurrentSongLyrics(songId, lyrics)
-        }
+        lyricsCoordinator.updateSongLyrics(songId, lyrics)
     }
 
     suspend fun songById(id: Long): Song? = repository.getSongById(id)
 
     fun fetchSongLyrics(song: Song, onResult: (String?) -> Unit) {
-        viewModelScope.launch {
-            val lyrics = repository.fetchSongLyrics(song)?.trim()?.takeIf { it.isNotBlank() && !it.equals("null", ignoreCase = true) }
-            onResult(lyrics)
-        }
+        lyricsCoordinator.fetchSongLyrics(song, onResult)
     }
 
     fun deleteSongsFromDevice(songs: List<Song>) {

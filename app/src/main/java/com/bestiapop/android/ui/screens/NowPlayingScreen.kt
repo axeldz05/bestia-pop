@@ -1066,12 +1066,7 @@ private fun NowPlayingLyricsView(
                 val timed = remember(parsedLrc) { SyncedLyrics.hasTimestamps(parsedLrc) }
 
                 val lyricsSettings by viewModel.lyricsSettings.collectAsStateWithLifecycle()
-                val isTranslationActive by viewModel.isTranslationActive.collectAsStateWithLifecycle()
-                val isFetchingTranslation by viewModel.isFetchingTranslation.collectAsStateWithLifecycle()
-                val translationSource by viewModel.translationSource.collectAsStateWithLifecycle()
-                val pendingPrompt by viewModel.pendingGoogleTranslatePrompt.collectAsStateWithLifecycle()
-                val romanizationVersion by viewModel.romanizationVersion.collectAsStateWithLifecycle()
-                val translationVersion by viewModel.translationVersion.collectAsStateWithLifecycle()
+                val translationState by viewModel.lyricsTranslationState.collectAsStateWithLifecycle()
                 val context = LocalContext.current
 
                 LaunchedEffect(song.id, plainLines, lyricsSettings.phoneticGuideEnabled) {
@@ -1082,12 +1077,10 @@ private fun NowPlayingLyricsView(
 
                 val displayLines = remember(
                     parsedLrc,
-                    isTranslationActive,
-                    romanizationVersion,
-                    translationVersion,
+                    translationState,
                     lyricsSettings
                 ) {
-                    val translated = if (isTranslationActive) {
+                    val translated = if (translationState.isTranslationActive) {
                         viewModel.getTranslatedLines(song.id)
                     } else {
                         null
@@ -1098,7 +1091,7 @@ private fun NowPlayingLyricsView(
                         val formattedTime = line.timeMs?.let { formatLyricStamp(it) }
                         if (line.text.isEmpty()) {
                             DisplayLyricLine(line.timeMs, "", null, formattedTime)
-                        } else if (isTranslationActive) {
+                        } else if (translationState.isTranslationActive) {
                             val transText = translated?.getOrNull(idx)?.takeIf { it.isNotBlank() } ?: line.text
                             DisplayLyricLine(
                                 timeMs = line.timeMs,
@@ -1127,7 +1120,7 @@ private fun NowPlayingLyricsView(
                     }
                 }
 
-                if (pendingPrompt) {
+                if (translationState.pendingGoogleTranslatePrompt) {
                     AlertDialog(
                         onDismissRequest = viewModel::cancelGoogleTranslatePrompt,
                         title = {
@@ -1162,8 +1155,8 @@ private fun NowPlayingLyricsView(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        if (isTranslationActive && translationSource != null) {
-                            val source = translationSource!!
+                        if (translationState.isTranslationActive && translationState.translationSource != null) {
+                            val source = translationState.translationSource!!
                             Surface(
                                 shape = RoundedCornerShape(12.dp),
                                 color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
@@ -1193,23 +1186,23 @@ private fun NowPlayingLyricsView(
                             onClick = {
                                 viewModel.toggleLyricsTranslation(song, plainLines)
                             },
-                            enabled = !isFetchingTranslation,
+                            enabled = !translationState.isFetchingTranslation,
                             shape = RoundedCornerShape(16.dp),
                             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
                             colors = ButtonDefaults.filledTonalButtonColors(
-                                containerColor = if (isTranslationActive) {
+                                containerColor = if (translationState.isTranslationActive) {
                                     MaterialTheme.colorScheme.primary
                                 } else {
                                     MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)
                                 },
-                                contentColor = if (isTranslationActive) {
+                                contentColor = if (translationState.isTranslationActive) {
                                     MaterialTheme.colorScheme.onPrimary
                                 } else {
                                     MaterialTheme.colorScheme.onSurfaceVariant
                                 }
                             )
                         ) {
-                            if (isFetchingTranslation) {
+                            if (translationState.isFetchingTranslation) {
                                 CircularProgressIndicator(
                                     modifier = Modifier.size(14.dp),
                                     strokeWidth = 2.dp,
@@ -1225,7 +1218,7 @@ private fun NowPlayingLyricsView(
                                 Spacer(modifier = Modifier.width(6.dp))
                             }
                             Text(
-                                text = if (isTranslationActive) "Original" else "Traducir",
+                                text = if (translationState.isTranslationActive) "Original" else "Traducir",
                                 style = MaterialTheme.typography.labelMedium
                             )
                         }

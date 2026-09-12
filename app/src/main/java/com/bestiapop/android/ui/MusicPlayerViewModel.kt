@@ -145,7 +145,12 @@ import com.bestiapop.android.ui.state.PlaylistDetailNav
 import com.bestiapop.android.ui.state.RadioPlaybackState
 import com.bestiapop.android.ui.state.SimilarPlaylistCoordinator
 import com.bestiapop.android.ui.state.SimilarPlaylistPreviewState
+import com.bestiapop.android.ui.state.GroupPlaybackAction
+import com.bestiapop.android.ui.state.LibraryScanCoordinator
+import com.bestiapop.android.ui.state.ListenBrainzIntegrationCoordinator
+import com.bestiapop.android.ui.state.PlaybackExecutionCoordinator
 import com.bestiapop.android.ui.state.SubmenuActionCoordinator
+import com.bestiapop.android.ui.state.UiNavigationCoordinator
 import com.bestiapop.android.ui.state.UiNavigationState
 import com.bestiapop.android.ui.state.lbMbidOrNull
 import com.bestiapop.android.ui.state.mapToUiState
@@ -313,22 +318,8 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     val crossfadeDurationSeconds: StateFlow<Int> =
         playbackPref(DEFAULT_CROSSFADE_DURATION_SECONDS) { it.crossfadeDurationSeconds }
 
-    private val _openNowPlayingEvents = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
-    val openNowPlayingEvents: SharedFlow<Unit> = _openNowPlayingEvents.asSharedFlow()
-
     val pendingListenCount: StateFlow<Int> = pendingListenDao.countFlow()
         .stateInUi(viewModelScope, 0)
-
-    private val _tokenValidation = MutableStateFlow(LoadableUiState<String?>(null))
-    val tokenValidation = _tokenValidation.asStateFlow()
-
-    private val matchListenBrainzTracksUseCase = MatchListenBrainzTracksUseCase()
-    private val importListenBrainzPlaylistUseCase = ImportListenBrainzPlaylistUseCase(repository)
-    private val fetchAndMatchCfRecommendationsUseCase = FetchAndMatchCfRecommendationsUseCase()
-
-    private val _lbPlaylistDetail =
-        MutableStateFlow(LoadableUiState<MatchedLbPlaylist?>(null))
-    val lbPlaylistDetail = _lbPlaylistDetail.asStateFlow()
 
     // Raw songs & playlists
     val rawSongs = repository.allSongsFlow
@@ -336,6 +327,9 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             viewModelScope,
             emptyList()
         )
+
+    private val uiAttached = AtomicBoolean(false)
+
     val identifyCoordinator = IdentifyReviewCoordinator(
         scope = viewModelScope,
         repository = repository,
@@ -422,18 +416,22 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private val _libraryViewMode = MutableStateFlow(LibraryViewMode.ALBUM_GROUPS)
     val libraryViewMode = _libraryViewMode.asStateFlow()
 
-    private val _navigation = MutableStateFlow(UiNavigationState())
-    val navigation = _navigation.asStateFlow()
-    private val _selectedNavIndex = MutableStateFlow(NAV_LIBRARY)
-    val selectedNavIndex = _selectedNavIndex.asStateFlow()
-
-    private var uiPrefsHydrated = false
-
-    /** Tab to persist. Transient jumps move the live index without touching this. */
-    private var persistedNavIndex = NAV_LIBRARY
-
-    /** Tab to come back to after a transient jump into Settings. */
-    private var navIndexBeforeTransient: Int? = null
+    private val uiNavigationCoordinator = UiNavigationCoordinator(
+        scope = viewModelScope,
+        libraryPreferences = libraryPreferences,
+        onClearSearchQuery = { setSearchQuery("") },
+        onCloseDiscoverSessionUi = { closeDiscoverSessionUi() },
+        onOpenListenBrainzPlaylist = { listenBrainzIntegrationCoordinator.openListenBrainzPlaylist(it) },
+        onOpenCfRecommendations = { openCfRecommendations() },
+        onRestoreListenBrainzPlaylist = { listenBrainzIntegrationCoordinator.loadListenBrainzPlaylist(it, forRestore = true) },
+        onRestoreCfRecommendations = { loadCfRecommendationsForRestore() },
+        isLbPlaylistDetailLoaded = { listenBrainzIntegrationCoordinator.lbPlaylistDetail.value.data != null || listenBrainzIntegrationCoordinator.lbPlaylistDetail.value.isLoading },
+        isCfRecommendationsLoaded = { cfRecommendations.value.data != null || cfRecommendations.value.isLoading },
+        toast = ::toast
+    )
+    val navigation: StateFlow<UiNavigationState> = uiNavigationCoordinator.navigation
+    val selectedNavIndex: StateFlow<Int> = uiNavigationCoordinator.selectedNavIndex
+    val pendingSettingsSection: StateFlow<String?> = uiNavigationCoordinator.pendingSettingsSection
 
     private val _libraryPrefsReady = MutableStateFlow(true)
     private val getLibrarySongsUseCase = com.bestiapop.android.domain.usecase.GetLibrarySongsUseCase()
@@ -506,38 +504,8 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         sortDirection = sortDirection.value
     )
 
-    fun playCurrentLibraryBrowse(shuffle: Boolean) {
-        val filter = _navigation.value.libraryBrowseFilter
-        if (filter == LibraryBrowseFilter.PLAYLISTS) {
-            viewModelScope.launch {
-                val detailId = (_navigation.value.playlistDetail as? PlaylistDetailNav.Local)?.id
-                val songsToPlay = if (detailId != null) {
-                    repository.getPlaylistSongsOrdered(detailId)
-                } else {
-                    val currentPlaylists = playlists.first()
-                    currentPlaylists.flatMap { repository.getPlaylistSongsOrdered(it.id) }
-                }
-                if (songsToPlay.isEmpty()) return@launch
-                if (shuffle) shuffleCollection(songsToPlay) else playCollection(songsToPlay)
-            }
-            return
-        }
-        val songs = libraryProjection.songs.value
-        val queue = when (filter) {
-            LibraryBrowseFilter.SONGS -> libraryProjection.songList.value.songsVisual
-            LibraryBrowseFilter.RECENT -> libraryProjection.recentSongs.value
-            else -> songsForBrowseProjection(
-                filter = filter,
-                songs = songs,
-                viewMode = _libraryViewMode.value,
-                albums = libraryProjection.albums.value,
-                artists = libraryProjection.artists.value,
-                genres = libraryProjection.genres.value
-            )
-        }
-        if (queue.isEmpty()) return
-        if (shuffle) shuffleCollection(queue) else playCollection(queue)
-    }
+    fun playCurrentLibraryBrowse(shuffle: Boolean) =
+        playbackExecutionCoordinator.playCurrentLibraryBrowse(shuffle)
 
     // Process-owned playback state. ViewModel only exposes/observes it.
     val currentItem = playbackRuntime.currentItem
@@ -573,12 +541,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         )
     }.stateInUi(viewModelScope, RadioPlaybackState())
 
-    /** Stable key of the catalog track being previewed inside Add Music (null = no catalog preview). */
-    private val _catalogPreviewKey = MutableStateFlow<String?>(null)
-    val catalogPreviewKey = _catalogPreviewKey.asStateFlow()
 
-    /** Held so opening another Discover playlist cancels the previous fetch. */
-    private var lbDetailJob: Job? = null
     private val radioEngine = app.radioEngine
     private val buildSimilarPlaylistPreviewUseCase =
         BuildSimilarPlaylistPreviewUseCase(radioEngine, repository)
@@ -650,6 +613,26 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         libraryPreferences.libraryBlobsSettingsFlow
             .stateInUi(viewModelScope, LibraryBlobsSettings())
 
+    private val playbackExecutionCoordinator = PlaybackExecutionCoordinator(
+        scope = viewModelScope,
+        playbackRuntime = playbackRuntime,
+        repository = repository,
+        libraryProjection = libraryProjection,
+        getLibrarySongsUseCase = getLibrarySongsUseCase,
+        getLocalSongsByMatchKey = { libraryLookupIndex.value.localSongsByMatchKey },
+        getLibraryBrowseFilter = { navigation.value.libraryBrowseFilter },
+        getPlaylistDetail = { navigation.value.playlistDetail },
+        getLibraryViewMode = { _libraryViewMode.value },
+        getSortOption = { _sortOption.value },
+        getSortDirection = { _sortDirection.value },
+        playlistsFlow = playlists,
+        isOpenNowPlayingOnPlay = { playbackSettings.value.openNowPlayingOnPlay },
+        togglePlayPause = { togglePlayPause() },
+        isPlaying = isPlaying
+    )
+    val catalogPreviewKey: StateFlow<String?> = playbackExecutionCoordinator.catalogPreviewKey
+    val openNowPlayingEvents: SharedFlow<Unit> = playbackExecutionCoordinator.openNowPlayingEvents
+
     private val discoverFeedCoordinator = DiscoverFeedCoordinator(
         scope = viewModelScope,
         repository = repository,
@@ -657,7 +640,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         libraryPreferences = libraryPreferences,
         onClearExternalState = {
             closeListenBrainzPlaylist()
-            val detail = _navigation.value.playlistDetail
+            val detail = navigation.value.playlistDetail
             if (detail is PlaylistDetailNav.ListenBrainz || detail is PlaylistDetailNav.CfRecommendations) {
                 updateNavigation { it.copy(playlistDetail = PlaylistDetailNav.None) }
                 persistNavSnapshot()
@@ -670,6 +653,22 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     val isLoadingTopRelatedFeed: StateFlow<Boolean> = discoverFeedCoordinator.isLoadingTopRelatedFeed
     val lbDiscover: StateFlow<LoadableUiState<List<LbPlaylistSummary>>> = discoverFeedCoordinator.lbDiscover
     val cfRecommendations: StateFlow<LoadableUiState<MatchedCfRecommendations?>> = discoverFeedCoordinator.cfRecommendations
+
+    private val listenBrainzIntegrationCoordinator = ListenBrainzIntegrationCoordinator(
+        scope = viewModelScope,
+        repository = repository,
+        listenBrainzPreferences = listenBrainzPreferences,
+        playbackRuntime = playbackRuntime,
+        discoverFeedCoordinator = discoverFeedCoordinator,
+        enqueuePendingDownloads = { id, tracks, toastQueued ->
+            enqueuePendingDownloads(id, tracks, toastQueued)
+        },
+        getCurrentPlaylistDetail = { navigation.value.playlistDetail },
+        toast = ::toast,
+        toastPlaylistSaved = ::toastPlaylistSaved
+    )
+    val tokenValidation: StateFlow<LoadableUiState<String?>> = listenBrainzIntegrationCoordinator.tokenValidation
+    val lbPlaylistDetail: StateFlow<LoadableUiState<MatchedLbPlaylist?>> = listenBrainzIntegrationCoordinator.lbPlaylistDetail
 
     private val libraryEditCoordinator = LibraryEditCoordinator(
         scope = viewModelScope,
@@ -692,7 +691,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         scope = viewModelScope,
         repository = repository,
         onPlaylistDeleted = { id ->
-            val detail = _navigation.value.playlistDetail
+            val detail = navigation.value.playlistDetail
             if (detail is PlaylistDetailNav.Local && detail.id == id) {
                 closePlaylistDetail()
             }
@@ -752,22 +751,22 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         )
     val downloadConflict: StateFlow<DownloadConflict?> = processDownloadRuntime.downloadConflict
 
-    /** Set when MainActivity should switch to Descargas (notification / dialog deep-link). */
-    private val _pendingOpenDownloads = MutableStateFlow(false)
-    private val _pendingOpenIdentifyReview = MutableStateFlow(false)
-    private val _pendingOpenNowPlaying = MutableStateFlow(false)
-    private val _localLibraryJobProgress = MutableStateFlow<LibraryJobProgress?>(null)
-    val libraryJobProgress: StateFlow<LibraryJobProgress?> =
-        combine(_localLibraryJobProgress, processIdentifyRuntime.progress) { local, identify ->
-            identify ?: local
-        }.stateInUi(viewModelScope, null)
-    private val uiAttached = AtomicBoolean(false)
-
-    /** Serializes the first-launch disk import: two callers race the completed-flag check. */
-    private val initialImportMutex = Mutex()
+    private val libraryScanCoordinator = LibraryScanCoordinator(
+        context = application,
+        scope = viewModelScope,
+        repository = repository,
+        libraryPreferences = libraryPreferences,
+        identifyProgress = processIdentifyRuntime.progress,
+        identifyImportedGaps = { identifyImportedGaps(it) },
+        toast = ::toast
+    )
+    val libraryJobProgress: StateFlow<LibraryJobProgress?> = libraryScanCoordinator.libraryJobProgress
     private val identifiedWifiSongIds = mutableSetOf<Long>()
+    private val _pendingOpenDownloads = MutableStateFlow(false)
     val pendingOpenDownloads = _pendingOpenDownloads.asStateFlow()
+    private val _pendingOpenIdentifyReview = MutableStateFlow(false)
     val pendingOpenIdentifyReview = _pendingOpenIdentifyReview.asStateFlow()
+    private val _pendingOpenNowPlaying = MutableStateFlow(false)
     val pendingOpenNowPlaying = _pendingOpenNowPlaying.asStateFlow()
 
     fun requestOpenDownloads() {
@@ -878,75 +877,15 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
-    fun syncLibraryTagsToFiles() {
-        if (_localLibraryJobProgress.value != null || processIdentifyRuntime.progress.value != null) {
-            toast("Ya hay una tarea de biblioteca en curso")
-            return
-        }
-        viewModelScope.launch {
-            val summary = withContext(Dispatchers.IO) {
-                repository.syncTagsToFiles { done, total, fileName ->
-                    reportLibraryProgress(LibraryJobKind.TAG_WRITE, done, total, fileName)
-                }
-            }
-            clearLibraryProgress()
-            toast(
-                buildString {
-                    append(
-                        if (summary.updated == 1) "1 archivo actualizado"
-                        else "${summary.updated} archivos actualizados"
-                    )
-                    if (summary.skipped > 0) {
-                        append(
-                            if (summary.skipped == 1) ", 1 omitido"
-                            else ", ${summary.skipped} omitidos"
-                        )
-                    }
-                    if (summary.errors > 0) {
-                        append(
-                            if (summary.errors == 1) ", 1 error"
-                            else ", ${summary.errors} errores"
-                        )
-                    }
-                }
-            )
-        }
-    }
+    fun syncLibraryTagsToFiles() = libraryScanCoordinator.syncLibraryTagsToFiles()
 
-    private val _pendingSettingsSection = MutableStateFlow<String?>(null)
-    val pendingSettingsSection = _pendingSettingsSection.asStateFlow()
+    fun openDownloadSettings() = uiNavigationCoordinator.openDownloadSettings()
 
-    /**
-     * Transient jump to Ajustes → Descargas: does not persist the tab, and remembers where the user
-     * came from so closing the section brings them back instead of stranding them on Settings.
-     */
-    fun openDownloadSettings() {
-        openSettingsSection("downloads")
-    }
+    fun openPlaybackSettings() = uiNavigationCoordinator.openPlaybackSettings()
 
-    fun openPlaybackSettings() {
-        openSettingsSection("playback")
-    }
+    fun returnFromTransientSettings(): Boolean = uiNavigationCoordinator.returnFromTransientSettings()
 
-    private fun openSettingsSection(section: String) {
-        navIndexBeforeTransient = _navigation.value.selectedNavIndex
-        _pendingSettingsSection.value = section
-        updateNavigation { it.copy(selectedNavIndex = NAV_SETTINGS) }
-    }
-
-    /** True when it consumed a pending transient jump and restored the previous tab. */
-    fun returnFromTransientSettings(): Boolean {
-        val previous = navIndexBeforeTransient ?: return false
-        navIndexBeforeTransient = null
-        updateNavigation { it.copy(selectedNavIndex = previous) }
-        return true
-    }
-
-    fun consumePendingSettingsSection(): String? {
-        val v = _pendingSettingsSection.value
-        _pendingSettingsSection.value = null
-        return v
-    }
+    fun consumePendingSettingsSection(): String? = uiNavigationCoordinator.consumePendingSettingsSection()
 
     fun setStereoLeftGain(gain: Float) = audioVolumeCoordinator.setStereoLeftGain(gain)
     fun setStereoRightGain(gain: Float) = audioVolumeCoordinator.setStereoRightGain(gain)
@@ -1043,7 +982,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         }
 
         viewModelScope.launch {
-            warnIfDatabaseWasDowngraded()
+            libraryScanCoordinator.warnIfDatabaseWasDowngraded()
         }
 
         viewModelScope.launch(Dispatchers.IO) {
@@ -1237,25 +1176,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         playlistOrQueue: List<Song> = emptyList(),
         applyManualModes: Boolean = true,
         openNowPlaying: Boolean = true
-    ) {
-        _catalogPreviewKey.value = null
-        val baseList = when {
-            playlistOrQueue.isNotEmpty() -> playlistOrQueue
-            else -> libraryProjection.songList.value.songsVisual.ifEmpty {
-                libraryProjection.songs.value
-            }
-        }
-        val indexInBase = baseList.indexOfFirst { it.id == song.id || it.uriString == song.uriString }
-
-        val targetQueue = if (indexInBase != -1) baseList else listOf(song)
-        val index = if (indexInBase != -1) indexInBase else 0
-        playPlayableCollection(
-            targetQueue.toPlayableItemsWithFreshIds { libraryProjection.resolveAlbumArtwork(it) },
-            index,
-            applyManualModes = applyManualModes,
-            openNowPlaying = openNowPlaying
-        )
-    }
+    ) = playbackExecutionCoordinator.playSong(song, playlistOrQueue, applyManualModes, openNowPlaying)
 
     fun playPlayableCollection(
         items: List<PlayableItem>,
@@ -1267,61 +1188,27 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         origin: DiscoverPlaybackOrigin = DiscoverPlaybackOrigin.None,
         resumeAtMs: Long? = null,
         openNowPlaying: Boolean = true
-    ) {
-        playbackRuntime.playPlayableCollection(
-            items = items,
-            startIndex = startIndex,
-            fromRadio = fromRadio,
-            rotate = rotate,
-            applyManualModes = applyManualModes,
-            startShuffled = startShuffled,
-            origin = origin,
-            resumeAtMs = resumeAtMs
-        )
-        if (openNowPlaying && items.isNotEmpty() && !fromRadio && playbackSettings.value.openNowPlayingOnPlay) {
-            _openNowPlayingEvents.tryEmit(Unit)
-        }
-    }
+    ) = playbackExecutionCoordinator.playPlayableCollection(
+        items, startIndex, fromRadio, rotate, applyManualModes, startShuffled, origin, resumeAtMs, openNowPlaying
+    )
 
     fun catalogPreviewKeyFor(track: OnlineCatalogTrack): String =
-        com.bestiapop.android.data.model.catalogPreviewKeyFor(track)
+        playbackExecutionCoordinator.catalogPreviewKeyForTrack(track)
 
     fun playOnlineCatalogTrackAsStream(
         track: OnlineCatalogTrack,
         openNowPlaying: Boolean = true
-    ) {
-        val key = catalogPreviewKeyFor(track)
-        if (_catalogPreviewKey.value == key && currentItem.value != null) {
-            togglePlayPause()
-            return
-        }
-        _catalogPreviewKey.value = key
-        val queryOrId = YouTubeExtractor.resolveYouTubeQueryOrId(track)
-        val remote = PlayableItem.remoteFrom(
-            identity = track.identity,
-            youtubeQueryOrId = queryOrId
-        )
-        playPlayableCollection(listOf(remote), 0, openNowPlaying = openNowPlaying)
-    }
+    ) = playbackExecutionCoordinator.playOnlineCatalogTrackAsStream(track, openNowPlaying)
 
     /** Returns matched local (non-remote) Song from library index in O(1) time. */
-    fun findLocalSongFor(meta: TrackMeta): Song? {
-        val song = TrackMatchKeys.lookupLocalSong(libraryLookupIndex.value.localSongsByMatchKey, meta)
-        return if (song != null && !song.isRemote) song else null
-    }
+    fun findLocalSongFor(meta: TrackMeta): Song? =
+        playbackExecutionCoordinator.findLocalSongFor(meta)
 
     /** Plays local version if available in library; otherwise falls back to online stream. */
     fun playCatalogOrLocalTrack(
         track: OnlineCatalogTrack,
         openNowPlaying: Boolean = true
-    ) {
-        val local = findLocalSongFor(track.identity)
-        if (local != null) {
-            playSong(local, openNowPlaying = openNowPlaying)
-        } else {
-            playOnlineCatalogTrackAsStream(track, openNowPlaying = openNowPlaying)
-        }
-    }
+    ) = playbackExecutionCoordinator.playCatalogOrLocalTrack(track, openNowPlaying)
 
     /** Plays collection of candidates, resolving any available local tracks to avoid streaming. */
     fun playCatalogCandidates(
@@ -1329,24 +1216,13 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         startIndex: Int = 0,
         startShuffled: Boolean = false,
         openNowPlaying: Boolean = true
-    ) {
-        _catalogPreviewKey.value = null
-        val playables = candidates.toPlayableItems(libraryLookupIndex.value.localSongsByMatchKey)
-        playPlayableCollection(
-            playables,
-            startIndex = startIndex,
-            startShuffled = startShuffled,
-            openNowPlaying = openNowPlaying
-        )
-    }
+    ) = playbackExecutionCoordinator.playCatalogCandidates(candidates, startIndex, startShuffled, openNowPlaying)
 
     /** Plays a single catalog candidate using local file if present, or streaming. */
     fun playCatalogCandidate(
         candidate: CatalogTrackCandidate,
         openNowPlaying: Boolean = true
-    ) {
-        playCatalogOrLocalTrack(candidate.effectiveTrack, openNowPlaying = openNowPlaying)
-    }
+    ) = playbackExecutionCoordinator.playCatalogCandidate(candidate, openNowPlaying)
 
     /** Level 2: Downloads a single catalog candidate preserving all candidate matches and identity. */
     fun downloadCatalogCandidate(
@@ -1398,129 +1274,72 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         getAlbumLibraryStatus(album.name, album.artist)
 
     /** Preview local file while reviewing identify candidates (toggle if already current). */
-    fun previewIdentifyLocalSong(song: Song) {
-        _catalogPreviewKey.value = null
-        val current = currentItem.value
-        if (current is PlayableItem.Local && current.song.id == song.id) {
-            togglePlayPause()
-            return
-        }
-        val local = PlayableItem.Local(
-            song = song,
-            resolvedArtworkUri = libraryProjection.resolveAlbumArtwork(song)
-        )
-        playPlayableCollection(
-            items = listOf(local),
-            startIndex = 0,
-            rotate = false,
-            openNowPlaying = false
-        )
-    }
+    fun previewIdentifyLocalSong(song: Song) =
+        playbackExecutionCoordinator.previewIdentifyLocalSong(song)
 
     /** Stream-preview a ranked identify candidate via YouTube (same path as catalog). */
-    fun previewIdentifyCandidate(candidate: IdentifyCandidate) {
-        playOnlineCatalogTrackAsStream(candidate.track, openNowPlaying = false)
-    }
+    fun previewIdentifyCandidate(candidate: IdentifyCandidate) =
+        playbackExecutionCoordinator.previewIdentifyCandidate(candidate)
 
-    fun clearCatalogPreview() {
-        _catalogPreviewKey.value = null
-    }
+    fun clearCatalogPreview() =
+        playbackExecutionCoordinator.clearCatalogPreview()
 
     /** Stops active catalog preview and pauses playback if currently playing. */
-    fun stopCatalogPreview() {
-        if (_catalogPreviewKey.value != null) {
-            _catalogPreviewKey.value = null
-            if (isPlaying.value) {
-                togglePlayPause()
-            }
-        }
-    }
+    fun stopCatalogPreview() =
+        playbackExecutionCoordinator.stopCatalogPreview()
 
     // Unified Collection / Group Pipeline ("Everything is a Playlist")
-    fun playCollection(songs: List<Song>, startIndex: Int = 0, startShuffled: Boolean = false) {
-        if (songs.isEmpty()) return
-        if (startShuffled) {
-            shuffleCollection(songs)
-        } else {
-            val validIndex = startIndex.coerceIn(0, songs.size - 1)
-            playSong(songs[validIndex], songs)
-        }
-    }
+    fun playCollection(songs: List<Song>, startIndex: Int = 0, startShuffled: Boolean = false) =
+        playbackExecutionCoordinator.playCollection(songs, startIndex, startShuffled)
 
-    fun playCollection(songs: List<Song>, startShuffled: Boolean) {
-        playCollection(songs, startIndex = 0, startShuffled = startShuffled)
-    }
+    fun playCollection(songs: List<Song>, startShuffled: Boolean) =
+        playbackExecutionCoordinator.playCollection(songs, startShuffled)
 
-    fun playCollection(songs: List<Song>, startSong: Song) {
-        playSong(startSong, songs)
-    }
-
-    enum class GroupPlaybackAction { PLAY, PLAY_SHUFFLED, PLAY_NEXT, ENQUEUE }
+    fun playCollection(songs: List<Song>, startSong: Song) =
+        playbackExecutionCoordinator.playCollection(songs, startSong)
 
     /**
      * Level 1: Core pipeline for executing playback actions on any collection of songs.
      */
-    fun executeGroupPlayback(songs: List<Song>, action: GroupPlaybackAction) {
-        if (songs.isEmpty()) return
-        when (action) {
-            GroupPlaybackAction.PLAY -> playCollection(songs, startShuffled = false)
-            GroupPlaybackAction.PLAY_SHUFFLED -> shuffleCollection(songs)
-            GroupPlaybackAction.PLAY_NEXT -> playNextBatch(songs)
-            GroupPlaybackAction.ENQUEUE -> enqueueCollection(songs)
-        }
-    }
+    fun executeGroupPlayback(songs: List<Song>, action: GroupPlaybackAction) =
+        playbackExecutionCoordinator.executeGroupPlayback(songs, action)
 
     // Unified Group / Aggregate Actions ("Everything is a Collection")
-    fun playAlbum(albumName: String, startShuffled: Boolean = false) {
-        executeGroupPlayback(
-            songsForAlbum(libraryProjection.songs.value, albumName),
-            if (startShuffled) GroupPlaybackAction.PLAY_SHUFFLED else GroupPlaybackAction.PLAY
-        )
-    }
+    fun playAlbum(albumName: String, startShuffled: Boolean = false) =
+        playbackExecutionCoordinator.playAlbum(albumName, startShuffled)
 
-    fun playAlbum(album: Album, startShuffled: Boolean = false) = playAlbum(album.name, startShuffled)
+    fun playAlbum(album: Album, startShuffled: Boolean = false) =
+        playbackExecutionCoordinator.playAlbum(album, startShuffled)
 
-    fun playAlbumNext(albumName: String) {
-        executeGroupPlayback(songsForAlbum(libraryProjection.songs.value, albumName), GroupPlaybackAction.PLAY_NEXT)
-    }
+    fun playAlbumNext(albumName: String) =
+        playbackExecutionCoordinator.playAlbumNext(albumName)
 
-    fun playAlbumNext(album: Album) = playAlbumNext(album.name)
+    fun playAlbumNext(album: Album) =
+        playbackExecutionCoordinator.playAlbumNext(album)
 
-    fun enqueueAlbum(albumName: String) {
-        executeGroupPlayback(songsForAlbum(libraryProjection.songs.value, albumName), GroupPlaybackAction.ENQUEUE)
-    }
+    fun enqueueAlbum(albumName: String) =
+        playbackExecutionCoordinator.enqueueAlbum(albumName)
 
-    fun enqueueAlbum(album: Album) = enqueueAlbum(album.name)
+    fun enqueueAlbum(album: Album) =
+        playbackExecutionCoordinator.enqueueAlbum(album)
 
-    fun playArtist(artistName: String, startShuffled: Boolean = false) {
-        executeGroupPlayback(
-            songsForArtist(libraryProjection.songs.value, artistName),
-            if (startShuffled) GroupPlaybackAction.PLAY_SHUFFLED else GroupPlaybackAction.PLAY
-        )
-    }
+    fun playArtist(artistName: String, startShuffled: Boolean = false) =
+        playbackExecutionCoordinator.playArtist(artistName, startShuffled)
 
-    fun playArtistNext(artistName: String) {
-        executeGroupPlayback(songsForArtist(libraryProjection.songs.value, artistName), GroupPlaybackAction.PLAY_NEXT)
-    }
+    fun playArtistNext(artistName: String) =
+        playbackExecutionCoordinator.playArtistNext(artistName)
 
-    fun enqueueArtist(artistName: String) {
-        executeGroupPlayback(songsForArtist(libraryProjection.songs.value, artistName), GroupPlaybackAction.ENQUEUE)
-    }
+    fun enqueueArtist(artistName: String) =
+        playbackExecutionCoordinator.enqueueArtist(artistName)
 
-    fun playGenre(genreName: String, startShuffled: Boolean = false) {
-        executeGroupPlayback(
-            songsForGenre(libraryProjection.songs.value, genreName),
-            if (startShuffled) GroupPlaybackAction.PLAY_SHUFFLED else GroupPlaybackAction.PLAY
-        )
-    }
+    fun playGenre(genreName: String, startShuffled: Boolean = false) =
+        playbackExecutionCoordinator.playGenre(genreName, startShuffled)
 
-    fun playGenreNext(genreName: String) {
-        executeGroupPlayback(songsForGenre(libraryProjection.songs.value, genreName), GroupPlaybackAction.PLAY_NEXT)
-    }
+    fun playGenreNext(genreName: String) =
+        playbackExecutionCoordinator.playGenreNext(genreName)
 
-    fun enqueueGenre(genreName: String) {
-        executeGroupPlayback(songsForGenre(libraryProjection.songs.value, genreName), GroupPlaybackAction.ENQUEUE)
-    }
+    fun enqueueGenre(genreName: String) =
+        playbackExecutionCoordinator.enqueueGenre(genreName)
 
     fun identifyAlbum(album: Album) {
         val albumSongs = songsForAlbum(libraryProjection.songs.value, album.name)
@@ -1583,29 +1402,11 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         libraryEditCoordinator.mergeAlbumInto(sourceAlbumKey, targetAlbumKey)
     }
 
-    fun shuffleCollection(songs: List<Song>) {
-        shufflePlayableCollection(songs.toPlayableItems { libraryProjection.resolveAlbumArtwork(it) })
-    }
+    fun shuffleCollection(songs: List<Song>) =
+        playbackExecutionCoordinator.shuffleCollection(songs)
 
-    private fun shufflePlayableCollection(
-        items: List<PlayableItem>,
-        origin: DiscoverPlaybackOrigin = DiscoverPlaybackOrigin.None
-    ): Boolean {
-        if (items.isEmpty()) return false
-        playPlayableCollection(
-            items,
-            startIndex = items.indices.random(),
-            rotate = false,
-            applyManualModes = false,
-            startShuffled = true,
-            origin = origin
-        )
-        return true
-    }
-
-    fun enqueueCollection(songs: List<Song>) {
-        addToQueueBatch(songs)
-    }
+    fun enqueueCollection(songs: List<Song>) =
+        playbackExecutionCoordinator.enqueueCollection(songs)
 
     fun togglePlayPause() {
         playbackRuntime.togglePlayPause()
@@ -1636,18 +1437,14 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     // Queue Management
-    fun addToQueue(song: Song) {
-        addToQueueBatch(listOf(song))
-    }
+    fun addToQueue(song: Song) =
+        playbackExecutionCoordinator.addToQueue(song)
 
-    fun addToQueueBatch(songs: List<Song>) {
-        if (songs.isEmpty()) return
-        addPlayableBatch(songs.toPlayableItems { libraryProjection.resolveAlbumArtwork(it) })
-    }
+    fun addToQueueBatch(songs: List<Song>) =
+        playbackExecutionCoordinator.addToQueueBatch(songs)
 
-    fun addPlayableBatch(items: List<PlayableItem>) {
-        playbackRuntime.addPlayableBatch(items)
-    }
+    fun addPlayableBatch(items: List<PlayableItem>) =
+        playbackExecutionCoordinator.addPlayableBatch(items)
 
     fun setRadioPreferredMode(mode: RadioMode) {
         playbackRuntime.setRadioPreferredMode(mode)
@@ -1714,17 +1511,14 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         )
     }
 
-    fun playNextInQueue(song: Song) {
-        playNextBatch(listOf(song))
-    }
+    fun playNextInQueue(song: Song) =
+        playbackExecutionCoordinator.playNextInQueue(song)
 
-    fun playNextBatch(songs: List<Song>) {
-        playbackRuntime.playNextBatch(songs.toPlayableItems { libraryProjection.resolveAlbumArtwork(it) })
-    }
+    fun playNextBatch(songs: List<Song>) =
+        playbackExecutionCoordinator.playNextBatch(songs)
 
-    fun playNextPlayableBatch(items: List<PlayableItem>) {
-        playbackRuntime.playNextBatch(items)
-    }
+    fun playNextPlayableBatch(items: List<PlayableItem>) =
+        playbackExecutionCoordinator.playNextPlayableBatch(items)
 
     fun addSongsToPlaylist(playlistId: Long, songs: List<Song>) =
         addSongsToPlaylist(playlistId, songs.map { it.id })
@@ -1839,151 +1633,56 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         setLibraryViewMode(next)
     }
 
-    private fun updateNavigation(
-        transform: (UiNavigationState) -> UiNavigationState
-    ): Boolean {
-        while (true) {
-            val current = _navigation.value
-            val updated = transform(current)
-            if (updated == current) return false
-            if (_navigation.compareAndSet(current, updated)) {
-                if (_selectedNavIndex.value != updated.selectedNavIndex) {
-                    _selectedNavIndex.value = updated.selectedNavIndex
-                }
-                return true
-            }
-        }
-    }
+    fun setSelectedNavIndex(index: Int, persist: Boolean = true) =
+        uiNavigationCoordinator.setSelectedNavIndex(index, persist)
 
-    fun setSelectedNavIndex(index: Int, persist: Boolean = true) {
-        val sanitized = LibraryUiPreferencesCodec.sanitizeNavIndex(index)
-        navIndexBeforeTransient = null
-        if (_selectedNavIndex.value == sanitized && _navigation.value.selectedNavIndex == sanitized) {
-            if (sanitized == NAV_PLAYLISTS) maybeRestoreDiscoverDetail()
-            return
-        }
-        _selectedNavIndex.value = sanitized
-        updateNavigation { it.copy(selectedNavIndex = sanitized) }
-        if (persist) {
-            persistedNavIndex = sanitized
-            persistNavSnapshot()
-        }
-        if (sanitized == NAV_PLAYLISTS) maybeRestoreDiscoverDetail()
-    }
+    fun openDownloadsTabTransient() =
+        uiNavigationCoordinator.openDownloadsTabTransient()
 
-    fun openDownloadsTabTransient() {
-        updateNavigation { it.copy(selectedNavIndex = NAV_DOWNLOADS) }
-    }
+    fun setLibraryBrowseFilter(filter: LibraryBrowseFilter) =
+        uiNavigationCoordinator.setLibraryBrowseFilter(filter)
 
-    fun setLibraryBrowseFilter(filter: LibraryBrowseFilter) {
-        if (updateNavigation { it.copy(libraryBrowseFilter = filter, libraryStack = LibraryBrowseStack.EMPTY) }) persistNavSnapshot()
-    }
+    fun openLibraryAlbum(name: String, fromNestedParent: Boolean = false) =
+        uiNavigationCoordinator.openLibraryAlbum(name, fromNestedParent)
 
-    fun openLibraryAlbum(name: String, fromNestedParent: Boolean = false) {
-        val trimmed = name.trim()
-        if (trimmed.isEmpty()) return
-        if (updateNavigation {
-                it.copy(libraryStack = it.libraryStack.openAlbum(trimmed, fromNestedParent))
-            }
-        ) {
-            persistNavSnapshot()
-        }
-    }
+    fun openLibraryArtist(name: String) =
+        uiNavigationCoordinator.openLibraryArtist(name)
 
-    fun openLibraryArtist(name: String) {
-        val trimmed = name.trim()
-        if (trimmed.isEmpty()) return
-        if (updateNavigation { it.copy(libraryStack = it.libraryStack.openArtist(trimmed)) }) {
-            persistNavSnapshot()
-        }
-    }
+    fun openLibraryGenre(name: String) =
+        uiNavigationCoordinator.openLibraryGenre(name)
 
-    fun openLibraryGenre(name: String) {
-        val trimmed = name.trim()
-        if (trimmed.isEmpty()) return
-        if (updateNavigation { it.copy(libraryStack = it.libraryStack.openGenre(trimmed)) }) {
-            persistNavSnapshot()
-        }
-    }
+    fun closeLibraryAlbum() =
+        uiNavigationCoordinator.closeLibraryAlbum()
 
-    fun closeLibraryAlbum() {
-        if (updateNavigation { it.copy(libraryStack = it.libraryStack.closeAlbum()) }) {
-            persistNavSnapshot()
-        }
-    }
+    fun closeLibraryArtist() =
+        uiNavigationCoordinator.closeLibraryArtist()
 
-    fun closeLibraryArtist() {
-        if (updateNavigation { it.copy(libraryStack = it.libraryStack.closeArtist()) }) {
-            persistNavSnapshot()
-        }
-    }
+    fun closeLibraryGenre() =
+        uiNavigationCoordinator.closeLibraryGenre()
 
-    fun closeLibraryGenre() {
-        if (updateNavigation { it.copy(libraryStack = it.libraryStack.closeGenre()) }) {
-            persistNavSnapshot()
-        }
-    }
+    fun popLibraryNested() =
+        uiNavigationCoordinator.popLibraryNested()
 
-    fun popLibraryNested() {
-        if (updateNavigation { it.copy(libraryStack = it.libraryStack.pop()) }) {
-            persistNavSnapshot()
-        }
-    }
+    fun renameRestoredLibraryAlbum(sourceKey: String, targetKey: String) =
+        uiNavigationCoordinator.renameRestoredLibraryAlbum(sourceKey, targetKey)
 
-    fun renameRestoredLibraryAlbum(sourceKey: String, targetKey: String) {
-        if (updateNavigation {
-                it.copy(libraryStack = it.libraryStack.renameAlbum(sourceKey, targetKey))
-            }
-        ) {
-            persistNavSnapshot()
-        }
-    }
+    fun openLocalPlaylist(id: Long) =
+        uiNavigationCoordinator.openLocalPlaylist(id)
 
-    fun openLocalPlaylist(id: Long) {
-        closeDiscoverSessionUi()
-        setSearchQuery("")
-        persistedNavIndex = NAV_LIBRARY
-        _selectedNavIndex.value = NAV_LIBRARY
-        updateNavigation {
-            it.copy(
-                selectedNavIndex = NAV_LIBRARY,
-                libraryBrowseFilter = LibraryBrowseFilter.PLAYLISTS,
-                libraryStack = LibraryBrowseStack(),
-                playlistDetail = PlaylistDetailNav.Local(id)
-            )
-        }
-        persistNavSnapshot()
-    }
+    fun openListenBrainzPlaylistDetail(mbid: String) =
+        uiNavigationCoordinator.openListenBrainzPlaylistDetail(mbid)
 
-    fun openListenBrainzPlaylistDetail(mbid: String) {
-        closeDiscoverSessionUi()
-        updateNavigation { it.copy(playlistDetail = PlaylistDetailNav.ListenBrainz(mbid)) }
-        persistNavSnapshot()
-        openListenBrainzPlaylist(mbid)
-    }
+    fun openCfRecommendationsDetail() =
+        uiNavigationCoordinator.openCfRecommendationsDetail()
 
-    fun openCfRecommendationsDetail() {
-        closeDiscoverSessionUi()
-        updateNavigation { it.copy(playlistDetail = PlaylistDetailNav.CfRecommendations) }
-        persistNavSnapshot()
-        openCfRecommendations()
-    }
+    fun closePlaylistDetail() =
+        uiNavigationCoordinator.closePlaylistDetail()
 
-    fun closePlaylistDetail() {
-        closeDiscoverSessionUi()
-        if (updateNavigation { it.copy(playlistDetail = PlaylistDetailNav.None) }) {
-            persistNavSnapshot()
-        }
-    }
+    fun dismissDiscoverDetails() =
+        uiNavigationCoordinator.dismissDiscoverDetails()
 
-    fun dismissDiscoverDetails() {
-        val detail = _navigation.value.playlistDetail
-        if (detail is PlaylistDetailNav.ListenBrainz || detail is PlaylistDetailNav.CfRecommendations) {
-            closePlaylistDetail()
-        } else {
-            closeDiscoverSessionUi()
-        }
-    }
+    fun updateNavigation(transform: (UiNavigationState) -> UiNavigationState): Boolean =
+        uiNavigationCoordinator.updateNavigation(transform)
 
     private fun closeDiscoverSessionUi() {
         closeListenBrainzPlaylist()
@@ -1997,100 +1696,25 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         _libraryViewMode.value = parseLibraryViewMode(display.viewModeName)
 
         val nav = libraryPreferences.navSnapshotFlow.first()
-        applyNavSnapshot(nav)
-        uiPrefsHydrated = true
+        uiNavigationCoordinator.applyNavSnapshot(nav)
         _libraryPrefsReady.value = true
         val ms = (System.nanoTime() - startedAt) / 1_000_000L
         PlaybackDiagnostics.log(PlaybackDiagnostics.TAG_LIFECYCLE, "prefsReady in ${ms}ms")
 
-        pruneRestoredLocalPlaylist()
-        if (_navigation.value.selectedNavIndex == NAV_PLAYLISTS) {
-            restoreDiscoverDetailOrFallback()
+        uiNavigationCoordinator.pruneRestoredLocalPlaylist(playlists.first())
+        if (selectedNavIndex.value == NAV_PLAYLISTS) {
+            uiNavigationCoordinator.maybeRestoreDiscoverDetail()
         }
-    }
-
-    private fun applyNavSnapshot(nav: UiNavSnapshot) {
-        _navigation.value = UiNavigationState.fromSnapshot(nav)
-        _selectedNavIndex.value = nav.navIndex
-        persistedNavIndex = nav.navIndex
-    }
-
-    private fun persistNavSnapshot() {
-        if (!uiPrefsHydrated) return
-        // persistedNavIndex, not the live one: a transient tab (download notification deep link,
-        // the Ajustes → Descargas shortcut) would otherwise become the next cold-start tab.
-        val snapshot = _navigation.value.toSnapshot(persistedNavIndex)
-        viewModelScope.launch(Dispatchers.IO) { libraryPreferences.setNavSnapshot(snapshot) }
     }
 
     private suspend fun pruneRestoredLibraryStack() {
         val songs = libraryProjection.songs.value.ifEmpty {
             repository.allSongsFlow.first()
         }
-        val lookups = LibraryStackLookups.fromSongs(songs)
-        val stack = _navigation.value.libraryStack
-        val pruned = LibraryUiPreferencesCodec.pruneLibraryStack(
-            albumName = stack.albumName,
-            artistName = stack.artistName,
-            genreName = stack.genreName,
-            albumExists = lookups.albumExists,
-            artistExists = lookups.artistExists,
-            genreExists = lookups.genreExists
-        )
-        if (updateNavigation { it.copy(libraryStack = it.libraryStack.applyPruned(pruned)) }) {
-            persistNavSnapshot()
-        }
+        uiNavigationCoordinator.pruneRestoredLibraryStack(songs)
     }
 
-    private suspend fun pruneRestoredLocalPlaylist() {
-        val detail = _navigation.value.playlistDetail as? PlaylistDetailNav.Local ?: return
-        val lists = playlists.first()
-        if (lists.none { it.id == detail.id }) {
-            updateNavigation { it.copy(playlistDetail = PlaylistDetailNav.None) }
-            persistNavSnapshot()
-        }
-    }
-
-    private fun maybeRestoreDiscoverDetail() {
-        val detail = _navigation.value.playlistDetail
-        if (detail !is PlaylistDetailNav.ListenBrainz && detail !is PlaylistDetailNav.CfRecommendations) {
-            return
-        }
-        val needsFetch = when (detail) {
-            is PlaylistDetailNav.ListenBrainz ->
-                _lbPlaylistDetail.value.data == null &&
-                        !_lbPlaylistDetail.value.isLoading
-
-            PlaylistDetailNav.CfRecommendations ->
-                cfRecommendations.value.data == null &&
-                        !cfRecommendations.value.isLoading
-
-            else -> false
-        }
-        if (!needsFetch) return
-        viewModelScope.launch { restoreDiscoverDetailOrFallback() }
-    }
-
-    private suspend fun restoreDiscoverDetailOrFallback() {
-        when (val detail = _navigation.value.playlistDetail) {
-            is PlaylistDetailNav.ListenBrainz -> {
-                val ok = loadListenBrainzPlaylist(detail.mbid, forRestore = true)
-                if (!ok) fallbackDiscoverRestore(announce = true)
-            }
-
-            PlaylistDetailNav.CfRecommendations -> {
-                val ok = loadCfRecommendationsForRestore()
-                if (!ok) fallbackDiscoverRestore(announce = true)
-            }
-
-            else -> Unit
-        }
-    }
-
-    private fun fallbackDiscoverRestore(announce: Boolean) {
-        closePlaylistDetail()
-        if (announce) toast(PlaylistMessages.openFailed)
-    }
+    private fun persistNavSnapshot(): Unit = uiNavigationCoordinator.persistNavSnapshot()
 
     private fun parseSortOption(name: String): SortOption =
         SortOption.entries.find { it.name == name } ?: SortOption.TITLE
@@ -2101,128 +1725,14 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private fun parseLibraryViewMode(name: String): LibraryViewMode =
         LibraryViewMode.entries.find { it.name == name } ?: LibraryViewMode.ALBUM_GROUPS
 
-    private fun reportLibraryProgress(
-        kind: LibraryJobKind,
-        done: Int,
-        total: Int,
-        label: String
-    ) {
-        _localLibraryJobProgress.value = LibraryJobProgress(kind, done, total, label)
-    }
-
-    private fun clearLibraryProgress() {
-        _localLibraryJobProgress.value = null
-    }
-
-    private fun importScanProgress(): (Int, Int, String) -> Unit = { done, total, fileName ->
-        reportLibraryProgress(LibraryJobKind.IMPORT, done, total, fileName)
-    }
-
     // SAF Import
-    fun importFolder(treeUri: Uri) {
-        viewModelScope.launch {
-            // Show the banner before the SAF tree walk; listing a big folder can take
-            // minutes with no files indexed yet, which looked like a dead tap.
-            reportLibraryProgress(LibraryJobKind.IMPORT, 0, 0, "Buscando archivos…")
-            // finally: a stuck banner blocks every later library job (see the guard in
-            // syncLibraryTagsToFiles), so it must clear even if the scan throws.
-            val inserted = try {
-                withContext(Dispatchers.IO) {
-                    repository.scanFolderUri(treeUri, importScanProgress())
-                }
-            } catch (e: Exception) {
-                CrashReporter.recordNonFatal(e, mapOf("scan_phase" to "folder_import"))
-                toast("No se pudo leer esa carpeta")
-                return@launch
-            } finally {
-                clearLibraryProgress()
-            }
-            val count = inserted.size
-            toast(
-                when {
-                    count <= 0 -> "No se encontraron canciones nuevas en esa carpeta"
-                    count == 1 -> "1 canción agregada a la biblioteca"
-                    else -> "$count canciones agregadas a la biblioteca"
-                }
-            )
-            identifyImportedGaps(inserted)
-        }
-    }
-
-    /**
-     * Installing an older APK makes Room drop every table (playlists, album overrides). Without this
-     * the user just found them gone with no explanation.
-     */
-    private suspend fun warnIfDatabaseWasDowngraded() {
-        val seen = libraryPreferences.highestDbVersionSeen()
-        if (seen > AppDatabase.VERSION) {
-            toast(
-                "Instalaste una versión más vieja de BestiaPop: se reinició la base " +
-                        "(playlists y datos de álbumes). Tus archivos de música siguen en Music/BestiaPop."
-            )
-        }
-        if (seen < AppDatabase.VERSION) {
-            libraryPreferences.setHighestDbVersionSeen(AppDatabase.VERSION)
-        }
-    }
+    fun importFolder(treeUri: Uri) = libraryScanCoordinator.importFolder(treeUri)
 
     /**
      * First-install (or post-uninstall) disk import: BestiaPop folder + MediaStore.
-     * Skipped on later cold starts / updates once [LibraryPreferencesRepository] marks completed.
-     * Room migrations still run independently via [AppDatabase].
      */
-    fun ensureInitialLibraryImport(showRecoveryToast: Boolean = false) {
-        viewModelScope.launch {
-            // Serialized: the VM init and MainActivity's permission callback both call this and both
-            // used to pass the check-then-act before either wrote the flag, running the whole disk
-            // import twice in parallel (duplicated work plus row-id churn).
-            initialImportMutex.withLock {
-                if (libraryPreferences.isInitialScanCompleted()) return@launch
-                if (!hasAudioPermission()) return@launch
-                try {
-                    runLibraryDiskImport(showRecoveryToast = showRecoveryToast)
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                    com.bestiapop.android.data.util.CrashReporter.recordNonFatal(
-                        e,
-                        mapOf("phase" to "ensureInitialLibraryImport")
-                    )
-                } finally {
-                    libraryPreferences.setInitialScanCompleted(true)
-                }
-            }
-        }
-    }
-
-    private suspend fun runLibraryDiskImport(showRecoveryToast: Boolean) {
-        val (recovered, inserted) = try {
-            withContext(Dispatchers.IO) {
-                val fromManaged = repository.resyncAppManagedMusic(importScanProgress())
-                val fromMedia = repository.scanMediaStore(importScanProgress())
-                fromManaged to (fromManaged + fromMedia)
-            }
-        } finally {
-            clearLibraryProgress()
-        }
-        if (showRecoveryToast && recovered.isNotEmpty()) {
-            toast(
-                if (recovered.size == 1) "Se recuperó 1 canción de Music/BestiaPop"
-                else "Se recuperaron ${recovered.size} canciones de Music/BestiaPop"
-            )
-        }
-        identifyImportedGaps(inserted)
-    }
-
-    private fun hasAudioPermission(): Boolean {
-        val app = getApplication<Application>()
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            ContextCompat.checkSelfPermission(app, Manifest.permission.READ_MEDIA_AUDIO) ==
-                    PackageManager.PERMISSION_GRANTED
-        } else {
-            ContextCompat.checkSelfPermission(app, Manifest.permission.READ_EXTERNAL_STORAGE) ==
-                    PackageManager.PERMISSION_GRANTED
-        }
-    }
+    fun ensureInitialLibraryImport(showRecoveryToast: Boolean = false) =
+        libraryScanCoordinator.ensureInitialLibraryImport(showRecoveryToast)
 
     /**
      * Online identify: Phase 1 lookup + score, auto-apply HIGH,
@@ -2389,232 +1899,71 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     // ListenBrainz Actions
-    fun setListenBrainzEnabled(enabled: Boolean) {
-        viewModelScope.launch {
-            listenBrainzPreferences.setEnabled(enabled)
-            if (enabled) playbackRuntime.requestListenSync()
-            if (!enabled) clearDiscoverState()
-        }
-    }
+    fun setListenBrainzEnabled(enabled: Boolean) =
+        listenBrainzIntegrationCoordinator.setListenBrainzEnabled(enabled)
 
-    fun setListenBrainzDiscoverEnabled(enabled: Boolean) {
-        viewModelScope.launch {
-            listenBrainzPreferences.setDiscoverEnabled(enabled)
-            if (enabled) {
-                refreshListenBrainzDiscoverPlaylists()
-            } else {
-                clearDiscoverState()
-            }
-        }
-    }
+    fun setListenBrainzDiscoverEnabled(enabled: Boolean) =
+        listenBrainzIntegrationCoordinator.setListenBrainzDiscoverEnabled(enabled)
 
-    fun setListenBrainzSaveWhileListening(enabled: Boolean) {
-        viewModelScope.launch {
-            listenBrainzPreferences.setSaveWhileListening(enabled)
-        }
-    }
+    fun setListenBrainzSaveWhileListening(enabled: Boolean) =
+        listenBrainzIntegrationCoordinator.setListenBrainzSaveWhileListening(enabled)
 
-    fun setListenBrainzSaveWhileListeningPercent(percent: Int) {
-        viewModelScope.launch {
-            listenBrainzPreferences.setSaveWhileListeningPercent(percent)
-        }
-    }
+    fun setListenBrainzSaveWhileListeningPercent(percent: Int) =
+        listenBrainzIntegrationCoordinator.setListenBrainzSaveWhileListeningPercent(percent)
 
-    fun saveListenBrainzToken(token: String) {
-        viewModelScope.launch {
-            listenBrainzPreferences.setToken(token)
-            _tokenValidation.value = _tokenValidation.value.idle(data = null)
-        }
-    }
+    fun saveListenBrainzToken(token: String) =
+        listenBrainzIntegrationCoordinator.saveListenBrainzToken(token)
 
-    fun validateListenBrainzToken(token: String = listenBrainzSettings.value.userToken) {
-        viewModelScope.launch {
-            val trimmed = token.trim()
-            if (trimmed.isBlank()) {
-                _tokenValidation.value = _tokenValidation.value.failure("Token vacío", data = null)
-                return@launch
-            }
-            _tokenValidation.value = _tokenValidation.value.loading(data = null)
-            listenBrainzPreferences.setToken(trimmed)
-            val result = ListenBrainzClient.validateToken(trimmed)
-            if (result.valid && !result.username.isNullOrBlank()) {
-                listenBrainzPreferences.setUsername(result.username)
-                listenBrainzPreferences.setEnabled(true)
-                _tokenValidation.value = _tokenValidation.value.success(result.username)
-                playbackRuntime.requestListenSync()
-                if (listenBrainzSettings.value.discoverEnabled) {
-                    refreshListenBrainzDiscoverPlaylists()
-                }
-            } else {
-                listenBrainzPreferences.setUsername(null)
-                _tokenValidation.value = _tokenValidation.value.failure(
-                    message = result.message ?: "Token inválido",
-                    data = null
-                )
-            }
-        }
-    }
+    fun validateListenBrainzToken(token: String = listenBrainzSettings.value.userToken) =
+        listenBrainzIntegrationCoordinator.validateListenBrainzToken(token)
 
-    fun clearListenBrainz() {
-        viewModelScope.launch {
-            listenBrainzPreferences.clear()
-            _tokenValidation.value = _tokenValidation.value.idle(data = null)
-            clearDiscoverState()
-        }
-    }
+    fun clearListenBrainz() =
+        listenBrainzIntegrationCoordinator.clearListenBrainz()
 
-    fun refreshListenBrainzDiscoverPlaylists() {
+    fun refreshListenBrainzDiscoverPlaylists() =
         discoverFeedCoordinator.refreshListenBrainzDiscoverPlaylists()
-    }
 
-    fun refreshCfRecommendations() {
+    fun refreshCfRecommendations() =
         discoverFeedCoordinator.refreshCfRecommendations()
-    }
 
-    fun openCfRecommendations() {
+    fun openCfRecommendations() =
         discoverFeedCoordinator.openCfRecommendations()
-    }
 
     private suspend fun loadCfRecommendationsForRestore(): Boolean =
         discoverFeedCoordinator.loadCfRecommendationsForRestore()
-
-    private fun playMatchedCollection(
-        items: List<PlayableItem>,
-        startIndex: Int = 0,
-        origin: DiscoverPlaybackOrigin = DiscoverPlaybackOrigin.None
-    ): Boolean {
-        if (items.isEmpty() || startIndex !in items.indices) return false
-        _catalogPreviewKey.value = null
-        playPlayableCollection(items, startIndex, origin = origin)
-        return true
-    }
 
     /** Play discover-matched tracks (CF / LB) with session origin. */
     fun playMatchedTracks(
         items: List<PlayableItem>,
         origin: DiscoverPlaybackOrigin,
         startIndex: Int = 0
-    ) {
-        playMatchedCollection(items, startIndex = startIndex, origin = origin)
-    }
+    ) = playbackExecutionCoordinator.playMatchedTracks(items, origin, startIndex)
 
     fun shuffleMatchedTracks(
         items: List<PlayableItem>,
         origin: DiscoverPlaybackOrigin
-    ) {
-        shufflePlayableCollection(items, origin = origin)
-    }
+    ) = playbackExecutionCoordinator.shuffleMatchedTracks(items, origin)
 
-    fun openListenBrainzPlaylist(mbid: String) {
-        // Tracked so opening A then B cannot leave A's late response rendered under B's route.
-        lbDetailJob?.cancel()
-        lbDetailJob = viewModelScope.launch {
-            loadListenBrainzPlaylist(mbid, forRestore = false)
-        }
-    }
+    fun openListenBrainzPlaylist(mbid: String) =
+        listenBrainzIntegrationCoordinator.openListenBrainzPlaylist(mbid)
 
-    private fun isListenBrainzDetailCurrent(mbid: String): Boolean =
-        _navigation.value.playlistDetail.lbMbidOrNull() == mbid
-
-    private suspend fun loadListenBrainzPlaylist(mbid: String, forRestore: Boolean): Boolean {
-        val settings = listenBrainzPreferences.settingsFlow.first()
-        if (!settings.showDiscoverPlaylists || mbid.isBlank()) {
-            if (!forRestore) {
-                _lbPlaylistDetail.update {
-                    it.failure("ListenBrainz no disponible", data = null)
-                }
-            }
-            return false
-        }
-        _lbPlaylistDetail.update { it.loading(data = null) }
-        return when (
-            val result = ListenBrainzClient.fetchPlaylist(
-                playlistMbid = mbid,
-                token = settings.userToken
-            )
-        ) {
-            is LbApiResult.Success -> {
-                val library = repository.allSongsFlow.first()
-                val matched = matchListenBrainzTracksUseCase.execute(result.data, library)
-                // Only publish if this mbid is still the one on screen.
-                if (!forRestore && !isListenBrainzDetailCurrent(mbid)) return false
-                _lbPlaylistDetail.update { it.success(matched) }
-                true
-            }
-
-            is LbApiResult.Failure -> {
-                if (forRestore) {
-                    _lbPlaylistDetail.update { it.idle(data = null) }
-                } else {
-                    _lbPlaylistDetail.update { it.failure(result.message, data = null) }
-                }
-                false
-            }
-        }
-    }
-
-    fun closeListenBrainzPlaylist() {
-        _lbPlaylistDetail.update { it.idle(data = null) }
-    }
+    fun closeListenBrainzPlaylist(): Unit =
+        listenBrainzIntegrationCoordinator.closeListenBrainzPlaylist()
 
     /** Saves matched locals + unmatched as pending metadata (no download yet). */
-    fun saveListenBrainzPlaylistAsLocal(onCreated: ((Long) -> Unit)? = null) {
-        val matched = _lbPlaylistDetail.value.data ?: return
-        if (matched.matchedCount == 0 && matched.streamCount == 0) return
-        viewModelScope.launch {
-            val playlistId = importListenBrainzPlaylistUseCase.createLocalFromMatched(matched)
-                ?: return@launch
-            toastPlaylistSaved(matched.matchedCount, pending = matched.streamCount)
-            onCreated?.invoke(playlistId)
-        }
-    }
+    fun saveListenBrainzPlaylistAsLocal(onCreated: ((Long) -> Unit)? = null) =
+        listenBrainzIntegrationCoordinator.saveListenBrainzPlaylistAsLocal(onCreated)
 
     /**
      * Creates a local playlist with matched + pending metadata, then enqueues unmatched
-     * downloads via [runTrackedDownload] ([ActiveDownloadSource.LB_IMPORT]).
+     * downloads via catalog coordinator.
      */
-    fun importListenBrainzPlaylistWithDownloads(onCreated: ((Long) -> Unit)? = null) {
-        val matched = _lbPlaylistDetail.value.data ?: return
-        val unmatched = importListenBrainzPlaylistUseCase.unmatchedCatalogTracks(matched)
-        if (unmatched.isEmpty() && matched.matchedCount == 0) return
-
-        viewModelScope.launch {
-            val playlistId = importListenBrainzPlaylistUseCase.createLocalFromMatched(
-                matched = matched,
-                allowEmpty = unmatched.isNotEmpty()
-            ) ?: return@launch
-
-            onCreated?.invoke(playlistId)
-
-            if (unmatched.isEmpty()) {
-                toastPlaylistSaved(matched.matchedCount)
-                return@launch
-            }
-
-            enqueuePendingDownloads(
-                playlistId = playlistId,
-                tracks = unmatched,
-                toastQueued = true
-            )
-        }
-    }
+    fun importListenBrainzPlaylistWithDownloads(onCreated: ((Long) -> Unit)? = null) =
+        listenBrainzIntegrationCoordinator.importListenBrainzPlaylistWithDownloads(onCreated)
 
     /** Downloads pending metadata tracks for an already-saved local playlist. */
-    fun downloadPlaylistPendingTracks(playlistId: Long) {
-        if (playlistId <= 0L) return
-        viewModelScope.launch {
-            val pending = repository.getPlaylistPendingTracksFlow(playlistId).first()
-            if (pending.isEmpty()) {
-                toast(DownloadMessages.noPendingTracks)
-                return@launch
-            }
-            enqueuePendingDownloads(
-                playlistId = playlistId,
-                tracks = pending.map { it.toOnlineCatalogTrack() },
-                toastQueued = true
-            )
-        }
-    }
+    fun downloadPlaylistPendingTracks(playlistId: Long) =
+        listenBrainzIntegrationCoordinator.downloadPlaylistPendingTracks(playlistId)
 
     private enum class LibraryToastKind { SAVED, ADDED, ALREADY }
 
@@ -2776,7 +2125,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     fun setLibraryBlobsSettings(settings: LibraryBlobsSettings) {
         viewModelScope.launch {
             libraryPreferences.setLibraryBlobsSettings(settings)
-            val currentFilter = _navigation.value.libraryBrowseFilter
+            val currentFilter = navigation.value.libraryBrowseFilter
             if (currentFilter !in settings.enabledFilters) {
                 setLibraryBrowseFilter(settings.primaryFilter)
             }
@@ -2935,21 +2284,8 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         catalogDownloadCoordinator.clearBatchConflictPolicy()
     }
 
-    private suspend fun rematchDiscoverAfterLibraryChange(extraSong: Song? = null) {
-        val library = libraryWithExtra(extraSong)
-        _lbPlaylistDetail.value.data?.let { current ->
-            _lbPlaylistDetail.update {
-                it.copy(data = current.copy(matches = current.matches.rematchLocals(library)))
-            }
-        }
-        discoverFeedCoordinator.rematchCfRecommendations(library)
-    }
-
-    private suspend fun libraryWithExtra(extraSong: Song?): List<Song> =
-        repository.allSongsFlow.first().let { list ->
-            if (extraSong == null || list.any { it.id == extraSong.id }) list
-            else list + extraSong
-        }
+    private suspend fun rematchDiscoverAfterLibraryChange(extraSong: Song? = null) =
+        listenBrainzIntegrationCoordinator.rematchDiscoverAfterLibraryChange(extraSong)
 
     fun downloadRemoteItem(remote: PlayableItem.Remote) {
         catalogDownloadCoordinator.downloadRemoteItem(remote)
@@ -2967,7 +2303,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         catalogDownloadCoordinator.cycleActiveDownload(
             id = id,
             activeDownloads = activeDownloads.value,
-            catalogPreviewKey = _catalogPreviewKey.value
+            catalogPreviewKey = catalogPreviewKey.value
         )
     }
 

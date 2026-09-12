@@ -89,244 +89,6 @@ import kotlin.coroutines.EmptyCoroutineContext
 private const val INITIAL_PLAYBACK_WINDOW_SIZE = 30
 private const val QUEUE_APPEND_CHUNK_SIZE = 100
 
-private fun controllerReconnectBackoffMs(attempt: Int): Long {
-    val exponent = (attempt - 1).coerceIn(0, 4)
-    return 500L * (1L shl exponent)
-}
-
-/** Keep already-hydrated LRC when the library row is identity-slim (`lyrics` null). */
-internal fun Song.keepLyricsIfIncomingSlim(incoming: Song): Song =
-    if (incoming.lyrics.isNullOrEmpty() && !lyrics.isNullOrEmpty()) incoming.copy(lyrics = lyrics)
-    else incoming
-
-internal fun refreshLocalQueueMetadata(
-    queue: List<PlayableItem>,
-    songs: List<Song>
-): List<PlayableItem> {
-    val localItems = queue.filterIsInstance<PlayableItem.Local>()
-    if (localItems.isEmpty() || songs.isEmpty()) return queue
-    val targetIds = HashSet<Long>(localItems.size)
-    val targetUris = HashSet<String>(localItems.size)
-    for (item in localItems) {
-        if (item.song.id > 0L) targetIds.add(item.song.id)
-        targetUris.add(item.song.uriString)
-    }
-    val byId = HashMap<Long, IndexedValue<Song>>(targetIds.size)
-    val byUri = HashMap<String, IndexedValue<Song>>(targetUris.size)
-    songs.forEachIndexed { index, song ->
-        val matchId = song.id > 0L && song.id in targetIds
-        val matchUri = song.uriString in targetUris
-        if (matchId || matchUri) {
-            val indexed = IndexedValue(index, song)
-            if (matchId) byId.putIfAbsent(song.id, indexed)
-            if (matchUri) byUri.putIfAbsent(song.uriString, indexed)
-        }
-    }
-    return queue.map { item ->
-        if (item !is PlayableItem.Local) return@map item
-        val idMatch = item.song.id.takeIf { it > 0L }?.let(byId::get)
-        val uriMatch = byUri[item.song.uriString]
-        val refreshed = when {
-            idMatch == null -> uriMatch
-            uriMatch == null -> idMatch
-            idMatch.index <= uriMatch.index -> idMatch
-            else -> uriMatch
-        }?.value
-        refreshed?.let { incoming ->
-            item.copy(song = item.song.keepLyricsIfIncomingSlim(incoming))
-        } ?: item
-    }
-}
-
-/**
- * Detects if [queue] represents an ordered album playback queue (all items belong to the same
- * album, not in shuffle mode), and returns the reordered list sorted by album track number
- * if the track order changed. Returns null if reordering is not needed or not applicable.
- */
-internal fun reorderAlbumQueueByTrackNumber(
-    queue: List<PlayableItem>,
-    isShuffle: Boolean
-): List<PlayableItem>? {
-    if (isShuffle || queue.size < 2) return null
-    val firstLocal = queue.firstOrNull() as? PlayableItem.Local ?: return null
-    val firstAlbum = firstLocal.song.album
-    if (firstAlbum.isBlank()) return null
-    if (!queue.all { it is PlayableItem.Local && albumNamesMatch(it.song.album, firstAlbum) }) {
-        return null
-    }
-    val sorted = queue.sortedWith { a, b ->
-        compareSongsWithinAlbum(
-            (a as PlayableItem.Local).song,
-            (b as PlayableItem.Local).song
-        )
-    }
-    return if (sorted != queue) sorted else null
-}
-
-internal interface PlaybackControllerFacade {
-    interface Listener {
-        fun onIsPlayingChanged(isPlaying: Boolean) = Unit
-        fun onPlayWhenReadyChanged(playWhenReady: Boolean) = Unit
-        fun onPlayerError() = Unit
-        fun onPlaybackStateChanged(playbackState: Int) = Unit
-        fun onMediaItemTransition(item: PlayableItem?, reason: Int) = Unit
-        fun onTimelineChanged() = Unit
-        fun onPositionDiscontinuity(positionMs: Long) = Unit
-        fun onRepeatModeChanged(repeatMode: Int) = Unit
-        fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) = Unit
-        fun onDisconnected(controller: PlaybackControllerFacade) = Unit
-    }
-
-    val mediaItemCount: Int
-    val currentMediaItemIndex: Int
-    val currentPosition: Long
-    val duration: Long
-    val isPlaying: Boolean
-    val playWhenReady: Boolean
-    val playbackState: Int
-    val hasPlayerError: Boolean get() = false
-    var repeatMode: Int
-    var shuffleModeEnabled: Boolean
-
-    fun addListener(listener: Listener)
-    fun items(): List<PlayableItem>
-    fun setMediaItems(items: List<PlayableItem>, startIndex: Int, startPositionMs: Long)
-    fun replaceMediaItem(index: Int, item: PlayableItem)
-    fun addMediaItems(items: List<PlayableItem>)
-    fun addMediaItems(index: Int, items: List<PlayableItem>)
-    fun removeMediaItem(index: Int)
-    fun removeMediaItems(fromIndex: Int, toIndex: Int)
-    fun clearMediaItems() {
-        if (mediaItemCount > 0) removeMediaItems(0, mediaItemCount)
-    }
-    fun moveMediaItem(fromIndex: Int, toIndex: Int)
-    fun prepare()
-    fun play()
-    fun pause()
-    fun seekTo(positionMs: Long)
-    fun seekTo(index: Int, positionMs: Long)
-    fun seekToNextMediaItem()
-    fun seekToPreviousMediaItem()
-    fun hasNextMediaItem(): Boolean
-    fun hasPreviousMediaItem(): Boolean
-    fun release()
-}
-
-internal interface PlaybackControllerConnection {
-    fun addListener(listener: () -> Unit)
-    fun get(): PlaybackControllerFacade
-    fun cancel()
-}
-
-internal fun interface PlaybackControllerConnector {
-    fun connect(): PlaybackControllerConnection
-}
-
-internal interface PlaybackRuntimePersistence {
-    suspend fun loadLastPlayed(): LastPlayedSnapshot? = null
-    suspend fun loadQueue(): QueueSnapshot? = null
-    suspend fun saveSession(
-        lastPlayed: LastPlayedSnapshot?,
-        queue: QueueSnapshot?,
-        clearQueue: Boolean
-    ) = Unit
-}
-
-internal interface PlaybackRuntimeListenTracker {
-    fun onTrackChanged(song: Song?, hint: PlaybackChangeHint)
-    fun onDurationKnown(songId: Long, durationMs: Long)
-    fun onPlaybackTick(isPlaying: Boolean, elapsedRealtimeMs: Long)
-    fun onStopped()
-    fun creditPlaybackTime(timeMs: Long) = Unit
-}
-
-internal sealed interface SaveWhileListeningDownloadResult {
-    data class Saved(val song: Song) : SaveWhileListeningDownloadResult
-    data class InFlight(val downloadId: String) : SaveWhileListeningDownloadResult
-    data class Failed(val error: Throwable) : SaveWhileListeningDownloadResult
-}
-
-internal interface PlaybackRuntimeSaveDownloads {
-    val downloads: StateFlow<List<ActiveDownload>>
-    suspend fun save(remote: PlayableItem.Remote): SaveWhileListeningDownloadResult
-    fun dismiss(id: String)
-}
-
-internal interface PlaybackRuntimeStreamAccess {
-    fun needsResolve(item: PlayableItem.Remote): Boolean
-    suspend fun resolve(item: PlayableItem.Remote): PlayableItem.Remote?
-    suspend fun invalidate(item: PlayableItem.Remote)
-}
-
-internal data class PlaybackRuntimeRadioRequest(
-    val seed: PlayableItem,
-    val library: List<Song>,
-    val mode: RadioMode,
-    val excludeKeys: Set<String>,
-    val settings: ListenBrainzSettings,
-    val timeoutMs: Long,
-    val coPlaylistSongIds: Set<Long>
-)
-
-internal fun interface PlaybackRuntimeRadioSuggester {
-    suspend fun suggest(request: PlaybackRuntimeRadioRequest): RadioSuggestResult
-}
-
-internal data class PlaybackRuntimeDependencies(
-    val scope: CoroutineScope,
-    val libraryUpdates: Flow<List<Song>> = flowOf(emptyList()),
-    val playbackSettings: StateFlow<PlaybackSettings> = MutableStateFlow(PlaybackSettings()),
-    val playbackSettingsReady: StateFlow<Boolean> = MutableStateFlow(true),
-    val listenSettings: StateFlow<ListenBrainzSettings> = MutableStateFlow(ListenBrainzSettings()),
-    val listenSettingsReady: StateFlow<Boolean> = MutableStateFlow(true),
-    val persistence: PlaybackRuntimePersistence = object : PlaybackRuntimePersistence {},
-    val listenTracker: PlaybackRuntimeListenTracker = object : PlaybackRuntimeListenTracker {
-        override fun onTrackChanged(song: Song?, hint: PlaybackChangeHint) = Unit
-        override fun onDurationKnown(songId: Long, durationMs: Long) = Unit
-        override fun onPlaybackTick(isPlaying: Boolean, elapsedRealtimeMs: Long) = Unit
-        override fun onStopped() = Unit
-    },
-    val streamAccess: PlaybackRuntimeStreamAccess,
-    val saveDownloads: PlaybackRuntimeSaveDownloads = object : PlaybackRuntimeSaveDownloads {
-        override val downloads = MutableStateFlow<List<ActiveDownload>>(emptyList())
-        override suspend fun save(remote: PlayableItem.Remote): SaveWhileListeningDownloadResult =
-            SaveWhileListeningDownloadResult.Failed(
-                IllegalStateException("Save while listening unavailable")
-            )
-
-        override fun dismiss(id: String) = Unit
-    },
-    val radioSuggester: PlaybackRuntimeRadioSuggester = PlaybackRuntimeRadioSuggester {
-        RadioSuggestResult(emptyList(), usedOnlineDiscovery = false, onlineDiscoveryFailed = false)
-    },
-    val resolveCoPlaylistSongIds: suspend (PlayableItem) -> Set<Long> = { emptySet() },
-    val isOnline: () -> Boolean = { false },
-    val persistShuffle: suspend (Boolean) -> Unit = {},
-    val persistRepeat: suspend (RepeatMode) -> Unit = {},
-    val touchSongLastPlayed: suspend (Long) -> Unit = {},
-    val updateSongDuration: suspend (Long, Long) -> Unit = { _, _ -> },
-    val loadSongById: suspend (Long) -> Song? = { null },
-    val loadSongsByIds: suspend (List<Long>) -> List<Song> = { emptyList() },
-    val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
-    val requestListenSync: () -> Unit = {},
-    val flushPostponedTagWrites: suspend (Long?) -> Unit = {},
-    val clockMs: () -> Long = System::currentTimeMillis,
-    val elapsedRealtimeMs: () -> Long = SystemClock::elapsedRealtime,
-    val controllerReconnectBackoffMs: (attempt: Int) -> Long = ::controllerReconnectBackoffMs,
-    val startTicker: Boolean = true
-)
-
-private data class PlaybackPersistenceRequest(
-    val lastPlayed: LastPlayedSnapshot?,
-    val queue: QueueSnapshot?,
-    val clearQueue: Boolean
-)
-
-private data class PersistedCollectionProjection(
-    val snapshot: PlaybackCollectionSnapshot,
-    val hydratedQueue: HydratedQueue? = null,
-    val restoreShuffle: Boolean = false
-)
 
 /**
  * Process-scoped playback owner retained by BestiaPopApplication.
@@ -361,14 +123,30 @@ class PlaybackRuntime internal constructor(
     val discoverPlaybackOrigin = _discoverPlaybackOrigin.asStateFlow()
     private val _resolvingRemote = MutableStateFlow(false)
     val resolvingRemote = _resolvingRemote.asStateFlow()
-    private val _radioActive = MutableStateFlow(false)
-    val radioActive = _radioActive.asStateFlow()
-    private val _radioLoading = MutableStateFlow(false)
-    val radioLoading = _radioLoading.asStateFlow()
-    private val _radioMode = MutableStateFlow(RadioMode.KNOWN)
-    val radioMode = _radioMode.asStateFlow()
-    private val _radioStatusLabel = MutableStateFlow<String?>(null)
-    val radioStatusLabel = _radioStatusLabel.asStateFlow()
+    private val radioCoordinator = PlaybackRadioCoordinator(
+        scope = scope,
+        dependencies = dependencies,
+        getCurrentItem = { _currentItem.value },
+        getQueue = { _queue.value },
+        getCurrentIndex = { controller?.currentMediaItemIndex ?: lastMediaItemIndex },
+        getRepeatMode = { _repeatMode.value },
+        isPlayWhenReadyIntent = { playWhenReadyIntent },
+        canKeepCurrent = ::shouldKeepCurrentWhenStartingRadio,
+        getLibrary = { library },
+        onEmitEvent = { _events.tryEmit(it) },
+        onClearDiscoverPlaybackOrigin = ::clearDiscoverPlaybackOrigin,
+        onApplyRadioStartModes = ::applyRadioStartModes,
+        onReplaceUpcomingWithRadio = ::replaceUpcomingWithRadio,
+        onPlayPlayableCollection = { items, fromRadio, rotate ->
+            playPlayableCollection(items, fromRadio = fromRadio, rotate = rotate)
+        },
+        onAddPlayableBatch = ::addPlayableBatch,
+        onPrefetchAround = ::prefetchAround
+    )
+    val radioActive = radioCoordinator.radioActive
+    val radioLoading = radioCoordinator.radioLoading
+    val radioMode = radioCoordinator.radioMode
+    val radioStatusLabel = radioCoordinator.radioStatusLabel
     private val _queueFocusEpoch = MutableStateFlow(0)
     val queueFocusEpoch = _queueFocusEpoch.asStateFlow()
     val saveWhileListeningDownloads: StateFlow<List<ActiveDownload>> =
@@ -428,11 +206,6 @@ class PlaybackRuntime internal constructor(
     private val saveWhileListeningFailures = mutableMapOf<String, Long>()
     private val pendingSaveSettingsJobs = mutableMapOf<String, Job>()
 
-    private var radioStartJob: Job? = null
-    private var radioRefillJob: Job? = null
-    private val playedInRadioSession = linkedSetOf<String>()
-    private var radioPreferredMode: RadioMode? = null
-    private var lastEmptyRadioRefillAtMs = 0L
     private val warmingUp = AtomicBoolean(false)
 
     init {
@@ -870,7 +643,7 @@ class PlaybackRuntime internal constructor(
                     positionMs = _playbackPositionMs.value
                 )
             }
-            maybeAutoStartRadioOnQueueEnd()
+            radioCoordinator.maybeAutoStartRadioOnQueueEnd()
         }
 
         override fun onMediaItemTransition(item: PlayableItem?, reason: Int) {
@@ -1398,7 +1171,7 @@ class PlaybackRuntime internal constructor(
     ): PlaybackCollectionSnapshot? {
         if (items.isEmpty()) return null
         invalidatePlaybackWork()
-        clearRadioSession()
+        radioCoordinator.clearRadioSession()
         clearDiscoverPlaybackOrigin()
         val staged = items.ensureFreshQueueEntryIds()
         val index = startIndex.coerceIn(staged.indices)
@@ -1420,7 +1193,7 @@ class PlaybackRuntime internal constructor(
         startShuffled: Boolean,
         resumeAtMs: Long?
     ) {
-        if (!fromRadio) clearRadioSession()
+        if (!fromRadio) radioCoordinator.clearRadioSession()
         val validIndex = startIndex.coerceIn(0, items.lastIndex)
         val shouldRotate = rotate && !fromRadio && validIndex > 0
         val ordered = if (shouldRotate) PlaybackQueueOrder.rotateToStart(items, validIndex) else items
@@ -1440,8 +1213,8 @@ class PlaybackRuntime internal constructor(
             resumeAtMs = resumePosition
         )
         ensureControllerConnection()
-        if (fromRadio && _radioActive.value && playWhenReadyIntent) {
-            maybeRefillRadio(playingIndex)
+        if (fromRadio && radioActive.value && playWhenReadyIntent) {
+            radioCoordinator.maybeRefillRadio(playingIndex)
         }
     }
 
@@ -1920,7 +1693,7 @@ class PlaybackRuntime internal constructor(
                 items,
                 slot,
                 applyManualModes = false,
-                fromRadio = _radioActive.value,
+                fromRadio = radioActive.value,
                 startPlaying = startPlaying
             )
         } else {
@@ -1999,9 +1772,9 @@ class PlaybackRuntime internal constructor(
                 }
                 prefetchAround(0)
             }
-            if (_radioActive.value) {
-                rememberRadioPlayed(reshuffled[0])
-                if (playWhenReadyIntent) maybeRefillRadio(0)
+            if (radioActive.value) {
+                radioCoordinator.rememberRadioPlayed(reshuffled[0])
+                if (playWhenReadyIntent) radioCoordinator.maybeRefillRadio(0)
             }
             persistPlaybackSession(force = true)
             return
@@ -2058,9 +1831,9 @@ class PlaybackRuntime internal constructor(
                 }
                 prefetchAround(newIndex)
             }
-            if (_radioActive.value) {
-                rememberRadioPlayed(playable)
-                if (playWhenReadyIntent) maybeRefillRadio(newIndex)
+            if (radioActive.value) {
+                radioCoordinator.rememberRadioPlayed(playable)
+                if (playWhenReadyIntent) radioCoordinator.maybeRefillRadio(newIndex)
             }
         } else {
             dependencies.listenTracker.onTrackChanged(null, PlaybackChangeHint.METADATA_UPDATE)
@@ -2624,22 +2397,13 @@ class PlaybackRuntime internal constructor(
     }
 
     fun setRadioPreferredMode(mode: RadioMode) {
-        radioPreferredMode = mode
+        radioCoordinator.setRadioPreferredMode(mode)
     }
 
-    fun preferredRadioModeOrNull(): RadioMode? = radioPreferredMode
+    fun preferredRadioModeOrNull(): RadioMode? = radioCoordinator.preferredRadioModeOrNull()
 
     fun stopRadio() {
-        radioStartJob?.cancel()
-        radioStartJob = null
-        radioRefillJob?.cancel()
-        radioRefillJob = null
-        lastEmptyRadioRefillAtMs = 0L
-        _radioLoading.value = false
-        _radioActive.value = false
-        playedInRadioSession.clear()
-        _radioMode.value = RadioMode.KNOWN
-        updateRadioStatusLabel()
+        radioCoordinator.stopRadio()
     }
 
     fun startRadio(
@@ -2648,130 +2412,12 @@ class PlaybackRuntime internal constructor(
         auto: Boolean = false,
         announceMode: Boolean = false
     ) {
-        val seed = seedSong?.toPlayable() ?: _currentItem.value ?: run {
-            if (!auto) _events.tryEmit("Elegí una canción para iniciar la radio")
-            return
-        }
-        if (seed.artist.isBlank() || seed.title.isBlank()) return
-        if (_radioLoading.value) return
-        if (mode != null) radioPreferredMode = mode
-        val resolvedMode = mode ?: radioPreferredMode
-        ?: if (dependencies.isOnline()) RadioMode.BOTH else RadioMode.KNOWN
-        val keepCurrent = !auto && shouldKeepCurrentWhenStartingRadio()
-        radioStartJob?.cancel()
-        radioStartJob = scope.launch {
-            dependencies.listenSettingsReady.first { it }
-            if (!isActive) return@launch
-            _radioLoading.value = true
-            try {
-                val exclude = buildRadioExcludeKeys(seed, includeQueue = true, _currentItem.value)
-                val batch = suggestRadioWithRetry(
-                    PlaybackRuntimeRadioRequest(
-                        seed = seed,
-                        library = library,
-                        mode = resolvedMode,
-                        excludeKeys = exclude,
-                        settings = dependencies.listenSettings.value,
-                        timeoutMs = RADIO_START_TIMEOUT_MS,
-                        coPlaylistSongIds = dependencies.resolveCoPlaylistSongIds(seed)
-                    )
-                )
-                if (!isActive) return@launch
-                if (batch.items.isEmpty()) {
-                    if (!auto) {
-                        _events.tryEmit(
-                            if (resolvedMode == RadioMode.NEW) {
-                                "Radio online no disponible"
-                            } else {
-                                "No encontré canciones parecidas"
-                            }
-                        )
-                    }
-                    return@launch
-                }
-                lastEmptyRadioRefillAtMs = 0L
-                clearDiscoverPlaybackOrigin()
-                applyRadioStartModes()
-                val previousPlayed =
-                    if (_radioActive.value) playedInRadioSession.toSet() else emptySet()
-                clearRadioSessionKeepPreference()
-                _radioMode.value = resolvedMode
-                playedInRadioSession += previousPlayed
-                playedInRadioSession += exclude
-                rememberRadioPlayed(seed)
-                _radioActive.value = true
-                updateRadioStatusLabel()
-                if (announceMode && !auto) _events.tryEmit(radioModeLabel(resolvedMode))
-                if (keepCurrent) {
-                    replaceUpcomingWithRadio(batch.items)
-                    _events.tryEmit("Se agregaron canciones de la radio a la cola")
-                    prefetchAround(controller?.currentMediaItemIndex ?: lastMediaItemIndex)
-                } else {
-                    playPlayableCollection(
-                        batch.items,
-                        fromRadio = true,
-                        rotate = false
-                    )
-                }
-            } finally {
-                _radioLoading.value = false
-            }
-        }
-    }
-
-    private fun maybeAutoStartRadioOnQueueEnd() {
-        if (_repeatMode.value != RepeatMode.OFF || _radioLoading.value) return
-        if (_queue.value.isEmpty() || !playWhenReadyIntent) return
-        val seed = _currentItem.value ?: return
-        if (seed.artist.isBlank() || seed.title.isBlank()) return
-        startRadio(auto = true)
-    }
-
-    private fun maybeRefillRadio(currentIndex: Int) {
-        if (!_radioActive.value || radioRefillJob?.isActive == true) return
-        val remaining = _queue.value.size - currentIndex - 1
-        if (remaining >= RADIO_REFILL_THRESHOLD) return
-        val seed = _currentItem.value ?: return
-        val sinceEmpty = dependencies.clockMs() - lastEmptyRadioRefillAtMs
-        if (lastEmptyRadioRefillAtMs > 0L && sinceEmpty < RADIO_EMPTY_COOLDOWN_MS) return
-        radioRefillJob = scope.launch {
-            val batch = suggestRadioWithRetry(
-                PlaybackRuntimeRadioRequest(
-                    seed = seed,
-                    library = library,
-                    mode = _radioMode.value,
-                    excludeKeys = buildRadioExcludeKeys(seed),
-                    settings = dependencies.listenSettings.value,
-                    timeoutMs = RADIO_REFILL_TIMEOUT_MS,
-                    coPlaylistSongIds = dependencies.resolveCoPlaylistSongIds(seed)
-                )
-            )
-            if (!isActive || !_radioActive.value) return@launch
-            if (batch.items.isNotEmpty()) {
-                lastEmptyRadioRefillAtMs = 0L
-                addPlayableBatch(batch.items)
-            } else if (batch.items.isEmpty()) {
-                lastEmptyRadioRefillAtMs = dependencies.clockMs()
-            }
-        }
+        radioCoordinator.startRadio(seedSong, mode, auto, announceMode)
     }
 
     internal suspend fun suggestRadioWithRetry(
         request: PlaybackRuntimeRadioRequest
-    ): RadioSuggestResult {
-        suspend fun once(): RadioSuggestResult = dependencies.radioSuggester.suggest(request)
-        if (request.mode != RadioMode.NEW) return once()
-
-        val deadline = dependencies.clockMs() + request.timeoutMs
-        var attempt = 0
-        var result = once()
-        while (result.items.isEmpty() && dependencies.clockMs() < deadline) {
-            attempt++
-            delay(minOf(attempt * 1_000L, 5_000L))
-            result = once()
-        }
-        return result
-    }
+    ): RadioSuggestResult = radioCoordinator.suggestRadioWithRetry(request)
 
     private fun replaceUpcomingWithRadio(suggestions: List<PlayableItem>) {
         val currentIndex = (controller?.currentMediaItemIndex ?: lastMediaItemIndex).coerceAtLeast(0)
@@ -2801,18 +2447,6 @@ class PlaybackRuntime internal constructor(
                 player.playbackState != Player.STATE_IDLE
     }
 
-    private fun clearRadioSessionKeepPreference() {
-        radioRefillJob?.cancel()
-        radioRefillJob = null
-        _radioActive.value = false
-        playedInRadioSession.clear()
-        updateRadioStatusLabel()
-    }
-
-    private fun clearRadioSession() {
-        stopRadio()
-        radioPreferredMode = null
-    }
 
     private fun clearDiscoverPlaybackOrigin() {
         if (_discoverPlaybackOrigin.value != DiscoverPlaybackOrigin.None) {
@@ -2820,41 +2454,6 @@ class PlaybackRuntime internal constructor(
         }
     }
 
-    private fun rememberRadioPlayed(item: PlayableItem) {
-        TrackMatchKeys.matchKey(item.artist, item.title)
-            .takeIf { it.isNotEmpty() }
-            ?.let(playedInRadioSession::add)
-        playedInRadioSession += item.mediaId
-    }
-
-    private fun buildRadioExcludeKeys(
-        seed: PlayableItem,
-        includeQueue: Boolean = true,
-        extra: PlayableItem? = null
-    ): MutableSet<String> {
-        val exclude = playedInRadioSession.toMutableSet()
-        fun add(item: PlayableItem) {
-            TrackMatchKeys.matchKey(item.artist, item.title)
-                .takeIf { it.isNotEmpty() }
-                ?.let(exclude::add)
-            exclude += item.mediaId
-        }
-        add(seed)
-        extra?.let(::add)
-        if (includeQueue) _queue.value.forEach(::add)
-        return exclude
-    }
-
-    private fun updateRadioStatusLabel() {
-        _radioStatusLabel.value =
-            if (_radioActive.value) radioModeLabel(_radioMode.value) else null
-    }
-
-    private fun radioModeLabel(mode: RadioMode): String = when (mode) {
-        RadioMode.KNOWN -> "Radio · Solo conocidos"
-        RadioMode.NEW -> "Radio · Solo nuevos"
-        RadioMode.BOTH -> "Radio · Ambos"
-    }
 
     private fun reloadPlayerTimeline(
         items: List<PlayableItem>,
@@ -3187,10 +2786,6 @@ class PlaybackRuntime internal constructor(
         private const val FALLBACK_SUCCESS_POSITION_MS = 1_000L
         private const val REMOTE_RECOVERY_RETRY_MS = 600L
         private const val SAVE_RETRY_COOLDOWN_MS = 10 * 60 * 1000L
-        private const val RADIO_REFILL_THRESHOLD = 5
-        private const val RADIO_START_TIMEOUT_MS = 45_000L
-        private const val RADIO_REFILL_TIMEOUT_MS = 20_000L
-        private const val RADIO_EMPTY_COOLDOWN_MS = 60_000L
         private const val RADIO_BATCH_SIZE = 30
 
         internal fun create(
@@ -3301,273 +2896,3 @@ class PlaybackRuntime internal constructor(
     }
 }
 
-private class PlaybackSessionStoreRuntimePersistence(
-    private val store: PlaybackSessionStore
-) : PlaybackRuntimePersistence {
-    override suspend fun loadLastPlayed() = store.load()
-    override suspend fun loadQueue() = store.loadQueue()
-    override suspend fun saveSession(
-        lastPlayed: LastPlayedSnapshot?,
-        queue: QueueSnapshot?,
-        clearQueue: Boolean
-    ) {
-        store.saveSession(lastPlayed, queue, clearQueue)
-    }
-}
-
-private class ListenTrackerRuntimeAdapter(
-    private val tracker: ListenTracker
-) : PlaybackRuntimeListenTracker {
-    override fun onTrackChanged(song: Song?, hint: PlaybackChangeHint) =
-        tracker.onTrackChanged(song, hint)
-
-    override fun onDurationKnown(songId: Long, durationMs: Long) =
-        tracker.onDurationKnown(songId, durationMs)
-
-    override fun onPlaybackTick(isPlaying: Boolean, elapsedRealtimeMs: Long) =
-        tracker.onPlaybackTick(isPlaying, elapsedRealtimeMs)
-
-    override fun onStopped() = tracker.onStopped()
-
-    override fun creditPlaybackTime(timeMs: Long) = tracker.creditPlaybackTime(timeMs)
-}
-
-private class StreamResolverRuntimeAccess(
-    private val resolver: StreamResolver,
-    private val clockMs: () -> Long
-) : PlaybackRuntimeStreamAccess {
-    override fun needsResolve(item: PlayableItem.Remote): Boolean {
-        val resolved = item.resolved ?: return true
-        return resolved.audioUrl.isBlank() || !resolver.isFresh(resolved)
-    }
-
-    override suspend fun resolve(item: PlayableItem.Remote): PlayableItem.Remote? =
-        resolver.resolve(item)
-            .getOrNull()
-            ?.let { item.copy(resolved = it) }
-
-    override suspend fun invalidate(item: PlayableItem.Remote) {
-        resolver.invalidate(item)
-    }
-}
-
-@OptIn(UnstableApi::class)
-private class MediaControllerConnection(
-    context: Context,
-    private val library: () -> List<Song>
-) : PlaybackControllerConnection {
-    private val disconnectionRelay = MediaControllerDisconnectionRelay()
-    private val audioStore = MusicFileStore(context)
-    private val future: ListenableFuture<MediaController>
-    private var facade: PlaybackControllerFacade? = null
-
-    init {
-        val token = SessionToken(context, ComponentName(context, MusicService::class.java))
-        future = MediaController.Builder(context, token)
-            .setListener(disconnectionRelay)
-            .buildAsync()
-    }
-
-    override fun addListener(listener: () -> Unit) {
-        future.addListener(listener, MoreExecutors.directExecutor())
-    }
-
-    override fun get(): PlaybackControllerFacade =
-        facade ?: MediaControllerFacade(
-            controller = future.get(),
-            audioStore = audioStore,
-            library = library,
-            disconnectionRelay = disconnectionRelay
-        ).also { facade = it }
-
-    override fun cancel() {
-        future.cancel(true)
-    }
-}
-
-private class MediaControllerDisconnectionRelay : MediaController.Listener {
-    @Volatile
-    private var callback: (() -> Unit)? = null
-
-    fun attach(callback: () -> Unit) {
-        this.callback = callback
-    }
-
-    fun clear() {
-        callback = null
-    }
-
-    override fun onDisconnected(controller: MediaController) {
-        callback?.invoke()
-    }
-}
-
-@OptIn(UnstableApi::class)
-private class MediaControllerFacade(
-    private val controller: MediaController,
-    private val audioStore: MusicFileStore,
-    private val library: () -> List<Song>,
-    private val disconnectionRelay: MediaControllerDisconnectionRelay
-) : PlaybackControllerFacade {
-    private val released = AtomicBoolean(false)
-    private var runtimeListener: PlaybackControllerFacade.Listener? = null
-    private val playerListener = object : Player.Listener {
-        override fun onIsPlayingChanged(isPlaying: Boolean) {
-            runtimeListener?.onIsPlayingChanged(isPlaying)
-        }
-
-        override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
-            runtimeListener?.onPlayWhenReadyChanged(playWhenReady)
-        }
-
-        override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
-            runtimeListener?.onPlayerError()
-        }
-
-        override fun onPlaybackStateChanged(playbackState: Int) {
-            runtimeListener?.onPlaybackStateChanged(playbackState)
-        }
-
-        override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-            runtimeListener?.onMediaItemTransition(
-                mediaItem?.let { PlaybackMediaItemCodec.decode(it, library()) },
-                reason
-            )
-        }
-
-        override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) {
-            runtimeListener?.onTimelineChanged()
-        }
-
-        override fun onPositionDiscontinuity(
-            oldPosition: Player.PositionInfo,
-            newPosition: Player.PositionInfo,
-            reason: Int
-        ) {
-            runtimeListener?.onPositionDiscontinuity(newPosition.positionMs)
-        }
-
-        override fun onRepeatModeChanged(repeatMode: Int) {
-            runtimeListener?.onRepeatModeChanged(repeatMode)
-        }
-
-        override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
-            runtimeListener?.onShuffleModeEnabledChanged(shuffleModeEnabled)
-        }
-    }
-
-    override val mediaItemCount: Int get() = controller.mediaItemCount
-    override val currentMediaItemIndex: Int get() = controller.currentMediaItemIndex
-    override val currentPosition: Long get() = controller.currentPosition
-    override val duration: Long get() = controller.duration
-    override val isPlaying: Boolean get() = controller.isPlaying
-    override val playWhenReady: Boolean get() = controller.playWhenReady
-    override val playbackState: Int get() = controller.playbackState
-    override val hasPlayerError: Boolean get() = controller.playerError != null
-    override var repeatMode: Int
-        get() = controller.repeatMode
-        set(value) {
-            controller.repeatMode = value
-        }
-    override var shuffleModeEnabled: Boolean
-        get() = controller.shuffleModeEnabled
-        set(value) {
-            controller.shuffleModeEnabled = value
-            val args = Bundle().apply {
-                putIntArray(
-                    MusicService.EXTRA_SHUFFLE_ORDER,
-                    if (value) IntArray(controller.mediaItemCount) { it } else IntArray(0)
-                )
-            }
-            controller.sendCustomCommand(
-                SessionCommand(MusicService.ACTION_SET_SHUFFLE_ORDER, Bundle.EMPTY),
-                args
-            )
-        }
-
-    override fun addListener(listener: PlaybackControllerFacade.Listener) {
-        runtimeListener = listener
-        disconnectionRelay.attach { listener.onDisconnected(this) }
-        controller.addListener(playerListener)
-    }
-
-    override fun items(): List<PlayableItem> {
-        val lib = library()
-        val byId = HashMap<Long, Song>(lib.size * 2)
-        val byUri = HashMap<String, Song>(lib.size * 2)
-        for (song in lib) {
-            if (song.id > 0L) byId.putIfAbsent(song.id, song)
-            if (song.uriString.isNotBlank()) byUri.putIfAbsent(song.uriString, song)
-        }
-        val lookup: (Long?, String) -> Song? = { id, uri ->
-            (if (id != null && id > 0L) byId[id] else null) ?: byUri[uri]
-        }
-        return buildList {
-            for (index in 0 until controller.mediaItemCount) {
-                PlaybackMediaItemCodec.decode(controller.getMediaItemAt(index), lib, lookup)?.let(::add)
-            }
-        }
-    }
-
-    override fun setMediaItems(
-        items: List<PlayableItem>,
-        startIndex: Int,
-        startPositionMs: Long
-    ) {
-        val encoded = ArrayList<MediaItem>(items.size)
-        for (i in items.indices) {
-            encoded.add(encode(items[i]))
-        }
-        controller.setMediaItems(encoded, startIndex, startPositionMs)
-    }
-
-    override fun replaceMediaItem(index: Int, item: PlayableItem) {
-        controller.replaceMediaItem(index, encode(item))
-    }
-
-    override fun addMediaItems(items: List<PlayableItem>) {
-        val encoded = ArrayList<MediaItem>(items.size)
-        for (i in items.indices) {
-            encoded.add(encode(items[i]))
-        }
-        controller.addMediaItems(encoded)
-    }
-
-    override fun addMediaItems(index: Int, items: List<PlayableItem>) {
-        val encoded = ArrayList<MediaItem>(items.size)
-        for (i in items.indices) {
-            encoded.add(encode(items[i]))
-        }
-        controller.addMediaItems(index, encoded)
-    }
-
-    override fun removeMediaItem(index: Int) = controller.removeMediaItem(index)
-    override fun removeMediaItems(fromIndex: Int, toIndex: Int) =
-        controller.removeMediaItems(fromIndex, toIndex)
-    override fun clearMediaItems() = controller.clearMediaItems()
-
-    override fun moveMediaItem(fromIndex: Int, toIndex: Int) =
-        controller.moveMediaItem(fromIndex, toIndex)
-
-    override fun prepare() = controller.prepare()
-    override fun play() = controller.play()
-    override fun pause() = controller.pause()
-    override fun seekTo(positionMs: Long) = controller.seekTo(positionMs)
-    override fun seekTo(index: Int, positionMs: Long) = controller.seekTo(index, positionMs)
-    override fun seekToNextMediaItem() = controller.seekToNextMediaItem()
-    override fun seekToPreviousMediaItem() = controller.seekToPreviousMediaItem()
-    override fun hasNextMediaItem(): Boolean = controller.hasNextMediaItem()
-    override fun hasPreviousMediaItem(): Boolean = controller.hasPreviousMediaItem()
-    override fun release() {
-        if (!released.compareAndSet(false, true)) return
-        disconnectionRelay.clear()
-        runtimeListener = null
-        controller.removeListener(playerListener)
-        controller.release()
-    }
-
-    private fun encode(item: PlayableItem): MediaItem =
-        PlaybackMediaItemCodec.encode(item) { song ->
-            audioStore.playableUri(song.uriString)
-        }
-}

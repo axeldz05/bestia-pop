@@ -132,7 +132,7 @@ fun CollectionHeader(
     onToggleCollapse: () -> Unit = {},
     onOpen: () -> Unit = {},
     menuContent: (@Composable ColumnScope.(dismissMenu: () -> Unit) -> Unit)? = null,
-    swipeAction: SubmenuSwipeAction = SubmenuSwipeAction.DISABLED,
+    swipeAction: SubmenuSwipeAction = LocalSubmenuGestureSettings.current.swipeLeftAction,
     onSwipeAction: (() -> Unit)? = null
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
@@ -255,8 +255,7 @@ data class AlbumHeaderActions(
     val onToggleSelect: () -> Unit = {},
     val onLongClick: () -> Unit = {},
     val onToggleCollapse: () -> Unit = {},
-    val onSwipeAction: (() -> Unit)? = null,
-    val swipeAction: SubmenuSwipeAction = SubmenuSwipeAction.ENQUEUE_ALL
+    val onSwipeAction: (() -> Unit)? = null
 )
 
 /**
@@ -326,7 +325,6 @@ fun AlbumHeader(
         onChangeAlbumCover = actions.onChangeCover,
         onIdentifyAlbum = actions.onIdentify,
         onOpenAlbum = actions.onOpen,
-        swipeAction = actions.swipeAction,
         onSwipeAction = actions.onSwipeAction,
         modifier = modifier
     )
@@ -356,7 +354,7 @@ fun AlbumHeader(
     onChangeAlbumCover: () -> Unit = {},
     onIdentifyAlbum: (() -> Unit)? = null,
     onOpenAlbum: () -> Unit = {},
-    swipeAction: SubmenuSwipeAction = SubmenuSwipeAction.DISABLED,
+    swipeAction: SubmenuSwipeAction = LocalSubmenuGestureSettings.current.swipeLeftAction,
     onSwipeAction: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
@@ -422,8 +420,7 @@ data class PlaylistHeaderActions(
     val onDelete: (Playlist) -> Unit,
     val onPlayNext: ((Playlist) -> Unit)? = null,
     val onAddToQueue: ((Playlist) -> Unit)? = null,
-    val onSwipeAction: (() -> Unit)? = null,
-    val swipeAction: SubmenuSwipeAction = SubmenuSwipeAction.ENQUEUE_ALL
+    val onSwipeAction: (() -> Unit)? = null
 )
 
 /**
@@ -435,7 +432,8 @@ fun PlaylistHeader(
     actions: PlaylistHeaderActions,
     modifier: Modifier = Modifier
 ) {
-    val resolvedSwipeAction = actions.onSwipeAction ?: when (actions.swipeAction) {
+    val swipeAction = LocalSubmenuGestureSettings.current.swipeLeftAction
+    val resolvedSwipeAction = actions.onSwipeAction ?: when (swipeAction) {
         SubmenuSwipeAction.ENQUEUE_ALL -> actions.onAddToQueue?.let { cb -> { cb(playlist) } }
         SubmenuSwipeAction.PLAY_NEXT -> actions.onPlayNext?.let { cb -> { cb(playlist) } }
         else -> null
@@ -449,7 +447,7 @@ fun PlaylistHeader(
         onDeletePlaylist = { actions.onDelete(playlist) },
         onPlayNext = actions.onPlayNext?.let { action -> { action(playlist) } },
         onAddToQueue = actions.onAddToQueue?.let { action -> { action(playlist) } },
-        swipeAction = actions.swipeAction,
+        swipeAction = swipeAction,
         onSwipeAction = resolvedSwipeAction,
         modifier = modifier
     )
@@ -469,7 +467,7 @@ fun PlaylistHeader(
     modifier: Modifier = Modifier,
     onPlayNext: (() -> Unit)? = null,
     onAddToQueue: (() -> Unit)? = null,
-    swipeAction: SubmenuSwipeAction = SubmenuSwipeAction.DISABLED,
+    swipeAction: SubmenuSwipeAction = LocalSubmenuGestureSettings.current.swipeLeftAction,
     onSwipeAction: (() -> Unit)? = null
 ) {
     val subtitle = remember(playlist.songCount, playlist.description) {

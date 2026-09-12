@@ -37,9 +37,11 @@ import androidx.compose.ui.text.input.ImeAction
 import com.bestiapop.android.ui.components.SearchHistorySheet
 import com.bestiapop.android.ui.components.SearchRecentChipsRow
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.bestiapop.android.ui.components.LocalSubmenuGestureSettings
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -354,8 +356,7 @@ fun LibraryScreen(
             onSwipeAlbum = { album ->
                 val songs = viewModel.songsForAlbum(viewModel.libraryProjection.songs.value, album.name)
                 viewModel.executeSubmenuActionForSongs(gestureSettings.swipeLeftAction, songs)
-            },
-            swipeAction = gestureSettings.swipeLeftAction
+            }
         )
     }
     val artistBrowseActions = remember(viewModel, searchQuery, gestureSettings) {
@@ -369,8 +370,7 @@ fun LibraryScreen(
             onSwipeAction = { artist ->
                 val songs = viewModel.songsForArtist(viewModel.libraryProjection.songs.value, artist.name)
                 viewModel.executeSubmenuActionForSongs(gestureSettings.swipeLeftAction, songs)
-            },
-            swipeAction = gestureSettings.swipeLeftAction
+            }
         )
     }
     val genreBrowseActions = remember(viewModel, searchQuery, gestureSettings) {
@@ -384,8 +384,7 @@ fun LibraryScreen(
             onSwipeAction = { genre ->
                 val songs = viewModel.songsForGenre(viewModel.libraryProjection.songs.value, genre.name)
                 viewModel.executeSubmenuActionForSongs(gestureSettings.swipeLeftAction, songs)
-            },
-            swipeAction = gestureSettings.swipeLeftAction
+            }
         )
     }
 
@@ -445,8 +444,7 @@ fun LibraryScreen(
                     songs = songs,
                     onAddToPlaylist = { songDialogs.onAddManyToPlaylist(it) }
                 )
-            },
-            swipeAction = gestureSettings.swipeLeftAction
+            }
         )
     }
 
@@ -469,7 +467,8 @@ fun LibraryScreen(
         )
     }
 
-    Column(modifier = Modifier.fillMaxSize()) {
+    CompositionLocalProvider(LocalSubmenuGestureSettings provides gestureSettings) {
+        Column(modifier = Modifier.fillMaxSize()) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -835,6 +834,7 @@ fun LibraryScreen(
             onClearAll = { viewModel.clearRecentSearches() },
             onDismiss = { showSearchHistorySheet = false }
         )
+    }
     }
 }
 

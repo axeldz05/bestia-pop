@@ -56,7 +56,9 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.bestiapop.android.ui.components.LocalSubmenuGestureSettings
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import androidx.compose.runtime.getValue
@@ -139,7 +141,7 @@ fun PlaylistsScreen(
 
     val gestureSettings by viewModel.submenuGestureSettings.collectAsStateWithLifecycle()
 
-    val playlistActions = remember(viewModel, gestureSettings) {
+    val playlistActions = remember(viewModel) {
         PlaylistHeaderActions(
             onPlay = { viewModel.playPlaylist(it.id, startShuffled = false) },
             onShuffle = { viewModel.playPlaylist(it.id, startShuffled = true) },
@@ -147,12 +149,12 @@ fun PlaylistsScreen(
             onEdit = { playlistToEdit = it },
             onDelete = { playlistToDelete = it },
             onPlayNext = { viewModel.playPlaylistNext(it.id) },
-            onAddToQueue = { viewModel.enqueuePlaylist(it.id) },
-            swipeAction = gestureSettings.swipeLeftAction
+            onAddToQueue = { viewModel.enqueuePlaylist(it.id) }
         )
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
+    CompositionLocalProvider(LocalSubmenuGestureSettings provides gestureSettings) {
+        Box(modifier = Modifier.fillMaxSize()) {
         // Same pattern as LibraryScreen: FAB overlays content. Scaffold FAB slot would add
         // bottom content padding (~72dp) on top of MainScreen's bottomChromePadding → gap bar.
         Column(
@@ -319,6 +321,7 @@ fun PlaylistsScreen(
             )
         }
     }
+    }
 }
 
 private data class DisplayPlaylistTrack(
@@ -402,7 +405,7 @@ private fun PlaylistDetailScreen(
     val totalCount = localSongs.size + pendingTracks.size
     val gestureSettings by viewModel.submenuGestureSettings.collectAsStateWithLifecycle()
     val songActions = rememberSongQueueActions(viewModel)
-    val playlistSongActions = remember(songActions, onAddToPlaylist, onEditMetadata, onIdentify, onEditLyrics, playlist.id, gestureSettings) {
+    val playlistSongActions = remember(songActions, onAddToPlaylist, onEditMetadata, onIdentify, onEditLyrics, playlist.id) {
         SongItemActions.from(
             queueActions = songActions,
             onAddToPlaylist = onAddToPlaylist,
@@ -410,18 +413,18 @@ private fun PlaylistDetailScreen(
             onEditLyrics = onEditLyrics,
             onIdentify = onIdentify,
             onDelete = { viewModel.removeSongFromPlaylist(playlist.id, it.id) },
-            deleteLabel = PlaylistMessages.removeFromPlaylist,
-            swipeAction = gestureSettings.swipeLeftAction
+            deleteLabel = PlaylistMessages.removeFromPlaylist
         )
     }
     val currentSong by viewModel.currentSong.collectAsStateWithLifecycle()
     val currentItem by viewModel.currentItem.collectAsStateWithLifecycle()
     val detailListState = rememberSaveable(playlist.id, saver = LazyListState.Saver) { LazyListState() }
 
-    Surface(
-        modifier = Modifier.fillMaxSize(),
-        color = MaterialTheme.colorScheme.background
-    ) {
+    CompositionLocalProvider(LocalSubmenuGestureSettings provides gestureSettings) {
+        Surface(
+            modifier = Modifier.fillMaxSize(),
+            color = MaterialTheme.colorScheme.background
+        ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -628,6 +631,7 @@ private fun PlaylistDetailScreen(
                 }
             )
         }
+    }
     }
 }
 

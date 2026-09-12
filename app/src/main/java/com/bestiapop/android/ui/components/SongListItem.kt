@@ -59,8 +59,7 @@ data class SongItemActions(
     val onEditLyrics: ((Song) -> Unit)? = null,
     val onIdentify: ((Song) -> Unit)? = null,
     val onDelete: ((Song) -> Unit)? = null,
-    val deleteLabel: String = "Eliminar",
-    val swipeAction: SubmenuSwipeAction = SubmenuSwipeAction.ENQUEUE_ALL
+    val deleteLabel: String = "Eliminar"
 ) {
     companion object {
         fun from(
@@ -70,8 +69,7 @@ data class SongItemActions(
             onEditLyrics: ((Song) -> Unit)? = null,
             onIdentify: ((Song) -> Unit)? = null,
             onDelete: ((Song) -> Unit)? = null,
-            deleteLabel: String = "Eliminar",
-            swipeAction: SubmenuSwipeAction = SubmenuSwipeAction.ENQUEUE_ALL
+            deleteLabel: String = "Eliminar"
         ): SongItemActions = SongItemActions(
             onPlayNext = queueActions.onPlayNext,
             onAddToQueue = queueActions.onAddToQueue,
@@ -81,8 +79,7 @@ data class SongItemActions(
             onEditLyrics = onEditLyrics,
             onIdentify = onIdentify,
             onDelete = onDelete,
-            deleteLabel = deleteLabel,
-            swipeAction = swipeAction
+            deleteLabel = deleteLabel
         )
 
         fun from(
@@ -90,8 +87,7 @@ data class SongItemActions(
             dialogs: SongActionDialogsController,
             onIdentify: ((Song) -> Unit)? = dialogs.onIdentify,
             onDelete: ((Song) -> Unit)? = dialogs.onDelete,
-            deleteLabel: String = "Eliminar",
-            swipeAction: SubmenuSwipeAction = SubmenuSwipeAction.ENQUEUE_ALL
+            deleteLabel: String = "Eliminar"
         ): SongItemActions = SongItemActions(
             onPlayNext = queueActions.onPlayNext,
             onAddToQueue = queueActions.onAddToQueue,
@@ -101,11 +97,20 @@ data class SongItemActions(
             onEditLyrics = dialogs.onEditLyrics,
             onIdentify = onIdentify,
             onDelete = onDelete,
-            deleteLabel = deleteLabel,
-            swipeAction = swipeAction
+            deleteLabel = deleteLabel
         )
-
     }
+}
+
+/**
+ * Resolves the appropriate action runnable for a swipe gesture on a specific song.
+ */
+fun SongItemActions.resolveSwipeAction(action: SubmenuSwipeAction, song: Song): (() -> Unit)? = when (action) {
+    SubmenuSwipeAction.ENQUEUE_ALL -> onAddToQueue?.let { cb -> { cb(song) } }
+    SubmenuSwipeAction.PLAY_NEXT -> onPlayNext?.let { cb -> { cb(song) } }
+    SubmenuSwipeAction.START_RADIO -> onStartRadio?.let { cb -> { cb(song) } }
+    SubmenuSwipeAction.ADD_TO_PLAYLIST -> onAddToPlaylist?.let { cb -> { cb(song) } }
+    SubmenuSwipeAction.SEARCH_SIMILAR, SubmenuSwipeAction.DISABLED -> null
 }
 
 /**
@@ -133,8 +138,8 @@ fun SongListItem(
     onLongClick: () -> Unit = {},
     onToggleSelect: () -> Unit = {},
     onOptionsClick: (() -> Unit)? = null,
-    swipeAction: SubmenuSwipeAction = actions.swipeAction,
-    onSwipeAction: (() -> Unit)? = null
+    swipeAction: SubmenuSwipeAction = LocalSubmenuGestureSettings.current.swipeLeftAction,
+    onSwipeAction: (() -> Unit)? = actions.resolveSwipeAction(swipeAction, song)
 ) = SongListItem(
     song = song,
     modifier = modifier,
@@ -199,7 +204,7 @@ fun SongListItem(
     onIdentify: (() -> Unit)? = null,
     onDelete: (() -> Unit)? = null,
     deleteLabel: String = "Eliminar",
-    swipeAction: SubmenuSwipeAction = SubmenuSwipeAction.ENQUEUE_ALL,
+    swipeAction: SubmenuSwipeAction = LocalSubmenuGestureSettings.current.swipeLeftAction,
     onSwipeAction: (() -> Unit)? = null
 ) {
     val colors = playingRowColors(highlighted = isCurrentPlaying, selected = isSelected)

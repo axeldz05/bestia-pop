@@ -35,8 +35,7 @@ data class LibraryAlbumGroupActions(
     val onChangeAlbumCover: (String) -> Unit = {},
     val onIdentifyAlbum: (String) -> Unit = {},
     val onOpenAlbum: (String) -> Unit = {},
-    val onSwipeAction: ((String, List<Long>) -> Unit)? = null,
-    val swipeAction: SubmenuSwipeAction = SubmenuSwipeAction.ENQUEUE_ALL
+    val onSwipeAction: ((String, List<Long>) -> Unit)? = null
 )
 
 /** Shared song/album action callbacks for [LibrarySongList]. */
@@ -86,8 +85,7 @@ data class LibrarySongListActions(
         onChangeAlbumCover: (String) -> Unit = {},
         onIdentifyAlbum: (String) -> Unit = {},
         onOpenAlbum: (String) -> Unit = {},
-        onSwipeAlbum: ((String, List<Long>) -> Unit)? = null,
-        swipeAction: SubmenuSwipeAction = SubmenuSwipeAction.ENQUEUE_ALL
+        onSwipeAlbum: ((String, List<Long>) -> Unit)? = null
     ) : this(
         songActions = SongItemActions(
             onPlayNext = onPlayNext,
@@ -97,8 +95,7 @@ data class LibrarySongListActions(
             onEditMetadata = onEditMetadata,
             onEditLyrics = onEditLyrics,
             onIdentify = onIdentify,
-            onDelete = onDeleteSong,
-            swipeAction = swipeAction
+            onDelete = onDeleteSong
         ),
         albumActions = LibraryAlbumGroupActions(
             onPlayAlbum = onPlayAlbum,
@@ -110,8 +107,7 @@ data class LibrarySongListActions(
             onChangeAlbumCover = onChangeAlbumCover,
             onIdentifyAlbum = onIdentifyAlbum,
             onOpenAlbum = onOpenAlbum,
-            onSwipeAction = onSwipeAlbum,
-            swipeAction = swipeAction
+            onSwipeAction = onSwipeAlbum
         ),
         onToggleSelect = onToggleSelect
     )

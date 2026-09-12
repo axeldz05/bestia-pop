@@ -356,8 +356,7 @@ private fun LibraryAlbumHeaderRow(
             onToggleCollapse = { albumActionsState.value.onToggleCollapseAlbum(item.albumName) },
             onSwipeAction = albumActionsState.value.onSwipeAction?.let { action ->
                 { action(item.albumName, item.songIds) }
-            },
-            swipeAction = albumActionsState.value.swipeAction
+            }
         )
     }
     AlbumHeader(

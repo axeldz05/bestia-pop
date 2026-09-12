@@ -13,6 +13,7 @@ import com.bestiapop.android.data.preferences.SubmenuSwipeAction
 import com.bestiapop.android.ui.SortOption
 import com.bestiapop.android.ui.components.FastScrollLazyColumn
 import com.bestiapop.android.ui.components.FastScrollSections
+import com.bestiapop.android.ui.components.LocalSubmenuGestureSettings
 import com.bestiapop.android.ui.components.formatSortRelevantInfo
 import com.bestiapop.android.ui.theme.ListDensity
 
@@ -45,7 +46,6 @@ fun LibraryGenreList(
             onClick = { actions.onClick(genre) },
             onPlay = { actions.onPlay(genre) },
             onShuffle = { actions.onShuffle(genre) },
-            swipeAction = actions.swipeAction,
             onSwipeAction = actions.onSwipeAction?.let { cb -> { cb(genre) } }
         )
     }
@@ -87,7 +87,7 @@ fun GenreListItem(
     onClick: () -> Unit,
     onPlay: () -> Unit,
     onShuffle: () -> Unit,
-    swipeAction: SubmenuSwipeAction = SubmenuSwipeAction.DISABLED,
+    swipeAction: SubmenuSwipeAction = LocalSubmenuGestureSettings.current.swipeLeftAction,
     onSwipeAction: (() -> Unit)? = null
 ) {
     val sortInfo = remember(genre.dateAdded, sortOption) {

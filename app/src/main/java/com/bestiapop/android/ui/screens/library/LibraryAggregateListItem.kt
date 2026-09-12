@@ -27,13 +27,14 @@ import com.bestiapop.android.ui.components.PlayShuffleIconPair
 import com.bestiapop.android.ui.theme.ListDensity
 
 /** Generic actions for aggregate browse rows (artists, genres, etc.) */
+import com.bestiapop.android.ui.components.LocalSubmenuGestureSettings
+
 @Immutable
 data class AggregateBrowseActions<T>(
     val onClick: (T) -> Unit,
     val onPlay: (T) -> Unit,
     val onShuffle: (T) -> Unit,
-    val onSwipeAction: ((T) -> Unit)? = null,
-    val swipeAction: SubmenuSwipeAction = SubmenuSwipeAction.ENQUEUE_ALL
+    val onSwipeAction: ((T) -> Unit)? = null
 )
 
 /** Shared row chrome for artist / genre browse aggregates. */
@@ -50,7 +51,7 @@ fun LibraryAggregateListItem(
     onPlay: () -> Unit,
     onShuffle: () -> Unit,
     modifier: Modifier = Modifier,
-    swipeAction: SubmenuSwipeAction = SubmenuSwipeAction.DISABLED,
+    swipeAction: SubmenuSwipeAction = LocalSubmenuGestureSettings.current.swipeLeftAction,
     onSwipeAction: (() -> Unit)? = null
 ) {
     val canSwipe = onSwipeAction != null && swipeAction != SubmenuSwipeAction.DISABLED

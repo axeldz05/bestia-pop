@@ -63,6 +63,13 @@ When passing identical callback clusters (e.g., playback, download, retry, lyric
 * Construct the bundle once at the host level (optionally with `remember`), eliminating repetitive 10-parameter plumbing between conditional branches.
 * Use slot composables (`headerContent`, `trailing`, `leading`) rather than boolean branching inside compressed layout bodies.
 
+### Contextual Single Source of Truth (SSOT) vs. Prop-Drilling
+
+Never thread environmental settings or pervasive configuration states (e.g., gesture preferences, appearance, sound options) through intermediary list hosts, browse actions, or header bundles:
+* **Boundary Injection**: Inject contextual settings at screen roots using `CompositionLocalProvider(LocalFooSettings provides settings)`.
+* **Default Parameter Consumption**: Leaf components consume contextual settings directly as parameter defaults (`action: FooAction = LocalFooSettings.current.action`). Intermediary composables remain completely agnostic to the setting.
+* **Unified Action Resolution**: When an action enum (`SubmenuSwipeAction`) maps to member callbacks, provide an extension or dispatch method on the action bundle (`actions.resolveSwipe(action, item)`). Never scatter redundant `when (action)` resolution logic across multiple UI leaf components.
+
 ## What to Avoid
 * No class hierarchies based on domain nouns (Employee, Manager) before writing code.
 * No deep inheritance, templates, or patterns introduced before duplication exists.

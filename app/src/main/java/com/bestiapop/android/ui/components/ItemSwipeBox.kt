@@ -43,6 +43,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.runtime.staticCompositionLocalOf
+import com.bestiapop.android.data.preferences.SubmenuGestureSettings
 import com.bestiapop.android.data.preferences.SubmenuSwipeAction
 import com.bestiapop.android.ui.theme.ListDensity
 import kotlinx.coroutines.launch
@@ -50,6 +52,11 @@ import kotlin.math.roundToInt
 
 private val DEFAULT_SWIPE_THRESHOLD = 64.dp
 private val DEFAULT_MAX_DRAG = 110.dp
+
+/**
+ * Single source of truth for submenu and item swipe gesture settings across the UI hierarchy.
+ */
+val LocalSubmenuGestureSettings = staticCompositionLocalOf { SubmenuGestureSettings() }
 
 /**
  * Short label for compact item swipe indicator.
@@ -68,7 +75,7 @@ fun SubmenuSwipeAction.shortLabel(): String = when (this) {
  */
 @Composable
 fun ItemSwipeBox(
-    action: SubmenuSwipeAction,
+    action: SubmenuSwipeAction = LocalSubmenuGestureSettings.current.swipeLeftAction,
     onSwipeAction: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,

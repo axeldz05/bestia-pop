@@ -43,6 +43,7 @@ import com.bestiapop.android.ui.components.ArtworkThumbnail
 import com.bestiapop.android.ui.components.CatalogCategoryChipsRow
 import com.bestiapop.android.ui.components.CircleActionBox
 import com.bestiapop.android.ui.components.HeaderActionIcon
+import com.bestiapop.android.ui.components.LocalSubmenuGestureSettings
 import com.bestiapop.android.ui.components.preloadArtwork
 import com.bestiapop.android.ui.components.EmptyListHint
 import com.bestiapop.android.ui.components.ScreenBackHeader
@@ -88,6 +89,7 @@ fun DiscoverScreen(
     viewModel: MusicPlayerViewModel,
     modifier: Modifier = Modifier
 ) {
+    val gestureSettings by viewModel.submenuGestureSettings.collectAsStateWithLifecycle()
     val catalogSearch by viewModel.catalogSearch.collectAsStateWithLifecycle()
     val catalogCollection by viewModel.catalogCollection.collectAsStateWithLifecycle()
     val recentSearches by viewModel.recentSearches.collectAsStateWithLifecycle()
@@ -179,14 +181,14 @@ fun DiscoverScreen(
         }
     }
 
-    Box(modifier = modifier.fillMaxSize()) {
-        if (selectedCollectionTitle != null) {
-            val gestureSettings by viewModel.submenuGestureSettings.collectAsStateWithLifecycle()
-            SubmenuSwipeBox(
-                settings = gestureSettings,
-                onSwipeRight = { viewModel.clearSelectedCollection() },
-                canSwipeBack = true
-            ) {
+    CompositionLocalProvider(LocalSubmenuGestureSettings provides gestureSettings) {
+        Box(modifier = modifier.fillMaxSize()) {
+            if (selectedCollectionTitle != null) {
+                SubmenuSwipeBox(
+                    settings = gestureSettings,
+                    onSwipeRight = { viewModel.clearSelectedCollection() },
+                    canSwipeBack = true
+                ) {
                 val albumProgress = activeDownloads.findAlbumDownloadProgress(
                     albumTitle = selectedCollectionTitle,
                     artistName = activeCandidates.firstOrNull()?.artist.orEmpty()
@@ -470,6 +472,7 @@ fun DiscoverScreen(
                 }
             }
         }
+    }
     }
 
     if (showSearchHistorySheet) {

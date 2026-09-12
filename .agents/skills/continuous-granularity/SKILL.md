@@ -59,11 +59,17 @@ When applying continuous granularity to Compose screens, components, and lists:
 1. **Action Bundles & Dual Overloads (Level 2 & Level 1)**:
    - When a screen, detail view, or host receives 6+ callbacks or related states (e.g., `DiscoverMatchedTrackActions`, `DiscoverCollectionActions`, `LibrarySongListActions`), bundle them into a Level 2 `data class`.
    - **Mandatory**: Always retain the Level 1 overload with individual primitive parameters delegating to the bundled version (or vice versa). Never eliminate Level 1 access, as previews, isolated tests, and custom call sites depend on passing explicit callbacks without constructing wrapper instances.
+   - **Avoid the Telescoping Trap**: Level 1 should offer granular control (custom slots, specific callbacks), NOT duplicate 20+ parameters that mirror Level 2 fields one-to-one.
+   - **Single Overload Invariant for Named Parameters**: Never define two Level 2 overloads where both have default arguments for the same parameters in different positions. This causes Kotlin `Overload resolution ambiguity` when callers invoke with named arguments.
 
 2. **Shared Layout Compression with Slot Escape Hatches**:
    - When sibling screens share 80%+ structural layout (e.g., `MatchedPlaylistContent` shared between `CfRecommendationsDetailScreen` and `LbPlaylistDetailScreen`), compress the shared scaffold/body into a Level 2 composable.
    - Do **not** inject flags (`isCf: Boolean`, `isLb: Boolean`) to toggle screen-specific buttons. Instead, accept a composable slot (e.g., `headerContent: (@Composable ColumnScope.() -> Unit)? = null`) to allow screen-specific actions ("Guardar", "Descargar faltantes") while keeping the shared layout clean.
 
-3. **Interface-typed Rows over Concrete DTOs**:
+3. **Contextual Defaults over Cascading Parameter Lists**:
+   - When Level 2 components require configuration (e.g., `ItemSwipeBox(action: SubmenuSwipeAction)`), default the argument to a contextual `CompositionLocal` (`LocalSubmenuGestureSettings.current.swipeLeftAction`).
+   - This ensures callers can still provide explicit overrides (granularity) while zero-overhead call sites remain clean without intermediate plumbing.
+
+4. **Interface-typed Rows over Concrete DTOs**:
    - Reusable row items (e.g., `DiscoverTrackListItem`) should accept common interfaces (e.g., `track: TrackMeta`) rather than specific remote catalog classes (`OnlineCatalogTrack`). This permits passing candidates, local songs, or online tracks indiscriminately.
    - Expose open customization slots with sensible defaults (e.g., `leading: (@Composable RowScope.() -> Unit)? = null`, `highlighted: Boolean = false`) so callers can decorate rows (track numbers, active playback styling) without duplicating the underlying row structure.

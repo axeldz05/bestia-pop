@@ -25,8 +25,7 @@ data class AlbumBrowseActions(
     val onEditAlbum: (Album) -> Unit,
     val onChangeAlbumCover: (Album) -> Unit,
     val onIdentifyAlbum: (Album) -> Unit = {},
-    val onSwipeAlbum: ((Album) -> Unit)? = null,
-    val swipeAction: SubmenuSwipeAction = SubmenuSwipeAction.ENQUEUE_ALL
+    val onSwipeAlbum: ((Album) -> Unit)? = null
 )
 
 /**
@@ -73,8 +72,7 @@ fun LibraryAlbumBrowseList(
                 onEdit = { actions.onEditAlbum(album) },
                 onChangeCover = { actions.onChangeAlbumCover(album) },
                 onIdentify = { actions.onIdentifyAlbum(album) },
-                onSwipeAction = actions.onSwipeAlbum?.let { action -> { action(album) } },
-                swipeAction = actions.swipeAction
+                onSwipeAction = actions.onSwipeAlbum?.let { action -> { action(album) } }
             )
         }
         AlbumHeader(

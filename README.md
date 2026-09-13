@@ -1,12 +1,12 @@
 # BestiaPop
 
-Reproductor de música para Android con biblioteca local, playlists, descargas y streaming, radio de similares, ListenBrainz y sincronización por WiFi.
+Reproductor de música para Android con biblioteca local, streaming, descargas, letras interactivas, radio inteligente, ListenBrainz y sincronización por WiFi.
 
 **Estado:** beta · **Requisito:** Android 8.0 (API 26) o superior · **Versión:** [`version.properties`](version.properties)
 
 [Descargar la última versión](https://github.com/axeldz05/bestia-pop/releases/latest)
 
-Sin anuncios ni Analytics. Los builds release envían fallos técnicos a Firebase Crashlytics.
+Sin anuncios ni Analytics comercial; los builds release incluyen telemetría técnica anónima opcional contra cierres inesperados.
 
 ## Instalar
 
@@ -16,196 +16,266 @@ Sin anuncios ni Analytics. Los builds release envían fallos técnicos a Firebas
 4. Abrí el APK e instalalo.
 5. Concedé acceso al audio y a las notificaciones cuando la app lo solicite.
 
-Las actualizaciones siguientes se pueden instalar desde **Ajustes → Actualización → Buscar actualización** o descargando un APK nuevo. **Ajustes → Invitar amigos** comparte el enlace de la última release.
+Las actualizaciones siguientes se instalan desde **Ajustes → Actualización → Buscar actualización** o descargando un APK nuevo. **Ajustes → Invitar amigos** genera un código QR dinámico y enlace directo para compartir la app con otros dispositivos.
 
-> Algunos fabricantes restringen las apps instaladas fuera de una tienda. Si la música se corta al salir, configurá BestiaPop como “Sin restricciones” o excluila de la optimización de batería.
+> Algunos fabricantes podrían imponer restricciones de batería que corten la música en segundo plano; en esos dispositivos, configurá BestiaPop como “Sin restricciones”.
 
 ## Primeros pasos
 
-1. En el primer arranque, esperá a que termine el banner de importación de la biblioteca.
-2. Tocá una canción o usá Play/Shuffle en un álbum, artista o playlist.
-3. Desde **Biblioteca → Agregar**, elegí una carpeta, pegá un enlace de YouTube o explorá el catálogo.
-4. Abrí **Descargas** para cancelar, reintentar o reproducir una descarga terminada.
-5. Tocá el mini player para abrir Now Playing: portada, letra, cola, radio, volumen y acciones de la canción.
-6. Para pasar música desde una PC, activá **WiFi Sync** y abrí en la PC la URL que muestra la app.
+1. En el primer arranque, esperá a que finalice la indexación inicial de la biblioteca.
+2. Tocá cualquier canción o usá los botones de Play o Shuffle en álbumes, artistas, géneros o playlists.
+3. Desde **Añadir**, subí canciones por WiFi, importá carpetas locales o descargá audios mediante enlaces directos.
+4. Explorá la pestaña **Descubrir** para buscar en el catálogo online, escuchar en streaming o guardar álbumes completos.
+5. Abrí el mini reproductor para acceder a la vista Now Playing con selector de carátula y letras, cola deslizable y controles de radio.
+6. Deslizá lateralmente sobre cualquier elemento de la biblioteca o de descubrir para encolarlo rápidamente sin interrumpir tu música.
 
-La barra inferior reúne **Biblioteca**, **Playlists**, **Descargas**, **WiFi Sync** y **Ajustes**. El gesto atrás cierra un nivel; en la raíz, pulsalo dos veces para salir sin detener la música.
+La barra inferior reúne **Biblioteca**, **Descubrir**, **Descargas**, **Añadir** y **Ajustes**. La navegación respeta el botón atrás retrocediendo jerárquicamente un nivel por toque, exigiendo doble pulsación en la raíz para salir sin cortar la reproducción.
+
+## Arquitectura y ciclo de vida
+
+### Diagrama de arquitectura
+
+```mermaid
+graph TD
+    subgraph UI ["Capa UI (Jetpack Compose + Material 3)"]
+        Screens["Pantallas (Library, Discover, Downloads, Add/Sync, Settings)"]
+        VM["MusicPlayerViewModel (Fachada UI) + StateFlows"]
+        NowPlaying["NowPlayingScreen, BottomPlayerBar y QueueSheet"]
+    end
+
+    subgraph Domain ["Capa de Dominio"]
+        UseCases["Casos de Uso (Reproducción, Descargas, Biblioteca, Metadatos)"]
+        Radio["RadioEngine (Known, New, Both)"]
+        RepoPort["IMusicRepository (Contrato)"]
+    end
+
+    subgraph Runtime ["Runtimes de Proceso (Singletons)"]
+        PR["PlaybackRuntime (Cola unificada y estado process-scoped)"]
+        PDR["ProcessDownloadRuntime y ProcessDownloadCoordinator"]
+        PIR["ProcessIdentifyRuntime"]
+    end
+
+    subgraph Data ["Capa de Datos"]
+        Repo["MusicRepository e I/O local (MusicFileStore)"]
+        Room["Room Database 3FN (songs, artists, genres, cross-refs)"]
+        DataStore["DataStore Preferences (Temas, Audio, Descargas, UI)"]
+        Net["Clientes de Red (InnerTube, iTunes, Deezer, ListenBrainz)"]
+    end
+
+    subgraph Services ["Servicios Android"]
+        MS["MusicService (MediaLibraryService + ExoPlayer)"]
+        DS["OnlineDownloadJobService / ForegroundService"]
+        WS["WebServerService (Servidor Ktor CIO para WiFi Sync)"]
+    end
+
+    Screens --> VM
+    VM --> UseCases
+    VM --> PR
+    VM --> PDR
+    UseCases --> RepoPort
+    RepoPort -.-> Repo
+    PR --> MS
+    PDR --> DS
+    Repo --> Room
+    Repo --> DataStore
+    Repo --> Net
+    WS --> Repo
+```
+
+### Diagrama de ciclo de vida de reproducción
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Usuario as Usuario
+    participant UI as MainActivity / UI Compose
+    participant PR as PlaybackRuntime
+    participant MS as MusicService (ExoPlayer)
+    participant Audio as AudioManager (Audio Focus)
+    participant Sys as System UI / Bluetooth
+
+    Usuario->>UI: Inicia la app
+    UI->>PR: attachPlaybackUi() tras primer frame
+    PR->>MS: Conecta MediaController e inicializa el servicio
+    MS->>Audio: Solicita AUDIOFOCUS_GAIN
+    MS->>Sys: Inicia Foreground Service (mediaPlayback) y notificación Media3
+    Usuario->>UI: Envía app a segundo plano
+    UI->>PR: detachPlaybackUi() (libera UI, playback continúa)
+    Sys->>MS: Control multimedia externo (Notificación, Lockscreen o Bluetooth)
+    MS->>PR: onPlaybackStartedFromService() sincroniza estado y sesión
+    Audio->>MS: AUDIOFOCUS_LOSS_TRANSIENT (llamada entrante o audio externo)
+    MS->>MS: Pausa reproducción reteniendo notificación en segundo plano
+    Audio->>MS: AUDIOFOCUS_GAIN
+    MS->>MS: Reanuda automáticamente el playback
+    Usuario->>Sys: Descarta la app del gestor de tareas (Task Removed)
+    Sys->>MS: onTaskRemoved()
+    MS->>MS: Detiene ExoPlayer, libera recursos y destruye el Foreground Service
+```
 
 ## Funciones principales
 
-### Biblioteca
+### Biblioteca y exploración
 
-- Importación inicial de la música del dispositivo e importación manual de carpetas del teléfono o SD.
-- Exploración por **Canciones**, **Álbumes**, **Artistas**, **Géneros** y **Recientes**.
-- Búsqueda, orden ascendente/descendente y vista plana o agrupada por álbum desde el botón de ajustes de vista.
-- Edición de título, artista, álbum, género, año, número de pista y portadas.
-- Identificación online de tags. Las coincidencias dudosas quedan en una cola persistente para revisar, buscar otra opción, aplicar u omitir.
-- Selección múltiple para identificar, buscar similares, crear una playlist o borrar canciones.
+- Exploración por **Canciones**, **Álbumes**, **Artistas**, **Géneros**, **Playlists** y **Recientes** mediante chips configurables y reordenables.
+- Vistas alternables entre lista plana y agrupación visual por álbum con cabeceras colapsables.
+- Ordenamiento ascendente o descendente por título, artista, álbum, género o fecha de agregado.
+- Riel lateral de scroll rápido con respuesta háptica, orden natural alfanumérico y romanización automática para títulos bilingües.
+- Deslizamiento lateral interactivo sobre canciones, álbumes, artistas, géneros y playlists para encolar o reproducir inmediatamente.
+- Selección múltiple persistente durante la búsqueda para edición masiva, creación de playlists, búsqueda de similares o borrado.
+- Identificación online de tags con soporte de títulos bilingües y revisión interactiva de discrepancias.
+- Edición granular de metadatos locales y sincronización de carátulas almacenadas de forma aislada en almacenamiento privado.
 
-Las descargas propias se guardan en `Music/BestiaPop`. Si los archivos siguen allí después de reinstalar, la app puede reindexarlos.
+### Now Playing, audio y letras
 
-### Agregar, streaming y descargas
+- Interfaz con selector de pestañas entre portada ampliada y letras interactivas, complementada con cola de reproducción deslizable.
+- Búsqueda automática de letras locales o remotas con resaltado rítmico, auto-scroll y desplazamiento manual sincronizado al toque.
+- Herramienta de guía fonética con romanización automática (Rōmaji, Hiragana, Cirílico) y traducción de líneas en tiempo real.
+- Editor integrado de letras sincronizadas para ajustar marcas de tiempo sobre pistas locales y exportar archivos `.lrc` compañeros.
+- Transiciones continuas con crossfade ajustable entre 1 y 10 segundos con protección automática para temas cortos.
+- Modo aleatorio con repetición infinita que reshufflea la cola limpiamente sin generar interrupciones perceptibles.
+- Amplificación de volumen por encima del 100% (hasta 200%) mediante botones físicos y balance estéreo L/R independiente.
+- Decodificación prioritaria por hardware en el reproductor ExoPlayer con fallback seguro a decodificadores estándar por software.
 
-**Biblioteca → Agregar** ofrece tres entradas:
+### Descubrir, streaming y descargas
 
-- **Local:** importar una carpeta.
-- **Por enlace:** pegar una URL de YouTube, `youtu.be` o un ID de video.
-- **Catálogo:** buscar canciones, álbumes, playlists, géneros y charts con metadatos de iTunes/Deezer.
+- Catálogo online integrado con buscador unificado, historial de hasta 100 consultas y sugerencias rápidas en chips.
+- Exploración de álbumes, playlists, canciones, charts y géneros con metadatos estructurados de Deezer e iTunes.
+- Streaming continuo y descarga de audio resueltos directamente mediante perfiles móviles de YouTube InnerTube.
+- Descargas coordinadas en un semáforo global con un máximo de 3 transferencias simultáneas divididas entre explícitas y automáticas.
+- Extracción de fragmentos de audio mediante peticiones HTTP `Range` cerradas para evitar bloqueos del CDN de streaming.
+- Re-extracción obligatoria de enlaces caducados antes de descargar para prevenir errores de autorización HTTP 403.
+- Gestión de descargas mediante User-Initiated Data Transfer (UIDT) en Android 14+ y Foreground Service en versiones anteriores.
+- Persistencia de transferencias incompletas y reanudación automática al recuperar conectividad o reiniciar la app.
 
-Los resultados del catálogo se pueden previsualizar por streaming o descargar. Las descargas:
+### Playlists, Radio y ListenBrainz
 
-- se registran en una cola única con hasta tres trabajos simultáneos;
-- aparecen en la pestaña **Descargas**;
-- permiten sobrescribir, guardar como nuevo o cancelar ante un duplicado;
-- reextraen el stream antes de descargar para evitar reutilizar una URL vencida.
+- Playlists locales con soporte de duplicados, reordenamiento interactivo por arrastre y carátula independiente que no altera sus canciones.
+- Motor de radio inteligente que combina canciones locales y descubrimientos remotos en modos Solo conocidos, Solo nuevos o Mixto.
+- Scrobbling oficial con ListenBrainz sincronizando reproducciones locales y encolando escuchas sin conexión para envío diferido.
+- Secciones personalizadas Para Ti y Recomendados que integran pistas locales con descubrimientos remotos basados en tu perfil musical.
+- Función Guardar al escuchar para descargar automáticamente en segundo plano pistas reproducidas por streaming sin consumir datos extras.
 
-El uso de redes móviles está permitido por defecto y se puede cambiar en **Ajustes → Descargas**.
+### Añadir y WiFi Sync
 
-### Reproducción y radio
+- Pestaña unificada que centraliza la importación de carpetas locales, la descarga por enlaces directos y la sincronización inalámbrica.
+- Servidor web HTTP embebido sobre Ktor CIO para transferir archivos de audio desde cualquier navegador en la misma red local.
+- Detección de duplicados, validación estricta de cabeceras de origen y límite de carga en transferencias entrantes.
+- Ejecución en segundo plano protegida como Foreground Service con apagado automático si el usuario descarta la app.
 
-- Una misma cola puede combinar canciones locales y streams remotos.
-- Mini player, Now Playing con pestañas de portada/letra/cola y cola reordenable.
-- Reproducción en segundo plano mediante Media3 y controles en la notificación del sistema.
-- La cola y el último tema se conservan entre sesiones. Autoplay está apagado por defecto; recordar shuffle y repetición está encendido.
-- Ajustes para saltar streams que fallan, limpiar modos al reproducir/saltar y evitar restricciones de batería.
+### Modo sin conexión y estabilidad
 
-La radio se inicia desde Now Playing o el menú de una canción:
+- Modo sin conexión conmutable que corta todo tráfico a internet y oculta elementos remotos para uso estrictamente local.
+- Monitor interno de estabilidad que registra de forma anónima presiones críticas de memoria y bloqueos para prevenir cierres por LMK.
+- Aislamiento completo sin rastreadores de publicidad comercial, frameworks de analytics invasivos ni uso de identificadores publicitarios.
 
-- **Solo conocidos:** usa canciones de la biblioteca.
-- **Solo nuevos:** busca descubrimientos online.
-- **Ambos:** intercala canciones locales y remotas.
+## Decisiones de diseño
 
-Tocá el icono de radio para usar el modo preferido; mantenelo pulsado para cambiar de modo o detener la radio. Desde una selección múltiple, **Similares** permite revisar resultados y crear una playlist sin alterar la cola actual.
-
-### Playlists y ListenBrainz
-
-- Playlists locales con portada propia, sin modificar las portadas de sus canciones.
-- Scrobbling con [ListenBrainz](https://listenbrainz.org); los listens sin conexión se envían más tarde.
-- **Para Ti** y **Recomendados** con mezcla de coincidencias locales y remotas.
-- Descarga por canción, importación de playlists y **Guardar al escuchar** para streams.
-
-Configurá el token desde **Ajustes → ListenBrainz**, validalo y activá **Mostrar Para Ti**. El token se obtiene en [listenbrainz.org/settings](https://listenbrainz.org/settings/).
-
-### WiFi Sync
-
-Con ambos dispositivos en la misma red, activá el servidor en **WiFi Sync** y abrí su URL desde una PC u otro dispositivo. La app permite subir audio, omite archivos que ya conoce e intenta identificar los tags importados. Los conflictos quedan disponibles para revisión.
-
-### Personalización
-
-- Temas predefinidos y colores personalizados.
-- Volumen por encima del 100% y balance estéreo L/R independiente.
-- Escritura opcional de tags de Room a archivos compatibles desde **Ajustes → Archivos**.
-- Preferencias de reproducción, descargas, ListenBrainz y actualización agrupadas en **Ajustes**.
+- **Colecciones unificadas:** Álbumes, artistas y listas comparten pipeline único con slots efímeros para duplicados, centralizando shuffle y fallbacks sin rutas divergentes.
+- **Normalización de Room en 3FN:** Artistas y géneros residen en tablas relacionales con claves de identidad canónicas, eliminando inconsistencias y anomalías de edición en metadatos compartidos.
+- **Desacoplamiento Catálogo ≠ Audio:** Metadatos de iTunes/Deezer y streams de YouTube resuelven URLs en memoria al vuelo, evitando almacenar tokens CDN efímeros propensos a caducar.
+- **Runtimes de proceso desacoplados de la UI:** Coordinadores de reproducción y descargas operan como singletons fuera de la actividad, asegurando continuidad en segundo plano y previniendo fugas de memoria.
+- **Hub semántico compartido (TrackIdentity):** Toda entidad de audio implementa interfaz común de metadatos, impidiendo descomposición en parámetros primitivos sueltos a lo largo de llamadas intermedias.
+- **Aislamiento de portadas entre entidades:** Álbumes y listas gestionan carátulas en almacenamiento privado dedicado, impidiendo que personalizar una colección sobrescriba el arte original de sus canciones.
 
 ## Datos, privacidad y límites
 
-- No hay anuncios, Firebase Analytics ni uso del advertising ID.
-- Crashlytics solo recopila fallos en builds no-debug.
-- Playlists, overrides de álbum y preferencias viven en los datos privados de la app. No confíes en que sobrevivan a una desinstalación: el backup cloud excluye Room, aunque una transferencia entre dispositivos puede conservar parte de los datos según Android.
-- Los audios en `Music/BestiaPop` suelen permanecer en el almacenamiento al desinstalar y se pueden reindexar.
-- Las URLs CDN de YouTube caducan y nunca se guardan en Room; se vuelven a resolver al reproducir o descargar.
-- Catálogo, identificación, radio online, ListenBrainz y streaming necesitan conexión.
-- La resolución de YouTube usa InnerTube, una API interna no estable. Los cambios de YouTube pueden interrumpir temporalmente streaming o descargas.
+- La aplicación no incorpora anuncios publicitarios, librerías de Firebase Analytics ni lecturas del Advertising ID.
+- El reporte de errores mediante Crashlytics funciona de forma opcional y exclusivamente en compilaciones de producción.
+- Las playlists, preferencias y sobrescrituras de metadatos se almacenan localmente en la base de datos privada de la app.
+- Los archivos de audio descargados residen en `Music/BestiaPop` y permanecen accesibles en el almacenamiento tras reinstalar.
+- Las URLs del CDN de YouTube tienen una vida útil corta y nunca se persisten en Room ni en DataStore.
+- La extracción de audio depende de la API interna InnerTube de YouTube, cuyos cambios externos pueden requerir actualizaciones periódicas.
 
 ## Solución de problemas
 
-- **La APK no instala:** habilitá “Instalar apps desconocidas” para la aplicación que abrió el archivo.
-- **La música se corta al salir:** quitá la restricción de batería para BestiaPop.
-- **Una descarga devuelve 403 o un stream falla:** comprobá la red y reintentá desde **Descargas**; las URLs de YouTube expiran.
-- **No aparece una actualización:** usá un build release y abrí **Ajustes → Actualización**. Para instalarla hace falta permiso de paquetes desconocidos.
-- **La biblioteca no reaparece tras reinstalar:** verificá que los audios continúen en `Music/BestiaPop`; playlists y metadata privada pueden haberse perdido.
+- **La aplicación no instala:** habilitá la opción de instalar aplicaciones desconocidas en el navegador o administrador de archivos utilizado.
+- **La reproducción se detiene al apagar la pantalla:** desactivá las optimizaciones automáticas de batería del fabricante para BestiaPop.
+- **Una descarga devuelve error 403 o se interrumpe:** verificá la conexión y reintentá desde la pestaña Descargas para obtener un enlace nuevo.
+- **No se detectan actualizaciones disponibles:** asegurate de usar una compilación release y contar con acceso a internet.
+- **La biblioteca aparece vacía tras reinstalar:** confirmá que tus archivos continúen en `Music/BestiaPop` y ejecutá una importación de carpeta.
 
 ## Desarrollo
 
 ### Requisitos
 
 - JDK 17
-- Android SDK con compile/target SDK 36
-- Gradle disponible en `PATH` (el repositorio no incluye Gradle Wrapper)
-- `adb` y un dispositivo o emulador para instalar y ejecutar tests instrumentados
+- Android SDK con compile y target SDK en API 36
+- Gradle instalado localmente en el entorno
+- Conexión por `adb` a un dispositivo físico o emulador Android
 
 ```bash
 git clone https://github.com/axeldz05/bestia-pop.git
 cd bestia-pop
 ```
 
-Descargá `app/google-services.json` desde la [Firebase Console](https://console.firebase.google.com/) antes de compilar. El repositorio no distribuye una configuración de ejemplo; Crashlytics real requiere el archivo del proyecto Firebase.
+Configurá `app/google-services.json` desde Firebase Console para habilitar Crashlytics en compilaciones firmadas.
 
-Para desarrollo diario:
+Para compilar e instalar en un dispositivo conectado:
 
 ```bash
-./install.sh              # debug
-./install.sh --release    # release local; usa firma debug si no hay keystore
+./install.sh              # Compilación e instalación debug
+./install.sh --release    # Compilación e instalación release local
 ```
 
-El script compila, instala con ADB, abre `MainActivity` y ajusta restricciones de segundo plano conocidas en sideload. Debug y release comparten `applicationId`; si existe `keystore.properties`, ambas variantes usan el mismo certificado.
+El script de instalación compila el proyecto, despliega el APK mediante ADB, inicia la actividad principal y ajusta permisos de segundo plano.
 
-Un `keystore.properties` local utiliza estas claves:
+Para firmar lanzamientos de producción se utiliza `keystore.properties`:
 
 ```properties
-storeFile=path/al/archivo.jks
-storePassword=...
-keyAlias=...
-keyPassword=...
+storeFile=ruta/al/keystore.jks
+storePassword=contrasenia_almacen
+keyAlias=alias_clave
+keyPassword=contrasenia_clave
 ```
 
-No subas ese archivo ni el keystore al repositorio.
-
-### Tests y coverage
+### Pruebas y cobertura
 
 ```bash
-gradle :app:testDebugUnitTest
-gradle :app:connectedDebugAndroidTest   # requiere dispositivo/emulador
+gradle :app:testDebugUnitTest            # Pruebas unitarias en la JVM
+gradle :app:connectedDebugAndroidTest    # Pruebas instrumentadas en dispositivo
 
-./coverage.sh                 # tests JVM + reporte HTML
-./coverage.sh --android       # instrumentados + reporte
-./coverage.sh --all           # reporte combinado
-./coverage.sh --emulator-help # ayuda para un emulador headless
+./coverage.sh                            # Reporte de cobertura unitaria
+./coverage.sh --android                  # Reporte de cobertura instrumentada
+./coverage.sh --all                      # Reporte combinado completo
 ```
 
-Los escenarios que necesitan coordinación desde el host viven en:
+Pruebas avanzadas de ciclo de vida disponibles en el directorio `scripts/`:
 
-- `scripts/run-playback-process-death-e2e.sh`
-- `scripts/run-playback-task-removal-e2e.sh`
-- `scripts/run-backup-restore-e2e.sh`
-- `scripts/run-library-permission-denied-e2e.sh`
+- `scripts/run-playback-process-death-e2e.sh`: muerte de proceso durante la reproducción.
+- `scripts/run-playback-task-removal-e2e.sh`: descarte de la aplicación desde la lista de tareas recientes.
+- `scripts/run-backup-restore-e2e.sh`: respaldo y restauración de datos.
+- `scripts/run-library-permission-denied-e2e.sh`: comportamiento ante denegación de permisos de almacenamiento.
 
-### Publicar una release
+### Publicación de releases
 
-La distribución actual es una APK firmada en GitHub Releases. Para publicar se necesita:
-
-- `app/google-services.json`;
-- `keystore.properties` y su `.jks`;
-- `GITHUB_REPOSITORY=axeldz05/bestia-pop` en `github-release.properties`;
-- GitHub CLI autenticado con `gh auth login`;
-- notas en `CHANGELOG.release-notes.md` o mediante `--notes`/`--notes-file`.
+La distribución de actualizaciones se realiza directamente a través de GitHub Releases:
 
 ```bash
-./release.sh --dry-run   # valida versión, tag y notas sin escribir ni compilar
-./release.sh             # bump, build, tag y GitHub Release
+./release.sh --dry-run   # Simulación para validar versión y notas
+./release.sh             # Compilación release, firma, tag y publicación en GitHub
 ```
 
-El script incrementa `version.properties`, genera `dist/BestiaPop-*.apk`, crea `v{VERSION_NAME}` y verifica que la release contenga el APK y el `versionCode` esperado por el updater.
+El comando automatiza el incremento de versión en `version.properties`, compila el binario en `dist/` y genera la release en el repositorio remoto.
 
-## Estructura
+## Estructura del código
 
-BestiaPop es un único módulo Android `:app`, con package raíz `com.bestiapop.android`.
+Proyecto estructurado en un único módulo Android `:app` bajo el paquete raíz `com.bestiapop.android`:
 
 ```text
-ui/       pantallas Compose, componentes, estado y ViewModel
-domain/   casos de uso, radio y contrato del repositorio
-data/     Room, red, modelos, preferencias y resolución de streams
-service/  reproducción Media3, descargas de proceso y servidor WiFi
+ui/          Interfaces Jetpack Compose, componentes reutilizables, temas y ViewModels
+domain/      Casos de uso de negocio, contratos de repositorios y motor de radio
+data/        Implementación de repositorios, Room, clientes de red, modelos y DataStore
+service/     Servicio de reproducción Media3, coordinadores de descargas y servidor WiFi
 ```
 
-Stack principal: Kotlin, Jetpack Compose/Material 3, Media3 ExoPlayer, Room, DataStore, OkHttp, Ktor y Coil.
+Tecnologías principales: Kotlin, Jetpack Compose, Material 3, AndroidX Media3 ExoPlayer, Room, DataStore, OkHttp, Ktor y Coil.
 
-## Créditos y servicios externos
+## Créditos y dependencias
 
-La resolución de YouTube es una implementación Kotlin propia de BestiaPop sobre InnerTube. La selección y configuración de perfiles de cliente está basada en los perfiles publicados y mantenidos por [yt-dlp](https://github.com/yt-dlp/yt-dlp), en particular [`yt_dlp/extractor/youtube/_base.py`](https://github.com/yt-dlp/yt-dlp/blob/master/yt_dlp/extractor/youtube/_base.py). BestiaPop no incluye ni ejecuta yt-dlp.
+La resolución de flujos de YouTube es una implementación nativa en Kotlin inspirada en los extractores mantenidos por la comunidad de [yt-dlp](https://github.com/yt-dlp/yt-dlp). BestiaPop no ejecuta binarios externos de yt-dlp.
 
-Los metadatos online pueden provenir de iTunes y Deezer; scrobbling y recomendaciones personales usan ListenBrainz.
+La información de catálogo musical se obtiene de iTunes y Deezer; el historial de reproducciones y sugerencias se integran con ListenBrainz.
 
 ## Licencia
 
-[GNU Affero General Public License v3.0](LICENSE).
+Este proyecto está bajo la licencia [GNU Affero General Public License v3.0](LICENSE).

@@ -25,12 +25,15 @@ class SystemStabilityMonitorTest {
     @Test
     fun formatReason_mapsStandardReasonsCorrectly() {
         assertEquals("LOW_MEMORY", SystemStabilityMonitor.formatReason(ApplicationExitInfo.REASON_LOW_MEMORY))
+        assertEquals("OTHER", SystemStabilityMonitor.formatReason(ApplicationExitInfo.REASON_OTHER))
         assertEquals("EXCESSIVE_RESOURCE_USAGE", SystemStabilityMonitor.formatReason(ApplicationExitInfo.REASON_EXCESSIVE_RESOURCE_USAGE))
         assertEquals("ANR", SystemStabilityMonitor.formatReason(ApplicationExitInfo.REASON_ANR))
         assertEquals("CRASH_NATIVE", SystemStabilityMonitor.formatReason(ApplicationExitInfo.REASON_CRASH_NATIVE))
         assertEquals("USER_REQUESTED", SystemStabilityMonitor.formatReason(ApplicationExitInfo.REASON_USER_REQUESTED))
         assertEquals("USER_STOPPED", SystemStabilityMonitor.formatReason(ApplicationExitInfo.REASON_USER_STOPPED))
         assertEquals("EXIT_SELF", SystemStabilityMonitor.formatReason(ApplicationExitInfo.REASON_EXIT_SELF))
+        assertEquals("PACKAGE_UPDATED", SystemStabilityMonitor.formatReason(ApplicationExitInfo.REASON_PACKAGE_UPDATED))
+        assertEquals("DEPENDENCY_DIED", SystemStabilityMonitor.formatReason(ApplicationExitInfo.REASON_DEPENDENCY_DIED))
     }
 
     @Test
@@ -90,5 +93,31 @@ class SystemStabilityMonitorTest {
         SystemStabilityMonitor.recordMemoryTrim(15)
         SystemStabilityMonitor.recordLowMemory()
         CrashReporter.isEnabled = true
+    }
+
+    @Test
+    fun blackBox_tracksAppStatePlaybackAndTrim() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        SystemStabilityMonitor.updateAppForegroundState(context, isForeground = true, screenName = "NowPlayingScreen")
+        val prefs = context.getSharedPreferences("system_stability_prefs", Context.MODE_PRIVATE)
+        assertEquals("FOREGROUND(NowPlayingScreen)", prefs.getString("bb_app_state", null))
+
+        SystemStabilityMonitor.updateAppForegroundState(context, isForeground = false)
+        assertEquals("BACKGROUND", prefs.getString("bb_app_state", null))
+        val bgTime = prefs.getLong("bb_bg_timestamp_ms", 0L)
+        org.junit.Assert.assertTrue(bgTime > 0L)
+
+        SystemStabilityMonitor.updatePlaybackState(context, isPlaying = true, playWhenReady = true, trackDescription = "Song A")
+        assertEquals("PLAYING(Song A)", prefs.getString("bb_last_playback", null))
+
+        SystemStabilityMonitor.updatePlaybackState(context, isPlaying = false, playWhenReady = false, trackDescription = "Song A")
+        assertEquals("PAUSED(Song A)", prefs.getString("bb_last_playback", null))
+
+        SystemStabilityMonitor.recordMemoryTrim(context, 15)
+        assertEquals("RUNNING_CRITICAL", prefs.getString("bb_last_trim", null))
+        org.junit.Assert.assertTrue(prefs.getLong("bb_last_trim_ms", 0L) > 0L)
+
+        SystemStabilityMonitor.recordLowMemory(context)
+        assertEquals("ON_LOW_MEMORY", prefs.getString("bb_last_trim", null))
     }
 }

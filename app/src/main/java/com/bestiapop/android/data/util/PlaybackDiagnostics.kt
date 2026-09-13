@@ -24,7 +24,11 @@ object PlaybackDiagnostics {
     const val TAG_RUNTIME = "BestiaPopRuntime"
     const val TAG_SYSTEM = "BestiaPopSystem"
 
+    @Volatile
+    private var appContext: Context? = null
+
     fun init(application: Application) {
+        appContext = application.applicationContext
         log(TAG_SYSTEM, "=== BestiaPop Process Initialized (PID=${android.os.Process.myPid()}) ===")
         logSystemStatus(application)
         logHistoricalExitReasons(application)
@@ -107,6 +111,14 @@ object PlaybackDiagnostics {
             TAG_PLAYBACK,
             "$event: isPlaying=$isPlaying, playWhenReady=$playWhenReady, state=$stateName$mediaStr$posStr$extraStr"
         )
+        appContext?.let { ctx ->
+            com.bestiapop.android.data.system.SystemStabilityMonitor.updatePlaybackState(
+                context = ctx,
+                isPlaying = isPlaying,
+                playWhenReady = playWhenReady,
+                trackDescription = currentMediaId
+            )
+        }
     }
 
     private fun logSystemStatus(context: Context) {

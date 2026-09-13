@@ -26,6 +26,11 @@ object SystemStabilityMonitor {
 
     private const val PREFS_NAME = "system_stability_prefs"
     private const val KEY_LAST_REPORTED_EXIT_MS = "last_reported_exit_timestamp_ms"
+    private const val KEY_BB_APP_STATE = "bb_app_state"
+    private const val KEY_BB_BG_TIMESTAMP_MS = "bb_bg_timestamp_ms"
+    private const val KEY_BB_LAST_PLAYBACK = "bb_last_playback"
+    private const val KEY_BB_LAST_TRIM = "bb_last_trim"
+    private const val KEY_BB_LAST_TRIM_MS = "bb_last_trim_ms"
 
     /**
      * Inspects historical process exits upon startup. Only acts if the previous exit was an unexpected,
@@ -59,75 +64,183 @@ object SystemStabilityMonitor {
                 newestTimestamp = exitTime
             }
 
-            val throwable = createExceptionForExitReason(exit) ?: continue
-            val metadata = buildExitMetadata(exit)
+            val metadata = buildExitMetadata(context, exit)
+            val throwable = createExceptionForExitReason(exit, metadata) ?: continue
             reporter(throwable, metadata)
         }
 
         if (newestTimestamp > lastReportedTimestamp) {
-            prefs.edit { putLong(KEY_LAST_REPORTED_EXIT_MS, newestTimestamp) }
+            prefs.edit {
+                putLong(KEY_LAST_REPORTED_EXIT_MS, newestTimestamp)
+                remove(KEY_BB_BG_TIMESTAMP_MS)
+                remove(KEY_BB_LAST_TRIM)
+                remove(KEY_BB_LAST_TRIM_MS)
+            }
         }
+    }
+
+    /**
+     * Updates foreground/background tracking for forensic correlation on unexpected process exit.
+     */
+    fun updateAppForegroundState(context: Context, isForeground: Boolean, screenName: String? = null) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit {
+            if (isForeground) {
+                putString(KEY_BB_APP_STATE, "FOREGROUND(${screenName ?: "App"})")
+                remove(KEY_BB_BG_TIMESTAMP_MS)
+            } else {
+                putString(KEY_BB_APP_STATE, "BACKGROUND")
+                putLong(KEY_BB_BG_TIMESTAMP_MS, System.currentTimeMillis())
+            }
+        }
+        syncProcessStateSummary(context)
+    }
+
+    /**
+     * Updates playback state for forensic correlation on unexpected process exit.
+     */
+    fun updatePlaybackState(context: Context, isPlaying: Boolean, playWhenReady: Boolean, trackDescription: String? = null) {
+        val status = when {
+            isPlaying -> "PLAYING"
+            playWhenReady -> "PREPARING"
+            trackDescription != null -> "PAUSED"
+            else -> "IDLE"
+        }
+        val fullStatus = if (trackDescription != null && status != "IDLE") {
+            "$status($trackDescription)"
+        } else {
+            status
+        }
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit {
+            putString(KEY_BB_LAST_PLAYBACK, fullStatus)
+        }
+        syncProcessStateSummary(context)
     }
 
     /**
      * In-flight telemetry: captures severe memory pressure signals from the Android kernel / framework.
      * Ignores benign transitions such as [ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN].
      */
-    fun recordMemoryTrim(level: Int) {
-        if (!CrashReporter.isEnabled) return
-        val label = formatTrimMemoryLevel(level) ?: return
-        val timestamp = System.currentTimeMillis().toString()
+    fun recordMemoryTrim(level: Int) = recordMemoryTrim(context = null, level = level)
 
-        CrashReporter.setKey("last_critical_trim_level", label)
-        CrashReporter.setKey("last_critical_trim_time", timestamp)
-        CrashReporter.log("Kernel/Framework memory pressure: $label (code=$level)")
+    fun recordMemoryTrim(context: Context?, level: Int) {
+        val label = formatTrimMemoryLevel(level) ?: return
+        val now = System.currentTimeMillis()
+        if (CrashReporter.isEnabled) {
+            CrashReporter.setKey("last_critical_trim_level", label)
+            CrashReporter.setKey("last_critical_trim_time", now.toString())
+            CrashReporter.log("Kernel/Framework memory pressure: $label (code=$level)")
+        }
+        context?.let { ctx ->
+            ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit {
+                putString(KEY_BB_LAST_TRIM, label)
+                putLong(KEY_BB_LAST_TRIM_MS, now)
+            }
+            syncProcessStateSummary(ctx)
+        }
     }
 
     /**
      * In-flight telemetry: records global system memory exhaustion warning.
      */
-    fun recordLowMemory() {
-        if (!CrashReporter.isEnabled) return
-        val timestamp = System.currentTimeMillis().toString()
-        CrashReporter.setKey("last_low_memory_time", timestamp)
-        CrashReporter.log("Kernel global onLowMemory() warning triggered")
+    fun recordLowMemory() = recordLowMemory(context = null)
+
+    fun recordLowMemory(context: Context?) {
+        val now = System.currentTimeMillis()
+        if (CrashReporter.isEnabled) {
+            CrashReporter.setKey("last_low_memory_time", now.toString())
+            CrashReporter.log("Kernel global onLowMemory() warning triggered")
+        }
+        context?.let { ctx ->
+            ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit {
+                putString(KEY_BB_LAST_TRIM, "ON_LOW_MEMORY")
+                putLong(KEY_BB_LAST_TRIM_MS, now)
+            }
+            syncProcessStateSummary(ctx)
+        }
     }
 
-    private fun createExceptionForExitReason(exit: ApplicationExitInfo): SystemProcessKilledException? {
+    private fun syncProcessStateSummary(context: Context) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            val appState = prefs.getString(KEY_BB_APP_STATE, null) ?: "UNKNOWN"
+            val playback = prefs.getString(KEY_BB_LAST_PLAYBACK, null)
+            val trim = prefs.getString(KEY_BB_LAST_TRIM, null)
+
+            val summary = buildString {
+                append("last_app_state=").append(appState)
+                playback?.let { append(",last_playback=").append(it) }
+                trim?.let { append(",last_memory_trim=").append(it) }
+            }
+            runCatching {
+                context.getSystemService(ActivityManager::class.java)
+                    ?.setProcessStateSummary(summary.toByteArray(Charsets.UTF_8))
+            }
+        }
+    }
+
+    internal fun createExceptionForExitReason(
+        exit: ApplicationExitInfo,
+        metadata: Map<String, String> = emptyMap()
+    ): SystemProcessKilledException? {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return null
 
         val description = exit.description?.takeIf { it.isNotBlank() } ?: "No system description"
         val importanceLabel = formatImportance(exit.importance)
+        val pssMb = exit.pss / 1024L
+        val rssMb = exit.rss / 1024L
+
+        val contextDetails = buildString {
+            append("state=").append(importanceLabel)
+            append(", rss=").append(rssMb).append("MB")
+            append(", pss=").append(pssMb).append("MB")
+            metadata["seconds_in_background"]?.let {
+                append(", bg=").append(it).append("s")
+            }
+            metadata["last_playback"]?.let {
+                append(", play=").append(it)
+            }
+            metadata["last_memory_trim"]?.let {
+                append(", trim=").append(it)
+            }
+            if (exit.status != 0) {
+                append(", status=").append(exit.status)
+            }
+        }
 
         return when (exit.reason) {
             ApplicationExitInfo.REASON_LOW_MEMORY ->
-                LowMemoryKillException("Process killed by LMK (Low Memory Killer) in state=$importanceLabel (status=${exit.status}): $description")
+                LowMemoryKillException("LMK kill [$contextDetails]: $description")
+
+            ApplicationExitInfo.REASON_OTHER ->
+                LowMemoryKillException("System kill [$contextDetails]: $description")
 
             ApplicationExitInfo.REASON_EXCESSIVE_RESOURCE_USAGE ->
-                ExcessiveResourceUsageException("Process killed for excessive resource usage in state=$importanceLabel (status=${exit.status}): $description")
+                ExcessiveResourceUsageException("Resource kill [$contextDetails]: $description")
 
             ApplicationExitInfo.REASON_ANR ->
-                ApplicationNotRespondingException("Process terminated due to ANR in state=$importanceLabel (status=${exit.status}): $description")
+                ApplicationNotRespondingException("ANR kill [$contextDetails]: $description")
 
             ApplicationExitInfo.REASON_CRASH_NATIVE ->
-                NativeCrashKillException("Process killed due to native crash in state=$importanceLabel (status=${exit.status}): $description")
+                NativeCrashKillException("Native crash kill [$contextDetails]: $description")
 
             else -> null
         }
     }
 
-    private fun buildExitMetadata(exit: ApplicationExitInfo): Map<String, String> {
+    internal fun buildExitMetadata(context: Context?, exit: ApplicationExitInfo): Map<String, String> {
         val metadata = mutableMapOf<String, String>()
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return metadata
+
+        val pssMb = exit.pss / 1024L
+        val rssMb = exit.rss / 1024L
 
         metadata["exit_reason"] = formatReason(exit.reason)
         metadata["importance"] = formatImportance(exit.importance)
         metadata["status"] = exit.status.toString()
         metadata["timestamp"] = exit.timestamp.toString()
         metadata["pid"] = exit.pid.toString()
-
-        val pssMb = exit.pss / 1024L
-        val rssMb = exit.rss / 1024L
         metadata["pss_mb"] = pssMb.toString()
         metadata["rss_mb"] = rssMb.toString()
 
@@ -135,11 +248,57 @@ object SystemStabilityMonitor {
             metadata["system_description"] = it
         }
 
+        val stateSummaryBytes = exit.processStateSummary
+        if (stateSummaryBytes != null && stateSummaryBytes.isNotEmpty()) {
+            val stateSummaryStr = runCatching { String(stateSummaryBytes, Charsets.UTF_8) }.getOrNull()
+            if (!stateSummaryStr.isNullOrBlank()) {
+                metadata["process_state_summary"] = stateSummaryStr
+                stateSummaryStr.split(",").forEach { part ->
+                    val kv = part.split("=", limit = 2)
+                    if (kv.size == 2) {
+                        val k = kv[0].trim()
+                        val v = kv[1].trim()
+                        if (k.isNotEmpty() && v.isNotEmpty()) {
+                            metadata[k] = v
+                        }
+                    }
+                }
+            }
+        }
+
+        if (context != null) {
+            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            val lastAppState = prefs.getString(KEY_BB_APP_STATE, null)
+            val lastBgTime = prefs.getLong(KEY_BB_BG_TIMESTAMP_MS, 0L)
+            val lastPlayback = prefs.getString(KEY_BB_LAST_PLAYBACK, null)
+            val lastTrim = prefs.getString(KEY_BB_LAST_TRIM, null)
+            val lastTrimTime = prefs.getLong(KEY_BB_LAST_TRIM_MS, 0L)
+
+            if (!metadata.containsKey("last_app_state") && lastAppState != null) {
+                metadata["last_app_state"] = lastAppState
+            }
+            if (!metadata.containsKey("seconds_in_background") && lastBgTime > 0L && exit.timestamp >= lastBgTime) {
+                val bgSec = (exit.timestamp - lastBgTime) / 1000L
+                metadata["seconds_in_background"] = bgSec.toString()
+            }
+            if (!metadata.containsKey("last_playback") && lastPlayback != null) {
+                metadata["last_playback"] = lastPlayback
+            }
+            if (!metadata.containsKey("last_memory_trim") && lastTrim != null) {
+                metadata["last_memory_trim"] = lastTrim
+                if (lastTrimTime > 0L && exit.timestamp >= lastTrimTime) {
+                    val trimSec = (exit.timestamp - lastTrimTime) / 1000L
+                    metadata["seconds_since_last_trim"] = trimSec.toString()
+                }
+            }
+        }
+
         return metadata
     }
 
     internal fun formatReason(reason: Int): String = when (reason) {
         ApplicationExitInfo.REASON_LOW_MEMORY -> "LOW_MEMORY"
+        ApplicationExitInfo.REASON_OTHER -> "OTHER"
         ApplicationExitInfo.REASON_EXCESSIVE_RESOURCE_USAGE -> "EXCESSIVE_RESOURCE_USAGE"
         ApplicationExitInfo.REASON_ANR -> "ANR"
         ApplicationExitInfo.REASON_CRASH_NATIVE -> "CRASH_NATIVE"
@@ -150,6 +309,8 @@ object SystemStabilityMonitor {
         ApplicationExitInfo.REASON_SIGNALED -> "SIGNALED"
         ApplicationExitInfo.REASON_INITIALIZATION_FAILURE -> "INITIALIZATION_FAILURE"
         ApplicationExitInfo.REASON_PERMISSION_CHANGE -> "PERMISSION_CHANGE"
+        ApplicationExitInfo.REASON_PACKAGE_UPDATED -> "PACKAGE_UPDATED"
+        ApplicationExitInfo.REASON_DEPENDENCY_DIED -> "DEPENDENCY_DIED"
         else -> "UNKNOWN_$reason"
     }
 

@@ -127,12 +127,21 @@ class BestiaPopApplication : Application(), ImageLoaderFactory {
             }
             override fun onActivityResumed(activity: android.app.Activity) {
                 PlaybackDiagnostics.log(PlaybackDiagnostics.TAG_LIFECYCLE, "${activity.javaClass.simpleName}.onResume() [UI in FOREGROUND]")
+                com.bestiapop.android.data.system.SystemStabilityMonitor.updateAppForegroundState(
+                    this@BestiaPopApplication,
+                    isForeground = true,
+                    screenName = activity.javaClass.simpleName
+                )
             }
             override fun onActivityPaused(activity: android.app.Activity) {
                 PlaybackDiagnostics.log(PlaybackDiagnostics.TAG_LIFECYCLE, "${activity.javaClass.simpleName}.onPause() [UI losing focus]")
             }
             override fun onActivityStopped(activity: android.app.Activity) {
                 PlaybackDiagnostics.log(PlaybackDiagnostics.TAG_LIFECYCLE, "${activity.javaClass.simpleName}.onStop() [UI in BACKGROUND]")
+                com.bestiapop.android.data.system.SystemStabilityMonitor.updateAppForegroundState(
+                    this@BestiaPopApplication,
+                    isForeground = false
+                )
             }
             override fun onActivitySaveInstanceState(activity: android.app.Activity, outState: android.os.Bundle) = Unit
             override fun onActivityDestroyed(activity: android.app.Activity) {
@@ -170,7 +179,7 @@ class BestiaPopApplication : Application(), ImageLoaderFactory {
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
         PlaybackDiagnostics.log(PlaybackDiagnostics.TAG_LIFECYCLE, "BestiaPopApplication.onTrimMemory(level=$level)")
-        com.bestiapop.android.data.system.SystemStabilityMonitor.recordMemoryTrim(level)
+        com.bestiapop.android.data.system.SystemStabilityMonitor.recordMemoryTrim(this, level)
         if (level >= ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN) {
             trimCaches()
         }
@@ -179,7 +188,7 @@ class BestiaPopApplication : Application(), ImageLoaderFactory {
     override fun onLowMemory() {
         super.onLowMemory()
         PlaybackDiagnostics.warn(PlaybackDiagnostics.TAG_LIFECYCLE, "BestiaPopApplication.onLowMemory() received")
-        com.bestiapop.android.data.system.SystemStabilityMonitor.recordLowMemory()
+        com.bestiapop.android.data.system.SystemStabilityMonitor.recordLowMemory(this)
         trimCaches()
     }
 

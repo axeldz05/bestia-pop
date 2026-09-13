@@ -6,6 +6,7 @@ import com.bestiapop.android.data.model.CandidateDownloadState
 import com.bestiapop.android.data.model.DownloadConflictPolicy
 import com.bestiapop.android.data.model.DownloadMessages
 import com.bestiapop.android.data.model.DownloadPlaylistDestination
+import com.bestiapop.android.data.model.OfflineMessages
 import com.bestiapop.android.data.model.OnlineCatalogTrack
 import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.data.model.Song
@@ -59,7 +60,8 @@ internal class CatalogDownloadCoordinator(
         current: List<OnlineCatalogTrack>,
         wasPreviewing: Boolean,
         apply: suspend (List<OnlineCatalogTrack>) -> OnlineCatalogTrack?
-    ) -> Unit
+    ) -> Unit,
+    private val isOnline: () -> Boolean = { true }
 ) {
     private val catalogBatchPlaylistMutex = Mutex()
     private var catalogBatchPlaylistTarget: CatalogBatchPlaylistTarget? = null
@@ -125,6 +127,14 @@ internal class CatalogDownloadCoordinator(
         )
     ).await()
 
+    private fun checkOnline(): Boolean {
+        if (!isOnline()) {
+            toast(OfflineMessages.connectionDisabled)
+            return false
+        }
+        return true
+    }
+
     /**
      * Level 2: Shared pre-flight validation, status checks, and feedback toast for downloading any online track.
      */
@@ -133,6 +143,7 @@ internal class CatalogDownloadCoordinator(
         source: ActiveDownloadSource,
         enqueue: suspend () -> Unit
     ): Boolean {
+        if (!checkOnline()) return false
         val key = TrackMatchKeys.downloadIdFor(meta.artist, meta.title)
         if (key.isEmpty()) {
             toast(DownloadMessages.missingArtistOrTitle)
@@ -184,10 +195,12 @@ internal class CatalogDownloadCoordinator(
     }
 
     fun retryActiveDownload(id: String) {
+        if (!checkOnline()) return
         processDownloadRuntime.retry(id)
     }
 
     fun resumeAllDownloads() {
+        if (!checkOnline()) return
         processDownloadRuntime.resumeAllErrors()
     }
 
@@ -261,6 +274,7 @@ internal class CatalogDownloadCoordinator(
     }
 
     fun downloadSelectedCandidatesBatch(collection: CatalogCollectionUiState) {
+        if (!checkOnline()) return
         val selected = collection.candidates.filter {
             it.isSelected && it.currentTrack != null
         }

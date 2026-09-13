@@ -20,28 +20,38 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.bestiapop.android.data.model.OfflineMessages
 import com.bestiapop.android.ui.MusicPlayerViewModel
+import com.bestiapop.android.ui.components.OfflineNoticeBanner
 import com.bestiapop.android.ui.components.SettingsScrollColumn
 import com.bestiapop.android.ui.components.SettingsSwitchRow
 
 @Composable
 fun TelemetrySettingsScreen(viewModel: MusicPlayerViewModel) {
     val telemetryEnabled by viewModel.telemetryEnabled.collectAsStateWithLifecycle()
+    val isOfflineMode by viewModel.isOfflineMode.collectAsStateWithLifecycle()
 
     SettingsScrollColumn(
         intro = "BestiaPop incluye telemetría técnica para diagnosticar problemas de estabilidad, " +
             "cierres del sistema operativo y consumo crítico de memoria."
     ) {
+        if (isOfflineMode) {
+            OfflineNoticeBanner(text = OfflineMessages.telemetryPausedBanner)
+            Spacer(modifier = Modifier.height(16.dp))
+        }
+
         SettingsSwitchRow(
             title = "Diagnósticos y estabilidad",
-            subtitle = if (telemetryEnabled) {
+            subtitle = if (isOfflineMode) {
+                OfflineMessages.telemetryPausedSubtitle
+            } else if (telemetryEnabled) {
                 "Activo — se transmiten reportes anónimos de cierres inesperados y memoria crítica"
             } else {
                 "Desactivado — ninguna métrica técnica se recopila ni envía al servidor"

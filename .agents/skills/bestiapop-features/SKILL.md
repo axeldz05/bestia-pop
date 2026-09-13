@@ -466,6 +466,24 @@ Manifest: `android:enableOnBackInvokedCallback="true"` en `MainActivity`.
 | Ajustes → Actualización | `AppUpdateScreen`: versión instalada + `versionCode`, link al repo (`GitHubReleaseUrls.repoUrl`), notas de la versión actual (cacheadas en `AppUpdateCheckStore` para verlas offline), botón Buscar actualización (`refreshReleases(force = true)`) y, si hay versiones nuevas, qué cambia en cada una + Actualizar (`startUpdate`) |
 | Play Console AAB | `./deploy-play.sh --upload --rollout` path legacy (no distribución de producto) |
 
+## 14. Modo sin conexión (Offline Mode)
+
+**Invariante:** Opción en Ajustes para cortar por completo el tráfico de red de la aplicación.
+- Oculta la pestaña **Descubrir** del bottom nav de `MainScreen`. Si estaba activa al activarlo, redirige a **Biblioteca**.
+- Desactiva y bloquea todo intento de red en OkHttp (`HttpClients.offlineInterceptor` lanza `IOException("Offline mode active")`).
+- `ConnectivityObserver` reporta `isCurrentlyOnline() = false` y emite `isOnline = false`.
+- Telemetría (`CrashReporter` / `FirebaseCrashlytics`) se deshabilita mientras el modo esté activo.
+- Scrobbling de ListenBrainz: las reproducciones se encolan normalmente en la base de datos local Room (`pending_listens`), pero el envío a la API queda en pausa hasta que se desactive el modo sin conexión.
+- Búsqueda remota de metadatos, letras en streaming, descarga de catálogo y chequeo de actualizaciones de app se bloquean y alertan al usuario mediante snackbar/toast.
+
+| Elemento | Ubicación |
+|----------|-----------|
+| Repositorio preferencias | `data/preferences/NetworkPreferencesRepository.kt` (`offlineModeFlow`, `setOfflineMode`, `isOfflineModeSync`) |
+| Interceptor HTTP | `data/network/HttpClients.kt` (`isOfflineMode` / `offlineInterceptor`) |
+| Observador conectividad | `data/network/ConnectivityObserver.kt` (`isCurrentlyOnline`, `isOnline`) |
+| UI Switch | `ui/screens/SettingsScreen.kt` |
+| Banners informativos | `ui/screens/ListenBrainzSettingsScreen.kt`, `ui/screens/TelemetrySettingsScreen.kt` |
+
 ## Relacionado
 
 - Capas y stack → `bestiapop-architecture`

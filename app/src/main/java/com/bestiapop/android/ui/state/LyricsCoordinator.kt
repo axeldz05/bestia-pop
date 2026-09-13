@@ -1,6 +1,7 @@
 package com.bestiapop.android.ui.state
 
 import androidx.compose.runtime.Immutable
+import com.bestiapop.android.data.model.OfflineMessages
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.data.network.LyricsTranslationResult
 import com.bestiapop.android.data.network.LyricsTranslationService
@@ -44,7 +45,9 @@ class LyricsCoordinator(
     private val repository: IMusicRepository,
     private val lyricsPreferences: LyricsPreferencesRepository,
     private val updateCurrentSongLyrics: (songId: Long, lyrics: String?) -> Unit,
-    private val updateCurrentItemLyrics: (lyrics: String?) -> Unit
+    private val updateCurrentItemLyrics: (lyrics: String?) -> Unit,
+    private val isOnline: () -> Boolean = { true },
+    private val toast: (String) -> Unit = {}
 ) {
     val settings: StateFlow<LyricsSettings> = lyricsPreferences.settingsFlow.stateIn(
         scope = scope,
@@ -137,7 +140,18 @@ class LyricsCoordinator(
             _translationState.update { it.copy(isTranslationActive = false) }
             return
         }
+        translateCommunityInternal(song, lines)
+    }
 
+    private fun checkOnline(): Boolean {
+        if (!isOnline()) {
+            toast(OfflineMessages.connectionDisabled)
+            return false
+        }
+        return true
+    }
+
+    private fun translateCommunityInternal(song: Song, lines: List<String>) {
         val cached = translationCache[song.id]
         if (cached != null) {
             _translationState.update {
@@ -148,6 +162,8 @@ class LyricsCoordinator(
             }
             return
         }
+
+        if (!checkOnline()) return
 
         scope.launch {
             _translationState.update { it.copy(isFetchingTranslation = true) }
@@ -179,6 +195,7 @@ class LyricsCoordinator(
     }
 
     private fun translateWithGoogleInternal(song: Song, lines: List<String>) {
+        if (!checkOnline()) return
         scope.launch {
             _translationState.update { it.copy(isFetchingTranslation = true) }
             val gResult = LyricsTranslationService.translateWithGoogle(lines)
@@ -199,6 +216,7 @@ class LyricsCoordinator(
     }
 
     fun ensureRomanization(songId: Long, lines: List<String>) {
+        if (!isOnline()) return
         if (romanizationCache.containsKey(songId)) return
         val hasNonLatin = lines.any { LyricsPhoneticProcessor.hasNonLatinScript(it) }
         if (!hasNonLatin) {
@@ -247,6 +265,11 @@ class LyricsCoordinator(
                         updateCurrentSongLyrics(song.id, localLyrics)
                         return@launch
                     }
+                }
+
+                if (!isOnline()) {
+                    if (force) _fetchError.value = OfflineMessages.connectionDisabled
+                    return@launch
                 }
 
                 val onlineLyrics = repository.fetchSongLyrics(song)?.trim()?.takeIf {

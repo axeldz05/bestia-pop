@@ -2,6 +2,7 @@ package com.bestiapop.android.ui.identify
 
 import com.bestiapop.android.data.model.IdentifyApplyFields
 import com.bestiapop.android.data.model.IdentifyApplyRequest
+import com.bestiapop.android.data.model.OfflineMessages
 import com.bestiapop.android.data.model.IdentifyCandidate
 import com.bestiapop.android.data.model.IdentifyProposal
 import com.bestiapop.android.data.model.Song
@@ -76,6 +77,7 @@ class IdentifyReviewCoordinator internal constructor(
     private val clearCatalogPreview: () -> Unit,
     private val toast: (String) -> Unit,
     private val uiAttached: () -> Boolean,
+    private val isOnline: () -> Boolean = { true },
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
 ) {
     private val _identifyReview = MutableStateFlow(IdentifyReviewState())
@@ -150,6 +152,14 @@ class IdentifyReviewCoordinator internal constructor(
         }
     }
 
+    private fun checkOnline(): Boolean {
+        if (!isOnline()) {
+            toast(OfflineMessages.connectionDisabled)
+            return false
+        }
+        return true
+    }
+
     /**
      * Submit songs for online metadata identification. Automatic triggers (import/WiFi) only
      * enqueue MEDIUM/LOW/NONE. [force] always looks up (manual setup). [showReview] opens the overlay.
@@ -163,6 +173,10 @@ class IdentifyReviewCoordinator internal constructor(
         fillGapsOnly: Boolean = false
     ) {
         if (songs.isEmpty()) return
+        if (!isOnline()) {
+            if (showReview) toast(OfflineMessages.connectionDisabled)
+            return
+        }
         identifyDroppedIds.removeAll(songs.map { it.id }.toSet())
         processIdentifyRuntime.submit(songs, force, showReview, fields, fillGapsOnly)
     }
@@ -737,6 +751,7 @@ class IdentifyReviewCoordinator internal constructor(
     fun searchAlbumCandidates(groupKey: String, query: String) {
         val clean = query.trim()
         if (clean.isEmpty()) return
+        if (!checkOnline()) return
         scope.launch {
             try {
                 val hits = withContext(ioDispatcher) {
@@ -1034,6 +1049,7 @@ class IdentifyReviewCoordinator internal constructor(
     fun searchIdentifyCandidates() {
         val state = _identifyReview.value
         val item = state.current ?: return
+        if (!checkOnline()) return
         val query = state.searchQueryDraft.trim()
         val filters = state.searchFilters.normalized()
         if (query.isEmpty() && !filters.hasAny) {
@@ -1075,6 +1091,7 @@ class IdentifyReviewCoordinator internal constructor(
         val state = _identifyReview.value
         val item = state.current ?: return
         if (state.isSearching || state.isLoadingMore) return
+        if (!checkOnline()) return
         val all = item.proposal.candidates
         val visible = state.visibleCandidateCount
         if (visible < all.size) {

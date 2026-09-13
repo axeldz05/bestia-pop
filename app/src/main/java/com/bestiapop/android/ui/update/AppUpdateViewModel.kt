@@ -6,6 +6,8 @@ import android.content.Intent
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.bestiapop.android.BuildConfig
+import com.bestiapop.android.data.model.OfflineMessages
+import com.bestiapop.android.data.preferences.NetworkPreferencesRepository
 import com.bestiapop.android.data.update.ApkUpdateInstaller
 import com.bestiapop.android.data.update.AppRelease
 import com.bestiapop.android.data.update.AppReleaseSelection
@@ -160,9 +162,13 @@ class AppUpdateViewModel internal constructor(
     private var downloadJob: Job? = null
     private var pendingInstall: AppRelease? = null
 
+    private fun isOffline(): Boolean =
+        NetworkPreferencesRepository.isOfflineModeSync(getApplication())
+
     fun maybeCheckOnLaunch() {
         if (dependencies.isDebugBuild) return
         if (dependencies.repository.isBlank()) return
+        if (isOffline()) return
         viewModelScope.launch {
             loadCachedNotes()
             val last = dependencies.store.lastCheckAtMs()
@@ -179,6 +185,10 @@ class AppUpdateViewModel internal constructor(
         checkJob = viewModelScope.launch {
             loadCachedNotes()
             if (!force && _notes.value.checked) return@launch
+            if (isOffline()) {
+                _notes.update { it.copy(loading = false, error = OfflineMessages.connectionDisabled, checked = true) }
+                return@launch
+            }
             if (dependencies.repository.isBlank()) {
                 _notes.update { it.copy(error = MISSING_REPOSITORY) }
                 return@launch
@@ -196,6 +206,10 @@ class AppUpdateViewModel internal constructor(
     }
 
     fun startUpdate(release: AppRelease) {
+        if (isOffline()) {
+            _state.value = AppUpdateUiState.Error(OfflineMessages.connectionDisabled)
+            return
+        }
         if (release.apkUrl.isNullOrBlank()) {
             _state.value = AppUpdateUiState.Error("Este release no tiene APK para instalar.")
             return

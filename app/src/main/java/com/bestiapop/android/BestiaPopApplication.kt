@@ -105,12 +105,16 @@ class BestiaPopApplication : Application(), ImageLoaderFactory {
     override fun onCreate() {
         super.onCreate()
         com.bestiapop.android.data.network.HttpClients.initialize(this)
+        com.bestiapop.android.data.network.HttpClients.isOfflineMode = {
+            com.bestiapop.android.data.preferences.NetworkPreferencesRepository.isOfflineModeSync(this)
+        }
         PlaybackDiagnostics.init(this)
-        // Collect crashes/non-fatals on release/beta builds only when telemetry is enabled by user.
-        val telemetryEnabled = com.bestiapop.android.data.preferences.TelemetryPreferencesRepository.isTelemetryEnabledSync(this)
-        CrashReporter.isEnabled = telemetryEnabled
-        FirebaseCrashlytics.getInstance().setCrashlyticsCollectionEnabled(telemetryEnabled && !BuildConfig.DEBUG)
-        if (telemetryEnabled) {
+        // Collect crashes/non-fatals on release/beta builds only when telemetry is enabled by user and not in offline mode.
+        val isOffline = com.bestiapop.android.data.preferences.NetworkPreferencesRepository.isOfflineModeSync(this)
+        val telemetryPermitted = !isOffline && com.bestiapop.android.data.preferences.TelemetryPreferencesRepository.isTelemetryEnabledSync(this)
+        CrashReporter.isEnabled = telemetryPermitted
+        FirebaseCrashlytics.getInstance().setCrashlyticsCollectionEnabled(telemetryPermitted && !BuildConfig.DEBUG)
+        if (telemetryPermitted) {
             com.bestiapop.android.data.system.SystemStabilityMonitor.checkHistoricalExitReasons(this)
         }
         PlaybackDiagnostics.log(PlaybackDiagnostics.TAG_LIFECYCLE, "BestiaPopApplication.onCreate version=${BuildConfig.VERSION_NAME}")
@@ -143,6 +147,7 @@ class BestiaPopApplication : Application(), ImageLoaderFactory {
         val maxMemoryPercent = if (isLowRam) 0.10 else 0.15
 
         return ImageLoader.Builder(this)
+            .okHttpClient { com.bestiapop.android.data.network.HttpClients.transfer }
             .memoryCache {
                 MemoryCache.Builder(this)
                     .maxSizePercent(maxMemoryPercent)

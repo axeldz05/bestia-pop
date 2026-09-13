@@ -25,6 +25,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.bestiapop.android.data.model.OfflineMessages
+import com.bestiapop.android.ui.components.OfflineNoticeBanner
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -52,6 +54,7 @@ fun ListenBrainzSettingsScreen(viewModel: MusicPlayerViewModel) {
     val settings by viewModel.listenBrainzSettings.collectAsStateWithLifecycle()
     val pendingCount by viewModel.pendingListenCount.collectAsStateWithLifecycle()
     val validationState by viewModel.tokenValidation.collectAsStateWithLifecycle()
+    val isOfflineMode by viewModel.isOfflineMode.collectAsStateWithLifecycle()
 
     var tokenDraft by remember(settings.userToken) { mutableStateOf(settings.userToken) }
     var showToken by remember { mutableStateOf(false) }
@@ -59,6 +62,11 @@ fun ListenBrainzSettingsScreen(viewModel: MusicPlayerViewModel) {
     SettingsScrollColumn(
         intro = "Registrá lo que escuchás en ListenBrainz y configurá las fuentes de recomendación para la pestaña Descubrir."
     ) {
+        if (isOfflineMode) {
+            OfflineNoticeBanner(text = OfflineMessages.listenBrainzPausedBanner)
+            Spacer(modifier = Modifier.height(16.dp))
+        }
+
         Surface(
             color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
             shape = RoundedCornerShape(14.dp),

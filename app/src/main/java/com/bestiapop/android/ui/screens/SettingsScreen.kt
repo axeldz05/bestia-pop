@@ -29,14 +29,18 @@ import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.SystemUpdate
+import androidx.compose.material.icons.filled.Wifi
+import androidx.compose.material.icons.filled.WifiOff
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.bestiapop.android.data.model.OfflineMessages
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -73,6 +77,7 @@ private enum class SettingsSection {
 fun SettingsScreen(viewModel: MusicPlayerViewModel, appUpdateViewModel: AppUpdateViewModel) {
     var section by remember { mutableStateOf<SettingsSection?>(null) }
     val pendingSettingsSection by viewModel.pendingSettingsSection.collectAsStateWithLifecycle()
+    val isOfflineMode by viewModel.isOfflineMode.collectAsStateWithLifecycle()
 
     LaunchedEffect(pendingSettingsSection) {
         when (pendingSettingsSection) {
@@ -99,6 +104,8 @@ fun SettingsScreen(viewModel: MusicPlayerViewModel, appUpdateViewModel: AppUpdat
     when (section) {
         null -> SettingsHome(
             appUpdateViewModel = appUpdateViewModel,
+            isOfflineMode = isOfflineMode,
+            onToggleOfflineMode = { viewModel.setOfflineMode(it) },
             onOpenThemes = { section = SettingsSection.Themes },
             onOpenLibrary = { section = SettingsSection.Library },
             onOpenListenBrainz = { section = SettingsSection.ListenBrainz },
@@ -162,6 +169,8 @@ private fun SettingsSectionPage(
 @Composable
 private fun SettingsHome(
     appUpdateViewModel: AppUpdateViewModel,
+    isOfflineMode: Boolean,
+    onToggleOfflineMode: (Boolean) -> Unit,
     onOpenThemes: () -> Unit,
     onOpenLibrary: () -> Unit,
     onOpenListenBrainz: () -> Unit,
@@ -309,6 +318,54 @@ private fun SettingsHome(
                 }
             }
         )
+
+        Card(
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = if (isOfflineMode) {
+                    MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.35f)
+                } else {
+                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
+                }
+            ),
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { onToggleOfflineMode(!isOfflineMode) }
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                Icon(
+                    imageVector = if (isOfflineMode) Icons.Default.WifiOff else Icons.Default.Wifi,
+                    contentDescription = null,
+                    tint = if (isOfflineMode) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(28.dp)
+                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = OfflineMessages.settingsTitle,
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = OfflineMessages.settingsSubtitle,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(
+                    checked = isOfflineMode,
+                    onCheckedChange = onToggleOfflineMode
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
         entries.forEachIndexed { index, entry ->
             if (index > 0) Spacer(modifier = Modifier.height(12.dp))
             SettingsEntryCard(

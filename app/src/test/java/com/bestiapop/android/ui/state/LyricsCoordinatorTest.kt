@@ -156,4 +156,53 @@ class LyricsCoordinatorTest {
         assertNull(coordinator.getRomanizedLines(10L))
         assertEquals(0, coordinator.translationState.value.romanizationVersion)
     }
+
+    @Test
+    fun ensureLyrics_whenOffline_blocksOnlineFetchAndSetsError() = runTest {
+        val context: Context = ApplicationProvider.getApplicationContext()
+        val storage = TemporaryPreferencesDataStore(context, "lyrics-test-offline-1")
+        val prefs = LyricsPreferencesRepository(storage.dataStore)
+        val repo = TestLyricsRepo(localLyrics = null, onlineLyrics = "Online lyrics line")
+
+        val coordinator = LyricsCoordinator(
+            scope = CoroutineScope(Dispatchers.Unconfined),
+            repository = repo,
+            lyricsPreferences = prefs,
+            updateCurrentSongLyrics = { _, _ -> },
+            updateCurrentItemLyrics = {},
+            isOnline = { false }
+        )
+
+        val song = testSong(77L)
+        coordinator.ensureLyrics(song, force = true)
+
+        assertEquals(com.bestiapop.android.data.model.OfflineMessages.connectionDisabled, coordinator.fetchError.value)
+        assertNull(repo.updatedSongId)
+        assertFalse(coordinator.isFetching.value)
+    }
+
+    @Test
+    fun translateWithGoogle_whenOffline_toastsAndBlocks() = runTest {
+        val context: Context = ApplicationProvider.getApplicationContext()
+        val storage = TemporaryPreferencesDataStore(context, "lyrics-test-offline-2")
+        val prefs = LyricsPreferencesRepository(storage.dataStore)
+        val repo = TestLyricsRepo()
+
+        var toasted: String? = null
+        val coordinator = LyricsCoordinator(
+            scope = CoroutineScope(Dispatchers.Unconfined),
+            repository = repo,
+            lyricsPreferences = prefs,
+            updateCurrentSongLyrics = { _, _ -> },
+            updateCurrentItemLyrics = {},
+            isOnline = { false },
+            toast = { toasted = it }
+        )
+
+        coordinator.confirmGoogleTranslate(testSong(88L), listOf("line 1"))
+
+        assertEquals(com.bestiapop.android.data.model.OfflineMessages.connectionDisabled, toasted)
+        assertFalse(coordinator.translationState.value.isFetchingTranslation)
+    }
 }
+

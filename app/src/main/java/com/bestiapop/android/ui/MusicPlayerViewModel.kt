@@ -240,6 +240,23 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private val identifyReviewStore = IdentifyReviewStore(application)
     private val pendingListenDao = AppDatabase.getDatabase(application).pendingListenDao()
     private val connectivityObserver = ConnectivityObserver(application)
+    private val networkPreferences = com.bestiapop.android.data.preferences.NetworkPreferencesRepository(application)
+    val isOfflineMode: StateFlow<Boolean> = networkPreferences.offlineModeFlow
+        .stateIn(viewModelScope, SharingStarted.Eagerly, networkPreferences.initialOfflineMode)
+
+    fun setOfflineMode(enabled: Boolean) {
+        viewModelScope.launch {
+            networkPreferences.setOfflineMode(enabled)
+        }
+    }
+
+    private inline fun runIfOnline(action: () -> Unit) {
+        if (!connectivityObserver.isCurrentlyOnline()) {
+            toast(OfflineMessages.connectionDisabled)
+            return
+        }
+        action()
+    }
 
     // Theme state
     val configuredThemeState: StateFlow<CustomTheme> = themeRepository.selectedThemeFlow
@@ -339,7 +356,8 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         awaitCatalogLoaded = { awaitFirstCatalogLoaded() },
         clearCatalogPreview = { clearCatalogPreview() },
         toast = { toast(it) },
-        uiAttached = { uiAttached.get() }
+        uiAttached = { uiAttached.get() },
+        isOnline = { connectivityObserver.isCurrentlyOnline() }
     )
     val identifyReview: StateFlow<IdentifyReviewState> = identifyCoordinator.identifyReview
     val identifySetup: StateFlow<IdentifySetupState?> = identifyCoordinator.identifySetup
@@ -585,7 +603,9 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         repository = repository,
         lyricsPreferences = lyricsPreferences,
         updateCurrentSongLyrics = { songId, lyrics -> playbackRuntime.updateCurrentSongLyrics(songId, lyrics) },
-        updateCurrentItemLyrics = { lyrics -> playbackRuntime.updateCurrentItemLyrics(lyrics) }
+        updateCurrentItemLyrics = { lyrics -> playbackRuntime.updateCurrentItemLyrics(lyrics) },
+        isOnline = { connectivityObserver.isCurrentlyOnline() },
+        toast = ::toast
     )
     val lyricsSettings: StateFlow<LyricsSettings> = lyricsCoordinator.settings
     val lyricsTranslationState: StateFlow<LyricsTranslationState> = lyricsCoordinator.translationState
@@ -719,7 +739,8 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         rematchDiscover = ::rematchDiscoverAfterLibraryChange,
         launchCycleYouTubeMatch = { query, current, wasPreviewing, apply ->
             catalogInspectionCoordinator.launchCycleYouTubeMatch(query, current, wasPreviewing, apply)
-        }
+        },
+        isOnline = { connectivityObserver.isCurrentlyOnline() }
     )
 
     private val submenuActionCoordinator = SubmenuActionCoordinator(
@@ -730,7 +751,11 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         startRadioForStream = { startRadio() },
         playPlayableCollection = { items, index -> playPlayableCollection(items, startIndex = index) },
         searchCatalog = ::searchCatalog,
-        navigateToDiscover = { setSelectedNavIndex(NAV_DISCOVER) },
+        navigateToDiscover = {
+            runIfOnline {
+                setSelectedNavIndex(NAV_DISCOVER)
+            }
+        },
         toast = ::toast,
         getLibrarySongs = { libraryProjection.songs.value },
         resolveAlbumArtwork = { libraryProjection.resolveAlbumArtwork(it) },
@@ -1341,17 +1366,20 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     fun enqueueGenre(genreName: String) =
         playbackExecutionCoordinator.enqueueGenre(genreName)
 
-    fun identifyAlbum(album: Album) {
+    fun identifyAlbum(album: Album) = runIfOnline {
         val albumSongs = songsForAlbum(libraryProjection.songs.value, album.name)
         if (albumSongs.isNotEmpty()) {
             openIdentifySetup(albumSongs, contextTitle = "Álbum: ${album.displayName}")
         }
     }
 
-    fun identifyAlbum(albumName: String) {
+    fun identifyAlbum(albumName: String) = runIfOnline {
         val album = libraryProjection.albums.value.firstOrNull { albumNamesMatch(it.name, albumName) }
         if (album != null) {
-            identifyAlbum(album)
+            val albumSongs = songsForAlbum(libraryProjection.songs.value, album.name)
+            if (albumSongs.isNotEmpty()) {
+                openIdentifySetup(albumSongs, contextTitle = "Álbum: ${album.displayName}")
+            }
         } else {
             val albumSongs = songsForAlbum(libraryProjection.songs.value, albumName)
             if (albumSongs.isNotEmpty()) {
@@ -1751,7 +1779,9 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     fun identifyImportedGaps(songs: List<Song>) = identifyCoordinator.identifyImportedGaps(songs)
 
     /** Single-song identify: open existing pending item, or open setup configuration dialog. */
-    fun identifySongForReview(song: Song) = identifyCoordinator.identifySongForReview(song)
+    fun identifySongForReview(song: Song) = runIfOnline {
+        identifyCoordinator.identifySongForReview(song)
+    }
 
     fun openIdentifySetup(songs: List<Song>, contextTitle: String = "") =
         identifyCoordinator.openIdentifySetup(songs, contextTitle)

@@ -173,14 +173,25 @@ fun MainScreen(
     val bottomChromePadding = with(density) {
         if (bottomChromeHeightPx > 0) bottomChromeHeightPx.toDp() else 152.dp
     }
+    val isOfflineMode by viewModel.isOfflineMode.collectAsStateWithLifecycle()
 
-    val navItems = listOf(
-        NavItem("Biblioteca", Icons.Default.LibraryMusic),
-        NavItem("Descubrir", Icons.Default.Explore),
-        NavItem("Descargas", Icons.Default.Download),
-        NavItem("Añadir", Icons.Default.DriveFolderUpload),
-        NavItem("Ajustes", Icons.Default.Settings)
-    )
+    LaunchedEffect(isOfflineMode, selectedNavIndex) {
+        if (isOfflineMode && selectedNavIndex == com.bestiapop.android.data.preferences.NAV_DISCOVER) {
+            viewModel.setSelectedNavIndex(com.bestiapop.android.data.preferences.NAV_LIBRARY)
+        }
+    }
+
+    val navItems = remember(isOfflineMode) {
+        buildList {
+            add(NavItem(com.bestiapop.android.data.preferences.NAV_LIBRARY, "Biblioteca", Icons.Default.LibraryMusic))
+            if (!isOfflineMode) {
+                add(NavItem(com.bestiapop.android.data.preferences.NAV_DISCOVER, "Descubrir", Icons.Default.Explore))
+            }
+            add(NavItem(com.bestiapop.android.data.preferences.NAV_DOWNLOADS, "Descargas", Icons.Default.Download))
+            add(NavItem(com.bestiapop.android.data.preferences.NAV_WIFI, "Añadir", Icons.Default.DriveFolderUpload))
+            add(NavItem(com.bestiapop.android.data.preferences.NAV_SETTINGS, "Ajustes", Icons.Default.Settings))
+        }
+    }
 
     fun openFullPlayer() {
         if (android.os.SystemClock.elapsedRealtime() < suppressBarOpenUntilElapsedRealtime) return
@@ -254,7 +265,7 @@ fun MainScreen(
                                 clearPendingExit()
                             }
                         )
-                        1 -> DiscoverScreen(viewModel = viewModel)
+                        1 -> if (!isOfflineMode) DiscoverScreen(viewModel = viewModel)
                         2 -> DownloadsScreen(viewModel = viewModel)
                         3 -> WebServerScreen(
                             viewModel = viewModel,
@@ -320,16 +331,16 @@ fun MainScreen(
                 containerColor = MaterialTheme.colorScheme.surface,
                 contentColor = MaterialTheme.colorScheme.onSurface
             ) {
-                navItems.forEachIndexed { index, item ->
+                navItems.forEach { item ->
                     NavigationBarItem(
-                        selected = selectedNavIndex == index,
+                        selected = selectedNavIndex == item.id,
                         onClick = {
-                            viewModel.setSelectedNavIndex(index)
+                            viewModel.setSelectedNavIndex(item.id)
                             dismissFullPlayer()
                             clearPendingExit()
                         },
                         icon = {
-                            if (index == 2 && downloadBadgeCount > 0) {
+                            if (item.id == com.bestiapop.android.data.preferences.NAV_DOWNLOADS && downloadBadgeCount > 0) {
                                 BadgedBox(
                                     badge = {
                                         Badge {
@@ -468,4 +479,8 @@ fun MainScreen(
     }
 }
 
-private data class NavItem(val label: String, val icon: androidx.compose.ui.graphics.vector.ImageVector)
+private data class NavItem(
+    val id: Int,
+    val label: String,
+    val icon: androidx.compose.ui.graphics.vector.ImageVector
+)

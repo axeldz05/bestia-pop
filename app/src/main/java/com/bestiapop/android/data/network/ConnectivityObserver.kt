@@ -5,26 +5,30 @@ import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
+import com.bestiapop.android.data.preferences.NetworkPreferencesRepository
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 
-class ConnectivityObserver(context: Context) {
+class ConnectivityObserver(private val context: Context) {
 
     private val connectivityManager =
         context.applicationContext.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
 
-    val isOnline: Flow<Boolean> = callbackFlow {
-        trySend(isCurrentlyOnline())
+    private val networkPreferences = NetworkPreferencesRepository(context.applicationContext)
+
+    private val rawNetworkOnline: Flow<Boolean> = callbackFlow {
+        trySend(isPhysicalNetworkOnline())
 
         val callback = object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: Network) {
-                trySend(isCurrentlyOnline())
+                trySend(isPhysicalNetworkOnline())
             }
 
             override fun onLost(network: Network) {
-                trySend(isCurrentlyOnline())
+                trySend(isPhysicalNetworkOnline())
             }
 
             override fun onCapabilitiesChanged(
@@ -53,10 +57,23 @@ class ConnectivityObserver(context: Context) {
         awaitClose {
             runCatching { connectivityManager.unregisterNetworkCallback(callback) }
         }
+    }
+
+    val isOnline: Flow<Boolean> = combine(
+        rawNetworkOnline,
+        networkPreferences.offlineModeFlow
+    ) { online, offlineMode ->
+        val overridden = testOverrides?.currentlyOnline
+        overridden ?: (online && !offlineMode)
     }.distinctUntilChanged()
 
     fun isCurrentlyOnline(): Boolean {
         testOverrides?.let { return it.currentlyOnline }
+        if (NetworkPreferencesRepository.isOfflineModeSync(context)) return false
+        return isPhysicalNetworkOnline()
+    }
+
+    private fun isPhysicalNetworkOnline(): Boolean {
         val network = connectivityManager.activeNetwork ?: return false
         val caps = connectivityManager.getNetworkCapabilities(network) ?: return false
         return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&

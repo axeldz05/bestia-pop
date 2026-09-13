@@ -3,8 +3,10 @@ package com.bestiapop.android.data.network
 import android.content.Context
 import okhttp3.Cache
 import okhttp3.ConnectionPool
+import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import java.io.File
+import java.io.IOException
 import java.util.concurrent.TimeUnit
 
 /**
@@ -19,7 +21,18 @@ object HttpClients {
 
     private const val HTTP_CACHE_SIZE_BYTES = 25L * 1024 * 1024 // 25 MB
 
+    @Volatile
+    var isOfflineMode: () -> Boolean = { false }
+
+    private val offlineInterceptor = Interceptor { chain ->
+        if (isOfflineMode()) {
+            throw IOException(com.bestiapop.android.data.model.OfflineMessages.blockedByUser)
+        }
+        chain.proceed(chain.request())
+    }
+
     private val baseBuilder: OkHttpClient.Builder = OkHttpClient.Builder()
+        .addInterceptor(offlineInterceptor)
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(20, TimeUnit.SECONDS)
         .writeTimeout(20, TimeUnit.SECONDS)

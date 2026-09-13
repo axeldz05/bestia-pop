@@ -1,7 +1,7 @@
 package com.bestiapop.android.ui.screens.nowplaying
 
 import android.content.Intent
-import android.net.Uri
+import androidx.core.net.toUri
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -242,7 +242,7 @@ fun NowPlayingLyricsView(
                                     .clickable(enabled = !source.url.isNullOrBlank()) {
                                         source.url?.let { urlStr ->
                                             try {
-                                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(urlStr))
+                                                val intent = Intent(Intent.ACTION_VIEW, urlStr.toUri())
                                                 context.startActivity(intent)
                                             } catch (_: Exception) {}
                                         }

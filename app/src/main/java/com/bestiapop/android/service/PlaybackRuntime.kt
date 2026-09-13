@@ -56,9 +56,6 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-private const val INITIAL_PLAYBACK_WINDOW_SIZE = 30
-private const val QUEUE_APPEND_CHUNK_SIZE = 100
-
 /**
  * Process-scoped playback owner retained by BestiaPopApplication.
  *
@@ -91,6 +88,21 @@ class PlaybackRuntime internal constructor(
         MutableStateFlow<DiscoverPlaybackOrigin>(DiscoverPlaybackOrigin.None)
     val discoverPlaybackOrigin = _discoverPlaybackOrigin.asStateFlow()
 
+    private val controllerLifecycleManager: PlaybackControllerLifecycleManager = PlaybackControllerLifecycleManager(
+        scope = scope,
+        dependencies = dependencies,
+        getPlayWhenReadyIntent = { playWhenReadyIntent },
+        getIsPlaying = { _isPlaying.value },
+        getQueueSize = { _queue.value.size },
+        emitEvent = { _events.tryEmit(it) },
+        getPlayerListener = { playerListener },
+        onControllerAttached = ::onControllerAttached,
+        onControllerDisconnectedCleanup = ::onControllerDisconnectedCleanup,
+        onTaskRemovedCleanup = ::onTaskRemovedCleanup,
+        onIdleReleasedCleanup = ::onIdleReleasedCleanup,
+        samplePositionAndOwnership = ::samplePositionAndOwnership
+    )
+
     private val sessionHydrator: PlaybackSessionHydrator = PlaybackSessionHydrator(
         scope = scope,
         dependencies = dependencies,
@@ -103,9 +115,9 @@ class PlaybackRuntime internal constructor(
         getCurrentQueueIndex = ::currentQueueIndex,
         isLibraryReady = { libraryReady.value },
         getLibrary = { library },
-        getUiAttachments = { uiAttachments.get() },
+        getUiAttachments = { controllerLifecycleManager.uiAttachmentCount },
         isPlayWhenReadyIntent = { playWhenReadyIntent },
-        hasController = { controller != null },
+        hasController = { controllerLifecycleManager.isControllerConnected },
         getControllerMediaItemCount = { controller?.mediaItemCount ?: 0 },
         onClearDiscoverPlaybackOrigin = ::clearDiscoverPlaybackOrigin,
         onSetCurrentItem = { item, persist -> setCurrentItem(item, persistLastPlayed = persist) },
@@ -113,6 +125,36 @@ class PlaybackRuntime internal constructor(
         onSetIsPlaying = { _isPlaying.value = it },
         onApplyHydratedQueue = ::applyHydratedQueue,
         onTogglePlayPause = ::togglePlayPause
+    )
+
+    private val timelineSynchronizer = PlaybackTimelineSynchronizer(
+        scope = scope,
+        dependencies = dependencies,
+        getController = { controller },
+        getQueue = { _queue.value },
+        setQueue = { _queue.value = it },
+        getCurrentItem = { _currentItem.value },
+        setCurrentItem = { item, persist, hint -> setCurrentItem(item, persistLastPlayed = persist, hint = hint) },
+        setPlaybackPositionMs = { _playbackPositionMs.value = it },
+        getLastMediaItemIndex = { lastMediaItemIndex },
+        setLastMediaItemIndex = { lastMediaItemIndex = it },
+        getPlayWhenReadyIntent = { playWhenReadyIntent },
+        setPlayWhenReadyIntent = { playWhenReadyIntent = it },
+        getPendingPlayIntentEpoch = { pendingPlayIntentEpoch },
+        cancelPendingPlayIntent = ::cancelPendingPlayIntent,
+        setPendingNewPlaybackQueueEntryId = { pendingNewPlaybackQueueEntryId = it },
+        getPlaybackGeneration = { playbackGeneration },
+        isPlaybackGenerationCurrent = ::isPlaybackGenerationCurrent,
+        ensureRemoteReadyAt = ::ensureRemoteReadyAt,
+        prefetchAround = ::prefetchAround,
+        syncShuffleToPlayer = ::syncShuffleToPlayer,
+        updateTickerLifecycle = ::updateTickerLifecycle,
+        invalidatePlaybackWork = ::invalidatePlaybackWork,
+        clearDiscoverPlaybackOrigin = ::clearDiscoverPlaybackOrigin,
+        persistPlaybackSession = { persistPlaybackSession(it) },
+        applyPendingExternalPlaybackModes = ::applyPendingExternalPlaybackModes,
+        restartAsyncPlaybackWork = ::restartAsyncPlaybackWork,
+        setLiveSessionHydrated = { sessionHydrator.liveSessionHydrated = it }
     )
 
     private val queueCoordinator: PlaybackQueueCoordinator = PlaybackQueueCoordinator(
@@ -132,7 +174,7 @@ class PlaybackRuntime internal constructor(
         onSetPlayWhenReadyIntent = { playWhenReadyIntent = it },
         getController = { controller },
         hasMaterializedTimeline = ::hasMaterializedTimeline,
-        setTimelineMaterialized = { timelineMaterialized = it },
+        setTimelineMaterialized = { timelineSynchronizer.timelineMaterialized = it },
         getLastMediaItemIndex = { lastMediaItemIndex },
         setLastMediaItemIndex = { lastMediaItemIndex = it },
         currentQueueIndex = ::currentQueueIndex,
@@ -197,6 +239,27 @@ class PlaybackRuntime internal constructor(
     val radioLoading = radioCoordinator.radioLoading
     val radioMode = radioCoordinator.radioMode
     val radioStatusLabel = radioCoordinator.radioStatusLabel
+
+    private val analyticsCoordinator = PlaybackAnalyticsCoordinator(
+        scope = scope,
+        dependencies = dependencies,
+        getCurrentItem = { _currentItem.value },
+        setCurrentItem = { item, persist, hint -> setCurrentItem(item, persistLastPlayed = persist, hint = hint) },
+        getCurrentSong = { _currentSong.value },
+        setCurrentSong = { _currentSong.value = it },
+        getQueue = { _queue.value },
+        setQueue = { _queue.value = it },
+        getController = { controller },
+        getIsPlaying = { _isPlaying.value },
+        setIsPlaying = { _isPlaying.value = it },
+        getPlaybackPositionMs = { _playbackPositionMs.value },
+        setPlaybackPositionMs = { _playbackPositionMs.value = it },
+        getLastSeekTimestamp = { lastSeekTimestamp },
+        clearRemoteRecoveryAfterProgress = ::clearRemoteRecoveryAfterProgress,
+        clearRejectedQueueEntries = { streamRecoveryCoordinator.clearRejectedQueueEntries() },
+        maybeSaveWhileListening = ::maybeSaveWhileListening
+    )
+
     private val _queueFocusEpoch = MutableStateFlow(0)
     val queueFocusEpoch = _queueFocusEpoch.asStateFlow()
     val saveWhileListeningDownloads: StateFlow<List<ActiveDownload>> =
@@ -206,75 +269,60 @@ class PlaybackRuntime internal constructor(
     val events = _events.asSharedFlow()
 
     private val started = AtomicBoolean(false)
-    private val uiAttachments = AtomicInteger(0)
-    private var controller: PlaybackControllerFacade? = null
-    private var controllerConnector: PlaybackControllerConnector? = null
-    private var controllerFuture: PlaybackControllerConnection? = null
-    private var controllerReconnectJob: Job? = null
-    private var consecutiveControllerFailures = 0
-    private var tickerJob: Job? = null
+    internal val controller: PlaybackControllerFacade?
+        get() = controllerLifecycleManager.controller
+
     private var library: List<Song> = emptyList()
     private val libraryReady = MutableStateFlow(false)
 
     private var lastMediaItemIndex = -1
     private var lastKnownQueueEntryId: String? = null
-    private var timelineMaterialized = false
+    private var timelineMaterialized: Boolean
+        get() = timelineSynchronizer.timelineMaterialized
+        set(value) {
+            timelineSynchronizer.timelineMaterialized = value
+        }
     private var playWhenReadyIntent = false
-    private var suppressPlaylistMutationCallbacks = false
+    private var suppressPlaylistMutationCallbacks: Boolean
+        get() = timelineSynchronizer.suppressPlaylistMutationCallbacks
+        set(value) {
+            timelineSynchronizer.suppressPlaylistMutationCallbacks = value
+        }
     private var suppressShuffleWrapDetection = false
     private var pendingNewPlaybackQueueEntryId: String? = null
     private var playbackIntentEpoch = 0L
     private var pendingPlayIntentEpoch: Long? = null
-    private var lastTouchedSongId = -1L
-    private var lyricsHydrateJob: Job? = null
     private var lastSeekTimestamp = 0L
 
     private var playbackGeneration = 0L
     private var queueSelectionJob: Job? = null
-    private var queueAppendJob: Job? = null
     private val selectionGate = PlaybackSelectionIntentGate()
-
-    private val warmingUp = AtomicBoolean(false)
 
     init {
         start()
     }
 
     fun warmup() {
-        if (controller != null || uiAttachments.get() > 0) return
+        if (controller != null || controllerLifecycleManager.uiAttachmentCount > 0) return
         PlaybackDiagnostics.log(
             PlaybackDiagnostics.TAG_RUNTIME,
             "PlaybackRuntime.warmup() (anticipating MediaController connection)"
         )
-        warmingUp.set(true)
-        ensureControllerConnection()
+        controllerLifecycleManager.warmUpController()
     }
 
     fun attachUi() {
-        warmingUp.set(false)
-        val count = uiAttachments.incrementAndGet()
-        PlaybackDiagnostics.log(
-            PlaybackDiagnostics.TAG_RUNTIME,
-            "PlaybackRuntime.attachUi() (uiAttachments=$count)"
-        )
-        ensureControllerConnection()
+        controllerLifecycleManager.attachUi()
         maybeSeedIdlePlayer()
         val curSong = _currentSong.value
         if (curSong != null && curSong.lyrics.isNullOrEmpty()) {
             hydrateCurrentSongLyrics(curSong.id)
         }
         scope.launch { samplePositionAndOwnership() }
-        updateTickerLifecycle()
     }
 
     fun detachUi() {
-        val count = uiAttachments.updateAndGet { c -> (c - 1).coerceAtLeast(0) }
-        PlaybackDiagnostics.log(
-            PlaybackDiagnostics.TAG_RUNTIME,
-            "PlaybackRuntime.detachUi() (uiAttachments=$count)"
-        )
-        updateTickerLifecycle()
-        releaseControllerIfIdle()
+        controllerLifecycleManager.detachUi()
     }
 
     fun requestListenSync() {
@@ -300,7 +348,7 @@ class PlaybackRuntime internal constructor(
         sessionHydrator.restoreSystemPlaybackSnapshot()
 
     internal fun attachControllerForTest(controller: PlaybackControllerFacade) {
-        attachController(controller)
+        controllerLifecycleManager.attachControllerForTest(controller)
     }
 
     internal fun connectForTest(connector: PlaybackControllerConnector) {
@@ -308,10 +356,10 @@ class PlaybackRuntime internal constructor(
     }
 
     internal val controllerConnectedForTest: Boolean
-        get() = controller != null
+        get() = controllerLifecycleManager.isControllerConnected
 
     internal val tickerActiveForTest: Boolean
-        get() = tickerJob?.isActive == true
+        get() = controllerLifecycleManager.isTickerActive
 
     internal suspend fun tickForTest() {
         samplePositionAndOwnership()
@@ -390,70 +438,21 @@ class PlaybackRuntime internal constructor(
     }
 
     private fun configureControllerConnector(connector: PlaybackControllerConnector) {
-        controllerConnector = connector
-        ensureControllerConnection()
+        controllerLifecycleManager.configureControllerConnector(connector)
     }
 
     private fun ensureControllerConnection() {
-        if (!shouldRetainController()) return
-        if (controller != null || controllerFuture != null ||
-            controllerReconnectJob?.isActive == true
-        ) {
-            return
-        }
-        val connector = controllerConnector ?: return
-        val future = runCatching(connector::connect).getOrElse {
-            onControllerConnectionFailed()
-            return
-        }
-        controllerFuture = future
-        future.addListener {
-            scope.launch {
-                if (controllerFuture !== future) return@launch
-                controllerFuture = null
-                runCatching(future::get).fold(
-                    onSuccess = { connected ->
-                        consecutiveControllerFailures = 0
-                        if (shouldRetainController()) {
-                            attachController(connected)
-                        } else {
-                            connected.release()
-                        }
-                    },
-                    onFailure = { onControllerConnectionFailed() }
-                )
-            }
-        }
+        controllerLifecycleManager.ensureControllerConnection()
     }
 
-    private fun onControllerConnectionFailed() {
-        consecutiveControllerFailures++
-        if (consecutiveControllerFailures == 1) {
-            _events.tryEmit("No se pudo conectar la reproducción")
-        }
-        if (!shouldRetainController() || controllerReconnectJob?.isActive == true) return
-        val delayMs = dependencies.controllerReconnectBackoffMs(consecutiveControllerFailures)
-            .coerceAtLeast(0L)
-        controllerReconnectJob = scope.launch {
-            delay(delayMs)
-            controllerReconnectJob = null
-            ensureControllerConnection()
-        }
-    }
-
-    private fun attachController(newController: PlaybackControllerFacade) {
-        if (controller === newController) return
-        check(controller == null) { "PlaybackRuntime already owns a controller" }
-        controller = newController
-        timelineMaterialized = false
-        newController.addListener(playerListener)
+    private fun onControllerAttached(newController: PlaybackControllerFacade) {
+        timelineSynchronizer.timelineMaterialized = false
         syncFromController()
         restorePlaybackModes()
         maybeSeedIdlePlayer()
         if (playWhenReadyIntent && _currentItem.value != null) {
             requestPlaybackForCurrent()
         }
-        updateTickerLifecycle()
     }
 
     fun requestResumeAfterServiceRestart() {
@@ -474,118 +473,44 @@ class PlaybackRuntime internal constructor(
         }
     }
 
-    private fun handleControllerDisconnected(disconnected: PlaybackControllerFacade) {
-        if (controller !== disconnected) return
-        controller = null
-        timelineMaterialized = false
+    private fun onControllerDisconnectedCleanup(disconnected: PlaybackControllerFacade) {
+        timelineSynchronizer.timelineMaterialized = false
         sessionHydrator.liveSessionHydrated = false
         _isPlaying.value = false
-        tickerJob?.cancel()
-        tickerJob = null
         invalidatePlaybackWork(clearRejectedEntries = false)
-        disconnected.release()
         if (playWhenReadyIntent && _currentItem.value != null) beginPendingPlayIntent()
-        ensureControllerConnection()
     }
 
-    fun onTaskRemovedNotEngaged() {
-        PlaybackDiagnostics.warn(
-            PlaybackDiagnostics.TAG_RUNTIME,
-            "PlaybackRuntime.onTaskRemovedNotEngaged: task removed while not engaged, releasing controller"
-        )
-        warmingUp.set(false)
-        uiAttachments.set(0)
+    private fun onTaskRemovedCleanup() {
         playWhenReadyIntent = false
         _isPlaying.value = false
         cancelPendingPlayIntent()
-        controllerReconnectJob?.cancel()
-        controllerReconnectJob = null
-        controllerFuture?.let { future ->
-            controllerFuture = null
-            future.cancel()
-        }
-        tickerJob?.cancel()
-        tickerJob = null
-        val owned = controller
-        controller = null
-        timelineMaterialized = false
+        timelineSynchronizer.timelineMaterialized = false
         sessionHydrator.liveSessionHydrated = false
-        owned?.release()
     }
 
-    private fun shouldRetainController(): Boolean =
-        warmingUp.get() ||
-                uiAttachments.get() > 0 ||
-                playWhenReadyIntent ||
-                _isPlaying.value
+    private fun onIdleReleasedCleanup() {
+        timelineSynchronizer.timelineMaterialized = false
+        sessionHydrator.liveSessionHydrated = false
+    }
+
+    fun onTaskRemovedNotEngaged() {
+        controllerLifecycleManager.onTaskRemovedNotEngaged()
+    }
 
     private fun releaseControllerIfIdle() {
-        val shouldRetain = shouldRetainController()
-        if (shouldRetain) {
-            PlaybackDiagnostics.log(
-                PlaybackDiagnostics.TAG_RUNTIME,
-                "PlaybackRuntime.releaseControllerIfIdle: RETAINING controller (uiAttachments=${uiAttachments.get()}, queueSize=${_queue.value.size}, playWhenReadyIntent=$playWhenReadyIntent, isPlaying=${_isPlaying.value})"
-            )
-            ensureControllerConnection()
-            return
-        }
-        PlaybackDiagnostics.warn(
-            PlaybackDiagnostics.TAG_RUNTIME,
-            "PlaybackRuntime.releaseControllerIfIdle: RELEASING controller (idle, no UI, no playback)"
-        )
-        controllerReconnectJob?.cancel()
-        controllerReconnectJob = null
-        controllerFuture?.let { future ->
-            controllerFuture = null
-            future.cancel()
-        }
-        tickerJob?.cancel()
-        tickerJob = null
-        val owned = controller
-        controller = null
-        timelineMaterialized = false
-        sessionHydrator.liveSessionHydrated = false
-        owned?.release()
+        controllerLifecycleManager.releaseControllerIfIdle()
     }
 
     private fun postOrRunReleaseControllerIfIdle() {
-        val posted = try {
-            val looper = android.os.Looper.myLooper()
-            if (looper != null) {
-                android.os.Handler(looper).post {
-                    releaseControllerIfIdle()
-                }
-            } else {
-                false
-            }
-        } catch (_: Throwable) {
-            false
-        }
-        if (!posted) {
-            releaseControllerIfIdle()
-        }
+        controllerLifecycleManager.postOrRunReleaseControllerIfIdle()
     }
 
     private fun updateTickerLifecycle() {
-        val shouldTick = dependencies.startTicker &&
-                controller?.isPlaying == true &&
-                uiAttachments.get() > 0
-        if (!shouldTick) {
-            tickerJob?.cancel()
-            tickerJob = null
-            return
-        }
-        if (tickerJob?.isActive == true) return
-        tickerJob = scope.launch {
-            while (isActive && controller?.isPlaying == true && uiAttachments.get() > 0) {
-                samplePositionAndOwnership()
-                delay(POSITION_TICK_MS)
-            }
-            tickerJob = null
-        }
+        controllerLifecycleManager.updateTickerLifecycle()
     }
 
-    private val playerListener = object : PlaybackControllerFacade.Listener {
+    private val playerListener: PlaybackControllerFacade.Listener = object : PlaybackControllerFacade.Listener {
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             PlaybackDiagnostics.log(
                 PlaybackDiagnostics.TAG_RUNTIME,
@@ -674,7 +599,7 @@ class PlaybackRuntime internal constructor(
         }
 
         override fun onDisconnected(controller: PlaybackControllerFacade) {
-            scope.launch { handleControllerDisconnected(controller) }
+            scope.launch { controllerLifecycleManager.handleControllerDisconnected(controller) }
         }
     }
 
@@ -707,80 +632,7 @@ class PlaybackRuntime internal constructor(
     }
 
     private fun reconcileTimelineFromController() {
-        if (suppressPlaylistMutationCallbacks || queueAppendJob?.isActive == true) return
-        val player = controller ?: return
-        val itemCount = player.mediaItemCount
-        if (itemCount <= 0) {
-            if (playWhenReadyIntent || pendingPlayIntentEpoch != null || timelineMaterialized) return
-            val changed = _queue.value.isNotEmpty()
-            if (changed) invalidatePlaybackWork(clearRejectedEntries = false)
-            _queue.value = emptyList()
-            lastMediaItemIndex = -1
-            timelineMaterialized = false
-            playWhenReadyIntent = false
-            cancelPendingPlayIntent()
-            _playbackPositionMs.value = 0L
-            setCurrentItem(null, persistLastPlayed = false)
-            if (changed) {
-                clearDiscoverPlaybackOrigin()
-                persistPlaybackSession(force = true)
-            }
-            return
-        }
-        val rebuilt = player.items()
-        if (rebuilt.size != itemCount || rebuilt.isEmpty()) return
-        val oldQueue = _queue.value
-        val oldQueueEntryIds = oldQueue.map { it.queueEntryId }
-        val newQueueEntryIds = rebuilt.map { it.queueEntryId }
-
-        val isWindowOfOldQueue = oldQueue.size > INITIAL_PLAYBACK_WINDOW_SIZE &&
-                newQueueEntryIds.size <= INITIAL_PLAYBACK_WINDOW_SIZE &&
-                newQueueEntryIds.isNotEmpty() &&
-                run {
-                    val firstIndex = oldQueueEntryIds.indexOf(newQueueEntryIds.first())
-                    firstIndex >= 0 &&
-                            firstIndex + newQueueEntryIds.size <= oldQueueEntryIds.size &&
-                            oldQueueEntryIds.subList(firstIndex, firstIndex + newQueueEntryIds.size) == newQueueEntryIds
-                }
-        val structureChanged = !isWindowOfOldQueue && oldQueueEntryIds != newQueueEntryIds
-        if (structureChanged) invalidatePlaybackWork(clearRejectedEntries = false)
-
-        val index = player.currentMediaItemIndex.coerceIn(rebuilt.indices)
-        val targetQueueEntryId = rebuilt[index].queueEntryId
-
-        val liveQueue = if (isWindowOfOldQueue) {
-            oldQueue
-        } else if (structureChanged) {
-            rebuilt.map { rebuiltItem ->
-                oldQueue.firstOrNull { it.queueEntryId == rebuiltItem.queueEntryId } ?: rebuiltItem
-            }
-        } else {
-            oldQueue
-        }
-
-        val liveCurrentItem = liveQueue.firstOrNull { it.queueEntryId == targetQueueEntryId } ?: rebuilt[index]
-        val occurrenceChanged = _currentItem.value?.queueEntryId != liveCurrentItem.queueEntryId
-
-        _queue.value = liveQueue
-        timelineMaterialized = true
-        sessionHydrator.liveSessionHydrated = true
-        lastMediaItemIndex = liveQueue.indexOfFirst { it.queueEntryId == targetQueueEntryId }
-            .takeIf { it >= 0 } ?: index
-        _playbackPositionMs.value = player.currentPosition.coerceAtLeast(0L)
-        setCurrentItem(
-            liveCurrentItem,
-            persistLastPlayed = occurrenceChanged,
-            hint = if (occurrenceChanged) {
-                PlaybackChangeHint.NEW_PLAYBACK
-            } else {
-                PlaybackChangeHint.METADATA_UPDATE
-            }
-        )
-        applyPendingExternalPlaybackModes()
-        if (structureChanged) {
-            persistPlaybackSession(force = true)
-            restartAsyncPlaybackWork()
-        }
+        timelineSynchronizer.reconcileTimelineFromController()
     }
 
     private fun reconcileExternalShuffleMode(enabled: Boolean) {
@@ -825,7 +677,7 @@ class PlaybackRuntime internal constructor(
         }
         _currentSong.value = displayed
         dependencies.listenTracker.onTrackChanged(local, hint)
-        if (displayed != null && displayed.lyrics.isNullOrEmpty() && uiAttachments.get() > 0) {
+        if (displayed != null && displayed.lyrics.isNullOrEmpty() && controllerLifecycleManager.uiAttachmentCount > 0) {
             hydrateCurrentSongLyrics(displayed.id)
         }
         if (persistLastPlayed) {
@@ -835,45 +687,23 @@ class PlaybackRuntime internal constructor(
     }
 
     fun hydrateCurrentSongLyrics(songId: Long) {
-        lyricsHydrateJob?.cancel()
-        lyricsHydrateJob = scope.launch(dependencies.ioDispatcher) {
-            val full = dependencies.loadSongById(songId) ?: return@launch
-            if (full.lyrics.isNullOrEmpty()) return@launch
-            withContext(scope.coroutineContext) {
-                applyLyricsToCurrent(songId, full.lyrics)
-            }
-        }
+        analyticsCoordinator.hydrateCurrentSongLyrics(songId)
     }
 
     fun updateCurrentSongLyrics(songId: Long, lyrics: String?) {
-        applyLyricsToCurrent(songId, lyrics)
+        analyticsCoordinator.updateCurrentSongLyrics(songId, lyrics)
     }
 
     fun updateCurrentItemLyrics(lyrics: String?) {
-        val cur = _currentItem.value ?: return
-        when (cur) {
-            is PlayableItem.Local -> applyLyricsToCurrent(cur.song.id, lyrics)
-            is PlayableItem.Remote -> _currentItem.value = cur.copy(lyrics = lyrics)
-        }
+        analyticsCoordinator.updateCurrentItemLyrics(lyrics)
     }
 
     private fun applyLyricsToCurrent(songId: Long, lyrics: String?) {
-        val current = _currentSong.value
-        if (current?.id == songId) {
-            _currentSong.value = current.copy(lyrics = lyrics)
-        }
-        val curItem = _currentItem.value
-        if (curItem is PlayableItem.Local && curItem.song.id == songId) {
-            _currentItem.value = curItem.copy(song = curItem.song.copy(lyrics = lyrics))
-        } else if (curItem is PlayableItem.Remote && songId < 0) {
-            _currentItem.value = curItem.copy(lyrics = lyrics)
-        }
+        analyticsCoordinator.applyLyricsToCurrent(songId, lyrics)
     }
 
     private fun touchLastPlayed(song: Song?) {
-        if (song == null || song.id <= 0L || song.id == lastTouchedSongId) return
-        lastTouchedSongId = song.id
-        scope.launch(Dispatchers.IO) { dependencies.touchSongLastPlayed(song.id) }
+        analyticsCoordinator.touchLastPlayed(song)
     }
 
     private fun currentQueueIndex(): Int {
@@ -1512,14 +1342,7 @@ class PlaybackRuntime internal constructor(
     }
 
     private fun creditItemPlayback(item: PlayableItem?, completed: Boolean = false) {
-        val playedMs = if (completed && item != null && item.durationMs > 0L) {
-            item.durationMs
-        } else {
-            _playbackPositionMs.value
-        }
-        if (playedMs > 0L) {
-            dependencies.listenTracker.creditPlaybackTime(playedMs)
-        }
+        analyticsCoordinator.creditItemPlayback(item, completed)
     }
 
     private fun ensureRemoteReadyAt(index: Int, startPlaying: Boolean) {
@@ -1573,10 +1396,7 @@ class PlaybackRuntime internal constructor(
     }
 
     private fun triggerFlushPostponedTagWrites() {
-        val activeId = (_currentItem.value as? PlayableItem.Local)?.song?.id
-        scope.launch(dependencies.ioDispatcher) {
-            dependencies.flushPostponedTagWrites(activeId)
-        }
+        analyticsCoordinator.triggerFlushPostponedTagWrites()
     }
 
     private fun ensurePreparedForPlayback() {
@@ -1605,56 +1425,7 @@ class PlaybackRuntime internal constructor(
     }
 
     private suspend fun samplePositionAndOwnership() {
-        val player = controller ?: return
-        if (_isPlaying.value != player.isPlaying) _isPlaying.value = player.isPlaying
-        if (player.isPlaying && dependencies.clockMs() - lastSeekTimestamp > 600L) {
-            _playbackPositionMs.value = player.currentPosition.coerceAtLeast(0L)
-            if (_playbackPositionMs.value >= FALLBACK_SUCCESS_POSITION_MS) {
-                clearRemoteRecoveryAfterProgress()
-                streamRecoveryCoordinator.clearRejectedQueueEntries()
-            }
-            val duration = player.duration
-            val current = _currentItem.value
-            if (duration > 0L && current != null && current.durationMs <= 0L) {
-                when (current) {
-                    is PlayableItem.Local -> {
-                        scope.launch(Dispatchers.IO) {
-                            dependencies.updateSongDuration(current.song.id, duration)
-                        }
-                        dependencies.listenTracker.onDurationKnown(current.song.id, duration)
-                    }
-
-                    is PlayableItem.Remote -> {
-                        val index = player.currentMediaItemIndex
-                        val updated = current.withIdentity { copy(durationMs = duration) }
-                        val live = _queue.value.toMutableList()
-                        if (index in live.indices) {
-                            live[index] = updated
-                            _queue.value = live
-                            setCurrentItem(
-                                updated,
-                                persistLastPlayed = false,
-                                hint = PlaybackChangeHint.METADATA_UPDATE
-                            )
-                        }
-                    }
-                }
-            }
-            (current as? PlayableItem.Remote)?.let { remote ->
-                maybeSaveWhileListening(
-                    remote,
-                    SaveWhileListeningEvent.PROGRESS,
-                    _playbackPositionMs.value,
-                    durationMs = remote.durationMs.takeIf { it > 0L } ?: duration
-                )
-            }
-        } else if (!player.isPlaying && player.mediaItemCount > 0) {
-            _playbackPositionMs.value = player.currentPosition.coerceAtLeast(0L)
-        }
-        dependencies.listenTracker.onPlaybackTick(
-            player.isPlaying,
-            dependencies.elapsedRealtimeMs()
-        )
+        analyticsCoordinator.samplePositionAndOwnership()
     }
 
     private fun maybeSaveWhileListening(
@@ -1730,147 +1501,25 @@ class PlaybackRuntime internal constructor(
         startPlaying: Boolean,
         newPlayback: Boolean = false
     ) {
-        val player = controller ?: return
-        if (items.isEmpty()) return
-        val validIndex = startIndex.coerceIn(items.indices)
-        if (newPlayback) pendingNewPlaybackQueueEntryId = items[validIndex].queueEntryId
-        playWhenReadyIntent = startPlaying
-        if (!startPlaying || (newPlayback && player.isPlaying)) player.pause()
-
-        queueAppendJob?.cancel()
-        queueAppendJob = null
-
-        val useWindow = items.size > INITIAL_PLAYBACK_WINDOW_SIZE
-        val windowStart = if (useWindow) (validIndex - 10).coerceAtLeast(0) else 0
-        val windowEnd =
-            if (useWindow) (windowStart + INITIAL_PLAYBACK_WINDOW_SIZE).coerceAtMost(items.size) else items.size
-        val initialItems = if (useWindow) items.subList(windowStart, windowEnd) else items
-        val initialIndex = validIndex - windowStart
-
-        suppressPlaylistMutationCallbacks = true
-        try {
-            player.setMediaItems(
-                initialItems,
-                initialIndex,
-                startPositionMs.coerceAtLeast(0L)
-            )
-        } finally {
-            suppressPlaylistMutationCallbacks = false
-        }
-        timelineMaterialized = true
-        lastMediaItemIndex = validIndex
-        val remote = items[validIndex] as? PlayableItem.Remote
-        if (remote != null && dependencies.streamAccess.needsResolve(remote)) {
-            if (startPlaying) ensureRemoteReadyAt(validIndex, startPlaying = true)
-        } else {
-            player.prepare()
-            if (startPlaying) prefetchAround(validIndex)
-        }
-        if (startPlaying) {
-            pendingPlayIntentEpoch = null
-            player.play()
-        }
-        syncShuffleToPlayer()
-        updateTickerLifecycle()
-
-        if (useWindow) {
-            val generation = playbackGeneration
-            queueAppendJob = scope.launch(Dispatchers.Default) {
-                var addedAny = false
-                if (windowEnd < items.size) {
-                    val tail = items.subList(windowEnd, items.size)
-                    for (chunk in tail.chunked(QUEUE_APPEND_CHUNK_SIZE)) {
-                        if (!isActive || !isPlaybackGenerationCurrent(generation)) break
-                        delay(40L)
-                        withContext(Dispatchers.Main.immediate) {
-                            if (hasMaterializedTimeline() && isPlaybackGenerationCurrent(generation)) {
-                                mutateMaterializedTimeline(syncShuffle = false) { it.addMediaItems(chunk) }
-                                addedAny = true
-                            }
-                        }
-                    }
-                }
-                if (windowStart > 0) {
-                    val head = items.subList(0, windowStart)
-                    var insertIndex = 0
-                    for (chunk in head.chunked(QUEUE_APPEND_CHUNK_SIZE)) {
-                        if (!isActive || !isPlaybackGenerationCurrent(generation)) break
-                        delay(40L)
-                        withContext(Dispatchers.Main.immediate) {
-                            if (hasMaterializedTimeline() && isPlaybackGenerationCurrent(generation)) {
-                                mutateMaterializedTimeline(syncShuffle = false) { it.addMediaItems(insertIndex, chunk) }
-                                insertIndex += chunk.size
-                                addedAny = true
-                            }
-                        }
-                    }
-                }
-                if (addedAny && isActive && isPlaybackGenerationCurrent(generation)) {
-                    withContext(Dispatchers.Main.immediate) {
-                        if (hasMaterializedTimeline() && isPlaybackGenerationCurrent(generation)) {
-                            syncShuffleToPlayer()
-                        }
-                    }
-                }
-            }
-        }
+        timelineSynchronizer.reloadPlayerTimeline(items, startIndex, startPositionMs, startPlaying, newPlayback)
     }
 
     private fun hasMaterializedTimeline(): Boolean =
-        timelineMaterialized && (controller?.mediaItemCount ?: 0) > 0
+        timelineSynchronizer.hasMaterializedTimeline()
 
     private fun mutateMaterializedTimeline(
         syncShuffle: Boolean = true,
         mutation: (PlaybackControllerFacade) -> Unit
     ) {
-        val player = controller ?: return
-        if (!hasMaterializedTimeline()) return
-        suppressPlaylistMutationCallbacks = true
-        try {
-            mutation(player)
-        } finally {
-            suppressPlaylistMutationCallbacks = false
-        }
-        if (syncShuffle) {
-            syncShuffleToPlayer()
-        }
+        timelineSynchronizer.mutateMaterializedTimeline(syncShuffle, mutation)
     }
 
     private fun syncChangedTimelineItems(oldQueue: List<PlayableItem>, newQueue: List<PlayableItem>) {
-        mutateMaterializedTimeline(syncShuffle = false) { player ->
-            newQueue.forEachIndexed { index, item ->
-                if (item !== oldQueue.getOrNull(index)) {
-                    player.replaceMediaItem(index, item)
-                }
-            }
-        }
+        timelineSynchronizer.syncChangedTimelineItems(oldQueue, newQueue)
     }
 
-    private fun rebuildPlayerQueueAroundCurrent(newOrder: List<PlayableItem>): Boolean {
-        val player = controller ?: return false
-        if (!hasMaterializedTimeline() || newOrder.isEmpty()) return false
-        val current = _currentItem.value ?: return false
-        val playIndex = newOrder.indexOfFirst { it.queueEntryId == current.queueEntryId }
-            .takeIf { it >= 0 } ?: return false
-        val playerIndex = player.currentMediaItemIndex
-        if (playerIndex !in 0 until player.mediaItemCount) return false
-        suppressPlaylistMutationCallbacks = true
-        try {
-            if (playerIndex + 1 < player.mediaItemCount) {
-                player.removeMediaItems(playerIndex + 1, player.mediaItemCount)
-            }
-            if (playerIndex > 0) player.removeMediaItems(0, playerIndex)
-            if (playIndex > 0) player.addMediaItems(0, newOrder.subList(0, playIndex))
-            if (playIndex < newOrder.lastIndex) {
-                player.addMediaItems(newOrder.subList(playIndex + 1, newOrder.size))
-            }
-            lastMediaItemIndex = player.currentMediaItemIndex.coerceAtLeast(0)
-        } finally {
-            suppressPlaylistMutationCallbacks = false
-        }
-        syncShuffleToPlayer()
-        return true
-    }
+    private fun rebuildPlayerQueueAroundCurrent(newOrder: List<PlayableItem>): Boolean =
+        timelineSynchronizer.rebuildPlayerQueueAroundCurrent(newOrder)
 
     private fun applyQueueReorder(
         newOrder: List<PlayableItem>,
@@ -1878,14 +1527,7 @@ class PlaybackRuntime internal constructor(
         positionMs: Long,
         startPlaying: Boolean
     ) {
-        _queue.value = newOrder
-        lastMediaItemIndex = focusIndex
-        setCurrentItem(newOrder[focusIndex], persistLastPlayed = false)
-        _playbackPositionMs.value = positionMs
-        if (!hasMaterializedTimeline()) return
-        if (!rebuildPlayerQueueAroundCurrent(newOrder)) {
-            reloadPlayerTimeline(newOrder, focusIndex, positionMs, startPlaying)
-        }
+        timelineSynchronizer.applyQueueReorder(newOrder, focusIndex, positionMs, startPlaying)
     }
 
     private fun permuteQueueToPlayOrder(
@@ -1942,8 +1584,7 @@ class PlaybackRuntime internal constructor(
     private fun invalidatePlaybackWork(clearRejectedEntries: Boolean = true) {
         playbackGeneration++
         streamRecoveryCoordinator.invalidatePlaybackWork(clearRejectedEntries)
-        queueAppendJob?.cancel()
-        queueAppendJob = null
+        timelineSynchronizer.cancelQueueAppend()
         invalidateQueueSelection()
         sessionHydrator.cancelSeekPersistence()
     }
@@ -1956,8 +1597,6 @@ class PlaybackRuntime internal constructor(
     }
 
     companion object {
-        private const val POSITION_TICK_MS = 200L
-        private const val FALLBACK_SUCCESS_POSITION_MS = 1_000L
         private const val RADIO_BATCH_SIZE = 30
 
         internal fun create(

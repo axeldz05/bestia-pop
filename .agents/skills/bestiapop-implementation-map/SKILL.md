@@ -90,6 +90,7 @@ Paths relativos a `app/src/main/java/com/bestiapop/android/`.
 | Multi-select bar | `ui/components/MultiSelectActionBar.kt` (`MultiSelectActionBar` L1/L2 con `MultiSelectActions`, `PlaylistAdditionActionBar` con `onSelectAll` / "Todo") |
 | Catalog category chips | `ui/components/CatalogCategoryChipsRow.kt` (`CatalogCategoryChipsRow` L2, `CatalogCategoryChip` L1 con icono/label unificados para catálogo y descubrir) |
 | Search history UI | `ui/components/SearchHistoryComponents.kt` (`SearchHistoryItemRow` L1, `SearchRecentChipsRow` L2, `SearchHistorySheet` L2 modal con lista completa, vaciar y eliminar individual) |
+| Invite friends dialog | `ui/components/InviteFriendsDialog.kt` (diálogo con código QR y enlace copiable para descargar APK) |
 | Similar preview dialog | `ui/components/SimilarPlaylistPreviewDialog.kt`; state `ui/state/SimilarPlaylistPreviewState.kt` |
 | Factories / carga UI | `ui/state/UiStateFlows.kt` (`stateInUi`, `mapToUiState`) y `LoadableUiState.kt` (`LoadPhase`, `LoadableUiState.loading` / `success` / `failure` / `idle`) |
 | Proyecciones biblioteca | `ui/state/LibraryProjectionState.kt` (`projectCatalog`, `sameLibraryCatalog`, `catalogLoaded`, `prefsReady`, `songs`/`albums`/`songList` Eagerly, `artists`/`genres`/`recentSongs`/`recentList` WhileSubscribed, haystack solo con query, `LIBRARY_SEARCH_DEBOUNCE_MS`, `playStats`, `buildListModel`; `Dispatchers.Default`; no emite lista nueva si `overlayOpen`) |

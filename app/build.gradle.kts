@@ -212,6 +212,9 @@ dependencies {
     // Audio file tag write (mp3 / m4a / flac / ogg) — minSdk 26 OK with official JAR
     implementation(libs.jaudiotagger)
 
+    // QR Code generation
+    implementation(libs.zxing.core)
+
     // Functional & Integration UI Testing
     testImplementation(libs.junit4)
     testImplementation(libs.json)

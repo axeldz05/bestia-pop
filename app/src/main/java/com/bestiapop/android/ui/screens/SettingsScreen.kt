@@ -44,6 +44,7 @@ import com.bestiapop.android.data.model.OfflineMessages
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -54,6 +55,7 @@ import androidx.compose.ui.unit.dp
 import com.bestiapop.android.BuildConfig
 import com.bestiapop.android.data.update.GitHubReleaseUrls
 import com.bestiapop.android.ui.MusicPlayerViewModel
+import com.bestiapop.android.ui.components.InviteFriendsDialog
 import com.bestiapop.android.ui.components.ScreenBackHeader
 import com.bestiapop.android.ui.update.AppUpdateScreen
 import com.bestiapop.android.ui.update.AppUpdateViewModel
@@ -183,6 +185,7 @@ private fun SettingsHome(
     onOpenUpdate: () -> Unit
 ) {
     val context = LocalContext.current
+    var showInviteDialog by rememberSaveable { mutableStateOf(false) }
     val updateNotes by appUpdateViewModel.notes.collectAsStateWithLifecycle()
     val repo = BuildConfig.GITHUB_REPOSITORY.trim()
     val latestUrl = if (repo.isNotEmpty()) GitHubReleaseUrls.latestPageUrl(repo) else ""
@@ -295,7 +298,7 @@ private fun SettingsHome(
             ),
             SettingsHomeEntry(
                 "Invitar amigos",
-                "Link de descarga del APK",
+                "QR y link de descarga del APK",
                 Icons.Default.Share
             ) {
                 if (repo.isEmpty()) {
@@ -305,6 +308,15 @@ private fun SettingsHome(
                         Toast.LENGTH_LONG
                     ).show()
                 } else {
+                    showInviteDialog = true
+                }
+            }
+        )
+
+        if (showInviteDialog && repo.isNotEmpty()) {
+            InviteFriendsDialog(
+                url = latestUrl,
+                onShare = {
                     context.startActivity(
                         Intent.createChooser(
                             Intent(Intent.ACTION_SEND).apply {
@@ -315,9 +327,10 @@ private fun SettingsHome(
                             "Invitar amigos"
                         )
                     )
-                }
-            }
-        )
+                },
+                onDismiss = { showInviteDialog = false }
+            )
+        }
 
         Card(
             shape = RoundedCornerShape(16.dp),

@@ -82,36 +82,6 @@ graph TD
     WS --> Repo
 ```
 
-### Diagrama de ciclo de vida de reproducción
-
-```mermaid
-sequenceDiagram
-    autonumber
-    actor Usuario as Usuario
-    participant UI as MainActivity / UI Compose
-    participant PR as PlaybackRuntime
-    participant MS as MusicService (ExoPlayer)
-    participant Audio as AudioManager (Audio Focus)
-    participant Sys as System UI / Bluetooth
-
-    Usuario->>UI: Inicia la app
-    UI->>PR: attachPlaybackUi() tras primer frame
-    PR->>MS: Conecta MediaController e inicializa el servicio
-    MS->>Audio: Solicita AUDIOFOCUS_GAIN
-    MS->>Sys: Inicia Foreground Service (mediaPlayback) y notificación Media3
-    Usuario->>UI: Envía app a segundo plano
-    UI->>PR: detachPlaybackUi() (libera UI, playback continúa)
-    Sys->>MS: Control multimedia externo (Notificación, Lockscreen o Bluetooth)
-    MS->>PR: onPlaybackStartedFromService() sincroniza estado y sesión
-    Audio->>MS: AUDIOFOCUS_LOSS_TRANSIENT (llamada entrante o audio externo)
-    MS->>MS: Pausa reproducción reteniendo notificación en segundo plano
-    Audio->>MS: AUDIOFOCUS_GAIN
-    MS->>MS: Reanuda automáticamente el playback
-    Usuario->>Sys: Descarta la app del gestor de tareas (Task Removed)
-    Sys->>MS: onTaskRemoved()
-    MS->>MS: Detiene ExoPlayer, libera recursos y destruye el Foreground Service
-```
-
 ## Funciones principales
 
 ### Biblioteca y exploración

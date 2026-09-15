@@ -31,7 +31,7 @@ Las actualizaciones siguientes se instalan desde **Ajustes → Actualización �
 
 La barra inferior reúne **Biblioteca**, **Descubrir**, **Descargas**, **Añadir** y **Ajustes**. La navegación respeta el botón atrás retrocediendo jerárquicamente un nivel por toque, exigiendo doble pulsación en la raíz para salir sin cortar la reproducción.
 
-## Arquitectura y ciclo de vida
+## Arquitectura
 
 ### Diagrama de arquitectura
 

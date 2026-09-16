@@ -108,10 +108,16 @@ class SystemStabilityMonitorTest {
         org.junit.Assert.assertTrue(bgTime > 0L)
 
         SystemStabilityMonitor.updatePlaybackState(context, isPlaying = true, playWhenReady = true, trackDescription = "Song A")
-        assertEquals("PLAYING(Song A)", prefs.getString("bb_last_playback", null))
+        assertEquals("PLAYING(LOCAL)", prefs.getString("bb_last_playback", null))
 
         SystemStabilityMonitor.updatePlaybackState(context, isPlaying = false, playWhenReady = false, trackDescription = "Song A")
-        assertEquals("PAUSED(Song A)", prefs.getString("bb_last_playback", null))
+        assertEquals("PAUSED(LOCAL)", prefs.getString("bb_last_playback", null))
+
+        SystemStabilityMonitor.updatePlaybackState(context, isPlaying = true, playWhenReady = true, trackDescription = "remote:12345")
+        assertEquals("PLAYING(REMOTE)", prefs.getString("bb_last_playback", null))
+
+        SystemStabilityMonitor.updatePlaybackState(context, isPlaying = false, playWhenReady = false, trackDescription = "remote:12345")
+        assertEquals("PAUSED(REMOTE)", prefs.getString("bb_last_playback", null))
 
         SystemStabilityMonitor.recordMemoryTrim(context, 15)
         assertEquals("RUNNING_CRITICAL", prefs.getString("bb_last_trim", null))
@@ -119,5 +125,43 @@ class SystemStabilityMonitorTest {
 
         SystemStabilityMonitor.recordLowMemory(context)
         assertEquals("ON_LOW_MEMORY", prefs.getString("bb_last_trim", null))
+    }
+
+    @Test
+    fun createExceptionForExitReason_ignoresCachedKills_reportsForegroundKills() {
+        val cachedLmk = createMockExitInfo(
+            reason = ApplicationExitInfo.REASON_LOW_MEMORY,
+            importance = ActivityManager.RunningAppProcessInfo.IMPORTANCE_CACHED
+        )
+        assertNull(SystemStabilityMonitor.createExceptionForExitReason(cachedLmk))
+
+        val cachedOther = createMockExitInfo(
+            reason = ApplicationExitInfo.REASON_OTHER,
+            importance = ActivityManager.RunningAppProcessInfo.IMPORTANCE_CACHED
+        )
+        assertNull(SystemStabilityMonitor.createExceptionForExitReason(cachedOther))
+
+        val fgLmk = createMockExitInfo(
+            reason = ApplicationExitInfo.REASON_LOW_MEMORY,
+            importance = ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND
+        )
+        val fgException = SystemStabilityMonitor.createExceptionForExitReason(fgLmk)
+        org.junit.Assert.assertNotNull(fgException)
+        org.junit.Assert.assertTrue(fgException is LowMemoryKillException)
+    }
+
+    private fun createMockExitInfo(reason: Int, importance: Int): ApplicationExitInfo {
+        val constructor = ApplicationExitInfo::class.java.getDeclaredConstructor()
+        constructor.isAccessible = true
+        val exit = constructor.newInstance()
+
+        fun setField(name: String, value: Any) {
+            val field = ApplicationExitInfo::class.java.getDeclaredField(name)
+            field.isAccessible = true
+            field.set(exit, value)
+        }
+        setField("mReason", reason)
+        setField("mImportance", importance)
+        return exit
     }
 }

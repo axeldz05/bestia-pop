@@ -99,15 +99,20 @@ object SystemStabilityMonitor {
     /**
      * Updates playback state for forensic correlation on unexpected process exit.
      */
-    fun updatePlaybackState(context: Context, isPlaying: Boolean, playWhenReady: Boolean, trackDescription: String? = null) {
+    fun updatePlaybackState(
+        context: Context,
+        isPlaying: Boolean,
+        playWhenReady: Boolean,
+        trackKind: com.bestiapop.android.data.util.TrackKind = com.bestiapop.android.data.util.TrackKind.NONE
+    ) {
         val status = when {
             isPlaying -> "PLAYING"
             playWhenReady -> "PREPARING"
-            trackDescription != null -> "PAUSED"
+            trackKind != com.bestiapop.android.data.util.TrackKind.NONE -> "PAUSED"
             else -> "IDLE"
         }
-        val fullStatus = if (trackDescription != null && status != "IDLE") {
-            "$status($trackDescription)"
+        val fullStatus = if (trackKind != com.bestiapop.android.data.util.TrackKind.NONE && status != "IDLE") {
+            "$status($trackKind)"
         } else {
             status
         }
@@ -117,6 +122,18 @@ object SystemStabilityMonitor {
         }
         syncProcessStateSummary(context)
     }
+
+    fun updatePlaybackState(
+        context: Context,
+        isPlaying: Boolean,
+        playWhenReady: Boolean,
+        trackDescription: String?
+    ) = updatePlaybackState(
+        context = context,
+        isPlaying = isPlaying,
+        playWhenReady = playWhenReady,
+        trackKind = com.bestiapop.android.data.util.TrackKind.from(trackDescription)
+    )
 
     /**
      * In-flight telemetry: captures severe memory pressure signals from the Android kernel / framework.
@@ -180,11 +197,17 @@ object SystemStabilityMonitor {
         }
     }
 
+    internal fun isBenignProcessExit(exit: ApplicationExitInfo): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return false
+        return exit.importance >= ActivityManager.RunningAppProcessInfo.IMPORTANCE_CACHED &&
+            (exit.reason == ApplicationExitInfo.REASON_LOW_MEMORY || exit.reason == ApplicationExitInfo.REASON_OTHER)
+    }
+
     internal fun createExceptionForExitReason(
         exit: ApplicationExitInfo,
         metadata: Map<String, String> = emptyMap()
     ): SystemProcessKilledException? {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return null
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R || isBenignProcessExit(exit)) return null
 
         val description = exit.description?.takeIf { it.isNotBlank() } ?: "No system description"
         val importanceLabel = formatImportance(exit.importance)

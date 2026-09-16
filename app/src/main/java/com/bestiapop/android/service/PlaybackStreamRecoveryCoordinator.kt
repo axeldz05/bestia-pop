@@ -149,9 +149,10 @@ internal class PlaybackStreamRecoveryCoordinator(
         val player = getController() ?: return
         val index = player.currentMediaItemIndex
         val queued = getQueue().getOrNull(index)
+        val trackKind = com.bestiapop.android.data.util.TrackKind.from(queued)
         PlaybackDiagnostics.warn(
             PlaybackDiagnostics.TAG_RUNTIME,
-            "PlaybackRuntime.handlePlayerError: index=$index, item='${queued?.title}', isRemote=${queued is PlayableItem.Remote}, playWhenReadyIntent=${isPlayWhenReadyIntent()}"
+            "PlaybackRuntime.handlePlayerError: index=$index, trackType=$trackKind, isRemote=${trackKind == com.bestiapop.android.data.util.TrackKind.REMOTE}, playWhenReadyIntent=${isPlayWhenReadyIntent()}"
         )
         if (!isPlayWhenReadyIntent()) {
             onSetIsPlaying(false)

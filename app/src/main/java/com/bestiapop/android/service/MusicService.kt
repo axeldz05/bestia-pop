@@ -222,11 +222,7 @@ class MusicService : MediaLibraryService() {
                 }
 
                 override fun onPlayerError(error: PlaybackException) {
-                    PlaybackDiagnostics.error(
-                        PlaybackDiagnostics.TAG_PLAYBACK,
-                        "ExoPlayer.onPlayerError: errorCode=${error.errorCodeName} (${error.errorCode}), msg=${error.message}, mediaId=${p.currentMediaItem?.mediaId}",
-                        error
-                    )
+                    PlaybackDiagnostics.logPlayerError(error, p.currentMediaItem?.mediaId)
                     releaseTransientWakeLock()
                 }
 
@@ -299,17 +295,7 @@ class MusicService : MediaLibraryService() {
                 }
 
                 override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-                    val reasonStr = when (reason) {
-                        Player.MEDIA_ITEM_TRANSITION_REASON_AUTO -> "AUTO (next track)"
-                        Player.MEDIA_ITEM_TRANSITION_REASON_SEEK -> "SEEK"
-                        Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED -> "PLAYLIST_CHANGED"
-                        Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT -> "REPEAT"
-                        else -> "REASON_$reason"
-                    }
-                    PlaybackDiagnostics.log(
-                        PlaybackDiagnostics.TAG_PLAYBACK,
-                        "ExoPlayer.onMediaItemTransition: mediaId='${mediaItem?.mediaId}', title='${mediaItem?.mediaMetadata?.title}', reason=$reasonStr"
-                    )
+                    PlaybackDiagnostics.logMediaItemTransition(mediaItem, reason)
                     if (latestPlaybackSettings.crossfadeEnabled) {
                         if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO ||
                             reason == Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT

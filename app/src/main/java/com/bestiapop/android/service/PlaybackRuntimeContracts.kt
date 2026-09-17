@@ -178,7 +178,7 @@ internal data class PlaybackRuntimeDependencies(
     val isOnline: () -> Boolean = { false },
     val persistShuffle: suspend (Boolean) -> Unit = {},
     val persistRepeat: suspend (RepeatMode) -> Unit = {},
-    val touchSongLastPlayed: suspend (Long) -> Unit = {},
+    val touchItemLastPlayed: suspend (PlayableItem, Long) -> Unit = { _, _ -> },
     val updateSongDuration: suspend (Long, Long) -> Unit = { _, _ -> },
     val loadSongById: suspend (Long) -> Song? = { null },
     val loadSongsByIds: suspend (List<Long>) -> List<Song> = { emptyList() },

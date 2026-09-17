@@ -128,7 +128,7 @@ class PlaybackRuntimeContinuityTest {
         val touched = mutableListOf<Long>()
         val fixture = fixture(
             attachController = true,
-            touchSongLastPlayed = { id -> touched.add(id) }
+            touchItemLastPlayed = { item, _ -> (item as? PlayableItem.Local)?.song?.id?.let { touched.add(it) } }
         )
         try {
             fixture.runtime.attachUi()
@@ -150,7 +150,7 @@ class PlaybackRuntimeContinuityTest {
         val touched = mutableListOf<Long>()
         val fixture = fixture(
             attachController = true,
-            touchSongLastPlayed = { id -> touched.add(id) }
+            touchItemLastPlayed = { item, _ -> (item as? PlayableItem.Local)?.song?.id?.let { touched.add(it) } }
         )
         try {
             fixture.runtime.attachUi()
@@ -1874,7 +1874,7 @@ class PlaybackRuntimeContinuityTest {
         dispatcher: CoroutineDispatcher = Dispatchers.Unconfined,
         clockMs: (() -> Long)? = null,
         loadSongById: suspend (Long) -> Song? = { null },
-        touchSongLastPlayed: suspend (Long) -> Unit = {},
+        touchItemLastPlayed: suspend (PlayableItem, Long) -> Unit = { _, _ -> },
         ioDispatcher: CoroutineDispatcher = dispatcher,
         isOnline: () -> Boolean = { true }
     ): Fixture {
@@ -1899,7 +1899,7 @@ class PlaybackRuntimeContinuityTest {
                 controllerReconnectBackoffMs = controllerReconnectBackoffMs,
                 startTicker = startTicker,
                 loadSongById = loadSongById,
-                touchSongLastPlayed = touchSongLastPlayed,
+                touchItemLastPlayed = touchItemLastPlayed,
                 ioDispatcher = ioDispatcher
             )
         )

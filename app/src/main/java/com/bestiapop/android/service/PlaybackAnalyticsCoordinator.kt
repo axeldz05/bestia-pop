@@ -31,7 +31,7 @@ internal class PlaybackAnalyticsCoordinator(
     private val clearRejectedQueueEntries: () -> Unit,
     private val maybeSaveWhileListening: (PlayableItem.Remote, SaveWhileListeningEvent, Long, Long) -> Unit
 ) {
-    private var lastTouchedSongId = -1L
+    private var lastTouchedItemKey: String? = null
     private var lyricsHydrateJob: Job? = null
 
     fun creditItemPlayback(item: PlayableItem?, completed: Boolean = false) {
@@ -45,11 +45,16 @@ internal class PlaybackAnalyticsCoordinator(
         }
     }
 
-    fun touchLastPlayed(song: Song?, force: Boolean = false) {
-        if (song == null || song.id <= 0L) return
-        if (!force && song.id == lastTouchedSongId) return
-        lastTouchedSongId = song.id
-        scope.launch(dependencies.ioDispatcher) { dependencies.touchSongLastPlayed(song.id) }
+    fun touchLastPlayed(item: PlayableItem?, force: Boolean = false) {
+        if (item == null) return
+        val itemKey = when (item) {
+            is PlayableItem.Local -> "local:${item.song.id}"
+            is PlayableItem.Remote -> "remote:${item.mediaId}"
+        }
+        if (!force && itemKey == lastTouchedItemKey) return
+        lastTouchedItemKey = itemKey
+        val now = System.currentTimeMillis()
+        scope.launch(dependencies.ioDispatcher) { dependencies.touchItemLastPlayed(item, now) }
     }
 
     fun triggerFlushPostponedTagWrites() {

@@ -61,6 +61,7 @@ import com.bestiapop.android.ui.components.LocalSubmenuGestureSettings
 import com.bestiapop.android.ui.components.MediaCardDownloadSpinner
 import com.bestiapop.android.ui.components.PlayIconButton
 import com.bestiapop.android.ui.components.TrackMetaRow
+import com.bestiapop.android.ui.components.TrackStorageIcon
 import com.bestiapop.android.ui.components.isAlbumDownloading
 import com.bestiapop.android.ui.state.ItemLibraryStatus
 
@@ -584,13 +585,17 @@ fun DiscoverTrackListItem(
                 )
                 .padding(horizontal = 4.dp, vertical = 2.dp),
             trailing = trailing ?: {
-                TrackLibraryActionButtons(
-                    status = status,
-                    onDownload = onDownload,
-                    activeDownload = activeDownload,
-                    onNotifyStatus = onNotifyStatus,
-                    onAlreadyInLibrary = onAlreadyInLibrary
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    TrackStorageIcon(isStreaming = !status.isDownloaded, size = 16.dp)
+                    Spacer(modifier = Modifier.width(4.dp))
+                    TrackLibraryActionButtons(
+                        status = status,
+                        onDownload = onDownload,
+                        activeDownload = activeDownload,
+                        onNotifyStatus = onNotifyStatus,
+                        onAlreadyInLibrary = onAlreadyInLibrary
+                    )
+                }
             }
         )
     }

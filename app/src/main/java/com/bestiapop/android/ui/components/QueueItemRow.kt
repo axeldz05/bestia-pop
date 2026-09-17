@@ -157,12 +157,19 @@ fun QueueItemRow(
                 boldWhenCurrent = true,
                 modifier = Modifier.weight(1f)
             )
-            if (trailingDuration != null) {
-                Text(
-                    text = trailingDuration,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-                )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(horizontal = 4.dp)
+            ) {
+                TrackStorageIcon(item = item)
+                if (trailingDuration != null) {
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = trailingDuration,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                    )
+                }
             }
             if (onRemove != null) {
                 IconButton(onClick = onRemove, modifier = Modifier.size(32.dp)) {

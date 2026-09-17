@@ -682,7 +682,7 @@ class PlaybackRuntime internal constructor(
         }
         if (persistLastPlayed) {
             persistPlaybackSession(force = true)
-            if (occurrenceChanged) touchLastPlayed(local)
+            if (occurrenceChanged) touchLastPlayed(item)
         }
     }
 
@@ -702,8 +702,8 @@ class PlaybackRuntime internal constructor(
         analyticsCoordinator.applyLyricsToCurrent(songId, lyrics)
     }
 
-    private fun touchLastPlayed(song: Song?, force: Boolean = false) {
-        analyticsCoordinator.touchLastPlayed(song, force = force)
+    private fun touchLastPlayed(item: PlayableItem?, force: Boolean = false) {
+        analyticsCoordinator.touchLastPlayed(item, force = force)
     }
 
     private fun currentQueueIndex(): Int {
@@ -905,7 +905,7 @@ class PlaybackRuntime internal constructor(
             newPlayback = true
         )
         if (startPlaying) {
-            touchLastPlayed((snapshot.currentItem as? PlayableItem.Local)?.song, force = true)
+            touchLastPlayed(snapshot.currentItem, force = true)
         }
         if (controller == null) {
             persistPlaybackSession(force = true)
@@ -1686,7 +1686,7 @@ class PlaybackRuntime internal constructor(
                     isOnline = connectivity::isCurrentlyOnline,
                     persistShuffle = playbackPreferences::setLastShuffleEnabled,
                     persistRepeat = playbackPreferences::setLastRepeatMode,
-                    touchSongLastPlayed = repository::touchSongLastPlayed,
+                    touchItemLastPlayed = repository::touchItemLastPlayed,
                     updateSongDuration = repository::updateSongDuration,
                     loadSongById = repository::getSongById,
                     loadSongsByIds = repository::getSongsByIds,

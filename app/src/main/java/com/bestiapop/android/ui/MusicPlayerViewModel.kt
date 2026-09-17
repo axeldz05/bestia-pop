@@ -383,19 +383,27 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 }
                 val matchKey = TrackMatchKeys.matchKey(song.artist, song.title)
                 if (matchKey.isNotEmpty()) {
-                    allByMatchKey.putIfAbsent(matchKey, song)
+                    if (!song.isStreamHistory) {
+                        allByMatchKey.putIfAbsent(matchKey, song)
+                    }
                     if (!song.isRemote) {
                         localByMatchKey.putIfAbsent(matchKey, song)
                     }
                 }
                 val artistAlbumKey = albumArtistKey(song.artist, song.album)
-                val status = if (!song.isRemote) ItemLibraryStatus.DOWNLOADED else ItemLibraryStatus.SAVED_REMOTE
-                if (albumStatusByArtistAndAlbum[artistAlbumKey] != ItemLibraryStatus.DOWNLOADED) {
-                    albumStatusByArtistAndAlbum[artistAlbumKey] = status
+                val status = when {
+                    !song.isRemote -> ItemLibraryStatus.DOWNLOADED
+                    song.isSavedRemote -> ItemLibraryStatus.SAVED_REMOTE
+                    else -> ItemLibraryStatus.NOT_IN_LIBRARY
                 }
-                val albumKey = albumIdentityKey(song.album)
-                if (albumStatusByTitle[albumKey] != ItemLibraryStatus.DOWNLOADED) {
-                    albumStatusByTitle[albumKey] = status
+                if (status != ItemLibraryStatus.NOT_IN_LIBRARY) {
+                    if (albumStatusByArtistAndAlbum[artistAlbumKey] != ItemLibraryStatus.DOWNLOADED) {
+                        albumStatusByArtistAndAlbum[artistAlbumKey] = status
+                    }
+                    val albumKey = albumIdentityKey(song.album)
+                    if (albumStatusByTitle[albumKey] != ItemLibraryStatus.DOWNLOADED) {
+                        albumStatusByTitle[albumKey] = status
+                    }
                 }
             }
 

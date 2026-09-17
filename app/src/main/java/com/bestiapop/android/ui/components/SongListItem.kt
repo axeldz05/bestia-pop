@@ -138,6 +138,7 @@ fun SongListItem(
     onLongClick: () -> Unit = {},
     onToggleSelect: () -> Unit = {},
     onOptionsClick: (() -> Unit)? = null,
+    showStorageIndicator: Boolean = true,
     swipeAction: SubmenuSwipeAction = LocalSubmenuGestureSettings.current.swipeLeftAction,
     onSwipeAction: (() -> Unit)? = actions.resolveSwipeAction(swipeAction, song)
 ) = SongListItem(
@@ -160,6 +161,7 @@ fun SongListItem(
     onLongClick = onLongClick,
     onToggleSelect = onToggleSelect,
     onOptionsClick = onOptionsClick,
+    showStorageIndicator = showStorageIndicator,
     onPlayNext = { actions.onPlayNext?.invoke(song) },
     onAddToQueue = { actions.onAddToQueue?.invoke(song) },
     onStartRadio = actions.onStartRadio?.let { cb -> { cb(song) } },
@@ -195,6 +197,7 @@ fun SongListItem(
     onLongClick: () -> Unit = {},
     onToggleSelect: () -> Unit = {},
     onOptionsClick: (() -> Unit)? = null,
+    showStorageIndicator: Boolean = true,
     onPlayNext: () -> Unit = {},
     onAddToQueue: () -> Unit = {},
     onStartRadio: (() -> Unit)? = null,
@@ -298,21 +301,29 @@ fun SongListItem(
             titleWeight = colors.titleWeight
         )
 
-        Text(
-            text = trailingText,
-            style = MaterialTheme.typography.labelMedium,
-            color = if (trailingIsSortKey) {
-                MaterialTheme.colorScheme.primary
-            } else {
-                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-            },
-            textAlign = TextAlign.End,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier
                 .widthIn(min = 56.dp)
                 .padding(horizontal = 8.dp)
-        )
+        ) {
+            if (showStorageIndicator) {
+                TrackStorageIcon(song = song)
+                Spacer(modifier = Modifier.width(4.dp))
+            }
+            Text(
+                text = trailingText,
+                style = MaterialTheme.typography.labelMedium,
+                color = if (trailingIsSortKey) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                },
+                textAlign = TextAlign.End,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
 
         if (isReorderMode) {
             Box(

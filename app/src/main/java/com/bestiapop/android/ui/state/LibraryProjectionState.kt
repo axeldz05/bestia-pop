@@ -5,6 +5,7 @@ import com.bestiapop.android.data.model.AlbumOverride
 import com.bestiapop.android.data.model.Artist
 import com.bestiapop.android.data.model.GenreGroup
 import com.bestiapop.android.data.model.Song
+import com.bestiapop.android.data.model.isStreamHistory
 import com.bestiapop.android.data.util.PlaybackDiagnostics
 import com.bestiapop.android.domain.usecase.GetLibrarySongsUseCase
 import com.bestiapop.android.ui.SortDirection
@@ -74,6 +75,7 @@ class LibraryProjectionState internal constructor(
         .stateInUi(scope, emptyMap())
 
     private val catalogSongs: Flow<List<Song>> = rawSongs
+        .map { list -> list.filter { !it.isStreamHistory } }
         .distinctUntilChanged(::sameLibraryCatalog)
         .conflate()
 

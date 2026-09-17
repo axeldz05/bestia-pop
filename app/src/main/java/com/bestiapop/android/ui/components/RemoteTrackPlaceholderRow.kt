@@ -101,15 +101,19 @@ fun RemoteTrackPlaceholderRow(
                     titleStyle = MaterialTheme.typography.titleSmall,
                     titleWeight = FontWeight.SemiBold
                 )
-                Text(
-                    text = badge,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = if (onClick == null) {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    } else {
-                        MaterialTheme.colorScheme.tertiary.copy(alpha = 0.9f)
-                    }
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    TrackStorageIcon(isStreaming = true, size = 13.dp)
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = badge,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (onClick == null) {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        } else {
+                            MaterialTheme.colorScheme.tertiary.copy(alpha = 0.9f)
+                        }
+                    )
+                }
             }
         }
         if (onDownload != null || download != null) {

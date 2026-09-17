@@ -14,9 +14,11 @@ import com.bestiapop.android.data.model.IdentifyApplyRequest
 import com.bestiapop.android.data.model.IdentifyCandidate
 import com.bestiapop.android.data.model.IdentifyResult
 import com.bestiapop.android.data.model.OnlineCatalogTrack
+import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.data.model.PlaylistPendingTrack
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.data.model.TrackIdentity
+import com.bestiapop.android.data.model.isStreamHistory
 import com.bestiapop.android.testutil.MediumTest
 import com.bestiapop.android.testutil.RoomTestDatabaseRule
 import com.bestiapop.android.testutil.TaggedAudioFixtures
@@ -263,10 +265,11 @@ class MusicRepositoryRoomIntegrationTest {
     }
 
     @Test
-    fun touchSongLastPlayed_writesPlayStatsWithoutChangingIdentityFlow() = runTest {
-        val id = database.musicDao.insertSong(song("played.mp3", "Played"))
+    fun touchItemLastPlayed_writesPlayStatsWithoutChangingIdentityFlow() = runTest {
+        val song = song("played.mp3", "Played")
+        val id = database.musicDao.insertSong(song)
         val listedBefore = repository().allSongsFlow.first().single { it.id == id }
-        repository().touchSongLastPlayed(id, 12_345L)
+        repository().touchItemLastPlayed(PlayableItem.Local(song.copy(id = id)), 12_345L)
         val listedAfter = repository().allSongsFlow.first().single { it.id == id }
         assertEquals(listedBefore, listedAfter)
         assertEquals(0L, listedAfter.lastPlayedAt)
@@ -887,6 +890,55 @@ class MusicRepositoryRoomIntegrationTest {
         val found = repo.findSongByArtistTitle("artista unico", "cancion de prueba")
         assertNotNull(found)
         assertEquals("Canción de Prueba", found?.title)
+    }
+
+    @Test
+    fun touchItemLastPlayed_recordsStreamTrackInHistory() = runTest {
+        val repo = repository()
+        val remoteItem = PlayableItem.Remote(
+            identity = TrackIdentity(
+                title = "Streaming Song",
+                artist = "Streaming Artist",
+                album = "Streaming Album",
+                durationMs = 210_000L
+            ),
+            youtubeQueryOrId = "yt_test_id"
+        )
+        val timestamp = 1_700_000_000_000L
+
+        repo.touchItemLastPlayed(remoteItem, timestamp)
+
+        val stats = repo.songPlayStatsFlow.first()
+        val songs = repo.allSongsFlow.first()
+        val recordedSong = songs.find { it.title == "Streaming Song" && it.artist == "Streaming Artist" }
+
+        assertNotNull(recordedSong)
+        assertTrue(recordedSong!!.isStreamHistory)
+        assertEquals(timestamp, stats[recordedSong.id])
+    }
+
+    @Test
+    fun touchItemLastPlayed_matchesExistingLocalTrack() = runTest {
+        val repo = repository()
+        val localSongId = database.musicDao.insertSong(
+            song("local.mp3", "Existing Song", artist = "Existing Artist")
+        )
+        val remoteItem = PlayableItem.Remote(
+            identity = TrackIdentity(
+                title = "Existing Song",
+                artist = "Existing Artist"
+            ),
+            youtubeQueryOrId = "yt_id"
+        )
+        val timestamp = 1_700_000_000_500L
+
+        repo.touchItemLastPlayed(remoteItem, timestamp)
+
+        val stats = repo.songPlayStatsFlow.first()
+        val songs = repo.allSongsFlow.first()
+        assertEquals(1, songs.size)
+        assertEquals(localSongId, songs[0].id)
+        assertEquals(timestamp, stats[localSongId])
     }
 }
 

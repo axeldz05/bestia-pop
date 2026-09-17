@@ -16,6 +16,7 @@ import com.bestiapop.android.data.model.IdentifyProposal
 import com.bestiapop.android.data.model.IdentifyResult
 import com.bestiapop.android.data.model.IdentifySearchFilters
 import com.bestiapop.android.data.model.OnlineCatalogTrack
+import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.data.model.Playlist
 import com.bestiapop.android.data.model.PlaylistPendingTrack
 import com.bestiapop.android.data.model.Song
@@ -464,8 +465,57 @@ class MusicRepository private constructor(
         musicDao.updateSongDuration(songId, durationMs)
     }
 
-    override suspend fun touchSongLastPlayed(songId: Long, playedAt: Long) = withContext(Dispatchers.IO) {
-        musicDao.updateLastPlayedAt(songId, playedAt)
+    override suspend fun touchItemLastPlayed(item: PlayableItem, playedAt: Long) = withContext(Dispatchers.IO) {
+        when (item) {
+            is PlayableItem.Local -> {
+                musicDao.updateLastPlayedAt(item.song.id, playedAt)
+            }
+            is PlayableItem.Remote -> {
+                touchRemoteItemLastPlayed(item, playedAt)
+            }
+        }
+    }
+
+    private suspend fun touchRemoteItemLastPlayed(item: PlayableItem.Remote, playedAt: Long) {
+        val candidateUri = if (!item.youtubeQueryOrId.isNullOrBlank()) {
+            "remote://yt/${item.youtubeQueryOrId}"
+        } else {
+            val hash = "${item.artist.trim().lowercase()}-${item.title.trim().lowercase()}".hashCode().toUInt().toString(16)
+            "remote://stream/$hash"
+        }
+
+        val existingByUri = musicDao.getSongByUri(candidateUri)
+        if (existingByUri != null) {
+            musicDao.updateLastPlayedAt(existingByUri.id, playedAt)
+            return
+        }
+
+        val existingByMatch = musicDao.findSongByTitleAndArtist(item.title.trim(), item.artist.trim())
+        if (existingByMatch != null) {
+            musicDao.updateLastPlayedAt(existingByMatch.id, playedAt)
+            return
+        }
+
+        val cleanTitle = item.title.trim().ifBlank { "Unknown Track" }
+        val cleanArtist = item.artist.trim().ifBlank { Song.UNKNOWN_ARTIST }
+        val cleanAlbum = item.album.trim().ifBlank { Song.UNKNOWN_ALBUM }
+
+        val newSong = Song(
+            uriString = candidateUri,
+            title = cleanTitle,
+            artist = cleanArtist,
+            album = cleanAlbum,
+            durationMs = item.durationMs,
+            artworkUri = item.artworkUri,
+            dateAdded = playedAt,
+            lastPlayedAt = playedAt
+        )
+        val insertedId = musicDao.insertSong(newSong)
+        val finalId = if (insertedId > 0L) insertedId else musicDao.getSongByUri(candidateUri)?.id ?: -1L
+        if (finalId > 0L) {
+            musicDao.updateLastPlayedAt(finalId, playedAt)
+            syncSongsRelations(db, musicDao, listOf(newSong.copy(id = finalId)))
+        }
     }
 
     override suspend fun updateSongMetadata(

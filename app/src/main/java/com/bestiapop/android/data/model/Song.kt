@@ -43,3 +43,9 @@ data class Song(
 val Song.isRemote: Boolean
     get() = uriString.startsWith("remote://")
 
+val Song.isSavedRemote: Boolean
+    get() = uriString.startsWith("remote://catalog/")
+
+val Song.isStreamHistory: Boolean
+    get() = uriString.startsWith("remote://stream/") || uriString.startsWith("remote://yt/")
+

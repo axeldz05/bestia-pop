@@ -106,7 +106,7 @@ interface IMusicRepository {
      */
     suspend fun identifySongMetadata(song: Song): IdentifyResult
     suspend fun updateSongDuration(songId: Long, durationMs: Long)
-    suspend fun touchSongLastPlayed(songId: Long, playedAt: Long = System.currentTimeMillis())
+    suspend fun touchItemLastPlayed(item: PlayableItem, playedAt: Long = System.currentTimeMillis())
     suspend fun updateSongMetadata(
         songId: Long,
         title: String,

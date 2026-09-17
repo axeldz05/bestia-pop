@@ -10,6 +10,7 @@ import com.bestiapop.android.data.model.IdentifyProposal
 import com.bestiapop.android.data.model.IdentifyResult
 import com.bestiapop.android.data.model.IdentifySearchFilters
 import com.bestiapop.android.data.model.OnlineCatalogTrack
+import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.data.model.Playlist
 import com.bestiapop.android.data.model.PlaylistPendingTrack
 import com.bestiapop.android.data.model.Song
@@ -66,7 +67,7 @@ open class FakeMusicRepository : IMusicRepository {
     ) = IdentifyResult.Skipped
     override suspend fun identifySongMetadata(song: Song) = IdentifyResult.Skipped
     override suspend fun updateSongDuration(songId: Long, durationMs: Long) = Unit
-    override suspend fun touchSongLastPlayed(songId: Long, playedAt: Long) = Unit
+    override suspend fun touchItemLastPlayed(item: PlayableItem, playedAt: Long) = Unit
     override suspend fun updateSongMetadata(
         songId: Long,
         title: String,

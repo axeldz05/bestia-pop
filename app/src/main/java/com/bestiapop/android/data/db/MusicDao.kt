@@ -56,6 +56,9 @@ interface MusicDao {
     @Query("SELECT * FROM songs WHERE uriString = :uri LIMIT 1")
     suspend fun getSongByUri(uri: String): Song?
 
+    @Query("SELECT * FROM songs WHERE title = :title COLLATE NOCASE AND artist = :artist COLLATE NOCASE ORDER BY CASE WHEN uriString NOT LIKE 'remote://%' THEN 0 ELSE 1 END ASC LIMIT 1")
+    suspend fun findSongByTitleAndArtist(title: String, artist: String): Song?
+
     @Query("SELECT * FROM songs WHERE uriString IN (:uris)")
     suspend fun getSongsByUris(uris: List<String>): List<Song>
 

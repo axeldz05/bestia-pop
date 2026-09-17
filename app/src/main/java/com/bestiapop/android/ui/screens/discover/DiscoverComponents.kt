@@ -238,7 +238,9 @@ fun AlbumLibraryActionButton(
     status: ItemLibraryStatus,
     onSave: () -> Unit,
     onNotifyStatus: ((String) -> Unit)? = null,
-    onAlreadySaved: () -> Unit = { onNotifyStatus?.invoke(status.albumMessage) },
+    onAlreadySaved: () -> Unit = {
+        status.albumMessage.takeIf { it.isNotBlank() }?.let { onNotifyStatus?.invoke(it) }
+    },
     modifier: Modifier = Modifier
 ) {
     when (status) {
@@ -275,7 +277,7 @@ fun AlbumLibraryHeaderButton(
     when (status) {
         ItemLibraryStatus.DOWNLOADED -> {
             FilledTonalButton(
-                onClick = { onAlreadyInLibrary(status.albumMessage) },
+                onClick = { status.albumMessage.takeIf { it.isNotBlank() }?.let(onAlreadyInLibrary) },
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
             ) {
                 Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -285,7 +287,7 @@ fun AlbumLibraryHeaderButton(
         }
         ItemLibraryStatus.SAVED_REMOTE -> {
             OutlinedButton(
-                onClick = { onAlreadyInLibrary(status.albumMessage) },
+                onClick = { status.albumMessage.takeIf { it.isNotBlank() }?.let(onAlreadyInLibrary) },
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
             ) {
                 Icon(Icons.Default.BookmarkAdded, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -521,7 +523,9 @@ fun DiscoverAlbumCard(
     activeDownloads: List<ActiveDownload>? = LocalDiscoverContext.current.activeDownloads,
     isDownloading: Boolean = activeDownloads?.isAlbumDownloading(album) ?: false,
     onNotifyStatus: ((String) -> Unit)? = LocalDiscoverContext.current.onNotifyStatus,
-    onAlreadySaved: () -> Unit = { onNotifyStatus?.invoke(status.albumMessage) },
+    onAlreadySaved: () -> Unit = {
+        status.albumMessage.takeIf { it.isNotBlank() }?.let { onNotifyStatus?.invoke(it) }
+    },
     onSwipeAction: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
@@ -565,7 +569,9 @@ fun DiscoverTrackListItem(
     leading: (@Composable RowScope.() -> Unit)? = null,
     trailing: (@Composable RowScope.() -> Unit)? = null,
     onNotifyStatus: ((String) -> Unit)? = LocalDiscoverContext.current.onNotifyStatus,
-    onAlreadyInLibrary: () -> Unit = { onNotifyStatus?.invoke(status.trackMessage) },
+    onAlreadyInLibrary: () -> Unit = {
+        status.trackMessage.takeIf { it.isNotBlank() }?.let { onNotifyStatus?.invoke(it) }
+    },
     onSwipeAction: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {

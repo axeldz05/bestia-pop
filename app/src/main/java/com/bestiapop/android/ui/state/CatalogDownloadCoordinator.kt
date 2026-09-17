@@ -13,6 +13,7 @@ import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.data.model.TrackIdentity
 import com.bestiapop.android.data.model.TrackMeta
 import com.bestiapop.android.data.model.catalogPreviewKeyFor
+import com.bestiapop.android.data.model.isRemote
 import com.bestiapop.android.data.model.youtubeSearchQuery
 import com.bestiapop.android.domain.repository.IMusicRepository
 import com.bestiapop.android.domain.util.TrackMatchKeys
@@ -160,11 +161,17 @@ internal class CatalogDownloadCoordinator(
         }
         when (existing?.state) {
             CandidateDownloadState.SUCCESS -> {
-                toastSongAlreadyInLibrary(meta.title)
                 scope.launch {
-                    rematchDiscover(null)
+                    val song = existing.resultSongId?.let { repository.getSongById(it) }
+                    if (song != null && !song.isRemote) {
+                        toastSongAlreadyInLibrary(meta.title)
+                        rematchDiscover(null)
+                    } else {
+                        toastDownloadsQueued(false, 1)
+                        enqueue()
+                    }
                 }
-                return false
+                return true
             }
             else -> Unit
         }

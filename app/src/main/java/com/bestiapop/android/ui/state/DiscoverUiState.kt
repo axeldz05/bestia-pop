@@ -14,14 +14,14 @@ enum class ItemLibraryStatus {
     val albumMessage: String
         get() = when (this) {
             DOWNLOADED -> DownloadMessages.alreadyDownloadedAlbum
-            SAVED_REMOTE -> "El álbum ya está guardado en tu biblioteca"
+            SAVED_REMOTE -> ""
             NOT_IN_LIBRARY -> ""
         }
 
     val trackMessage: String
         get() = when (this) {
             DOWNLOADED -> DownloadMessages.alreadyDownloadedSong
-            SAVED_REMOTE -> "Canción guardada en la biblioteca"
+            SAVED_REMOTE -> ""
             NOT_IN_LIBRARY -> ""
         }
 }

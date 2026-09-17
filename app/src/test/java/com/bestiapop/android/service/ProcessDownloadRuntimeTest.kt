@@ -406,6 +406,43 @@ class ProcessDownloadRuntimeTest {
         }
     }
 
+    @Test
+    fun streamingSongInLibrary_doesNotBlockDownloadAsDuplicate() = runBlocking {
+        val remoteStreamSong = Song(
+            id = 55L,
+            uriString = "remote://catalog/abc123hash/1/trackhash",
+            title = "Song test-streaming",
+            artist = "Artist",
+            album = "Album"
+        )
+        val downloadedSong = Song(
+            id = 55L,
+            uriString = "/music/test-streaming.m4a",
+            title = "Song test-streaming",
+            artist = "Artist",
+            album = "Album"
+        )
+        val downloadExecuted = AtomicInteger(0)
+        val fixture = fixture(
+            findSong = { _, _ -> remoteStreamSong },
+            download = { _, _, _ ->
+                downloadExecuted.incrementAndGet()
+                Result.success(downloadedSong)
+            }
+        )
+        try {
+            fixture.coordinator.awaitHydrated()
+            val result = fixture.runtime.submit(request("test-streaming")).await()
+            assertTrue(result.isSuccess)
+            assertEquals(1, downloadExecuted.get())
+            assertEquals(null, fixture.runtime.downloadConflict.value)
+            val completed = fixture.coordinator.downloads.value.single()
+            assertEquals(CandidateDownloadState.SUCCESS, completed.state)
+        } finally {
+            fixture.close()
+        }
+    }
+
     private fun fixture(
         initial: List<ActiveDownload> = emptyList(),
         isMetered: Boolean = false,

@@ -9,6 +9,7 @@ import com.bestiapop.android.data.model.CatalogAlbum
 import com.bestiapop.android.data.model.OnlineCatalogTrack
 import com.bestiapop.android.data.model.PlaylistPendingTrack
 import com.bestiapop.android.data.model.TrackIdentity
+import com.bestiapop.android.data.model.isRemote
 import com.bestiapop.android.data.model.toListenBrainzCatalogTrack
 import com.bestiapop.android.data.network.ListenBrainzClient
 import com.bestiapop.android.data.network.MetadataFetcher
@@ -344,12 +345,14 @@ internal class RepositoryIdentityCache(
         val key = com.bestiapop.android.domain.util.TrackMatchKeys.matchKey(artist, title)
         if (key.isEmpty()) return null
         val songs = getSongs()
+        var remoteFallback: com.bestiapop.android.data.model.Song? = null
         for (song in songs) {
             if (com.bestiapop.android.domain.util.TrackMatchKeys.matchKey(song.artist, song.title) == key) {
-                return song
+                if (!song.isRemote) return song
+                if (remoteFallback == null) remoteFallback = song
             }
         }
-        return null
+        return remoteFallback
     }
 }
 

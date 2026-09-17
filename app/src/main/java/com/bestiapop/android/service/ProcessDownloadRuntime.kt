@@ -16,6 +16,7 @@ import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.data.model.TrackIdentity
 import com.bestiapop.android.data.model.isInFlight
+import com.bestiapop.android.data.model.isRemote
 import com.bestiapop.android.data.model.isFailed
 import com.bestiapop.android.data.model.lane
 import com.bestiapop.android.data.model.overwriteTargetSongIdOrNull
@@ -238,7 +239,7 @@ internal class ProcessDownloadRuntime(
                 IllegalArgumentException("Identidad de canción incompleta")
             )
         }
-        dependencies.findSong(remote.artist, remote.title)?.let {
+        dependencies.findSong(remote.artist, remote.title)?.takeUnless { it.isRemote }?.let {
             return SaveWhileListeningDownloadResult.Saved(it)
         }
         val result = submit(
@@ -712,7 +713,7 @@ internal class ProcessDownloadRuntime(
     ): Song? = dependencies.findSong(
         lookup.artist.ifBlank { activeTrack.artist },
         lookup.title.ifBlank { activeTrack.title }
-    )
+    )?.takeUnless { it.isRemote }
 
     private suspend fun applyBatchPolicy(
         activeTrack: OnlineCatalogTrack,

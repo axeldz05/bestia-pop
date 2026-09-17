@@ -9,6 +9,7 @@ import com.bestiapop.android.data.model.DuplicateSongException
 import com.bestiapop.android.data.model.OnlineCatalogTrack
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.data.model.TrackIdentity
+import com.bestiapop.android.data.model.isRemote
 import com.bestiapop.android.data.model.mergePreferring
 import com.bestiapop.android.data.model.withIdentity
 import com.bestiapop.android.data.model.youtubeSearchQuery
@@ -83,7 +84,11 @@ internal class OnlineTrackDownloadOperator(
             null -> {
                 val existing = identityCache.findSongByArtistTitle(identity.artist, identity.title)
                 if (existing != null) {
-                    throw DuplicateSongException(existing, track.copy(identity = identity))
+                    if (!existing.isRemote) {
+                        throw DuplicateSongException(existing, track.copy(identity = identity))
+                    } else {
+                        overwriteTarget = existing
+                    }
                 }
             }
         }
@@ -359,6 +364,7 @@ internal class OnlineTrackDownloadOperator(
         onProgress?.invoke(DownloadPhase.Saving)
 
         if (overwriteTarget != null) {
+            val wasRemote = overwriteTarget.isRemote
             val updated = overwriteTarget.withIdentity(
                 TrackIdentity(
                     title = finalTitle,
@@ -376,7 +382,11 @@ internal class OnlineTrackDownloadOperator(
             musicDao.updateSong(updated)
             identityCache.remember(updated)
             onSongSaved(updated)
-            onProgress?.invoke(DownloadPhase.Overwritten)
+            if (wasRemote) {
+                onProgress?.invoke(DownloadPhase.Completed)
+            } else {
+                onProgress?.invoke(DownloadPhase.Overwritten)
+            }
             return@withContext updated
         }
 

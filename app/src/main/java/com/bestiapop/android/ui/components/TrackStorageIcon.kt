@@ -33,13 +33,6 @@ fun TrackStorageIcon(
             tint = streamingTint,
             modifier = modifier.size(size)
         )
-    } else {
-        Icon(
-            imageVector = Icons.Default.DownloadDone,
-            contentDescription = "Guardado",
-            tint = savedTint,
-            modifier = modifier.size(size)
-        )
     }
 }
 

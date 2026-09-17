@@ -188,7 +188,7 @@ private fun SettingsHome(
     var showInviteDialog by rememberSaveable { mutableStateOf(false) }
     val updateNotes by appUpdateViewModel.notes.collectAsStateWithLifecycle()
     val repo = BuildConfig.GITHUB_REPOSITORY.trim()
-    val latestUrl = if (repo.isNotEmpty()) GitHubReleaseUrls.latestPageUrl(repo) else ""
+    val latestUrl = if (repo.isNotEmpty()) GitHubReleaseUrls.latestApkDownloadUrl(repo) else ""
     val inviteText = """
         BestiaPop — descargá la app:
 

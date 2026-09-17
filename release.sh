@@ -303,8 +303,11 @@ fi
 
 mkdir -p "$DIST_DIR"
 APK_DIST="${DIST_DIR}/BestiaPop-${NEXT_NAME}.apk"
+APK_GENERIC="${DIST_DIR}/BestiaPop.apk"
 cp "$APK_GRADLE_OUT" "$APK_DIST"
+cp "$APK_GRADLE_OUT" "$APK_GENERIC"
 echo -e "${GREEN}APK:${NC} ${APK_DIST}"
+echo -e "${GREEN}APK (latest download):${NC} ${APK_GENERIC}"
 
 if [[ "$DO_UPLOAD" -eq 0 ]]; then
     echo -e "\n${YELLOW}--no-upload: release no creado.${NC}"
@@ -323,7 +326,7 @@ CREATE_ARGS=(
 if [[ -n "$RELEASE_TARGET" ]]; then
     CREATE_ARGS+=(--target "$RELEASE_TARGET")
 fi
-gh release create "${CREATE_ARGS[@]}" "$APK_DIST"
+gh release create "${CREATE_ARGS[@]}" "$APK_DIST" "$APK_GENERIC"
 
 echo -e "\n${YELLOW}Verificando lo que va a leer la app…${NC}"
 if verify_published_release; then

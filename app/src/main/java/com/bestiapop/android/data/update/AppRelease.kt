@@ -24,6 +24,9 @@ object GitHubReleaseUrls {
     fun latestPageUrl(repository: String): String =
         "${repoUrl(repository)}/releases/latest"
 
+    fun latestApkDownloadUrl(repository: String): String =
+        "${repoUrl(repository)}/releases/latest/download/BestiaPop.apk"
+
     fun apiReleasesUrl(repository: String): String =
         "https://api.github.com/repos/${repository.trim()}/releases?per_page=$RELEASES_PAGE_SIZE"
 

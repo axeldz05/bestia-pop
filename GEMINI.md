@@ -16,6 +16,7 @@ Leer y seguir estos skills del repo **antes** de diseñar o implementar cambios 
 | **Linter management** | `.agents/skills/kotlin-linter-management/SKILL.md` | Diagnóstico, ejecución y resolución de errores de linter sin supresiones |
 | **Device debugging** | `.agents/skills/android-device-debugging/SKILL.md` | Depuración en dispositivo físico USB, memoria, Doze, LMK, servicios e input |
 | **Music catalog toolkit** | `.agents/skills/music-catalog-toolkit/SKILL.md` | Scripts CLI para inspeccionar Deezer/iTunes, extraer streams de YouTube y descargar canciones/álbumes |
+| **Crashlytics diagnostics** | `.agents/skills/bestiapop-crashlytics/SKILL.md` | Consultar Crashlytics con firebase-mcp-server, revisar crashes, ANRs y non-fatals |
 
 Resumen histórico de principios (mantener alineado con features): `.agents/AGENTS.md`
 

@@ -124,6 +124,53 @@ class PlaybackRuntimeContinuityTest {
     }
 
     @Test
+    fun playPlayableCollection_withAttachedController_touchesLastPlayedForInitialLocalSong() {
+        val touched = mutableListOf<Long>()
+        val fixture = fixture(
+            attachController = true,
+            touchSongLastPlayed = { id -> touched.add(id) }
+        )
+        try {
+            fixture.runtime.attachUi()
+            fixture.runtime.playPlayableCollection(
+                items = listOf(
+                    PlayableItem.Local(song(42, "Library Song")),
+                    PlayableItem.Local(song(43, "Next Song"))
+                ),
+                rotate = false
+            )
+            assertEquals(listOf(42L), touched)
+        } finally {
+            fixture.close()
+        }
+    }
+
+    @Test
+    fun skipToQueueIndex_touchesLastPlayedForTargetLocalSong() {
+        val touched = mutableListOf<Long>()
+        val fixture = fixture(
+            attachController = true,
+            touchSongLastPlayed = { id -> touched.add(id) }
+        )
+        try {
+            fixture.runtime.attachUi()
+            fixture.runtime.playPlayableCollection(
+                items = listOf(
+                    PlayableItem.Local(song(10, "Song 10")),
+                    PlayableItem.Local(song(20, "Song 20"))
+                ),
+                rotate = false
+            )
+            assertEquals(listOf(10L), touched)
+
+            fixture.runtime.skipToQueueIndex(1)
+            assertEquals(listOf(10L, 20L), touched)
+        } finally {
+            fixture.close()
+        }
+    }
+
+    @Test
     fun detachUi_keepsSlidingPrefetchAndResolvesRemoteNPlus3() {
         val stream = FakeStreamAccess()
         val fixture = fixture(streamAccess = stream)
@@ -1827,6 +1874,7 @@ class PlaybackRuntimeContinuityTest {
         dispatcher: CoroutineDispatcher = Dispatchers.Unconfined,
         clockMs: (() -> Long)? = null,
         loadSongById: suspend (Long) -> Song? = { null },
+        touchSongLastPlayed: suspend (Long) -> Unit = {},
         ioDispatcher: CoroutineDispatcher = dispatcher,
         isOnline: () -> Boolean = { true }
     ): Fixture {
@@ -1851,6 +1899,7 @@ class PlaybackRuntimeContinuityTest {
                 controllerReconnectBackoffMs = controllerReconnectBackoffMs,
                 startTicker = startTicker,
                 loadSongById = loadSongById,
+                touchSongLastPlayed = touchSongLastPlayed,
                 ioDispatcher = ioDispatcher
             )
         )

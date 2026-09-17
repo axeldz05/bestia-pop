@@ -702,8 +702,8 @@ class PlaybackRuntime internal constructor(
         analyticsCoordinator.applyLyricsToCurrent(songId, lyrics)
     }
 
-    private fun touchLastPlayed(song: Song?) {
-        analyticsCoordinator.touchLastPlayed(song)
+    private fun touchLastPlayed(song: Song?, force: Boolean = false) {
+        analyticsCoordinator.touchLastPlayed(song, force = force)
     }
 
     private fun currentQueueIndex(): Int {
@@ -904,8 +904,10 @@ class PlaybackRuntime internal constructor(
             startPlaying = startPlaying,
             newPlayback = true
         )
+        if (startPlaying) {
+            touchLastPlayed((snapshot.currentItem as? PlayableItem.Local)?.song, force = true)
+        }
         if (controller == null) {
-            touchLastPlayed((snapshot.currentItem as? PlayableItem.Local)?.song)
             persistPlaybackSession(force = true)
         }
         return snapshot.currentIndex

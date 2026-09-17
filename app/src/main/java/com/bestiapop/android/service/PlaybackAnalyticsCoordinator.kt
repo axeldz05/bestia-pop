@@ -45,10 +45,11 @@ internal class PlaybackAnalyticsCoordinator(
         }
     }
 
-    fun touchLastPlayed(song: Song?) {
-        if (song == null || song.id <= 0L || song.id == lastTouchedSongId) return
+    fun touchLastPlayed(song: Song?, force: Boolean = false) {
+        if (song == null || song.id <= 0L) return
+        if (!force && song.id == lastTouchedSongId) return
         lastTouchedSongId = song.id
-        scope.launch(Dispatchers.IO) { dependencies.touchSongLastPlayed(song.id) }
+        scope.launch(dependencies.ioDispatcher) { dependencies.touchSongLastPlayed(song.id) }
     }
 
     fun triggerFlushPostponedTagWrites() {

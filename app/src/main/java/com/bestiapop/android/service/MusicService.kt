@@ -99,6 +99,7 @@ class MusicService : MediaLibraryService() {
         )
     }
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private lateinit var notificationProvider: RefreshingMediaNotificationProvider
 
     override fun onCreate() {
         super.onCreate()
@@ -106,7 +107,7 @@ class MusicService : MediaLibraryService() {
         createPlaybackNotificationChannel()
         watchBackgroundAppOps()
         maybeNotifyBackgroundRestriction("onCreate")
-        val notificationProvider = RefreshingMediaNotificationProvider(
+        notificationProvider = RefreshingMediaNotificationProvider(
             context = this,
             notificationId = PLAYBACK_NOTIFICATION_ID,
             channelId = PLAYBACK_CHANNEL_ID,
@@ -696,12 +697,49 @@ class MusicService : MediaLibraryService() {
     }
 
     private fun handleForegroundServiceStartDenied() {
-        PlaybackDiagnostics.error(
+        val lastNotif = if (::notificationProvider.isInitialized) notificationProvider.lastMediaNotification else null
+        PlaybackDiagnostics.warn(
             PlaybackDiagnostics.TAG_SERVICE,
             "handleForegroundServiceStartDenied: Media3 foreground service start was DENIED! " +
                 "isPlaying=${player?.isPlaying}, playWhenReady=${player?.playWhenReady}, state=${player?.playbackState}, " +
-                "retryAttempts=$foregroundPromoteRetryAttempts, scheduled=$foregroundPromoteRetryScheduled"
+                "hasCachedNotification=${lastNotif != null}, retryAttempts=$foregroundPromoteRetryAttempts"
         )
+
+        // Attempt direct Service.startForeground using cached MediaNotification.
+        // On Android 14+, updating an active service via ServiceCompat.startForeground is permitted,
+        // whereas Media3's internal ContextCompat.startForegroundService is rejected from background.
+        if (lastNotif != null && isPlaybackEngaged()) {
+            val fgsType = if (Build.VERSION.SDK_INT >= 29) {
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+            } else {
+                0
+            }
+            try {
+                ServiceCompat.startForeground(
+                    this,
+                    lastNotif.notificationId,
+                    lastNotif.notification,
+                    fgsType
+                )
+                PlaybackDiagnostics.log(
+                    PlaybackDiagnostics.TAG_SERVICE,
+                    "handleForegroundServiceStartDenied: successfully recovered foreground status directly"
+                )
+                foregroundPromoteRetryAttempts = 0
+                return
+            } catch (e: Exception) {
+                PlaybackDiagnostics.error(
+                    PlaybackDiagnostics.TAG_SERVICE,
+                    "handleForegroundServiceStartDenied: direct startForeground recovery failed: ${e.message}"
+                )
+                try {
+                    val nm = getSystemService(NotificationManager::class.java)
+                    nm?.notify(lastNotif.notificationId, lastNotif.notification)
+                } catch (_: Exception) {
+                }
+            }
+        }
+
         CrashReporter.recordNonFatal(
             IllegalStateException("Media3 foreground service start was denied"),
             mapOf(

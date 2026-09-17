@@ -34,17 +34,30 @@ internal class RefreshingMediaNotificationProvider(
         delegate.setSmallIcon(resourceId)
     }
 
+    @Volatile
+    var lastMediaNotification: MediaNotification? = null
+        private set
+
     override fun createNotification(
         mediaSession: MediaSession,
         mediaButtonPreferences: ImmutableList<CommandButton>,
         actionFactory: MediaNotification.ActionFactory,
         onNotificationChangedCallback: MediaNotification.Provider.Callback
-    ): MediaNotification = delegate.createNotification(
-        mediaSession,
-        mediaButtonPreferences,
-        actionFactory,
-        onNotificationChangedCallback
-    )
+    ): MediaNotification {
+        val notification = delegate.createNotification(
+            mediaSession,
+            mediaButtonPreferences,
+            actionFactory,
+            object : MediaNotification.Provider.Callback {
+                override fun onNotificationChanged(notification: MediaNotification) {
+                    lastMediaNotification = notification
+                    onNotificationChangedCallback.onNotificationChanged(notification)
+                }
+            }
+        )
+        lastMediaNotification = notification
+        return notification
+    }
 
     override fun handleCustomCommand(
         session: MediaSession,

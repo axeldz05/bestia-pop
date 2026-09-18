@@ -1,11 +1,14 @@
 package com.bestiapop.android.ui.screens.discover
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -13,6 +16,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
@@ -26,30 +30,31 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.bestiapop.android.data.listenbrainz.LbPlaylistSummary
 import com.bestiapop.android.data.listenbrainz.MatchedCfRecommendations
 import com.bestiapop.android.data.listenbrainz.MatchedLbPlaylist
 import com.bestiapop.android.data.listenbrainz.MatchedRemoteTrack
-import com.bestiapop.android.data.model.firstArtworkUri
 import com.bestiapop.android.data.model.ActiveDownload
 import com.bestiapop.android.data.model.DiscoverPlaybackOrigin
 import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.data.model.Song
+import com.bestiapop.android.data.model.firstArtworkUri
 import com.bestiapop.android.data.model.toDiscoverOrigin
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.RowScope
-import androidx.compose.ui.text.font.FontWeight
-import com.bestiapop.android.ui.components.ArtworkHero
 import com.bestiapop.android.ui.components.ArtworkThumbnail
+import com.bestiapop.android.ui.components.CollectionDetailHero
+import com.bestiapop.android.ui.components.DiscoverMatchedTrackActions
 import com.bestiapop.android.ui.components.DownloadMissingTracksButton
-import com.bestiapop.android.ui.components.LabeledPlayShuffleButtons
 import com.bestiapop.android.ui.components.MatchedTrackLazyColumn
 import com.bestiapop.android.ui.components.ScreenBackHeader
 import com.bestiapop.android.ui.components.SongItemActions
@@ -61,12 +66,16 @@ import java.text.DateFormat
 import java.util.Date
 import java.util.Locale
 
-fun matchedStreamCountLabel(matched: Int, stream: Int): String = when {
-    matched > 0 && stream > 0 -> "$matched en biblioteca · $stream para escuchar online"
-    matched > 0 -> "$matched en tu biblioteca"
-    stream > 0 -> "$stream canciones para escuchar online"
-    else -> "Sin canciones"
-}
+fun matchedStreamCountLabel(
+    matched: Int,
+    stream: Int,
+): String =
+    when {
+        matched > 0 && stream > 0 -> "$matched en biblioteca · $stream para escuchar online"
+        matched > 0 -> "$matched en tu biblioteca"
+        stream > 0 -> "$stream canciones para escuchar online"
+        else -> "Sin canciones"
+    }
 
 @Composable
 internal fun MatchedPlaylistDetailScaffold(
@@ -74,37 +83,49 @@ internal fun MatchedPlaylistDetailScaffold(
     onBack: () -> Unit,
     loading: Boolean,
     errorMessage: String?,
-    content: @Composable ColumnScope.() -> Unit
+    content: @Composable ColumnScope.() -> Unit,
 ) {
     Surface(
         modifier = Modifier.fillMaxSize(),
-        color = MaterialTheme.colorScheme.background
+        color = MaterialTheme.colorScheme.background,
     ) {
         Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(top = 16.dp, start = 16.dp, end = 16.dp)
+            modifier = Modifier.fillMaxSize(),
         ) {
-            ScreenBackHeader(title = title, onBack = onBack)
-            Spacer(modifier = Modifier.height(12.dp))
+            ScreenBackHeader(
+                title = title,
+                onBack = onBack,
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+            )
             when {
-                loading -> Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    CircularProgressIndicator()
+                loading -> {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        CircularProgressIndicator()
+                    }
                 }
-                errorMessage != null -> Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = errorMessage,
-                        color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodyMedium
-                    )
+
+                errorMessage != null -> {
+                    Box(
+                        modifier =
+                            Modifier
+                                .fillMaxSize()
+                                .padding(16.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            text = errorMessage,
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
                 }
-                else -> content()
+
+                else -> {
+                    content()
+                }
             }
         }
     }
@@ -116,18 +137,19 @@ fun PlaylistSurfaceCard(
     onClick: () -> Unit,
     leading: @Composable () -> Unit,
     lines: @Composable ColumnScope.() -> Unit,
-    trailing: @Composable RowScope.() -> Unit = {}
+    trailing: @Composable RowScope.() -> Unit = {},
 ) {
     Surface(
         color = MaterialTheme.colorScheme.surface,
         shape = RoundedCornerShape(14.dp),
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onClick),
     ) {
         Row(
             modifier = Modifier.padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             leading()
             Spacer(modifier = Modifier.width(14.dp))
@@ -137,7 +159,7 @@ fun PlaylistSurfaceCard(
                     style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                     color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    overflow = TextOverflow.Ellipsis,
                 )
                 lines()
             }
@@ -149,16 +171,19 @@ fun PlaylistSurfaceCard(
 @Composable
 internal fun CfRecommendationsCardItem(
     matched: MatchedCfRecommendations,
-    onClick: () -> Unit
+    onClick: () -> Unit,
 ) {
-    val lastUpdatedLabel = matched.payload.lastUpdatedEpochSec?.let { epochSec ->
-        val formatter = DateFormat.getDateInstance(DateFormat.MEDIUM, Locale.getDefault())
-        " · actualizado ${formatter.format(Date(epochSec * 1000L))}"
-    }.orEmpty()
+    val lastUpdatedLabel =
+        matched.payload.lastUpdatedEpochSec
+            ?.let { epochSec ->
+                val formatter = DateFormat.getDateInstance(DateFormat.MEDIUM, Locale.getDefault())
+                " · actualizado ${formatter.format(Date(epochSec * 1000L))}"
+            }.orEmpty()
 
-    val coverUri = remember(matched.matches) {
-        matched.matches.firstArtworkUri()
-    }
+    val coverUri =
+        remember(matched.matches) {
+            matched.matches.firstArtworkUri()
+        }
 
     PlaylistSurfaceCard(
         title = "Recomendados para vos",
@@ -169,7 +194,7 @@ internal fun CfRecommendationsCardItem(
                 size = 60.dp,
                 cornerRadius = 10.dp,
                 fallbackIcon = Icons.Default.Recommend,
-                contentDescription = "Recomendados para vos"
+                contentDescription = "Recomendados para vos",
             )
         },
         lines = {
@@ -178,43 +203,28 @@ internal fun CfRecommendationsCardItem(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+                overflow = TextOverflow.Ellipsis,
             )
             Text(
                 text = "${matched.totalCount} tracks · CF$lastUpdatedLabel",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.9f),
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+                overflow = TextOverflow.Ellipsis,
             )
-        }
+        },
     )
 }
-
-/**
- * Level 2: Bundled callbacks for track playback and download actions across matched playlists.
- */
-data class DiscoverMatchedTrackActions(
-    val currentItem: PlayableItem?,
-    val activeDownloads: List<ActiveDownload>,
-    val onPlayAt: (Int) -> Unit,
-    val onDownloadRemote: (PlayableItem.Remote) -> Unit,
-    val onRetryDownload: (String) -> Unit,
-    val onCancelDownload: (String) -> Unit,
-    val queueActions: SongQueueActions,
-    val onEditLyrics: (Song) -> Unit,
-    val songActions: SongItemActions = SongItemActions.from(
-        queueActions = queueActions,
-        onEditLyrics = onEditLyrics
-    ),
-    val onSwipeRemote: ((PlayableItem.Remote) -> Unit)? = null
-)
 
 /**
  * Level 2: Shared content layout for matched playlist and CF recommendation detail screens.
  */
 @Composable
 internal fun MatchedPlaylistContent(
+    title: String,
+    subtitle: String?,
+    coverUri: String?,
+    fallbackIcon: ImageVector,
     matchedCount: Int,
     streamCount: Int,
     matches: List<MatchedRemoteTrack>,
@@ -224,106 +234,62 @@ internal fun MatchedPlaylistContent(
     actions: DiscoverMatchedTrackActions,
     emptyMessage: String,
     modifier: Modifier = Modifier,
-    headerContent: (@Composable ColumnScope.() -> Unit)? = null
+    bannerContent: (@Composable ColumnScope.() -> Unit)? = null,
 ) {
+    val listItems =
+        remember(matches) {
+            matches.mapIndexed { index, match -> match.toListItem(index) }
+        }
+
+    val headerComposable: @Composable () -> Unit = {
+        CollectionDetailHero(
+            title = title,
+            subtitle = subtitle,
+            metadata = matchedStreamCountLabel(matchedCount, streamCount),
+            artworkUri = coverUri,
+            fallbackIcon = fallbackIcon,
+            onPlay = onPlay,
+            onShuffle = onShuffle,
+            playEnabled = matches.isNotEmpty(),
+            shuffleEnabled = matches.isNotEmpty(),
+            bannerContent = bannerContent,
+        )
+    }
+
     if (matches.isEmpty()) {
-        Box(
+        LazyColumn(
             modifier = modifier.fillMaxSize(),
-            contentAlignment = Alignment.Center
+            contentPadding = PaddingValues(bottom = 96.dp),
         ) {
-            Text(
-                text = emptyMessage,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodyMedium
-            )
+            item(key = "matched-playlist-header") {
+                headerComposable()
+            }
+            item(key = "matched-playlist-empty") {
+                Box(
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 48.dp, horizontal = 16.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = emptyMessage,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+            }
         }
         return
     }
 
-    Column(modifier = modifier.fillMaxSize()) {
-        headerContent?.invoke(this)
-
-        Text(
-            text = matchedStreamCountLabel(matchedCount, streamCount),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-        )
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        LabeledPlayShuffleButtons(
-            onPlay = onPlay,
-            onShuffle = onShuffle,
-            enabled = matches.isNotEmpty()
-        )
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        val listItems = remember(matches) {
-            matches.mapIndexed { index, match -> match.toListItem(index) }
-        }
-
-        MatchedTrackLazyColumn(
-            matches = listItems,
-            remoteBadge = remoteBadge,
-            currentItem = actions.currentItem,
-            activeDownloads = actions.activeDownloads,
-            onPlayAt = actions.onPlayAt,
-            onDownloadRemote = actions.onDownloadRemote,
-            onRetryDownload = actions.onRetryDownload,
-            onCancelDownload = actions.onCancelDownload,
-            songActions = actions.songActions,
-            onSwipeRemote = actions.onSwipeRemote
-        )
-    }
-}
-
-/** Level 2: Reusable header banner with cover artwork, title and subtitle for discover playlists. */
-@Composable
-internal fun DiscoverPlaylistHeaderBanner(
-    title: String,
-    subtitle: String? = null,
-    coverUri: String? = null,
-    fallbackIcon: ImageVector,
-    contentDescription: String = title,
-    modifier: Modifier = Modifier
-) {
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(bottom = 12.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        ArtworkHero(
-            uri = coverUri,
-            contentDescription = contentDescription,
-            fallback = fallbackIcon,
-            fallbackTint = MaterialTheme.colorScheme.onPrimaryContainer,
-            cornerRadius = 14.dp,
-            containerColor = MaterialTheme.colorScheme.primaryContainer,
-            modifier = Modifier.size(90.dp)
-        )
-        Spacer(modifier = Modifier.width(14.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
-            if (!subtitle.isNullOrBlank()) {
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.9f),
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-        }
-    }
+    MatchedTrackLazyColumn(
+        matches = listItems,
+        remoteBadge = remoteBadge,
+        actions = actions,
+        modifier = modifier,
+        headerContent = headerComposable,
+    )
 }
 
 /** Level 2: CF recommendations detail screen with bundled actions. */
@@ -333,20 +299,33 @@ internal fun CfRecommendationsDetailScreen(
     onBack: () -> Unit,
     onPlay: () -> Unit,
     onShuffle: () -> Unit,
-    actions: DiscoverMatchedTrackActions
+    actions: DiscoverMatchedTrackActions,
 ) {
     val matched = state.data
-    val coverUri = remember(matched?.matches) {
-        matched?.matches?.firstArtworkUri()
-    }
+    val coverUri =
+        remember(matched?.matches) {
+            matched?.matches?.firstArtworkUri()
+        }
+
+    val subtitle =
+        remember(matched?.payload?.lastUpdatedEpochSec) {
+            matched?.payload?.lastUpdatedEpochSec?.let { epochSec ->
+                val formatter = DateFormat.getDateInstance(DateFormat.MEDIUM, Locale.getDefault())
+                "Actualizado ${formatter.format(Date(epochSec * 1000L))}"
+            }
+        }
 
     MatchedPlaylistDetailScaffold(
         title = "Recomendados",
         onBack = onBack,
         loading = matched == null && (state.phase is LoadPhase.Loading || state.phase is LoadPhase.Idle),
-        errorMessage = state.errorMessage
+        errorMessage = state.errorMessage,
     ) {
         MatchedPlaylistContent(
+            title = "Recomendados para vos",
+            subtitle = subtitle,
+            coverUri = coverUri,
+            fallbackIcon = Icons.Default.Recommend,
             matchedCount = matched?.matchedCount ?: 0,
             streamCount = matched?.streamCount ?: 0,
             matches = matched?.matches.orEmpty(),
@@ -355,18 +334,6 @@ internal fun CfRecommendationsDetailScreen(
             onShuffle = onShuffle,
             actions = actions,
             emptyMessage = "Aún no hay recomendaciones CF para tu cuenta.",
-            headerContent = {
-                val subtitle = matched?.payload?.lastUpdatedEpochSec?.let { epochSec ->
-                    val formatter = DateFormat.getDateInstance(DateFormat.MEDIUM, Locale.getDefault())
-                    "Actualizado ${formatter.format(Date(epochSec * 1000L))}"
-                }
-                DiscoverPlaylistHeaderBanner(
-                    title = "Recomendados para vos",
-                    subtitle = subtitle,
-                    coverUri = coverUri,
-                    fallbackIcon = Icons.Default.Recommend
-                )
-            }
         )
     }
 }
@@ -386,32 +353,34 @@ internal fun CfRecommendationsDetailScreen(
     onCancelDownload: (String) -> Unit,
     queueActions: SongQueueActions,
     onEditLyrics: (Song) -> Unit,
-    songItemActions: SongItemActions? = null
+    songItemActions: SongItemActions? = null,
 ) = CfRecommendationsDetailScreen(
     state = state,
     onBack = onBack,
     onPlay = onPlay,
     onShuffle = onShuffle,
-    actions = DiscoverMatchedTrackActions(
-        currentItem = currentItem,
-        activeDownloads = activeDownloads,
-        onPlayAt = onPlayAt,
-        onDownloadRemote = onDownloadRemote,
-        onRetryDownload = onRetryDownload,
-        onCancelDownload = onCancelDownload,
-        queueActions = queueActions,
-        onEditLyrics = onEditLyrics,
-        songActions = songItemActions ?: SongItemActions.from(
+    actions =
+        DiscoverMatchedTrackActions(
+            currentItem = currentItem,
+            activeDownloads = activeDownloads,
+            onPlayAt = onPlayAt,
+            onDownloadRemote = onDownloadRemote,
+            onRetryDownload = onRetryDownload,
+            onCancelDownload = onCancelDownload,
             queueActions = queueActions,
-            onEditLyrics = onEditLyrics
-        )
-    )
+            onEditLyrics = onEditLyrics,
+            songActions =
+                songItemActions ?: SongItemActions.from(
+                    queueActions = queueActions,
+                    onEditLyrics = onEditLyrics,
+                ),
+        ),
 )
 
 @Composable
 internal fun LbPlaylistCardItem(
     playlist: LbPlaylistSummary,
-    onClick: () -> Unit
+    onClick: () -> Unit,
 ) {
     PlaylistSurfaceCard(
         title = playlist.title,
@@ -422,7 +391,7 @@ internal fun LbPlaylistCardItem(
                 size = 60.dp,
                 cornerRadius = 10.dp,
                 fallbackIcon = Icons.AutoMirrored.Filled.QueueMusic,
-                contentDescription = playlist.title
+                contentDescription = playlist.title,
             )
         },
         lines = {
@@ -432,19 +401,20 @@ internal fun LbPlaylistCardItem(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
             Text(
-                text = if (playlist.trackCount > 0) {
-                    "${playlist.trackCount} tracks · ListenBrainz"
-                } else {
-                    "ListenBrainz"
-                },
+                text =
+                    if (playlist.trackCount > 0) {
+                        "${playlist.trackCount} tracks · ListenBrainz"
+                    } else {
+                        "ListenBrainz"
+                    },
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.9f)
+                color = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.9f),
             )
-        }
+        },
     )
 }
 
@@ -457,24 +427,24 @@ internal fun LbPlaylistDetailScreen(
     onShuffle: () -> Unit,
     onSaveAsLocal: () -> Unit,
     onImportWithDownloads: () -> Unit,
-    actions: DiscoverMatchedTrackActions
+    actions: DiscoverMatchedTrackActions,
 ) {
     val matchedPlaylist = state.data
     MatchedPlaylistDetailScaffold(
         title = matchedPlaylist?.detail?.summary?.title ?: "Para Ti",
         onBack = onBack,
         loading = state.phase is LoadPhase.Loading || state.phase is LoadPhase.Idle,
-        errorMessage = state.errorMessage
+        errorMessage = state.errorMessage,
     ) {
         val matched = matchedPlaylist
         if (matched == null) {
             Box(
                 modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
+                contentAlignment = Alignment.Center,
             ) {
                 Text(
                     text = "No se pudo cargar la playlist",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
             return@MatchedPlaylistDetailScaffold
@@ -484,7 +454,16 @@ internal fun LbPlaylistDetailScreen(
         val hasMatched = matched.matchedCount > 0
         val hasUnmatched = matched.streamCount > 0
 
+        val coverUri =
+            remember(matched) {
+                matched.detail.summary.coverUrl ?: matched.matches.firstArtworkUri()
+            }
+
         MatchedPlaylistContent(
+            title = matched.detail.summary.title,
+            subtitle = description,
+            coverUri = coverUri,
+            fallbackIcon = Icons.AutoMirrored.Filled.QueueMusic,
             matchedCount = matched.matchedCount,
             streamCount = matched.streamCount,
             matches = matched.matches,
@@ -493,27 +472,19 @@ internal fun LbPlaylistDetailScreen(
             onShuffle = onShuffle,
             actions = actions,
             emptyMessage = "Esta playlist no tiene tracks",
-            headerContent = {
-                val coverUri = remember(matched) {
-                    matched.detail.summary.coverUrl ?: matched.matches.firstArtworkUri()
-                }
-                DiscoverPlaylistHeaderBanner(
-                    title = matched.detail.summary.title,
-                    subtitle = description,
-                    coverUri = coverUri,
-                    fallbackIcon = Icons.AutoMirrored.Filled.QueueMusic
-                )
+            bannerContent = {
                 if (hasMatched || hasUnmatched) {
                     Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(bottom = 8.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         OutlinedButton(
                             onClick = onSaveAsLocal,
                             shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier.weight(1f),
                         ) {
                             Icon(imageVector = Icons.AutoMirrored.Filled.PlaylistAdd, contentDescription = null)
                             Spacer(modifier = Modifier.width(4.dp))
@@ -522,12 +493,12 @@ internal fun LbPlaylistDetailScreen(
                         if (hasUnmatched) {
                             DownloadMissingTracksButton(
                                 onClick = onImportWithDownloads,
-                                modifier = Modifier.weight(1f)
+                                modifier = Modifier.weight(1f),
                             )
                         }
                     }
                 }
-            }
+            },
         )
     }
 }
@@ -549,7 +520,7 @@ internal fun LbPlaylistDetailScreen(
     onCancelDownload: (String) -> Unit,
     queueActions: SongQueueActions,
     onEditLyrics: (Song) -> Unit,
-    songItemActions: SongItemActions? = null
+    songItemActions: SongItemActions? = null,
 ) = LbPlaylistDetailScreen(
     state = state,
     onBack = onBack,
@@ -557,20 +528,22 @@ internal fun LbPlaylistDetailScreen(
     onShuffle = onShuffle,
     onSaveAsLocal = onSaveAsLocal,
     onImportWithDownloads = onImportWithDownloads,
-    actions = DiscoverMatchedTrackActions(
-        currentItem = currentItem,
-        activeDownloads = activeDownloads,
-        onPlayAt = onPlayAt,
-        onDownloadRemote = onDownloadRemote,
-        onRetryDownload = onRetryDownload,
-        onCancelDownload = onCancelDownload,
-        queueActions = queueActions,
-        onEditLyrics = onEditLyrics,
-        songActions = songItemActions ?: SongItemActions.from(
+    actions =
+        DiscoverMatchedTrackActions(
+            currentItem = currentItem,
+            activeDownloads = activeDownloads,
+            onPlayAt = onPlayAt,
+            onDownloadRemote = onDownloadRemote,
+            onRetryDownload = onRetryDownload,
+            onCancelDownload = onCancelDownload,
             queueActions = queueActions,
-            onEditLyrics = onEditLyrics
-        )
-    )
+            onEditLyrics = onEditLyrics,
+            songActions =
+                songItemActions ?: SongItemActions.from(
+                    queueActions = queueActions,
+                    onEditLyrics = onEditLyrics,
+                ),
+        ),
 )
 
 /**
@@ -597,7 +570,7 @@ fun DiscoverPlaylistDetailHost(
     onOpenLocalPlaylist: (Long) -> Unit,
     onImportLbWithDownloads: () -> Unit,
     songItemActions: SongItemActions? = null,
-    onSwipeRemote: ((PlayableItem.Remote) -> Unit)? = null
+    onSwipeRemote: ((PlayableItem.Remote) -> Unit)? = null,
 ) {
     val makeActions: ((Int) -> Unit) -> DiscoverMatchedTrackActions = { onPlayAt ->
         DiscoverMatchedTrackActions(
@@ -609,11 +582,12 @@ fun DiscoverPlaylistDetailHost(
             onCancelDownload = onCancelDownload,
             queueActions = songActions,
             onEditLyrics = onEditLyrics,
-            songActions = songItemActions ?: SongItemActions.from(
-                queueActions = songActions,
-                onEditLyrics = onEditLyrics
-            ),
-            onSwipeRemote = onSwipeRemote
+            songActions =
+                songItemActions ?: SongItemActions.from(
+                    queueActions = songActions,
+                    onEditLyrics = onEditLyrics,
+                ),
+            onSwipeRemote = onSwipeRemote,
         )
     }
 
@@ -634,11 +608,12 @@ fun DiscoverPlaylistDetailHost(
             },
             onSaveAsLocal = { onSaveLbAsLocal(onOpenLocalPlaylist) },
             onImportWithDownloads = onImportLbWithDownloads,
-            actions = makeActions { index ->
-                if (matched != null) {
-                    onPlayMatched(matched.toPlayableItems(), matched.toDiscoverOrigin(), index)
-                }
-            }
+            actions =
+                makeActions { index ->
+                    if (matched != null) {
+                        onPlayMatched(matched.toPlayableItems(), matched.toDiscoverOrigin(), index)
+                    }
+                },
         )
     } else if (cfDetailOpen) {
         val matched = cfRecommendationsState.data
@@ -655,13 +630,12 @@ fun DiscoverPlaylistDetailHost(
                     onShuffleMatched(matched.toPlayableItems(), DiscoverPlaybackOrigin.CfRecommendations)
                 }
             },
-            actions = makeActions { index ->
-                if (matched != null) {
-                    onPlayMatched(matched.toPlayableItems(), DiscoverPlaybackOrigin.CfRecommendations, index)
-                }
-            }
+            actions =
+                makeActions { index ->
+                    if (matched != null) {
+                        onPlayMatched(matched.toPlayableItems(), DiscoverPlaybackOrigin.CfRecommendations, index)
+                    }
+                },
         )
     }
 }
-
-

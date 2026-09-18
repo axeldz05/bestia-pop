@@ -1,40 +1,31 @@
 package com.bestiapop.android.ui.screens.discover
 
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Shuffle
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
+import androidx.compose.material.icons.filled.Album
+import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.bestiapop.android.data.model.CatalogTrackCandidate
 import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.ui.components.ActiveAlbumDownloadProgress
 import com.bestiapop.android.ui.components.AlbumDownloadStateButton
-import com.bestiapop.android.ui.components.ArtworkThumbnail
+import com.bestiapop.android.ui.components.CollectionDetailHero
 import com.bestiapop.android.ui.components.ScreenBackHeader
 import com.bestiapop.android.ui.components.findUiDownloadByTrack
 import com.bestiapop.android.ui.components.isCurrentPlaying
@@ -54,7 +45,7 @@ data class DiscoverCollectionActions(
     val onPlayCandidate: (CatalogTrackCandidate) -> Unit,
     val onDownloadCandidate: (CatalogTrackCandidate) -> Unit,
     val onSelectArtist: (String) -> Unit = {},
-    val albumDownloadProgress: ActiveAlbumDownloadProgress = ActiveAlbumDownloadProgress()
+    val albumDownloadProgress: ActiveAlbumDownloadProgress = ActiveAlbumDownloadProgress(),
 )
 
 /** Level 2: Collection drill-down view using bundled [DiscoverCollectionActions]. */
@@ -68,7 +59,7 @@ fun DiscoverCollectionDetailView(
     albumStatus: ItemLibraryStatus = ItemLibraryStatus.NOT_IN_LIBRARY,
     currentItem: PlayableItem? = null,
     actions: DiscoverCollectionActions,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     DiscoverCollectionDetailView(
         title = title,
@@ -87,7 +78,7 @@ fun DiscoverCollectionDetailView(
         onPlayCandidate = actions.onPlayCandidate,
         onDownloadCandidate = actions.onDownloadCandidate,
         onSelectArtist = actions.onSelectArtist,
-        modifier = modifier
+        modifier = modifier,
     )
 }
 
@@ -110,19 +101,19 @@ fun DiscoverCollectionDetailView(
     albumStatus: ItemLibraryStatus = ItemLibraryStatus.NOT_IN_LIBRARY,
     albumDownloadProgress: ActiveAlbumDownloadProgress = ActiveAlbumDownloadProgress(),
     currentItem: PlayableItem? = null,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier.fillMaxSize()) {
         ScreenBackHeader(
             title = title,
             onBack = onBack,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
         )
 
         if (isLoading) {
             Box(
                 modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
+                contentAlignment = Alignment.Center,
             ) {
                 CircularProgressIndicator()
             }
@@ -131,95 +122,56 @@ fun DiscoverCollectionDetailView(
 
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(bottom = 80.dp)
+            contentPadding = PaddingValues(bottom = 96.dp),
         ) {
-            item {
-                // Header Info
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    ArtworkThumbnail(
-                        artworkUri = coverUrl,
-                        size = 100.dp,
-                        cornerRadius = 12.dp
-                    )
-                    Spacer(modifier = Modifier.width(16.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = title,
-                            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        val artistName = candidates.firstOrNull()?.artist.orEmpty()
-                        if (artistName.isNotEmpty()) {
-                            Text(
-                                text = artistName,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.clickable { onSelectArtist(artistName) }
+            item(key = "collection-hero-header") {
+                val artistName = candidates.firstOrNull()?.artist.orEmpty()
+                val fallback =
+                    when (kind) {
+                        CatalogCollectionKind.PLAYLIST -> Icons.AutoMirrored.Filled.QueueMusic
+                        CatalogCollectionKind.GENRE -> Icons.Default.Album
+                        else -> Icons.Default.MusicNote
+                    }
+                CollectionDetailHero(
+                    title = title,
+                    subtitle = artistName.takeIf { it.isNotBlank() },
+                    metadata = "${candidates.size} canciones",
+                    artworkUri = coverUrl,
+                    fallbackIcon = fallback,
+                    onSubtitleClick =
+                        if (artistName.isNotBlank()) {
+                            { onSelectArtist(artistName) }
+                        } else {
+                            null
+                        },
+                    onPlay = onPlayAll,
+                    onShuffle = onShuffle,
+                    playEnabled = candidates.isNotEmpty(),
+                    shuffleEnabled = candidates.isNotEmpty(),
+                    actionButtons = {
+                        if (kind == CatalogCollectionKind.ALBUM) {
+                            AlbumLibraryActionButton(
+                                status = albumStatus,
+                                onSave = onSaveAlbum,
+                                onAlreadySaved = {},
+                                modifier = Modifier.size(36.dp),
                             )
                         }
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = "${candidates.size} canciones",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
 
-                // Action Buttons
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    FilledTonalButton(
-                        onClick = onPlayAll,
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-                    ) {
-                        Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Play")
-                    }
-
-                    FilledTonalButton(
-                        onClick = onShuffle,
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-                    ) {
-                        Icon(Icons.Default.Shuffle, contentDescription = null, modifier = Modifier.size(18.dp))
-                    }
-
-                    if (kind == CatalogCollectionKind.ALBUM) {
-                        AlbumLibraryActionButton(
-                            status = albumStatus,
-                            onSave = onSaveAlbum,
-                            onAlreadySaved = {},
-                            modifier = Modifier.size(36.dp)
-                        )
-                    }
-
-                    if (albumStatus != ItemLibraryStatus.DOWNLOADED) {
-                        AlbumDownloadStateButton(
-                            progress = albumDownloadProgress,
-                            onDownload = onDownloadAll
-                        )
-                    }
-                }
+                        if (albumStatus != ItemLibraryStatus.DOWNLOADED) {
+                            AlbumDownloadStateButton(
+                                progress = albumDownloadProgress,
+                                onDownload = onDownloadAll,
+                            )
+                        }
+                    },
+                )
             }
 
             itemsIndexed(
                 items = candidates,
                 key = { index, it -> "candidate-${it.trackNumber}-${it.identity.artist}-${it.identity.title}-$index" },
-                contentType = { _, _ -> "candidate-track-item" }
+                contentType = { _, _ -> "candidate-track-item" },
             ) { _, candidate ->
                 val activeDownload = LocalDiscoverContext.current.activeDownloads.findUiDownloadByTrack(candidate.artist, candidate.title)
                 val isPlaying = isCurrentPlaying(currentItem, candidate.identity.artist, candidate.identity.title)
@@ -237,10 +189,10 @@ fun DiscoverCollectionDetailView(
                                     text = "$num",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.width(28.dp)
+                                    modifier = Modifier.width(28.dp),
                                 )
                             }
-                        }
+                        },
                     )
                 }
             }

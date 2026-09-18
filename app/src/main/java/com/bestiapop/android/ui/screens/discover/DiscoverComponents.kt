@@ -72,7 +72,7 @@ import com.bestiapop.android.ui.state.ItemLibraryStatus
 data class DiscoverSwipeActions(
     val onSwipeTrack: ((TrackMeta) -> Unit)? = null,
     val onSwipeAlbum: ((CatalogAlbum) -> Unit)? = null,
-    val onSwipeArtist: ((String) -> Unit)? = null
+    val onSwipeArtist: ((String) -> Unit)? = null,
 )
 
 /**
@@ -88,9 +88,10 @@ data class DiscoverContext(
     val activeDownloads: List<ActiveDownload> = emptyList(),
     val getTrackStatus: (TrackMeta) -> ItemLibraryStatus = { ItemLibraryStatus.NOT_IN_LIBRARY },
     val getAlbumStatus: (String, String) -> ItemLibraryStatus = { _, _ -> ItemLibraryStatus.NOT_IN_LIBRARY },
-    val onNotifyStatus: ((String) -> Unit)? = null
+    val onNotifyStatus: ((String) -> Unit)? = null,
 ) {
     fun getAlbumStatus(album: CatalogAlbum): ItemLibraryStatus = getAlbumStatus(album.title, album.artist)
+
     fun withoutSwipeActions(): DiscoverContext = copy(swipeActions = DiscoverSwipeActions())
 }
 
@@ -101,7 +102,7 @@ val LocalDiscoverContext = staticCompositionLocalOf { DiscoverContext() }
 fun ItemLibraryStatusIcon(
     status: ItemLibraryStatus,
     modifier: Modifier = Modifier,
-    size: Dp = 18.dp
+    size: Dp = 18.dp,
 ) {
     when (status) {
         ItemLibraryStatus.DOWNLOADED -> {
@@ -109,18 +110,22 @@ fun ItemLibraryStatusIcon(
                 imageVector = Icons.Default.CheckCircle,
                 contentDescription = "En la biblioteca",
                 tint = MaterialTheme.colorScheme.primary,
-                modifier = modifier.size(size)
+                modifier = modifier.size(size),
             )
         }
+
         ItemLibraryStatus.SAVED_REMOTE -> {
             Icon(
                 imageVector = Icons.Default.BookmarkAdded,
                 contentDescription = "Guardada en biblioteca",
                 tint = MaterialTheme.colorScheme.secondary,
-                modifier = modifier.size(size)
+                modifier = modifier.size(size),
             )
         }
-        ItemLibraryStatus.NOT_IN_LIBRARY -> Unit
+
+        ItemLibraryStatus.NOT_IN_LIBRARY -> {
+            Unit
+        }
     }
 }
 
@@ -132,7 +137,7 @@ internal fun DiscoverActionIcon(
     modifier: Modifier = Modifier,
     tint: Color = MaterialTheme.colorScheme.primary,
     iconSize: Dp = 20.dp,
-    boxSize: Dp = 36.dp
+    boxSize: Dp = 36.dp,
 ) {
     HeaderActionIcon(
         onClick = onClick,
@@ -141,7 +146,7 @@ internal fun DiscoverActionIcon(
         modifier = modifier,
         tint = tint,
         iconSize = iconSize,
-        boxSize = boxSize
+        boxSize = boxSize,
     )
 }
 
@@ -151,12 +156,12 @@ internal fun DiscoverStatusActionIcon(
     status: ItemLibraryStatus,
     modifier: Modifier = Modifier,
     iconSize: Dp = 20.dp,
-    boxSize: Dp = 36.dp
+    boxSize: Dp = 36.dp,
 ) {
     CircleActionBox(
         onClick = onClick,
         modifier = modifier,
-        boxSize = boxSize
+        boxSize = boxSize,
     ) {
         ItemLibraryStatusIcon(status = status, size = iconSize)
     }
@@ -170,7 +175,7 @@ fun TrackLibraryActionButtons(
     activeDownload: ActiveDownload? = null,
     onNotifyStatus: ((String) -> Unit)? = null,
     onAlreadyInLibrary: () -> Unit = { onNotifyStatus?.invoke(status.trackMessage) },
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     if (activeDownload != null) {
         DownloadStateTrailing(
@@ -184,9 +189,9 @@ fun TrackLibraryActionButtons(
                     status = ItemLibraryStatus.DOWNLOADED,
                     iconSize = 20.dp,
                     boxSize = 36.dp,
-                    modifier = modifier
+                    modifier = modifier,
                 )
-            }
+            },
         )
         return
     }
@@ -197,16 +202,17 @@ fun TrackLibraryActionButtons(
                 status = status,
                 iconSize = 20.dp,
                 boxSize = 36.dp,
-                modifier = modifier
+                modifier = modifier,
             )
         }
+
         ItemLibraryStatus.SAVED_REMOTE -> {
             Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
                 DiscoverStatusActionIcon(
                     onClick = onAlreadyInLibrary,
                     status = status,
                     iconSize = 20.dp,
-                    boxSize = 36.dp
+                    boxSize = 36.dp,
                 )
                 DiscoverActionIcon(
                     onClick = onDownload,
@@ -214,10 +220,11 @@ fun TrackLibraryActionButtons(
                     contentDescription = "Descargar localmente",
                     tint = MaterialTheme.colorScheme.primary,
                     iconSize = 20.dp,
-                    boxSize = 36.dp
+                    boxSize = 36.dp,
                 )
             }
         }
+
         ItemLibraryStatus.NOT_IN_LIBRARY -> {
             DiscoverActionIcon(
                 onClick = onDownload,
@@ -226,7 +233,7 @@ fun TrackLibraryActionButtons(
                 tint = MaterialTheme.colorScheme.primary,
                 iconSize = 20.dp,
                 boxSize = 36.dp,
-                modifier = modifier
+                modifier = modifier,
             )
         }
     }
@@ -241,7 +248,7 @@ fun AlbumLibraryActionButton(
     onAlreadySaved: () -> Unit = {
         status.albumMessage.takeIf { it.isNotBlank() }?.let { onNotifyStatus?.invoke(it) }
     },
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     when (status) {
         ItemLibraryStatus.DOWNLOADED, ItemLibraryStatus.SAVED_REMOTE -> {
@@ -250,9 +257,10 @@ fun AlbumLibraryActionButton(
                 status = status,
                 iconSize = 18.dp,
                 boxSize = 32.dp,
-                modifier = modifier
+                modifier = modifier,
             )
         }
+
         ItemLibraryStatus.NOT_IN_LIBRARY -> {
             DiscoverActionIcon(
                 onClick = onSave,
@@ -261,7 +269,7 @@ fun AlbumLibraryActionButton(
                 tint = MaterialTheme.colorScheme.primary,
                 iconSize = 18.dp,
                 boxSize = 32.dp,
-                modifier = modifier
+                modifier = modifier,
             )
         }
     }
@@ -272,33 +280,35 @@ fun AlbumLibraryActionButton(
 fun AlbumLibraryHeaderButton(
     status: ItemLibraryStatus,
     onSaveAlbum: () -> Unit,
-    onAlreadyInLibrary: (String) -> Unit
+    onAlreadyInLibrary: (String) -> Unit,
 ) {
     when (status) {
         ItemLibraryStatus.DOWNLOADED -> {
             FilledTonalButton(
                 onClick = { status.albumMessage.takeIf { it.isNotBlank() }?.let(onAlreadyInLibrary) },
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
             ) {
                 Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(modifier = Modifier.width(4.dp))
                 Text("En biblioteca")
             }
         }
+
         ItemLibraryStatus.SAVED_REMOTE -> {
             OutlinedButton(
                 onClick = { status.albumMessage.takeIf { it.isNotBlank() }?.let(onAlreadyInLibrary) },
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
             ) {
                 Icon(Icons.Default.BookmarkAdded, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(modifier = Modifier.width(4.dp))
                 Text("Guardado")
             }
         }
+
         ItemLibraryStatus.NOT_IN_LIBRARY -> {
             OutlinedButton(
                 onClick = onSaveAlbum,
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
             ) {
                 Icon(Icons.Default.BookmarkAdd, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(modifier = Modifier.width(4.dp))
@@ -325,7 +335,7 @@ fun DiscoverMediaCard(
     onSwipeAction: (() -> Unit)? = null,
     swipeAction: SubmenuSwipeAction = LocalSubmenuGestureSettings.current.swipeLeftAction,
     topEndBadge: @Composable (BoxScope.() -> Unit)? = null,
-    bottomEndAction: @Composable (BoxScope.() -> Unit)? = null
+    bottomEndAction: @Composable (BoxScope.() -> Unit)? = null,
 ) {
     val cardModifier = if (cardWidth != null) Modifier.width(cardWidth) else Modifier.fillMaxWidth()
     val cardContent = @Composable {
@@ -333,24 +343,26 @@ fun DiscoverMediaCard(
             onClick = onClick,
             modifier = cardModifier,
             shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
-            )
+            colors =
+                CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                ),
         ) {
             Column(modifier = Modifier.padding(8.dp)) {
-                val imageBoxModifier = if (imageSize != null) {
-                    Modifier.size(imageSize)
-                } else {
-                    Modifier
-                        .fillMaxWidth()
-                        .aspectRatio(aspectRatio)
-                }
+                val imageBoxModifier =
+                    if (imageSize != null) {
+                        Modifier.size(imageSize)
+                    } else {
+                        Modifier
+                            .fillMaxWidth()
+                            .aspectRatio(aspectRatio)
+                    }
                 Box(modifier = imageBoxModifier) {
                     ArtworkThumbnail(
                         artworkUri = artworkUri,
                         size = imageSize,
                         cornerRadius = 12.dp,
-                        modifier = Modifier.fillMaxSize()
+                        modifier = Modifier.fillMaxSize(),
                     )
 
                     topEndBadge?.invoke(this)
@@ -363,7 +375,7 @@ fun DiscoverMediaCard(
                     text = title,
                     style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    overflow = TextOverflow.Ellipsis,
                 )
 
                 if (subtitle.isNotEmpty()) {
@@ -372,7 +384,7 @@ fun DiscoverMediaCard(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
             }
@@ -384,7 +396,7 @@ fun DiscoverMediaCard(
             action = swipeAction,
             onSwipeAction = onSwipeAction,
             shape = RoundedCornerShape(16.dp),
-            modifier = modifier.then(cardModifier)
+            modifier = modifier.then(cardModifier),
         ) {
             cardContent()
         }
@@ -400,17 +412,18 @@ fun DiscoverMediaCard(
 fun BoxScope.MediaCardBadge(
     modifier: Modifier = Modifier,
     onClick: (() -> Unit)? = null,
-    content: @Composable () -> Unit
+    content: @Composable () -> Unit,
 ) {
     Box(
-        modifier = modifier
-            .align(Alignment.TopEnd)
-            .padding(4.dp)
-            .size(26.dp)
-            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.85f), CircleShape)
-            .clip(CircleShape)
-            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
-        contentAlignment = Alignment.Center
+        modifier =
+            modifier
+                .align(Alignment.TopEnd)
+                .padding(4.dp)
+                .size(26.dp)
+                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.85f), CircleShape)
+                .clip(CircleShape)
+                .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
+        contentAlignment = Alignment.Center,
     ) {
         content()
     }
@@ -425,23 +438,24 @@ fun BoxScope.MediaCardAction(
     modifier: Modifier = Modifier,
     containerColor: Color = MaterialTheme.colorScheme.primary,
     contentColor: Color = MaterialTheme.colorScheme.onPrimary,
-    size: Dp = 36.dp
+    size: Dp = 36.dp,
 ) {
     Box(
-        modifier = modifier
-            .align(Alignment.BottomEnd)
-            .padding(4.dp)
-            .size(size)
-            .background(containerColor, CircleShape)
-            .clip(CircleShape)
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center
+        modifier =
+            modifier
+                .align(Alignment.BottomEnd)
+                .padding(4.dp)
+                .size(size)
+                .background(containerColor, CircleShape)
+                .clip(CircleShape)
+                .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
     ) {
         Icon(
             imageVector = icon,
             contentDescription = contentDescription,
             tint = contentColor,
-            modifier = Modifier.size(size * 0.55f)
+            modifier = Modifier.size(size * 0.55f),
         )
     }
 }
@@ -456,9 +470,11 @@ fun DiscoverTrackCard(
     onNotifyStatus: ((String) -> Unit)? = LocalDiscoverContext.current.onNotifyStatus,
     onAlreadyInLibrary: () -> Unit = { onNotifyStatus?.invoke(status.trackMessage) },
     onSwipeAction: (() -> Unit)? = null,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
-    val resolvedSwipeAction = onSwipeAction ?: LocalDiscoverContext.current.swipeActions.onSwipeTrack?.let { cb -> { cb(track) } }
+    val resolvedSwipeAction =
+        onSwipeAction ?: LocalDiscoverContext.current.swipeActions.onSwipeTrack
+            ?.let { cb -> { cb(track) } }
     DiscoverMediaCard(
         title = track.title,
         subtitle = track.artist,
@@ -479,9 +495,9 @@ fun DiscoverTrackCard(
             MediaCardAction(
                 onClick = onPlay,
                 icon = Icons.Default.PlayArrow,
-                contentDescription = "Reproducir"
+                contentDescription = "Reproducir",
             )
-        }
+        },
     )
 }
 
@@ -497,7 +513,7 @@ fun DiscoverAlbumCard(
     imageSize: Dp = 134.dp,
     onSwipeAction: (() -> Unit)? = null,
     topEndBadge: @Composable (BoxScope.() -> Unit)? = null,
-    bottomEndAction: @Composable (BoxScope.() -> Unit)? = null
+    bottomEndAction: @Composable (BoxScope.() -> Unit)? = null,
 ) {
     DiscoverMediaCard(
         title = title,
@@ -509,7 +525,7 @@ fun DiscoverAlbumCard(
         onSwipeAction = onSwipeAction,
         modifier = modifier,
         topEndBadge = topEndBadge,
-        bottomEndAction = bottomEndAction
+        bottomEndAction = bottomEndAction,
     )
 }
 
@@ -527,9 +543,11 @@ fun DiscoverAlbumCard(
         status.albumMessage.takeIf { it.isNotBlank() }?.let { onNotifyStatus?.invoke(it) }
     },
     onSwipeAction: (() -> Unit)? = null,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
-    val resolvedSwipeAction = onSwipeAction ?: LocalDiscoverContext.current.swipeActions.onSwipeAlbum?.let { cb -> { cb(album) } }
+    val resolvedSwipeAction =
+        onSwipeAction ?: LocalDiscoverContext.current.swipeActions.onSwipeAlbum
+            ?.let { cb -> { cb(album) } }
     DiscoverAlbumCard(
         title = album.title,
         artist = album.artist,
@@ -545,14 +563,15 @@ fun DiscoverAlbumCard(
                     status = status,
                     onSave = onSave,
                     onAlreadySaved = onAlreadySaved,
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(4.dp)
-                        .size(32.dp)
-                        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.85f), CircleShape)
+                    modifier =
+                        Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(4.dp)
+                            .size(32.dp)
+                            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.85f), CircleShape),
                 )
             }
-        }
+        },
     )
 }
 
@@ -565,6 +584,7 @@ fun DiscoverTrackListItem(
     activeDownload: ActiveDownload? = null,
     status: ItemLibraryStatus = LocalDiscoverContext.current.getTrackStatus(track),
     highlighted: Boolean = false,
+    showArtwork: Boolean = true,
     subtitle: String? = null,
     leading: (@Composable RowScope.() -> Unit)? = null,
     trailing: (@Composable RowScope.() -> Unit)? = null,
@@ -573,36 +593,40 @@ fun DiscoverTrackListItem(
         status.trackMessage.takeIf { it.isNotBlank() }?.let { onNotifyStatus?.invoke(it) }
     },
     onSwipeAction: (() -> Unit)? = null,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
-    val resolvedSwipeAction = onSwipeAction ?: LocalDiscoverContext.current.swipeActions.onSwipeTrack?.let { cb -> { cb(track) } }
+    val resolvedSwipeAction =
+        onSwipeAction ?: LocalDiscoverContext.current.swipeActions.onSwipeTrack
+            ?.let { cb -> { cb(track) } }
     val rowContent = @Composable {
         TrackMetaRow(
             artworkUri = track.artworkUri,
             title = track.title,
             subtitle = subtitle ?: track.artist,
             highlighted = highlighted,
+            showArtwork = showArtwork,
             leading = leading,
             onClick = onPlay,
-            modifier = Modifier
-                .background(
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
-                    shape = RoundedCornerShape(12.dp)
-                )
-                .padding(horizontal = 4.dp, vertical = 2.dp),
-            trailing = trailing ?: {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    TrackStorageIcon(isStreaming = !status.isDownloaded, size = 16.dp)
-                    Spacer(modifier = Modifier.width(4.dp))
-                    TrackLibraryActionButtons(
-                        status = status,
-                        onDownload = onDownload,
-                        activeDownload = activeDownload,
-                        onNotifyStatus = onNotifyStatus,
-                        onAlreadyInLibrary = onAlreadyInLibrary
-                    )
-                }
-            }
+            modifier =
+                Modifier
+                    .background(
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                        shape = RoundedCornerShape(12.dp),
+                    ).padding(horizontal = 4.dp, vertical = 2.dp),
+            trailing =
+                trailing ?: {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        TrackStorageIcon(isStreaming = !status.isDownloaded, size = 16.dp)
+                        Spacer(modifier = Modifier.width(4.dp))
+                        TrackLibraryActionButtons(
+                            status = status,
+                            onDownload = onDownload,
+                            activeDownload = activeDownload,
+                            onNotifyStatus = onNotifyStatus,
+                            onAlreadyInLibrary = onAlreadyInLibrary,
+                        )
+                    }
+                },
         )
     }
 
@@ -610,7 +634,7 @@ fun DiscoverTrackListItem(
         ItemSwipeBox(
             onSwipeAction = resolvedSwipeAction,
             shape = RoundedCornerShape(12.dp),
-            modifier = modifier
+            modifier = modifier,
         ) {
             rowContent()
         }
@@ -628,24 +652,25 @@ fun DiscoverSectionHeader(
     modifier: Modifier = Modifier,
     badgeText: String? = null,
     badgeColor: Color = MaterialTheme.colorScheme.primary,
-    trailing: (@Composable () -> Unit)? = null
+    trailing: (@Composable () -> Unit)? = null,
 ) {
     Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 4.dp),
+        modifier =
+            modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 4.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
             text = title,
-            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
+            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
         )
         if (badgeText != null) {
             Text(
                 text = badgeText,
                 style = MaterialTheme.typography.labelSmall,
-                color = badgeColor
+                color = badgeColor,
             )
         } else if (trailing != null) {
             trailing()
@@ -662,16 +687,16 @@ fun DiscoverCarouselRow(
     modifier: Modifier = Modifier,
     contentPadding: PaddingValues = PaddingValues(0.dp),
     horizontalArrangement: Arrangement.Horizontal = Arrangement.Start,
-    content: LazyListScope.() -> Unit
+    content: LazyListScope.() -> Unit,
 ) {
     CompositionLocalProvider(
-        LocalDiscoverContext provides LocalDiscoverContext.current.withoutSwipeActions()
+        LocalDiscoverContext provides LocalDiscoverContext.current.withoutSwipeActions(),
     ) {
         LazyRow(
             modifier = modifier,
             contentPadding = contentPadding,
             horizontalArrangement = horizontalArrangement,
-            content = content
+            content = content,
         )
     }
 }
@@ -684,19 +709,19 @@ fun DiscoverFeedHorizontalSection(
     badgeText: String? = null,
     badgeColor: Color = MaterialTheme.colorScheme.primary,
     trailing: (@Composable () -> Unit)? = null,
-    content: LazyListScope.() -> Unit
+    content: LazyListScope.() -> Unit,
 ) {
     Column(modifier = modifier.fillMaxWidth()) {
         DiscoverSectionHeader(
             title = title,
             badgeText = badgeText,
             badgeColor = badgeColor,
-            trailing = trailing
+            trailing = trailing,
         )
         DiscoverCarouselRow(
             contentPadding = PaddingValues(horizontal = 16.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
-            content = content
+            content = content,
         )
     }
 }

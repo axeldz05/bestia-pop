@@ -12,11 +12,11 @@ import com.bestiapop.android.data.model.Artist
 import com.bestiapop.android.data.model.GenreGroup
 import com.bestiapop.android.data.model.Playlist
 import com.bestiapop.android.data.model.Song
+import com.bestiapop.android.data.preferences.FastScrollSettings
 import com.bestiapop.android.domain.util.albumNamesMatch
 import com.bestiapop.android.ui.MusicPlayerViewModel
 import com.bestiapop.android.ui.SortDirection
 import com.bestiapop.android.ui.SortOption
-import com.bestiapop.android.data.preferences.FastScrollSettings
 import com.bestiapop.android.ui.components.SubmenuSwipeBox
 import com.bestiapop.android.ui.screens.PlaylistsScreen
 import com.bestiapop.android.ui.state.LibraryBrowseFilter
@@ -36,7 +36,7 @@ data class LibraryBrowseListStates(
     val artists: LazyListState,
     val genres: LazyListState,
     val playlists: LazyListState,
-    val recent: LazyListState
+    val recent: LazyListState,
 )
 
 @Composable
@@ -46,17 +46,18 @@ fun rememberLibraryBrowseListStates(
     artists: LazyListState = rememberSaveable(key = "library_browse_artists", saver = LazyListState.Saver) { LazyListState() },
     genres: LazyListState = rememberSaveable(key = "library_browse_genres", saver = LazyListState.Saver) { LazyListState() },
     playlists: LazyListState = rememberSaveable(key = "library_browse_playlists", saver = LazyListState.Saver) { LazyListState() },
-    recent: LazyListState = rememberSaveable(key = "library_browse_recent", saver = LazyListState.Saver) { LazyListState() }
-): LibraryBrowseListStates = remember(songs, albums, artists, genres, playlists, recent) {
-    LibraryBrowseListStates(
-        songs = songs,
-        albums = albums,
-        artists = artists,
-        genres = genres,
-        playlists = playlists,
-        recent = recent
-    )
-}
+    recent: LazyListState = rememberSaveable(key = "library_browse_recent", saver = LazyListState.Saver) { LazyListState() },
+): LibraryBrowseListStates =
+    remember(songs, albums, artists, genres, playlists, recent) {
+        LibraryBrowseListStates(
+            songs = songs,
+            albums = albums,
+            artists = artists,
+            genres = genres,
+            playlists = playlists,
+            recent = recent,
+        )
+    }
 
 @Composable
 fun LibraryBrowsePane(
@@ -83,58 +84,85 @@ fun LibraryBrowsePane(
     fastScrollSettings: FastScrollSettings,
     listStates: LibraryBrowseListStates = rememberLibraryBrowseListStates(),
     onAddSongsToPlaylist: (Playlist) -> Unit = {},
-    onAddManyToPlaylist: ((List<Song>) -> Unit)? = null
+    onAddManyToPlaylist: ((List<Song>) -> Unit)? = null,
 ) {
     when {
         selectedAlbumName != null || selectedArtistName != null || selectedGenreName != null -> {
             val gestureSettings by viewModel.submenuGestureSettings.collectAsStateWithLifecycle()
-            val allSongs by viewModel.libraryProjection.songs.collectAsStateWithLifecycle()
-            val nestedSongs = remember(allSongs, selectedAlbumName, selectedArtistName, selectedGenreName) {
-                libraryNestedSongs(viewModel, allSongs, selectedAlbumName, selectedArtistName, selectedGenreName)
-            }
             SubmenuSwipeBox(
                 settings = gestureSettings,
                 onSwipeRight = { viewModel.popLibraryNested() },
-                canSwipeBack = true
+                canSwipeBack = true,
             ) {
-                NestedLibraryBrowse(
-                    selectedAlbumName = selectedAlbumName,
-                    selectedArtistName = selectedArtistName,
-                    selectedGenreName = selectedGenreName,
-                    viewMode = if (selectedAlbumName != null) LibraryViewMode.FLAT else LibraryViewMode.ALBUM_GROUPS,
-                    viewModel = viewModel,
-                    currentSongIdFlow = currentSongIdFlow,
-                    isSelectionMode = isMultiSelectMode,
-                    selectedSongIds = selectedSongIds,
-                    collapsedAlbumNames = collapsedAlbumNames,
-                    sortOption = sortOption,
-                    sortDirection = sortDirection,
-                    actions = actions,
-                    onToggleSelect = onToggleSelect,
-                    fastScrollSettings = fastScrollSettings
-                )
+                if (isMultiSelectMode || isPlaylistAdditionMode) {
+                    NestedLibraryBrowse(
+                        selectedAlbumName = selectedAlbumName,
+                        selectedArtistName = selectedArtistName,
+                        selectedGenreName = selectedGenreName,
+                        viewMode = if (selectedAlbumName != null) LibraryViewMode.FLAT else LibraryViewMode.ALBUM_GROUPS,
+                        viewModel = viewModel,
+                        currentSongIdFlow = currentSongIdFlow,
+                        isSelectionMode = true,
+                        selectedSongIds = selectedSongIds,
+                        collapsedAlbumNames = collapsedAlbumNames,
+                        sortOption = sortOption,
+                        sortDirection = sortDirection,
+                        actions = actions,
+                        onToggleSelect = onToggleSelect,
+                        fastScrollSettings = fastScrollSettings,
+                    )
+                } else {
+                    when {
+                        selectedAlbumName != null -> {
+                            LibraryAlbumDetailView(
+                                albumName = selectedAlbumName,
+                                viewModel = viewModel,
+                                actions = actions,
+                                onBack = { viewModel.popLibraryNested() },
+                            )
+                        }
+
+                        selectedArtistName != null -> {
+                            LibraryArtistDetailView(
+                                artistName = selectedArtistName,
+                                viewModel = viewModel,
+                                onBack = { viewModel.popLibraryNested() },
+                            )
+                        }
+
+                        selectedGenreName != null -> {
+                            LibraryGenreDetailView(
+                                genreName = selectedGenreName,
+                                viewModel = viewModel,
+                                actions = actions,
+                                onBack = { viewModel.popLibraryNested() },
+                            )
+                        }
+                    }
+                }
             }
         }
 
         activeFilter == LibraryBrowseFilter.SONGS || isPlaylistAdditionMode -> {
-            val onLibrarySongsClick = remember(
-                isPlaylistAdditionMode,
-                isMultiSelectMode,
-                songList,
-                searchQuery,
-                onToggleSelect
-            ) {
-                { song: Song, index: Int ->
-                    if (isPlaylistAdditionMode || isMultiSelectMode) {
-                        onToggleSelect(song)
-                    } else {
-                        if (searchQuery.isNotBlank()) {
-                            viewModel.addRecentSearch(searchQuery)
+            val onLibrarySongsClick =
+                remember(
+                    isPlaylistAdditionMode,
+                    isMultiSelectMode,
+                    songList,
+                    searchQuery,
+                    onToggleSelect,
+                ) {
+                    { song: Song, index: Int ->
+                        if (isPlaylistAdditionMode || isMultiSelectMode) {
+                            onToggleSelect(song)
+                        } else {
+                            if (searchQuery.isNotBlank()) {
+                                viewModel.addRecentSearch(searchQuery)
+                            }
+                            viewModel.playCollection(songList.songsVisual, index)
                         }
-                        viewModel.playCollection(songList.songsVisual, index)
                     }
                 }
-            }
             LibrarySongListHost(
                 list = songList,
                 currentSongId = null,
@@ -147,7 +175,7 @@ fun LibraryBrowsePane(
                 onSongClick = onLibrarySongsClick,
                 loading = !catalogLoaded,
                 fastScrollSettings = fastScrollSettings,
-                listState = listStates.songs
+                listState = listStates.songs,
             )
         }
 
@@ -162,7 +190,7 @@ fun LibraryBrowsePane(
                 searchQuery = searchQuery,
                 onToggleSelect = onToggleSelect,
                 fastScrollSettings = fastScrollSettings,
-                listState = listStates.recent
+                listState = listStates.recent,
             )
         }
 
@@ -172,7 +200,7 @@ fun LibraryBrowsePane(
                 sortOption = sortOption,
                 actions = albumBrowseActions,
                 fastScrollSettings = fastScrollSettings,
-                listState = listStates.albums
+                listState = listStates.albums,
             )
         }
 
@@ -182,7 +210,7 @@ fun LibraryBrowsePane(
                 sortOption = sortOption,
                 actions = artistBrowseActions,
                 fastScrollSettings = fastScrollSettings,
-                listState = listStates.artists
+                listState = listStates.artists,
             )
         }
 
@@ -192,7 +220,7 @@ fun LibraryBrowsePane(
                 sortOption = sortOption,
                 actions = genreBrowseActions,
                 fastScrollSettings = fastScrollSettings,
-                listState = listStates.genres
+                listState = listStates.genres,
             )
         }
 
@@ -201,7 +229,7 @@ fun LibraryBrowsePane(
                 viewModel = viewModel,
                 searchQuery = searchQuery,
                 listState = listStates.playlists,
-                onAddSongsRequest = onAddSongsToPlaylist
+                onAddSongsRequest = onAddSongsToPlaylist,
             )
         }
     }
@@ -210,12 +238,13 @@ fun LibraryBrowsePane(
 @Composable
 fun NestedAlbumDisplayName(
     viewModel: MusicPlayerViewModel,
-    albumKey: String
+    albumKey: String,
 ): String {
     val albums by viewModel.libraryProjection.albums.collectAsStateWithLifecycle()
-    return albums.firstOrNull {
-        albumNamesMatch(it.name, albumKey) || albumNamesMatch(it.displayName, albumKey)
-    }?.displayName ?: albumKey
+    return albums
+        .firstOrNull {
+            albumNamesMatch(it.name, albumKey) || albumNamesMatch(it.displayName, albumKey)
+        }?.displayName ?: albumKey
 }
 
 fun songsForCurrentLibrarySelection(
@@ -225,22 +254,32 @@ fun songsForCurrentLibrarySelection(
     selectedArtistName: String?,
     selectedGenreName: String?,
     activeFilter: LibraryBrowseFilter,
-    songsViewMode: LibraryViewMode
+    songsViewMode: LibraryViewMode,
 ): List<Song> {
     val songs = viewModel.libraryProjection.songs.value
     return when {
-        selectedAlbumName != null || selectedArtistName != null || selectedGenreName != null ->
+        selectedAlbumName != null || selectedArtistName != null || selectedGenreName != null -> {
             libraryNestedSongs(viewModel, songs, selectedAlbumName, selectedArtistName, selectedGenreName)
-        activeFilter == LibraryBrowseFilter.RECENT -> viewModel.libraryProjection.recentSongs.value
-        activeFilter == LibraryBrowseFilter.SONGS -> songList.songsVisual
-        else -> viewModel.songsForBrowseProjection(
-            filter = activeFilter,
-            songs = songs,
-            viewMode = songsViewMode,
-            albums = viewModel.libraryProjection.albums.value,
-            artists = viewModel.libraryProjection.artists.value,
-            genres = viewModel.libraryProjection.genres.value
-        )
+        }
+
+        activeFilter == LibraryBrowseFilter.RECENT -> {
+            viewModel.libraryProjection.recentSongs.value
+        }
+
+        activeFilter == LibraryBrowseFilter.SONGS -> {
+            songList.songsVisual
+        }
+
+        else -> {
+            viewModel.songsForBrowseProjection(
+                filter = activeFilter,
+                songs = songs,
+                viewMode = songsViewMode,
+                albums = viewModel.libraryProjection.albums.value,
+                artists = viewModel.libraryProjection.artists.value,
+                genres = viewModel.libraryProjection.genres.value,
+            )
+        }
     }
 }
 
@@ -249,13 +288,14 @@ fun libraryNestedSongs(
     songs: List<Song>,
     selectedAlbumName: String?,
     selectedArtistName: String?,
-    selectedGenreName: String?
-): List<Song> = when {
-    selectedAlbumName != null -> viewModel.songsForAlbum(songs, selectedAlbumName)
-    selectedArtistName != null -> viewModel.songsForArtist(songs, selectedArtistName)
-    selectedGenreName != null -> viewModel.songsForGenre(songs, selectedGenreName)
-    else -> emptyList()
-}
+    selectedGenreName: String?,
+): List<Song> =
+    when {
+        selectedAlbumName != null -> viewModel.songsForAlbum(songs, selectedAlbumName)
+        selectedArtistName != null -> viewModel.songsForArtist(songs, selectedArtistName)
+        selectedGenreName != null -> viewModel.songsForGenre(songs, selectedGenreName)
+        else -> emptyList()
+    }
 
 /** Nested album/artist/genre detail: build list items + play in view order. */
 @Composable
@@ -273,12 +313,13 @@ fun NestedLibraryBrowse(
     sortDirection: SortDirection,
     actions: LibrarySongListActions,
     onToggleSelect: (Song) -> Unit,
-    fastScrollSettings: FastScrollSettings
+    fastScrollSettings: FastScrollSettings,
 ) {
     val songs by viewModel.libraryProjection.songs.collectAsStateWithLifecycle()
-    val browseSongs = remember(songs, selectedAlbumName, selectedArtistName, selectedGenreName) {
-        libraryNestedSongs(viewModel, songs, selectedAlbumName, selectedArtistName, selectedGenreName)
-    }
+    val browseSongs =
+        remember(songs, selectedAlbumName, selectedArtistName, selectedGenreName) {
+            libraryNestedSongs(viewModel, songs, selectedAlbumName, selectedArtistName, selectedGenreName)
+        }
     // Keyed on albums so an album rename refreshes the group headers, which read the override name.
     val albums by viewModel.libraryProjection.albums.collectAsStateWithLifecycle()
     val list by produceState(
@@ -287,33 +328,40 @@ fun NestedLibraryBrowse(
         viewMode,
         albums,
         sortOption,
-        sortDirection
+        sortDirection,
     ) {
-        value = withContext(Dispatchers.Default) {
-            viewModel.buildLibraryListModel(browseSongs, viewMode, sortOption, sortDirection)
+        value =
+            withContext(Dispatchers.Default) {
+                viewModel.buildLibraryListModel(browseSongs, viewMode, sortOption, sortDirection)
+            }
+    }
+    val playQueue =
+        remember(list, viewMode, browseSongs) {
+            if (viewMode == LibraryViewMode.ALBUM_GROUPS) {
+                list.songsVisual
+            } else {
+                browseSongs
+            }
         }
-    }
-    val playQueue = remember(list, viewMode, browseSongs) {
-        if (viewMode == LibraryViewMode.ALBUM_GROUPS) {
-            list.songsVisual
-        } else {
-            browseSongs
+    val onSongClick =
+        remember(isSelectionMode, playQueue, onToggleSelect) {
+            { song: Song, index: Int ->
+                if (isSelectionMode) {
+                    onToggleSelect(song)
+                } else {
+                    viewModel.playCollection(playQueue, index)
+                }
+            }
         }
-    }
-    val onSongClick = remember(isSelectionMode, playQueue, onToggleSelect) {
-        { song: Song, index: Int ->
-            if (isSelectionMode) onToggleSelect(song)
-            else viewModel.playCollection(playQueue, index)
+    val nestedListState =
+        rememberSaveable(
+            selectedAlbumName,
+            selectedArtistName,
+            selectedGenreName,
+            saver = LazyListState.Saver,
+        ) {
+            LazyListState()
         }
-    }
-    val nestedListState = rememberSaveable(
-        selectedAlbumName,
-        selectedArtistName,
-        selectedGenreName,
-        saver = LazyListState.Saver
-    ) {
-        LazyListState()
-    }
     LibrarySongListHost(
         list = list,
         currentSongId = null,
@@ -325,6 +373,6 @@ fun NestedLibraryBrowse(
         actions = actions,
         onSongClick = onSongClick,
         fastScrollSettings = fastScrollSettings,
-        listState = nestedListState
+        listState = nestedListState,
     )
 }

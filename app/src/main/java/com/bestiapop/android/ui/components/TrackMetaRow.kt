@@ -24,7 +24,11 @@ import androidx.compose.ui.unit.dp
 import com.bestiapop.android.data.model.TrackMeta
 import com.bestiapop.android.ui.theme.ListDensity
 
-fun joinMeta(first: String?, second: String?, sep: String = " • "): String {
+fun joinMeta(
+    first: String?,
+    second: String?,
+    sep: String = " • ",
+): String {
     val f = first?.trim()?.takeIf { it.isNotEmpty() }
     val s = second?.trim()?.takeIf { it.isNotEmpty() }
     return when {
@@ -34,7 +38,12 @@ fun joinMeta(first: String?, second: String?, sep: String = " • "): String {
     }
 }
 
-fun joinMeta(first: String?, second: String?, third: String?, sep: String = " • "): String {
+fun joinMeta(
+    first: String?,
+    second: String?,
+    third: String?,
+    sep: String = " • ",
+): String {
     val f = first?.trim()?.takeIf { it.isNotEmpty() }
     val s = second?.trim()?.takeIf { it.isNotEmpty() }
     val t = third?.trim()?.takeIf { it.isNotEmpty() }
@@ -52,7 +61,10 @@ fun joinMeta(first: String?, second: String?, third: String?, sep: String = " �
     return sb.toString()
 }
 
-fun joinMeta(vararg parts: String?, sep: String = " • "): String {
+fun joinMeta(
+    vararg parts: String?,
+    sep: String = " • ",
+): String {
     if (parts.isEmpty()) return ""
     val sb = java.lang.StringBuilder()
     for (part in parts) {
@@ -70,29 +82,28 @@ fun TrackMeta.artistAlbumLabel(sep: String = " • "): String = joinMeta(artist,
 data class PlayingRowColors(
     val background: Color,
     val title: Color,
-    val titleWeight: FontWeight
+    val titleWeight: FontWeight,
 )
 
 @Composable
-fun playingRowColors(highlighted: Boolean, selected: Boolean = false): PlayingRowColors {
-    val background = when {
-        selected -> MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
-        highlighted -> MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
-        else -> Color.Transparent
-    }
-    val title = if (highlighted || selected) {
-        MaterialTheme.colorScheme.primary
-    } else {
-        MaterialTheme.colorScheme.onSurface
-    }
+fun playingRowColors(
+    highlighted: Boolean,
+    selected: Boolean = false,
+): PlayingRowColors {
+    val background =
+        when {
+            selected -> MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
+            highlighted -> MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+            else -> Color.Transparent
+        }
+    val title =
+        if (highlighted || selected) {
+            MaterialTheme.colorScheme.primary
+        } else {
+            MaterialTheme.colorScheme.onSurface
+        }
     val weight = if (highlighted || selected) FontWeight.Bold else FontWeight.Medium
     return PlayingRowColors(background = background, title = title, titleWeight = weight)
-}
-
-@Composable
-fun playingTitleStyle(highlighted: Boolean): Pair<Color, FontWeight> {
-    val colors = playingRowColors(highlighted)
-    return colors.title to colors.titleWeight
 }
 
 @Composable
@@ -105,7 +116,7 @@ fun TrackTextColumn(
     titleStyle: TextStyle = ListDensity.titleStyle,
     subtitleColor: Color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
     maxTitleLines: Int = 1,
-    maxSubtitleLines: Int = 1
+    maxSubtitleLines: Int = 1,
 ) {
     Column(modifier = modifier) {
         Text(
@@ -114,7 +125,7 @@ fun TrackTextColumn(
             fontWeight = titleWeight,
             color = titleColor,
             maxLines = maxTitleLines,
-            overflow = TextOverflow.Ellipsis
+            overflow = TextOverflow.Ellipsis,
         )
         if (subtitle.isNotEmpty()) {
             Text(
@@ -122,7 +133,7 @@ fun TrackTextColumn(
                 style = ListDensity.subtitleStyle,
                 color = subtitleColor,
                 maxLines = maxSubtitleLines,
-                overflow = TextOverflow.Ellipsis
+                overflow = TextOverflow.Ellipsis,
             )
         }
     }
@@ -136,32 +147,36 @@ fun TrackMetaRow(
     highlighted: Boolean = false,
     modifier: Modifier = Modifier,
     artworkSize: Dp = ListDensity.artworkSong,
+    showArtwork: Boolean = true,
     leading: @Composable (RowScope.() -> Unit)? = null,
     trailing: @Composable (RowScope.() -> Unit)? = null,
-    onClick: (() -> Unit)? = null
+    onClick: (() -> Unit)? = null,
 ) {
     val colors = playingRowColors(highlighted)
     Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(ListDensity.corner))
-            .background(colors.background)
-            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
-        verticalAlignment = Alignment.CenterVertically
+        modifier =
+            modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(ListDensity.corner))
+                .background(colors.background)
+                .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         leading?.invoke(this)
-        ArtworkThumbnail(
-            artworkUri = artworkUri,
-            size = artworkSize,
-            contentDescription = title
-        )
-        Spacer(modifier = Modifier.width(12.dp))
+        if (showArtwork) {
+            ArtworkThumbnail(
+                artworkUri = artworkUri,
+                size = artworkSize,
+                contentDescription = title,
+            )
+            Spacer(modifier = Modifier.width(12.dp))
+        }
         TrackTextColumn(
             title = title,
             subtitle = subtitle,
             modifier = Modifier.weight(1f),
             titleColor = colors.title,
-            titleWeight = colors.titleWeight
+            titleWeight = colors.titleWeight,
         )
         trailing?.invoke(this)
     }

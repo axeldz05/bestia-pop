@@ -13,6 +13,7 @@ import com.bestiapop.android.data.listenbrainz.LbUserStatArtist
 import com.bestiapop.android.data.listenbrainz.LbUserStatRecording
 import com.bestiapop.android.data.listenbrainz.LbUserStatRelease
 import com.bestiapop.android.data.model.TrackIdentity
+import com.bestiapop.android.domain.util.HtmlSanitizer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -29,64 +30,74 @@ data class ListenPayload(
     val trackName: String,
     val artistName: String,
     val releaseName: String? = null,
-    val durationMs: Long? = null
+    val durationMs: Long? = null,
 ) {
     companion object {
-        fun fromIdentity(identity: TrackIdentity, listenedAt: Long): ListenPayload = ListenPayload(
-            listenedAt = listenedAt,
-            trackName = identity.title,
-            artistName = identity.artist,
-            releaseName = identity.album.takeIf {
-                it.isNotBlank() && !it.equals("Unknown Album", ignoreCase = true)
-            },
-            durationMs = identity.durationMs.takeIf { it > 0 }
-        )
+        fun fromIdentity(
+            identity: TrackIdentity,
+            listenedAt: Long,
+        ): ListenPayload =
+            ListenPayload(
+                listenedAt = listenedAt,
+                trackName = identity.title,
+                artistName = identity.artist,
+                releaseName =
+                    identity.album.takeIf {
+                        it.isNotBlank() && !it.equals("Unknown Album", ignoreCase = true)
+                    },
+                durationMs = identity.durationMs.takeIf { it > 0 },
+            )
     }
 }
 
 data class TokenValidationResult(
     val valid: Boolean,
     val username: String? = null,
-    val message: String? = null
+    val message: String? = null,
 )
 
 sealed class SubmitListensResult {
     data class Success(
         val rateLimitRemaining: Int?,
-        val rateLimitResetInSec: Int?
+        val rateLimitResetInSec: Int?,
     ) : SubmitListensResult()
 
-    data class RateLimited(val resetInSec: Int) : SubmitListensResult()
+    data class RateLimited(
+        val resetInSec: Int,
+    ) : SubmitListensResult()
 
     data class Failure(
         val message: String,
         val isNetworkError: Boolean = false,
         val rateLimitRemaining: Int? = null,
-        val rateLimitResetInSec: Int? = null
+        val rateLimitResetInSec: Int? = null,
     ) : SubmitListensResult()
 }
 
 internal data class ListenBrainzEndpoints(
-    val apiBaseUrl: String = "https://api.listenbrainz.org/1"
+    val apiBaseUrl: String = "https://api.listenbrainz.org/1",
 )
 
 object ListenBrainzClient {
-
     private val JSON = "application/json; charset=utf-8".toMediaType()
 
-    private val defaultClient = HttpClients.api.newBuilder()
-        .connectTimeout(8, TimeUnit.SECONDS)
-        .readTimeout(10, TimeUnit.SECONDS)
-        .callTimeout(12, TimeUnit.SECONDS)
-        .build()
+    private val defaultClient =
+        HttpClients.api
+            .newBuilder()
+            .connectTimeout(8, TimeUnit.SECONDS)
+            .readTimeout(10, TimeUnit.SECONDS)
+            .callTimeout(12, TimeUnit.SECONDS)
+            .build()
+
     @Volatile
     private var client: OkHttpClient = defaultClient
+
     @Volatile
     private var endpoints = ListenBrainzEndpoints()
 
     internal fun configureForTest(
         http: OkHttpClient,
-        endpoints: ListenBrainzEndpoints
+        endpoints: ListenBrainzEndpoints,
     ) {
         client = http
         this.endpoints = endpoints
@@ -97,185 +108,211 @@ object ListenBrainzClient {
         endpoints = ListenBrainzEndpoints()
     }
 
-    private fun endpoint(pathAndQuery: String): String =
-        "${endpoints.apiBaseUrl.trimEnd('/')}/${pathAndQuery.trimStart('/')}"
+    private fun endpoint(pathAndQuery: String): String = "${endpoints.apiBaseUrl.trimEnd('/')}/${pathAndQuery.trimStart('/')}"
 
-    suspend fun validateToken(token: String): TokenValidationResult = withContext(Dispatchers.IO) {
-        if (token.isBlank()) {
-            return@withContext TokenValidationResult(valid = false, message = "Token vacío")
-        }
-        try {
-            val request = Request.Builder()
-                .url(endpoint("validate-token"))
-                .header("Authorization", "Token ${token.trim()}")
-                .get()
-                .build()
+    suspend fun validateToken(token: String): TokenValidationResult =
+        withContext(Dispatchers.IO) {
+            if (token.isBlank()) {
+                return@withContext TokenValidationResult(valid = false, message = "Token vacío")
+            }
+            try {
+                val request =
+                    Request
+                        .Builder()
+                        .url(endpoint("validate-token"))
+                        .header("Authorization", "Token ${token.trim()}")
+                        .get()
+                        .build()
 
-            client.newCall(request).execute().use { response ->
-                val body = response.body?.string().orEmpty()
-                if (!response.isSuccessful) {
-                    return@withContext TokenValidationResult(
-                        valid = false,
-                        message = "Error ${response.code}"
+                client.newCall(request).execute().use { response ->
+                    val body = response.body?.string().orEmpty()
+                    if (!response.isSuccessful) {
+                        return@withContext TokenValidationResult(
+                            valid = false,
+                            message = "Error ${response.code}",
+                        )
+                    }
+                    val json = JSONObject(body)
+                    val valid = json.optBoolean("valid", false)
+                    val username =
+                        if (json.has("user_name") && !json.isNull("user_name")) {
+                            json.getString("user_name").takeIf { it.isNotBlank() }
+                        } else {
+                            null
+                        }
+                    TokenValidationResult(
+                        valid = valid,
+                        username = username,
+                        message = if (valid) null else json.optString("message", "Token inválido"),
                     )
                 }
-                val json = JSONObject(body)
-                val valid = json.optBoolean("valid", false)
-                val username = if (json.has("user_name") && !json.isNull("user_name")) {
-                    json.getString("user_name").takeIf { it.isNotBlank() }
-                } else {
-                    null
-                }
-                TokenValidationResult(
-                    valid = valid,
-                    username = username,
-                    message = if (valid) null else json.optString("message", "Token inválido")
-                )
+            } catch (e: Exception) {
+                TokenValidationResult(valid = false, message = e.message ?: "Error de red")
             }
-        } catch (e: Exception) {
-            TokenValidationResult(valid = false, message = e.message ?: "Error de red")
         }
-    }
 
     suspend fun submitListens(
         token: String,
-        listens: List<ListenPayload>
-    ): SubmitListensResult = withContext(Dispatchers.IO) {
-        if (token.isBlank()) {
-            return@withContext SubmitListensResult.Failure("Token vacío")
-        }
-        if (listens.isEmpty()) {
-            return@withContext SubmitListensResult.Success(null, null)
-        }
-
-        try {
-            val listenType = if (listens.size == 1) "single" else "import"
-            val payload = JSONObject().apply {
-                put("listen_type", listenType)
-                put("payload", JSONArray().apply {
-                    listens.forEach { listen ->
-                        put(JSONObject().apply {
-                            put("listened_at", listen.listenedAt)
-                            put("track_metadata", JSONObject().apply {
-                                put("track_name", listen.trackName)
-                                put("artist_name", listen.artistName)
-                                if (!listen.releaseName.isNullOrBlank()) {
-                                    put("release_name", listen.releaseName)
-                                }
-                                put("additional_info", JSONObject().apply {
-                                    put("media_player", "Bestia Pop")
-                                    put("submission_client", "Bestia Pop")
-                                    listen.durationMs?.takeIf { it > 0 }?.let {
-                                        put("duration_ms", it)
-                                    }
-                                })
-                            })
-                        })
-                    }
-                })
+        listens: List<ListenPayload>,
+    ): SubmitListensResult =
+        withContext(Dispatchers.IO) {
+            if (token.isBlank()) {
+                return@withContext SubmitListensResult.Failure("Token vacío")
+            }
+            if (listens.isEmpty()) {
+                return@withContext SubmitListensResult.Success(null, null)
             }
 
-            val request = Request.Builder()
-                .url(endpoint("submit-listens"))
-                .header("Authorization", "Token ${token.trim()}")
-                .post(payload.toString().toRequestBody(JSON))
-                .build()
-
-            client.newCall(request).execute().use { response ->
-                val remaining = response.header("X-RateLimit-Remaining")?.toIntOrNull()
-                val resetIn = response.header("X-RateLimit-Reset-In")?.toIntOrNull()
-                val body = response.body?.string().orEmpty()
-
-                when {
-                    response.code == 429 -> {
-                        SubmitListensResult.RateLimited(resetInSec = (resetIn ?: 30).coerceAtLeast(1))
-                    }
-                    response.isSuccessful -> {
-                        SubmitListensResult.Success(
-                            rateLimitRemaining = remaining,
-                            rateLimitResetInSec = resetIn
+            try {
+                val listenType = if (listens.size == 1) "single" else "import"
+                val payload =
+                    JSONObject().apply {
+                        put("listen_type", listenType)
+                        put(
+                            "payload",
+                            JSONArray().apply {
+                                listens.forEach { listen ->
+                                    put(
+                                        JSONObject().apply {
+                                            put("listened_at", listen.listenedAt)
+                                            put(
+                                                "track_metadata",
+                                                JSONObject().apply {
+                                                    put("track_name", listen.trackName)
+                                                    put("artist_name", listen.artistName)
+                                                    if (!listen.releaseName.isNullOrBlank()) {
+                                                        put("release_name", listen.releaseName)
+                                                    }
+                                                    put(
+                                                        "additional_info",
+                                                        JSONObject().apply {
+                                                            put("media_player", "Bestia Pop")
+                                                            put("submission_client", "Bestia Pop")
+                                                            listen.durationMs?.takeIf { it > 0 }?.let {
+                                                                put("duration_ms", it)
+                                                            }
+                                                        },
+                                                    )
+                                                },
+                                            )
+                                        },
+                                    )
+                                }
+                            },
                         )
                     }
-                    else -> {
-                        val message = runCatching {
-                            JSONObject(body).optString("error", body)
-                        }.getOrDefault(body).ifBlank { "Error ${response.code}" }
-                        SubmitListensResult.Failure(
-                            message = message,
-                            rateLimitRemaining = remaining,
-                            rateLimitResetInSec = resetIn
-                        )
+
+                val request =
+                    Request
+                        .Builder()
+                        .url(endpoint("submit-listens"))
+                        .header("Authorization", "Token ${token.trim()}")
+                        .post(payload.toString().toRequestBody(JSON))
+                        .build()
+
+                client.newCall(request).execute().use { response ->
+                    val remaining = response.header("X-RateLimit-Remaining")?.toIntOrNull()
+                    val resetIn = response.header("X-RateLimit-Reset-In")?.toIntOrNull()
+                    val body = response.body?.string().orEmpty()
+
+                    when {
+                        response.code == 429 -> {
+                            SubmitListensResult.RateLimited(resetInSec = (resetIn ?: 30).coerceAtLeast(1))
+                        }
+
+                        response.isSuccessful -> {
+                            SubmitListensResult.Success(
+                                rateLimitRemaining = remaining,
+                                rateLimitResetInSec = resetIn,
+                            )
+                        }
+
+                        else -> {
+                            val message =
+                                runCatching {
+                                    JSONObject(body).optString("error", body)
+                                }.getOrDefault(body).ifBlank { "Error ${response.code}" }
+                            SubmitListensResult.Failure(
+                                message = message,
+                                rateLimitRemaining = remaining,
+                                rateLimitResetInSec = resetIn,
+                            )
+                        }
                     }
                 }
+            } catch (e: Exception) {
+                SubmitListensResult.Failure(
+                    message = e.message ?: "Error de red",
+                    isNetworkError = true,
+                )
             }
-        } catch (e: Exception) {
-            SubmitListensResult.Failure(
-                message = e.message ?: "Error de red",
-                isNetworkError = true
-            )
         }
-    }
 
     suspend fun fetchCreatedForPlaylists(
         username: String,
         token: String? = null,
         count: Int = 25,
-        offset: Int = 0
-    ): LbApiResult<List<LbPlaylistSummary>> = withContext(Dispatchers.IO) {
-        if (username.isBlank()) {
-            return@withContext LbApiResult.Failure("Usuario vacío")
+        offset: Int = 0,
+    ): LbApiResult<List<LbPlaylistSummary>> =
+        withContext(Dispatchers.IO) {
+            if (username.isBlank()) {
+                return@withContext LbApiResult.Failure("Usuario vacío")
+            }
+            val encodedUser = URLEncoder.encode(username.trim(), Charsets.UTF_8.name())
+            val url = endpoint("user/$encodedUser/playlists/createdfor?count=$count&offset=$offset")
+            lbGet(url, token) { body -> parsePlaylistSummaries(JSONObject(body)) }
         }
-        val encodedUser = URLEncoder.encode(username.trim(), Charsets.UTF_8.name())
-        val url = endpoint("user/$encodedUser/playlists/createdfor?count=$count&offset=$offset")
-        lbGet(url, token) { body -> parsePlaylistSummaries(JSONObject(body)) }
-    }
 
     suspend fun fetchPlaylist(
         playlistMbid: String,
-        token: String? = null
-    ): LbApiResult<LbPlaylistDetail> = withContext(Dispatchers.IO) {
-        if (playlistMbid.isBlank()) {
-            return@withContext LbApiResult.Failure("Playlist inválida")
-        }
-        val encodedMbid = URLEncoder.encode(playlistMbid.trim(), Charsets.UTF_8.name())
-        val url = endpoint("playlist/$encodedMbid")
-        lbCall(buildGetRequest(url, token)) { code, body ->
-            if (code !in 200..299) {
-                LbApiResult.Failure(message = errorMessageFromBody(body, code))
-            } else {
-                val detail = parsePlaylistDetail(JSONObject(body), playlistMbid.trim())
-                    ?: return@lbCall LbApiResult.Failure("Respuesta de playlist inválida")
-                LbApiResult.Success(detail)
+        token: String? = null,
+    ): LbApiResult<LbPlaylistDetail> =
+        withContext(Dispatchers.IO) {
+            if (playlistMbid.isBlank()) {
+                return@withContext LbApiResult.Failure("Playlist inválida")
+            }
+            val encodedMbid = URLEncoder.encode(playlistMbid.trim(), Charsets.UTF_8.name())
+            val url = endpoint("playlist/$encodedMbid")
+            lbCall(buildGetRequest(url, token)) { code, body ->
+                if (code !in 200..299) {
+                    LbApiResult.Failure(message = errorMessageFromBody(body, code))
+                } else {
+                    val detail =
+                        parsePlaylistDetail(JSONObject(body), playlistMbid.trim())
+                            ?: return@lbCall LbApiResult.Failure("Respuesta de playlist inválida")
+                    LbApiResult.Success(detail)
+                }
             }
         }
-    }
 
     suspend fun lookupRecordingMetadata(
         artistName: String,
         recordingName: String,
         token: String,
-        releaseName: String? = null
-    ): LbApiResult<LbMetadataLookup> = withContext(Dispatchers.IO) {
-        if (token.isBlank()) {
-            return@withContext LbApiResult.Failure("Token vacío")
-        }
-        if (recordingName.isBlank()) {
-            return@withContext LbApiResult.Failure("Título vacío")
-        }
-        val utf8 = Charsets.UTF_8.name()
-        val params = buildString {
-            if (artistName.isNotBlank()) {
-                append("artist_name=").append(URLEncoder.encode(artistName.trim(), utf8))
-                append("&")
+        releaseName: String? = null,
+    ): LbApiResult<LbMetadataLookup> =
+        withContext(Dispatchers.IO) {
+            if (token.isBlank()) {
+                return@withContext LbApiResult.Failure("Token vacío")
             }
-            append("recording_name=").append(URLEncoder.encode(recordingName.trim(), utf8))
-            if (!releaseName.isNullOrBlank()) {
-                append("&release_name=").append(URLEncoder.encode(releaseName.trim(), utf8))
+            if (recordingName.isBlank()) {
+                return@withContext LbApiResult.Failure("Título vacío")
             }
+            val utf8 = Charsets.UTF_8.name()
+            val params =
+                buildString {
+                    if (artistName.isNotBlank()) {
+                        append("artist_name=").append(URLEncoder.encode(artistName.trim(), utf8))
+                        append("&")
+                    }
+                    append("recording_name=").append(URLEncoder.encode(recordingName.trim(), utf8))
+                    if (!releaseName.isNullOrBlank()) {
+                        append("&release_name=").append(URLEncoder.encode(releaseName.trim(), utf8))
+                    }
+                }
+            val url = endpoint("metadata/lookup/?$params")
+            lbGet(url, token) { body -> parseMetadataLookup(JSONObject(body)) }
         }
-        val url = endpoint("metadata/lookup/?$params")
-        lbGet(url, token) { body -> parseMetadataLookup(JSONObject(body)) }
-    }
 
     suspend fun fetchLbRadioArtist(
         artistMbid: String,
@@ -284,83 +321,91 @@ object ListenBrainzClient {
         maxSimilarArtists: Int = 8,
         maxRecordingsPerArtist: Int = 4,
         popBegin: Int = 20,
-        popEnd: Int = 100
-    ): LbApiResult<List<LbRadioRecording>> = withContext(Dispatchers.IO) {
-        if (token.isBlank()) {
-            return@withContext LbApiResult.Failure("Token vacío")
+        popEnd: Int = 100,
+    ): LbApiResult<List<LbRadioRecording>> =
+        withContext(Dispatchers.IO) {
+            if (token.isBlank()) {
+                return@withContext LbApiResult.Failure("Token vacío")
+            }
+            if (artistMbid.isBlank()) {
+                return@withContext LbApiResult.Failure("Artist MBID vacío")
+            }
+            val utf8 = Charsets.UTF_8.name()
+            val encodedMbid = URLEncoder.encode(artistMbid.trim(), utf8)
+            val encodedMode = URLEncoder.encode(mode.trim().ifBlank { "medium" }, utf8)
+            val url =
+                endpoint("lb-radio/artist/$encodedMbid") +
+                    "?mode=$encodedMode" +
+                    "&max_similar_artists=$maxSimilarArtists" +
+                    "&max_recordings_per_artist=$maxRecordingsPerArtist" +
+                    "&pop_begin=$popBegin" +
+                    "&pop_end=$popEnd"
+            lbGet(url, token) { body -> parseLbRadioArtist(JSONObject(body)) }
         }
-        if (artistMbid.isBlank()) {
-            return@withContext LbApiResult.Failure("Artist MBID vacío")
-        }
-        val utf8 = Charsets.UTF_8.name()
-        val encodedMbid = URLEncoder.encode(artistMbid.trim(), utf8)
-        val encodedMode = URLEncoder.encode(mode.trim().ifBlank { "medium" }, utf8)
-        val url = endpoint("lb-radio/artist/$encodedMbid") +
-            "?mode=$encodedMode" +
-            "&max_similar_artists=$maxSimilarArtists" +
-            "&max_recordings_per_artist=$maxRecordingsPerArtist" +
-            "&pop_begin=$popBegin" +
-            "&pop_end=$popEnd"
-        lbGet(url, token) { body -> parseLbRadioArtist(JSONObject(body)) }
-    }
 
     suspend fun fetchCfRecordingRecommendations(
         username: String,
         token: String? = null,
         count: Int = 50,
         offset: Int = 0,
-        artistType: String = "top"
-    ): LbApiResult<CfRecommendationsPayload> = withContext(Dispatchers.IO) {
-        if (username.isBlank()) {
-            return@withContext LbApiResult.Failure("Usuario vacío")
-        }
-        val utf8 = Charsets.UTF_8.name()
-        val encodedUser = URLEncoder.encode(username.trim(), utf8)
-        val encodedType = URLEncoder.encode(artistType.trim().ifBlank { "top" }, utf8)
-        val url = endpoint("cf/recommendation/user/$encodedUser/recording") +
-            "?count=$count&offset=$offset&artist_type=$encodedType"
-        val empty = CfRecommendationsPayload(userName = username.trim(), recordings = emptyList())
-        lbCall(buildGetRequest(url, token)) { code, body ->
-            when {
-                code == 204 || body.isBlank() -> LbApiResult.Success(empty)
-                code !in 200..299 -> LbApiResult.Failure(message = errorMessageFromBody(body, code))
-                else -> LbApiResult.Success(parseCfRecommendations(JSONObject(body), username.trim()))
+        artistType: String = "top",
+    ): LbApiResult<CfRecommendationsPayload> =
+        withContext(Dispatchers.IO) {
+            if (username.isBlank()) {
+                return@withContext LbApiResult.Failure("Usuario vacío")
+            }
+            val utf8 = Charsets.UTF_8.name()
+            val encodedUser = URLEncoder.encode(username.trim(), utf8)
+            val encodedType = URLEncoder.encode(artistType.trim().ifBlank { "top" }, utf8)
+            val url =
+                endpoint("cf/recommendation/user/$encodedUser/recording") +
+                    "?count=$count&offset=$offset&artist_type=$encodedType"
+            val empty = CfRecommendationsPayload(userName = username.trim(), recordings = emptyList())
+            lbCall(buildGetRequest(url, token)) { code, body ->
+                when {
+                    code == 204 || body.isBlank() -> LbApiResult.Success(empty)
+                    code !in 200..299 -> LbApiResult.Failure(message = errorMessageFromBody(body, code))
+                    else -> LbApiResult.Success(parseCfRecommendations(JSONObject(body), username.trim()))
+                }
             }
         }
-    }
 
     suspend fun fetchRecordingMetadata(
         recordingMbids: List<String>,
         token: String? = null,
-        inc: String = "artist release"
-    ): LbApiResult<Map<String, LbRecordingMetadata>> = withContext(Dispatchers.IO) {
-        val mbids = recordingMbids.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
-        if (mbids.isEmpty()) {
-            return@withContext LbApiResult.Success(emptyMap())
-        }
-        // POST avoids URL length limits for larger batches
-        val payload = JSONObject().apply {
-            put("recording_mbids", JSONArray(mbids))
-            put("inc", inc)
-        }
-        val builder = Request.Builder()
-            .url(endpoint("metadata/recording/"))
-            .post(payload.toString().toRequestBody(JSON))
-        if (!token.isNullOrBlank()) {
-            builder.header("Authorization", "Token ${token.trim()}")
-        }
-        lbCall(builder.build()) { code, body ->
-            if (code !in 200..299) {
-                LbApiResult.Failure(message = errorMessageFromBody(body, code))
-            } else {
-                LbApiResult.Success(parseRecordingMetadataMap(JSONObject(body)))
+        inc: String = "artist release",
+    ): LbApiResult<Map<String, LbRecordingMetadata>> =
+        withContext(Dispatchers.IO) {
+            val mbids = recordingMbids.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+            if (mbids.isEmpty()) {
+                return@withContext LbApiResult.Success(emptyMap())
+            }
+            // POST avoids URL length limits for larger batches
+            val payload =
+                JSONObject().apply {
+                    put("recording_mbids", JSONArray(mbids))
+                    put("inc", inc)
+                }
+            val builder =
+                Request
+                    .Builder()
+                    .url(endpoint("metadata/recording/"))
+                    .post(payload.toString().toRequestBody(JSON))
+            if (!token.isNullOrBlank()) {
+                builder.header("Authorization", "Token ${token.trim()}")
+            }
+            lbCall(builder.build()) { code, body ->
+                if (code !in 200..299) {
+                    LbApiResult.Failure(message = errorMessageFromBody(body, code))
+                } else {
+                    LbApiResult.Success(parseRecordingMetadataMap(JSONObject(body)))
+                }
             }
         }
-    }
 
     data class CfRecordingWithMetadata(
         val recording: CfRecommendedRecording,
-        val metadata: LbRecordingMetadata?
+        val metadata: LbRecordingMetadata?,
     )
 
     /**
@@ -371,30 +416,34 @@ object ListenBrainzClient {
         token: String? = null,
         count: Int = 50,
         offset: Int = 0,
-        artistType: String = "top"
-    ): LbApiResult<List<CfRecordingWithMetadata>> = withContext(Dispatchers.IO) {
-        val cfResult = fetchCfRecordingRecommendations(username, token, count, offset, artistType)
-        val payload = when (cfResult) {
-            is LbApiResult.Success -> cfResult.data
-            is LbApiResult.Failure -> return@withContext cfResult
+        artistType: String = "top",
+    ): LbApiResult<List<CfRecordingWithMetadata>> =
+        withContext(Dispatchers.IO) {
+            val cfResult = fetchCfRecordingRecommendations(username, token, count, offset, artistType)
+            val payload =
+                when (cfResult) {
+                    is LbApiResult.Success -> cfResult.data
+                    is LbApiResult.Failure -> return@withContext cfResult
+                }
+            if (payload.recordings.isEmpty()) {
+                return@withContext LbApiResult.Success(emptyList())
+            }
+            val mbids = payload.recordings.map { it.recordingMbid }
+            val metaByMbid =
+                when (val metaResult = fetchRecordingMetadata(mbids, token)) {
+                    is LbApiResult.Success -> metaResult.data
+                    is LbApiResult.Failure -> emptyMap()
+                }
+            val combined =
+                payload.recordings.map { rec ->
+                    CfRecordingWithMetadata(rec, metaByMbid[rec.recordingMbid])
+                }
+            LbApiResult.Success(combined)
         }
-        if (payload.recordings.isEmpty()) {
-            return@withContext LbApiResult.Success(emptyList())
-        }
-        val mbids = payload.recordings.map { it.recordingMbid }
-        val metaByMbid = when (val metaResult = fetchRecordingMetadata(mbids, token)) {
-            is LbApiResult.Success -> metaResult.data
-            is LbApiResult.Failure -> emptyMap()
-        }
-        val combined = payload.recordings.map { rec ->
-            CfRecordingWithMetadata(rec, metaByMbid[rec.recordingMbid])
-        }
-        LbApiResult.Success(combined)
-    }
 
     private data class CachedStatsEntry<T>(
         val timestampMs: Long,
-        val data: List<T>
+        val data: List<T>,
     )
 
     private val statsCache = java.util.concurrent.ConcurrentHashMap<String, CachedStatsEntry<*>>()
@@ -412,51 +461,51 @@ object ListenBrainzClient {
         count: Int,
         token: String?,
         forceRefresh: Boolean = false,
-        parser: (JSONObject) -> List<T>
-    ): LbApiResult<List<T>> = withContext(Dispatchers.IO) {
-        if (username.isBlank()) return@withContext LbApiResult.Failure("Usuario vacío")
-        val cleanUser = username.trim()
-        val cacheKey = "${cleanUser.lowercase()}:$entity:$range"
-        val now = System.currentTimeMillis()
+        parser: (JSONObject) -> List<T>,
+    ): LbApiResult<List<T>> =
+        withContext(Dispatchers.IO) {
+            if (username.isBlank()) return@withContext LbApiResult.Failure("Usuario vacío")
+            val cleanUser = username.trim()
+            val cacheKey = "${cleanUser.lowercase()}:$entity:$range"
+            val now = System.currentTimeMillis()
 
-        if (!forceRefresh) {
-            val cached = statsCache[cacheKey]
-            if (cached != null && (now - cached.timestampMs) < STATS_CACHE_TTL_MS) {
-                @Suppress("UNCHECKED_CAST")
-                val items = cached.data as? List<T>
-                if (items != null && items.isNotEmpty()) {
-                    return@withContext LbApiResult.Success(items.take(count))
+            if (!forceRefresh) {
+                val cached = statsCache[cacheKey]
+                if (cached != null && (now - cached.timestampMs) < STATS_CACHE_TTL_MS) {
+                    @Suppress("UNCHECKED_CAST")
+                    val items = cached.data as? List<T>
+                    if (items != null && items.isNotEmpty()) {
+                        return@withContext LbApiResult.Success(items.take(count))
+                    }
                 }
             }
-        }
 
-        val requestCount = maxOf(count, 25)
-        val encodedUser = URLEncoder.encode(cleanUser, Charsets.UTF_8.name())
-        val url = endpoint("stats/user/$encodedUser/$entity?range=$range&count=$requestCount")
-        val result = lbGet(url, token) { body -> parser(JSONObject(body)) }
-        if (result is LbApiResult.Success) {
-            statsCache[cacheKey] = CachedStatsEntry(timestampMs = now, data = result.data)
-            LbApiResult.Success(result.data.take(count))
-        } else {
-            result
+            val requestCount = maxOf(count, 25)
+            val encodedUser = URLEncoder.encode(cleanUser, Charsets.UTF_8.name())
+            val url = endpoint("stats/user/$encodedUser/$entity?range=$range&count=$requestCount")
+            val result = lbGet(url, token) { body -> parser(JSONObject(body)) }
+            if (result is LbApiResult.Success) {
+                statsCache[cacheKey] = CachedStatsEntry(timestampMs = now, data = result.data)
+                LbApiResult.Success(result.data.take(count))
+            } else {
+                result
+            }
         }
-    }
 
     suspend fun fetchUserTopArtists(
         username: String,
         range: String = "all_time",
         count: Int = 20,
         token: String? = null,
-        forceRefresh: Boolean = false
-    ): LbApiResult<List<LbUserStatArtist>> =
-        fetchUserStats(username, "artists", range, count, token, forceRefresh, ::parseUserTopArtists)
+        forceRefresh: Boolean = false,
+    ): LbApiResult<List<LbUserStatArtist>> = fetchUserStats(username, "artists", range, count, token, forceRefresh, ::parseUserTopArtists)
 
     suspend fun fetchUserTopReleases(
         username: String,
         range: String = "all_time",
         count: Int = 20,
         token: String? = null,
-        forceRefresh: Boolean = false
+        forceRefresh: Boolean = false,
     ): LbApiResult<List<LbUserStatRelease>> =
         fetchUserStats(username, "releases", range, count, token, forceRefresh, ::parseUserTopReleases)
 
@@ -465,7 +514,7 @@ object ListenBrainzClient {
         range: String = "all_time",
         count: Int = 20,
         token: String? = null,
-        forceRefresh: Boolean = false
+        forceRefresh: Boolean = false,
     ): LbApiResult<List<LbUserStatRecording>> =
         fetchUserStats(username, "recordings", range, count, token, forceRefresh, ::parseUserTopRecordings)
 
@@ -473,35 +522,36 @@ object ListenBrainzClient {
         username: String,
         count: Int = 30,
         token: String? = null,
-        forceRefresh: Boolean = false
-    ): LbApiResult<List<ListenPayload>> = withContext(Dispatchers.IO) {
-        if (username.isBlank()) return@withContext LbApiResult.Failure("Usuario vacío")
-        val cleanUser = username.trim()
-        val cacheKey = "${cleanUser.lowercase()}:recent_listens"
-        val now = System.currentTimeMillis()
+        forceRefresh: Boolean = false,
+    ): LbApiResult<List<ListenPayload>> =
+        withContext(Dispatchers.IO) {
+            if (username.isBlank()) return@withContext LbApiResult.Failure("Usuario vacío")
+            val cleanUser = username.trim()
+            val cacheKey = "${cleanUser.lowercase()}:recent_listens"
+            val now = System.currentTimeMillis()
 
-        if (!forceRefresh) {
-            val cached = statsCache[cacheKey]
-            if (cached != null && (now - cached.timestampMs) < STATS_CACHE_TTL_MS) {
-                @Suppress("UNCHECKED_CAST")
-                val items = cached.data as? List<ListenPayload>
-                if (items != null && items.isNotEmpty()) {
-                    return@withContext LbApiResult.Success(items.take(count))
+            if (!forceRefresh) {
+                val cached = statsCache[cacheKey]
+                if (cached != null && (now - cached.timestampMs) < STATS_CACHE_TTL_MS) {
+                    @Suppress("UNCHECKED_CAST")
+                    val items = cached.data as? List<ListenPayload>
+                    if (items != null && items.isNotEmpty()) {
+                        return@withContext LbApiResult.Success(items.take(count))
+                    }
                 }
             }
-        }
 
-        val requestCount = maxOf(count, 30)
-        val encodedUser = URLEncoder.encode(cleanUser, Charsets.UTF_8.name())
-        val url = endpoint("user/$encodedUser/listens?count=$requestCount")
-        val result = lbGet(url, token) { body -> parseUserRecentListens(JSONObject(body)) }
-        if (result is LbApiResult.Success) {
-            statsCache[cacheKey] = CachedStatsEntry(timestampMs = now, data = result.data)
-            LbApiResult.Success(result.data.take(count))
-        } else {
-            result
+            val requestCount = maxOf(count, 30)
+            val encodedUser = URLEncoder.encode(cleanUser, Charsets.UTF_8.name())
+            val url = endpoint("user/$encodedUser/listens?count=$requestCount")
+            val result = lbGet(url, token) { body -> parseUserRecentListens(JSONObject(body)) }
+            if (result is LbApiResult.Success) {
+                statsCache[cacheKey] = CachedStatsEntry(timestampMs = now, data = result.data)
+                LbApiResult.Success(result.data.take(count))
+            } else {
+                result
+            }
         }
-    }
 
     /**
      * Level 2: Fetches top artist names for user; if empty or failed, falls back to distinct artists
@@ -511,7 +561,7 @@ object ListenBrainzClient {
         username: String,
         count: Int = 20,
         token: String? = null,
-        forceRefresh: Boolean = false
+        forceRefresh: Boolean = false,
     ): List<String> {
         if (username.isBlank()) return emptyList()
         val topResult = fetchUserTopArtists(username, count = count, token = token, forceRefresh = forceRefresh)
@@ -525,23 +575,23 @@ object ListenBrainzClient {
         return emptyList()
     }
 
-
     private inline fun <T> lbCall(
         request: Request,
-        parse: (code: Int, body: String) -> LbApiResult<T>
+        parse: (code: Int, body: String) -> LbApiResult<T>,
     ): LbApiResult<T> {
         // Parsing happens outside the network try: with it inside, a schema change or an HTML error
         // page surfaced as isNetworkError = true and was logged as a connectivity failure.
-        val response = try {
-            client.newCall(request).execute().use { response ->
-                response.code to response.body?.string().orEmpty()
+        val response =
+            try {
+                client.newCall(request).execute().use { response ->
+                    response.code to response.body?.string().orEmpty()
+                }
+            } catch (e: Exception) {
+                return LbApiResult.Failure(
+                    message = e.message ?: "Error de red",
+                    isNetworkError = true,
+                )
             }
-        } catch (e: Exception) {
-            return LbApiResult.Failure(
-                message = e.message ?: "Error de red",
-                isNetworkError = true
-            )
-        }
         val (code, body) = response
         return try {
             parse(code, body)
@@ -553,16 +603,20 @@ object ListenBrainzClient {
     private inline fun <T> lbGet(
         url: String,
         token: String?,
-        parse: (body: String) -> T
-    ): LbApiResult<T> = lbCall(buildGetRequest(url, token)) { code, body ->
-        if (code !in 200..299) {
-            LbApiResult.Failure(message = errorMessageFromBody(body, code))
-        } else {
-            LbApiResult.Success(parse(body))
+        parse: (body: String) -> T,
+    ): LbApiResult<T> =
+        lbCall(buildGetRequest(url, token)) { code, body ->
+            if (code !in 200..299) {
+                LbApiResult.Failure(message = errorMessageFromBody(body, code))
+            } else {
+                LbApiResult.Success(parse(body))
+            }
         }
-    }
 
-    private fun buildGetRequest(url: String, token: String?): Request {
+    private fun buildGetRequest(
+        url: String,
+        token: String?,
+    ): Request {
         val builder = Request.Builder().url(url).get()
         if (!token.isNullOrBlank()) {
             builder.header("Authorization", "Token ${token.trim()}")
@@ -570,11 +624,13 @@ object ListenBrainzClient {
         return builder.build()
     }
 
-    private fun errorMessageFromBody(body: String, code: Int): String {
-        return runCatching {
+    private fun errorMessageFromBody(
+        body: String,
+        code: Int,
+    ): String =
+        runCatching {
             JSONObject(body).optString("error", body)
         }.getOrDefault(body).ifBlank { "Error $code" }
-    }
 
     private fun parsePlaylistSummaries(root: JSONObject): List<LbPlaylistSummary> {
         val playlistsArray = root.optJSONArray("playlists") ?: JSONArray()
@@ -587,7 +643,10 @@ object ListenBrainzClient {
         return result
     }
 
-    private fun parsePlaylistDetail(root: JSONObject, fallbackMbid: String): LbPlaylistDetail? {
+    private fun parsePlaylistDetail(
+        root: JSONObject,
+        fallbackMbid: String,
+    ): LbPlaylistDetail? {
         val playlist = root.optJSONObject("playlist") ?: return null
         val summary = parsePlaylistSummary(playlist, fallbackMbid) ?: return null
         val tracksArray = playlist.optJSONArray("track") ?: JSONArray()
@@ -602,45 +661,49 @@ object ListenBrainzClient {
             val artworkUri = extractTrackArtwork(trackObj)
             tracks.add(
                 LbPlaylistTrack(
-                    identity = TrackIdentity(
-                        title = title.ifBlank { "Unknown Title" },
-                        artist = artist.ifBlank { "Unknown Artist" },
-                        album = releaseName.orEmpty(),
-                        artworkUri = artworkUri
-                    ),
-                    recordingMbid = recordingMbid
-                )
+                    identity =
+                        TrackIdentity(
+                            title = title.ifBlank { "Unknown Title" },
+                            artist = artist.ifBlank { "Unknown Artist" },
+                            album = releaseName.orEmpty(),
+                            artworkUri = artworkUri,
+                        ),
+                    recordingMbid = recordingMbid,
+                ),
             )
         }
         val detailCover = summary.coverUrl ?: tracks.firstNotNullOfOrNull { it.identity.artworkUri }
         return LbPlaylistDetail(
-            summary = summary.copy(
-                trackCount = if (summary.trackCount > 0) summary.trackCount else tracks.size,
-                coverUrl = detailCover
-            ),
-            tracks = tracks
+            summary =
+                summary.copy(
+                    trackCount = if (summary.trackCount > 0) summary.trackCount else tracks.size,
+                    coverUrl = detailCover,
+                ),
+            tracks = tracks,
         )
     }
 
     private fun parsePlaylistSummary(
         playlist: JSONObject,
-        fallbackMbid: String? = null
+        fallbackMbid: String? = null,
     ): LbPlaylistSummary? {
         val mbid = extractPlaylistMbid(playlist.opt("identifier")) ?: fallbackMbid
         if (mbid.isNullOrBlank()) return null
         val title = playlist.optString("title").orEmpty().ifBlank { "Playlist" }
-        val description = playlist.optString("annotation").takeIf { it.isNotBlank() }
-        val trackCount = playlist.optJSONArray("track")?.length()
-            ?: playlist.optInt("num_tracks", 0).takeIf { it > 0 }
-            ?: extensionTrackCount(playlist)
-        val coverUrl = playlist.optString("image").takeIf { it.isNotBlank() }
-            ?: extractExtensionImage(playlist)
+        val description = HtmlSanitizer.stripHtml(playlist.optString("annotation"))
+        val trackCount =
+            playlist.optJSONArray("track")?.length()
+                ?: playlist.optInt("num_tracks", 0).takeIf { it > 0 }
+                ?: extensionTrackCount(playlist)
+        val coverUrl =
+            playlist.optString("image").takeIf { it.isNotBlank() }
+                ?: extractExtensionImage(playlist)
         return LbPlaylistSummary(
             mbid = mbid,
             title = title,
             description = description,
             trackCount = trackCount,
-            coverUrl = coverUrl
+            coverUrl = coverUrl,
         )
     }
 
@@ -660,29 +723,39 @@ object ListenBrainzClient {
     }
 
     private fun extractPlaylistMbid(identifier: Any?): String? {
-        val raw = when (identifier) {
-            is String -> identifier
-            is JSONArray -> identifier.optString(0)
-            else -> null
-        } ?: return null
+        val raw =
+            when (identifier) {
+                is String -> identifier
+                is JSONArray -> identifier.optString(0)
+                else -> null
+            } ?: return null
         val marker = "/playlist/"
         val idx = raw.lastIndexOf(marker)
         if (idx >= 0) {
-            return raw.substring(idx + marker.length).substringBefore('?').trim().ifBlank { null }
+            return raw
+                .substring(idx + marker.length)
+                .substringBefore('?')
+                .trim()
+                .ifBlank { null }
         }
         return raw.trim().takeIf { it.length == 36 }
     }
 
     private fun extractRecordingMbid(identifier: Any?): String? {
-        val raw = when (identifier) {
-            is String -> identifier
-            is JSONArray -> identifier.optString(0)
-            else -> null
-        } ?: return null
+        val raw =
+            when (identifier) {
+                is String -> identifier
+                is JSONArray -> identifier.optString(0)
+                else -> null
+            } ?: return null
         val marker = "/recording/"
         val idx = raw.lastIndexOf(marker)
         if (idx >= 0) {
-            return raw.substring(idx + marker.length).substringBefore('?').trim().ifBlank { null }
+            return raw
+                .substring(idx + marker.length)
+                .substringBefore('?')
+                .trim()
+                .ifBlank { null }
         }
         return raw.trim().takeIf { it.length == 36 }
     }
@@ -695,18 +768,21 @@ object ListenBrainzClient {
         while (keys.hasNext()) {
             val key = keys.next()
             val ns = extension.optJSONObject(key) ?: continue
-            val img = ns.optString("image").takeIf { it.isNotBlank() }
-                ?: ns.optString("artwork_url").takeIf { it.isNotBlank() }
-                ?: ns.optString("cover_art_url").takeIf { it.isNotBlank() }
+            val img =
+                ns.optString("image").takeIf { it.isNotBlank() }
+                    ?: ns.optString("artwork_url").takeIf { it.isNotBlank() }
+                    ?: ns.optString("cover_art_url").takeIf { it.isNotBlank() }
             if (img != null) return img
-            val releaseId = ns.optString("caa_release_mbid").takeIf { it.isNotBlank() }
-                ?: ns.optString("release_identifier").takeIf { it.isNotBlank() }
-                ?: ns.optString("release_mbid").takeIf { it.isNotBlank() }
+            val releaseId =
+                ns.optString("caa_release_mbid").takeIf { it.isNotBlank() }
+                    ?: ns.optString("release_identifier").takeIf { it.isNotBlank() }
+                    ?: ns.optString("release_mbid").takeIf { it.isNotBlank() }
             val mbid = extractReleaseMbidFromUrlOrId(releaseId)
             if (mbid != null) return coverArtArchiveUrl(mbid)
             val additional = ns.optJSONObject("additional_metadata")
-            val addMbid = additional?.optString("caa_release_mbid")?.takeIf { it.isNotBlank() }
-                ?: additional?.optString("release_mbid")?.takeIf { it.isNotBlank() }
+            val addMbid =
+                additional?.optString("caa_release_mbid")?.takeIf { it.isNotBlank() }
+                    ?: additional?.optString("release_mbid")?.takeIf { it.isNotBlank() }
             if (addMbid != null) {
                 val caaId = additional?.optLong("caa_id", 0L)?.takeIf { it > 0 }
                 return coverArtArchiveUrl(addMbid, caaId)
@@ -722,7 +798,11 @@ object ListenBrainzClient {
         val marker = "/release/"
         val idx = raw.lastIndexOf(marker)
         if (idx >= 0) {
-            return raw.substring(idx + marker.length).substringBefore('?').trim().ifBlank { null }
+            return raw
+                .substring(idx + marker.length)
+                .substringBefore('?')
+                .trim()
+                .ifBlank { null }
         }
         return raw.trim().takeIf { it.length == 36 }
     }
@@ -743,7 +823,7 @@ object ListenBrainzClient {
             artistMbids = artistMbids,
             recordingMbid = recordingMbid,
             artistCreditName = artistCreditName,
-            recordingName = recordingName
+            recordingName = recordingName,
         )
     }
 
@@ -760,12 +840,16 @@ object ListenBrainzClient {
                 result.add(
                     LbRadioRecording(
                         recordingMbid = recordingMbid,
-                        similarArtistMbid = obj.optString("similar_artist_mbid")
-                            .takeIf { it.isNotBlank() },
-                        similarArtistName = obj.optString("similar_artist_name")
-                            .takeIf { it.isNotBlank() },
-                        totalListenCount = obj.optLong("total_listen_count", 0L)
-                    )
+                        similarArtistMbid =
+                            obj
+                                .optString("similar_artist_mbid")
+                                .takeIf { it.isNotBlank() },
+                        similarArtistName =
+                            obj
+                                .optString("similar_artist_name")
+                                .takeIf { it.isNotBlank() },
+                        totalListenCount = obj.optLong("total_listen_count", 0L),
+                    ),
                 )
             }
         }
@@ -774,7 +858,7 @@ object ListenBrainzClient {
 
     internal fun parseCfRecommendations(
         root: JSONObject,
-        fallbackUserName: String
+        fallbackUserName: String,
     ): CfRecommendationsPayload {
         val payload = root.optJSONObject("payload") ?: root
         val mbidsArray = payload.optJSONArray("mbids") ?: JSONArray()
@@ -786,23 +870,29 @@ object ListenBrainzClient {
             recordings.add(
                 CfRecommendedRecording(
                     recordingMbid = mbid,
-                    score = obj.optDouble("score", 0.0)
-                )
+                    score = obj.optDouble("score", 0.0),
+                ),
             )
         }
-        val userName = payload.optString("user_name").takeIf { it.isNotBlank() }
-            ?: fallbackUserName
-        val lastUpdated = when {
-            payload.has("last_updated") && !payload.isNull("last_updated") ->
-                payload.optLong("last_updated")
-            else -> null
-        }
+        val userName =
+            payload.optString("user_name").takeIf { it.isNotBlank() }
+                ?: fallbackUserName
+        val lastUpdated =
+            when {
+                payload.has("last_updated") && !payload.isNull("last_updated") -> {
+                    payload.optLong("last_updated")
+                }
+
+                else -> {
+                    null
+                }
+            }
         return CfRecommendationsPayload(
             userName = userName,
             recordings = recordings,
             lastUpdatedEpochSec = lastUpdated,
             totalMbidCount = payload.optInt("total_mbid_count", recordings.size),
-            artistType = payload.optString("type").takeIf { it.isNotBlank() }
+            artistType = payload.optString("type").takeIf { it.isNotBlank() },
         )
     }
 
@@ -813,31 +903,37 @@ object ListenBrainzClient {
             val mbid = keys.next()
             val entry = root.optJSONObject(mbid) ?: continue
             val recordingObj = entry.optJSONObject("recording")
-            val title = recordingObj?.optString("name")?.takeIf { it.isNotBlank() }
-                ?: entry.optString("recording_name").takeIf { it.isNotBlank() }
-                ?: continue
+            val title =
+                recordingObj?.optString("name")?.takeIf { it.isNotBlank() }
+                    ?: entry.optString("recording_name").takeIf { it.isNotBlank() }
+                    ?: continue
             val artistObj = entry.optJSONObject("artist")
-            val artist = artistObj?.optString("name")?.takeIf { it.isNotBlank() }
-                ?: entry.optString("artist_credit_name").takeIf { it.isNotBlank() }
-                ?: "Unknown Artist"
+            val artist =
+                artistObj?.optString("name")?.takeIf { it.isNotBlank() }
+                    ?: entry.optString("artist_credit_name").takeIf { it.isNotBlank() }
+                    ?: "Unknown Artist"
             val releaseObj = entry.optJSONObject("release")
             val releaseName = releaseObj?.optString("name")?.takeIf { it.isNotBlank() }
-            val releaseMbid = releaseObj?.optString("mbid")?.takeIf { it.isNotBlank() }
-                ?: releaseObj?.optString("release_mbid")?.takeIf { it.isNotBlank() }
-                ?: releaseObj?.optString("caa_release_mbid")?.takeIf { it.isNotBlank() }
-                ?: entry.optString("release_mbid").takeIf { it.isNotBlank() }
-            val artworkUri = releaseMbid?.let(::coverArtArchiveUrl)
-                ?: entry.optString("cover_art_url").takeIf { it.isNotBlank() }
-                ?: entry.optString("artwork_url").takeIf { it.isNotBlank() }
-            result[mbid] = LbRecordingMetadata(
-                identity = TrackIdentity(
-                    title = title,
-                    artist = artist,
-                    album = releaseName.orEmpty(),
-                    artworkUri = artworkUri
-                ),
-                recordingMbid = mbid
-            )
+            val releaseMbid =
+                releaseObj?.optString("mbid")?.takeIf { it.isNotBlank() }
+                    ?: releaseObj?.optString("release_mbid")?.takeIf { it.isNotBlank() }
+                    ?: releaseObj?.optString("caa_release_mbid")?.takeIf { it.isNotBlank() }
+                    ?: entry.optString("release_mbid").takeIf { it.isNotBlank() }
+            val artworkUri =
+                releaseMbid?.let(::coverArtArchiveUrl)
+                    ?: entry.optString("cover_art_url").takeIf { it.isNotBlank() }
+                    ?: entry.optString("artwork_url").takeIf { it.isNotBlank() }
+            result[mbid] =
+                LbRecordingMetadata(
+                    identity =
+                        TrackIdentity(
+                            title = title,
+                            artist = artist,
+                            album = releaseName.orEmpty(),
+                            artworkUri = artworkUri,
+                        ),
+                    recordingMbid = mbid,
+                )
         }
         return result
     }
@@ -845,7 +941,7 @@ object ListenBrainzClient {
     private inline fun <T> parsePayloadArray(
         root: JSONObject,
         arrayKey: String,
-        transform: (JSONObject) -> T?
+        transform: (JSONObject) -> T?,
     ): List<T> {
         val arr = root.optJSONObject("payload")?.optJSONArray(arrayKey) ?: return emptyList()
         val result = ArrayList<T>(arr.length())
@@ -863,7 +959,7 @@ object ListenBrainzClient {
             LbUserStatArtist(
                 artistName = artistName,
                 listenCount = obj.optLong("listen_count", 0L),
-                artistMbid = obj.optString("artist_mbid").takeIf { it.isNotBlank() }
+                artistMbid = obj.optString("artist_mbid").takeIf { it.isNotBlank() },
             )
         }
 
@@ -874,7 +970,7 @@ object ListenBrainzClient {
                 releaseName = releaseName,
                 artistName = obj.optString("artist_name").trim(),
                 listenCount = obj.optLong("listen_count", 0L),
-                releaseMbid = obj.optString("release_mbid").takeIf { it.isNotBlank() }
+                releaseMbid = obj.optString("release_mbid").takeIf { it.isNotBlank() },
             )
         }
 
@@ -886,7 +982,7 @@ object ListenBrainzClient {
                 artistName = obj.optString("artist_name").trim(),
                 releaseName = obj.optString("release_name").takeIf { it.isNotBlank() },
                 listenCount = obj.optLong("listen_count", 0L),
-                recordingMbid = obj.optString("recording_mbid").takeIf { it.isNotBlank() }
+                recordingMbid = obj.optString("recording_mbid").takeIf { it.isNotBlank() },
             )
         }
 
@@ -902,8 +998,7 @@ object ListenBrainzClient {
                 trackName = trackName,
                 artistName = artistName,
                 releaseName = meta.optString("release_name").takeIf { it.isNotBlank() },
-                durationMs = durationMs
+                durationMs = durationMs,
             )
         }
 }
-

@@ -7,6 +7,8 @@ import com.bestiapop.android.data.model.Playlist
 import com.bestiapop.android.data.model.PlaylistPendingTrack
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.data.model.firstArtworkUri
+import com.bestiapop.android.data.model.isRemote
+import com.bestiapop.android.domain.util.TrackMatchKeys
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
@@ -142,8 +144,35 @@ internal class PlaylistRepositoryOperator(
             musicDao.updatePlaylistPendingTrackArtwork(id, artworkUri)
         }
 
+    suspend fun rematchPlaylistPendingTracks(playlistId: Long) = withContext(Dispatchers.IO) {
+        val allPending = musicDao.getPlaylistPendingTracks(playlistId)
+        if (allPending.isEmpty()) return@withContext
+        val library = musicDao.getAllSongs()
+        val index = TrackMatchKeys.buildLibraryIndex(library)
+        val maxExistingPos = musicDao.getMaxPositionInPlaylist(playlistId) ?: -1
+        var nextPos = maxExistingPos + 1
+        val refsToAdd = ArrayList<PlaylistSongCrossRef>()
+        val idsToDelete = ArrayList<Long>()
+
+        for (pending in allPending) {
+            val local = TrackMatchKeys.lookupLocalSong(index, pending.toPendingTrack().identity)
+            if (local != null && !local.isRemote) {
+                val targetPos = if (pending.position >= 0) pending.position else nextPos++
+                refsToAdd.add(PlaylistSongCrossRef(playlistId = playlistId, songId = local.id, position = targetPos))
+                idsToDelete.add(pending.id)
+            }
+        }
+        if (refsToAdd.isNotEmpty()) {
+            musicDao.addSongsToPlaylist(refsToAdd)
+            for (id in idsToDelete) {
+                musicDao.deletePlaylistPendingTrackById(id)
+            }
+        }
+    }
+
     suspend fun enrichPlaylistPendingArtworks(playlistId: Long) =
         withContext(Dispatchers.IO) {
+            rematchPlaylistPendingTracks(playlistId)
             val allPending = musicDao.getPlaylistPendingTracks(playlistId)
             val firstExistingArt = allPending.firstNotNullOfOrNull {
                 it.artworkUri?.takeIf { uri -> uri.isNotBlank() && !uri.equals("null", ignoreCase = true) }

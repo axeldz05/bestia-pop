@@ -381,13 +381,26 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 if (song.id > 0L) {
                     byId[song.id] = song
                 }
-                val matchKey = TrackMatchKeys.matchKey(song.artist, song.title)
-                if (matchKey.isNotEmpty()) {
-                    if (!song.isStreamHistory) {
-                        allByMatchKey.putIfAbsent(matchKey, song)
+                if (!song.isRemote) {
+                    val canonical = TrackMatchKeys.matchKey(song.artist, song.title)
+                    if (canonical.isNotEmpty()) {
+                        allByMatchKey[canonical] = song
+                        localByMatchKey[canonical] = song
                     }
-                    if (!song.isRemote) {
-                        localByMatchKey.putIfAbsent(matchKey, song)
+                }
+            }
+            for (song in songs) {
+                if (!song.isRemote) {
+                    for (candKey in TrackMatchKeys.candidateMatchKeys(song)) {
+                        allByMatchKey.putIfAbsent(candKey, song)
+                        localByMatchKey.putIfAbsent(candKey, song)
+                    }
+                }
+            }
+            for (song in songs) {
+                if (song.isRemote && !song.isStreamHistory) {
+                    for (candKey in TrackMatchKeys.candidateMatchKeys(song)) {
+                        allByMatchKey.putIfAbsent(candKey, song)
                     }
                 }
                 val artistAlbumKey = albumArtistKey(song.artist, song.album)

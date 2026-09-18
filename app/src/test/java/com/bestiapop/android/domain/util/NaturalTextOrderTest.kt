@@ -22,6 +22,9 @@ class NaturalTextOrderTest {
         assertEquals("1999", NaturalTextOrder.extractRomanizedOrParsed("1999"))
         assertEquals("...", NaturalTextOrder.extractRomanizedOrParsed("..."))
         assertEquals("★ Star", NaturalTextOrder.extractRomanizedOrParsed("★ Star"))
+
+        // Transliteration
+        assertEquals("soranin", NaturalTextOrder.transliterateToLatin("ソラニン").lowercase())
     }
 
     @Test

@@ -356,17 +356,11 @@ internal class RepositoryIdentityCache(
     }
 
     suspend fun findSongByArtistTitle(artist: String, title: String): com.bestiapop.android.data.model.Song? {
-        val key = com.bestiapop.android.domain.util.TrackMatchKeys.matchKey(artist, title)
-        if (key.isEmpty()) return null
+        if (artist.isBlank() || title.isBlank()) return null
         val songs = getSongs()
-        var remoteFallback: com.bestiapop.android.data.model.Song? = null
-        for (song in songs) {
-            if (com.bestiapop.android.domain.util.TrackMatchKeys.matchKey(song.artist, song.title) == key) {
-                if (!song.isRemote) return song
-                if (remoteFallback == null) remoteFallback = song
-            }
-        }
-        return remoteFallback
+        val index = com.bestiapop.android.domain.util.TrackMatchKeys.buildLibraryIndex(songs)
+        val candidateIdentity = com.bestiapop.android.data.model.TrackIdentity(title = title, artist = artist)
+        return com.bestiapop.android.domain.util.TrackMatchKeys.lookupLocalSong(index, candidateIdentity)
     }
 }
 

@@ -13,9 +13,9 @@ import org.junit.Test
 
 class TrackMatchKeysTest {
 
-    private fun song(id: Long, title: String, artist: String) = Song(
+    private fun song(id: Long, title: String, artist: String, isRemote: Boolean = false) = Song(
         id = id,
-        uriString = "file:///$id",
+        uriString = if (isRemote) "remote://stream/$id" else "file:///$id",
         title = title,
         artist = artist,
         album = "A",
@@ -132,5 +132,61 @@ class TrackMatchKeysTest {
             metaOf = { it.meta }
         ) { item, local -> item.score to local?.id }
         assertEquals(listOf(0.9 to 5L), out)
+    }
+
+    @Test
+    fun lookupLocalSong_matchesTransliteratedOriginalTitle_soranin() {
+        val library = listOf(song(1549, "Soranin", "ASIAN KUNG-FU GENERATION"))
+        val index = TrackMatchKeys.buildLibraryIndex(library)
+        val query = TrackIdentity(title = "ソラニン", artist = "ASIAN KUNG-FU GENERATION")
+        val found = TrackMatchKeys.lookupLocalSong(index, query)
+        assertEquals(1549L, found?.id)
+    }
+
+    @Test
+    fun lookupLocalSong_matchesOriginalLocalTitle_withRomanizedQuery() {
+        val library = listOf(song(1745, "ソラニン", "ASIAN KUNG-FU GENERATION"))
+        val index = TrackMatchKeys.buildLibraryIndex(library)
+        val query = TrackIdentity(title = "Soranin", artist = "ASIAN KUNG-FU GENERATION")
+        val found = TrackMatchKeys.lookupLocalSong(index, query)
+        assertEquals(1745L, found?.id)
+    }
+
+    @Test
+    fun lookupLocalSong_matchesJapaneseRLVariation() {
+        val library = listOf(song(10, "Solanin", "ASIAN KUNG-FU GENERATION"))
+        val index = TrackMatchKeys.buildLibraryIndex(library)
+        val query = TrackIdentity(title = "Soranin", artist = "ASIAN KUNG-FU GENERATION")
+        val found = TrackMatchKeys.lookupLocalSong(index, query)
+        assertEquals(10L, found?.id)
+    }
+
+    @Test
+    fun lookupLocalSong_matchesParenthesizedBilingualTitle() {
+        val library = listOf(song(20, "夜鷹 (Yodaka)", "Artist"))
+        val index = TrackMatchKeys.buildLibraryIndex(library)
+        val queryInside = TrackIdentity(title = "Yodaka", artist = "Artist")
+        val queryOutside = TrackIdentity(title = "夜鷹", artist = "Artist")
+        assertEquals(20L, TrackMatchKeys.lookupLocalSong(index, queryInside)?.id)
+        assertEquals(20L, TrackMatchKeys.lookupLocalSong(index, queryOutside)?.id)
+    }
+
+    @Test
+    fun lookupLocalSong_matchesCosmeticNoiseTitle() {
+        val library = listOf(song(30, "Rewrite (2016 Rerecorded)", "ASIAN KUNG-FU GENERATION"))
+        val index = TrackMatchKeys.buildLibraryIndex(library)
+        val query = TrackIdentity(title = "Rewrite", artist = "ASIAN KUNG-FU GENERATION")
+        val found = TrackMatchKeys.lookupLocalSong(index, query)
+        assertEquals(30L, found?.id)
+    }
+
+    @Test
+    fun buildLibraryIndex_localSongWinsOverRemoteSong() {
+        val local = song(1549, "Soranin", "ASIAN KUNG-FU GENERATION", isRemote = false)
+        val remote = song(1745, "ソラニン", "ASIAN KUNG-FU GENERATION", isRemote = true)
+        val index = TrackMatchKeys.buildLibraryIndex(listOf(remote, local))
+        val query = TrackIdentity(title = "ソラニン", artist = "ASIAN KUNG-FU GENERATION")
+        val found = TrackMatchKeys.lookupLocalSong(index, query)
+        assertEquals(1549L, found?.id)
     }
 }

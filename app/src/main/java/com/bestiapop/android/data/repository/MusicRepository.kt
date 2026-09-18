@@ -507,7 +507,7 @@ class MusicRepository private constructor(
             return
         }
 
-        val existingByMatch = musicDao.findSongByTitleAndArtist(item.title.trim(), item.artist.trim())
+        val existingByMatch = findSongByArtistTitle(item.artist, item.title)
         if (existingByMatch != null) {
             musicDao.updateLastPlayedAt(existingByMatch.id, playedAt)
             return

@@ -404,7 +404,10 @@ private fun PlaylistDetailScreen(
 
     val allPlayables = remember(localSongs, pendingTracks) {
         val locals = localSongs.map { it.song.toPlayableItem(artworkUri = viewModel.resolveAlbumArtwork(it.song)) }
-        val remotes = pendingTracks.map { it.toPlayableItem() }
+        val remotes = pendingTracks.map { pending ->
+            val local = viewModel.findLocalSongFor(pending.identity)
+            pending.toPlayableItem(local)
+        }
         locals + remotes
     }
     val totalCount = localSongs.size + pendingTracks.size

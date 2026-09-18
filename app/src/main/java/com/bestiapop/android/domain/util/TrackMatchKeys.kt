@@ -3,6 +3,7 @@ package com.bestiapop.android.domain.util
 import com.bestiapop.android.data.model.CatalogAlbum
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.data.model.TrackMeta
+import com.bestiapop.android.data.model.isRemote
 import java.text.Normalizer
 
 /**
@@ -83,6 +84,91 @@ object TrackMatchKeys {
     fun matchKeyPreNormalized(normalizedArtist: String, normalizedTitle: String): String =
         composeKey(normalizedArtist, normalizedTitle)
 
+    private val PARENTHESES_REGEX = Regex("""[\(\[\{]([^\)\]\}]+)[\)\]\}]""")
+
+    /**
+     * Level 1: Generates candidate match keys for an artist + title pair.
+     * Includes canonical matchKey, transliterated non-Latin characters,
+     * Japanese Romaji r/l variations, bilingual/parenthesized sub-parts,
+     * and cosmetic-noise-stripped titles.
+     */
+    fun candidateMatchKeys(artist: String, title: String): List<String> {
+        val canonical = matchKey(artist, title)
+        if (canonical.isEmpty()) return emptyList()
+
+        val transArtist = NaturalTextOrder.transliterateToLatin(artist)
+        val artistVariants = if (transArtist.isNotBlank() && transArtist != artist) {
+            listOf(artist, transArtist)
+        } else {
+            listOf(artist)
+        }
+
+        val out = LinkedHashSet<String>()
+
+        fun emitRlVariants(art: String, t: String) {
+            if (t.contains('r', ignoreCase = true) || t.contains('l', ignoreCase = true)) {
+                val rToL = t.replace('r', 'l').replace('R', 'L')
+                val lToR = t.replace('l', 'r').replace('L', 'R')
+                if (rToL != t) {
+                    val k = matchKey(art, rToL)
+                    if (k.isNotEmpty()) out.add(k)
+                }
+                if (lToR != t) {
+                    val k = matchKey(art, lToR)
+                    if (k.isNotEmpty()) out.add(k)
+                }
+            }
+        }
+
+        fun emitTitle(t: String) {
+            val trimmed = t.trim()
+            if (trimmed.isEmpty()) return
+            for (art in artistVariants) {
+                val key = matchKey(art, trimmed)
+                if (key.isNotEmpty()) out.add(key)
+                val trans = NaturalTextOrder.transliterateToLatin(trimmed)
+                if (trans.isNotBlank() && trans != trimmed) {
+                    val transKey = matchKey(art, trans)
+                    if (transKey.isNotEmpty()) out.add(transKey)
+                    emitRlVariants(art, trans)
+                } else {
+                    emitRlVariants(art, trimmed)
+                }
+            }
+        }
+
+        // 1. Primary title (canonical, transliterated, r/l)
+        emitTitle(title)
+
+        // 2. Parenthesized / bilingual portions
+        for (match in PARENTHESES_REGEX.findAll(title)) {
+            emitTitle(match.groupValues[1])
+        }
+        val outside = PARENTHESES_REGEX.replace(title, " ").trim()
+        if (outside != title) {
+            emitTitle(outside)
+        }
+
+        // 3. Delimiter-separated titles
+        if (title.contains('/')) {
+            for (part in title.split('/')) {
+                emitTitle(part)
+            }
+        }
+
+        // 4. Cosmetic noise stripping
+        val clean = IdentifyRanking.cleanIdentityTitle(title, artist)
+        if (clean != title) {
+            emitTitle(clean)
+        }
+
+        return out.toList()
+    }
+
+    /** Level 2: Candidate match keys directly from [TrackMeta] without unpacking. */
+    fun candidateMatchKeys(meta: TrackMeta): List<String> =
+        candidateMatchKeys(meta.artist, meta.title)
+
     /** L2: stable [ActiveDownload] / queue id from artist+title (empty if either blank). */
     fun downloadIdFor(artist: String, title: String): String = matchKey(artist, title)
 
@@ -101,32 +187,79 @@ object TrackMatchKeys {
      * has to span the whole set — single source of truth for `findByTrack` and the enqueue gate.
      */
     fun downloadIdVariantsFor(artist: String, title: String): List<String> {
-        val key = downloadIdFor(artist, title)
-        return if (key.isEmpty()) emptyList() else listOf(key, "batch:$key")
+        val keys = candidateMatchKeys(artist, title)
+        if (keys.isEmpty()) return emptyList()
+        val out = ArrayList<String>(keys.size * 2)
+        for (key in keys) {
+            out.add(key)
+            out.add("batch:$key")
+        }
+        return out
     }
 
-    fun buildLibraryIndex(library: List<Song>): Map<String, Song> =
-        buildIndex(library, artistOf = { it.artist }, titleOf = { it.title })
+    /** Level 2: Download ID variants directly from [TrackMeta] without unpacking. */
+    fun downloadIdVariantsFor(meta: TrackMeta): List<String> =
+        downloadIdVariantsFor(meta.artist, meta.title)
+
+    fun buildLibraryIndex(library: List<Song>): Map<String, Song> {
+        val map = HashMap<String, Song>(library.size * 2)
+        // Pass 1: Local songs canonical keys take absolute top priority
+        for (song in library) {
+            if (!song.isRemote) {
+                val canonical = matchKey(song.artist, song.title)
+                if (canonical.isNotEmpty()) {
+                    map[canonical] = song
+                }
+            }
+        }
+        // Pass 2: Local songs candidate/alias keys
+        for (song in library) {
+            if (!song.isRemote) {
+                for (key in candidateMatchKeys(song)) {
+                    map.putIfAbsent(key, song)
+                }
+            }
+        }
+        // Pass 3: Remote songs (only fill unoccupied slots)
+        for (song in library) {
+            if (song.isRemote) {
+                for (key in candidateMatchKeys(song)) {
+                    map.putIfAbsent(key, song)
+                }
+            }
+        }
+        return map
+    }
 
     fun <T> buildIndex(
         items: List<T>,
         artistOf: (T) -> String,
         titleOf: (T) -> String
     ): Map<String, T> {
-        val map = HashMap<String, T>(items.size)
+        val map = HashMap<String, T>(items.size * 2)
         for (item in items) {
             val key = matchKey(artistOf(item), titleOf(item))
-            if (key.isNotEmpty() && !map.containsKey(key)) {
-                map[key] = item
+            if (key.isNotEmpty()) {
+                map.putIfAbsent(key, item)
+            }
+        }
+        for (item in items) {
+            for (key in candidateMatchKeys(artistOf(item), titleOf(item))) {
+                map.putIfAbsent(key, item)
             }
         }
         return map
     }
 
-    /** Resolve a library song from a pre-built [buildLibraryIndex] map. */
+    /** Resolve a library song from a pre-built [buildLibraryIndex] map, prioritizing local tracks. */
     fun lookupLocalSong(index: Map<String, Song>, meta: TrackMeta): Song? {
-        val key = meta.matchKey()
-        return if (key.isEmpty()) null else index[key]
+        var remoteFallback: Song? = null
+        for (candidate in candidateMatchKeys(meta)) {
+            val found = index[candidate] ?: continue
+            if (!found.isRemote) return found
+            if (remoteFallback == null) remoteFallback = found
+        }
+        return remoteFallback
     }
 
     /**

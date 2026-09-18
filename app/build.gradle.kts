@@ -223,6 +223,7 @@ dependencies {
     testImplementation(libs.okhttp.mockwebserver)
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.robolectric)
+    testImplementation(libs.icu4j)
     // Robolectric 4.16.1 is the latest stable release, but its bundled ASM cannot read JDK 26.
     testImplementation(libs.asm)
     debugImplementation(libs.androidx.compose.ui.test.manifest)

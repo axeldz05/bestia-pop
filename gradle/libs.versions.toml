@@ -28,6 +28,7 @@ androidxTestEspresso = "3.7.0"
 documentfile = "1.1.0"
 jaudiotagger = "3.0.1"
 zxing = "3.5.3"
+icu4j = "74.2"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -87,6 +88,7 @@ androidx-compose-ui-test-manifest = { group = "androidx.compose.ui", name = "ui-
 androidx-documentfile = { group = "androidx.documentfile", name = "documentfile", version.ref = "documentfile" }
 jaudiotagger = { group = "net.jthink", name = "jaudiotagger", version.ref = "jaudiotagger" }
 zxing-core = { group = "com.google.zxing", name = "core", version.ref = "zxing" }
+icu4j = { group = "com.ibm.icu", name = "icu4j", version.ref = "icu4j" }
 
 # Firebase
 firebase-bom = { group = "com.google.firebase", name = "firebase-bom", version.ref = "firebaseBom" }

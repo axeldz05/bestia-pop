@@ -39,14 +39,20 @@ object NaturalTextOrder {
     )
 
     private val icuTransliteratorPair by lazy {
-        try {
-            val clazz = Class.forName("android.icu.text.Transliterator")
-            val getInstance = clazz.getMethod("getInstance", String::class.java)
-            val instance = getInstance.invoke(null, "Any-Latin; Latin-ASCII")
-            val transliterate = clazz.getMethod("transliterate", String::class.java)
-            Pair(instance, transliterate)
-        } catch (_: Throwable) {
-            null
+        val classNames = listOf(
+            "android.icu.text.Transliterator",
+            "com.ibm.icu.text.Transliterator"
+        )
+        classNames.firstNotNullOfOrNull { className ->
+            try {
+                val clazz = Class.forName(className)
+                val getInstance = clazz.getMethod("getInstance", String::class.java)
+                val instance = getInstance.invoke(null, "Any-Latin; Latin-ASCII")
+                val transliterate = clazz.getMethod("transliterate", String::class.java)
+                Pair(instance, transliterate)
+            } catch (_: Throwable) {
+                null
+            }
         }
     }
 

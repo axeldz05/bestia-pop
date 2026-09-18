@@ -100,6 +100,7 @@ open class FakeMusicRepository : IMusicRepository {
         emptyFlow()
     override suspend fun addPlaylistPendingTracks(tracks: List<PlaylistPendingTrack>) = Unit
     override suspend fun removePlaylistPendingTrack(playlistId: Long, artist: String, title: String) = Unit
+    override suspend fun enrichPlaylistPendingArtworks(playlistId: Long) = Unit
     override suspend fun downloadAndSaveOnlineTrack(
         track: OnlineCatalogTrack,
         onProgress: ((DownloadPhase) -> Unit)?,

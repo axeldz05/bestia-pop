@@ -4,6 +4,7 @@ import com.bestiapop.android.data.listenbrainz.MatchedLbPlaylist
 import com.bestiapop.android.data.listenbrainz.unmatchedCatalogTracks
 import com.bestiapop.android.data.model.OnlineCatalogTrack
 import com.bestiapop.android.data.model.PlaylistPendingTrack
+import com.bestiapop.android.data.model.firstArtworkUri
 import com.bestiapop.android.domain.repository.IMusicRepository
 
 /**
@@ -26,10 +27,13 @@ class ImportListenBrainzPlaylistUseCase(
     ): Long? {
         val summary = matched.detail.summary
         val name = summary.title.ifBlank { "Para Ti" }
+        val resolvedCover = summary.coverUrl
+            ?: matched.matches.firstArtworkUri()
         return repository.createPlaylistWithPlayables(
             name = name,
             items = matched.toPlayableItems(),
             description = summary.description,
+            coverUri = resolvedCover,
             allowEmpty = allowEmpty
         )
     }

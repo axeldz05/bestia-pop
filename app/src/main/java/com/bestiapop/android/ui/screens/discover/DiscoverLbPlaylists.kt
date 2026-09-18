@@ -30,12 +30,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.bestiapop.android.data.listenbrainz.LbPlaylistSummary
 import com.bestiapop.android.data.listenbrainz.MatchedCfRecommendations
 import com.bestiapop.android.data.listenbrainz.MatchedLbPlaylist
 import com.bestiapop.android.data.listenbrainz.MatchedRemoteTrack
+import com.bestiapop.android.data.model.firstArtworkUri
 import com.bestiapop.android.data.model.ActiveDownload
 import com.bestiapop.android.data.model.DiscoverPlaybackOrigin
 import com.bestiapop.android.data.model.PlayableItem
@@ -44,6 +46,8 @@ import com.bestiapop.android.data.model.toDiscoverOrigin
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.ui.text.font.FontWeight
+import com.bestiapop.android.ui.components.ArtworkHero
+import com.bestiapop.android.ui.components.ArtworkThumbnail
 import com.bestiapop.android.ui.components.DownloadMissingTracksButton
 import com.bestiapop.android.ui.components.LabeledPlayShuffleButtons
 import com.bestiapop.android.ui.components.MatchedTrackLazyColumn
@@ -152,24 +156,21 @@ internal fun CfRecommendationsCardItem(
         " · actualizado ${formatter.format(Date(epochSec * 1000L))}"
     }.orEmpty()
 
+    val coverUri = remember(matched.matches) {
+        matched.matches.firstArtworkUri()
+    }
+
     PlaylistSurfaceCard(
         title = "Recomendados para vos",
         onClick = onClick,
         leading = {
-            Box(
-                modifier = Modifier
-                    .size(60.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(MaterialTheme.colorScheme.secondaryContainer),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Recommend,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSecondaryContainer,
-                    modifier = Modifier.size(28.dp)
-                )
-            }
+            ArtworkThumbnail(
+                artworkUri = coverUri,
+                size = 60.dp,
+                cornerRadius = 10.dp,
+                fallbackIcon = Icons.Default.Recommend,
+                contentDescription = "Recomendados para vos"
+            )
         },
         lines = {
             Text(
@@ -277,6 +278,54 @@ internal fun MatchedPlaylistContent(
     }
 }
 
+/** Level 2: Reusable header banner with cover artwork, title and subtitle for discover playlists. */
+@Composable
+internal fun DiscoverPlaylistHeaderBanner(
+    title: String,
+    subtitle: String? = null,
+    coverUri: String? = null,
+    fallbackIcon: ImageVector,
+    contentDescription: String = title,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(bottom = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        ArtworkHero(
+            uri = coverUri,
+            contentDescription = contentDescription,
+            fallback = fallbackIcon,
+            fallbackTint = MaterialTheme.colorScheme.onPrimaryContainer,
+            cornerRadius = 14.dp,
+            containerColor = MaterialTheme.colorScheme.primaryContainer,
+            modifier = Modifier.size(90.dp)
+        )
+        Spacer(modifier = Modifier.width(14.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+            if (!subtitle.isNullOrBlank()) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.9f),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+    }
+}
+
 /** Level 2: CF recommendations detail screen with bundled actions. */
 @Composable
 internal fun CfRecommendationsDetailScreen(
@@ -287,6 +336,10 @@ internal fun CfRecommendationsDetailScreen(
     actions: DiscoverMatchedTrackActions
 ) {
     val matched = state.data
+    val coverUri = remember(matched?.matches) {
+        matched?.matches?.firstArtworkUri()
+    }
+
     MatchedPlaylistDetailScaffold(
         title = "Recomendados",
         onBack = onBack,
@@ -301,7 +354,19 @@ internal fun CfRecommendationsDetailScreen(
             onPlay = onPlay,
             onShuffle = onShuffle,
             actions = actions,
-            emptyMessage = "Aún no hay recomendaciones CF para tu cuenta."
+            emptyMessage = "Aún no hay recomendaciones CF para tu cuenta.",
+            headerContent = {
+                val subtitle = matched?.payload?.lastUpdatedEpochSec?.let { epochSec ->
+                    val formatter = DateFormat.getDateInstance(DateFormat.MEDIUM, Locale.getDefault())
+                    "Actualizado ${formatter.format(Date(epochSec * 1000L))}"
+                }
+                DiscoverPlaylistHeaderBanner(
+                    title = "Recomendados para vos",
+                    subtitle = subtitle,
+                    coverUri = coverUri,
+                    fallbackIcon = Icons.Default.Recommend
+                )
+            }
         )
     }
 }
@@ -352,20 +417,13 @@ internal fun LbPlaylistCardItem(
         title = playlist.title,
         onClick = onClick,
         leading = {
-            Box(
-                modifier = Modifier
-                    .size(60.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(MaterialTheme.colorScheme.tertiaryContainer),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.QueueMusic,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onTertiaryContainer,
-                    modifier = Modifier.size(28.dp)
-                )
-            }
+            ArtworkThumbnail(
+                artworkUri = playlist.coverUrl,
+                size = 60.dp,
+                cornerRadius = 10.dp,
+                fallbackIcon = Icons.AutoMirrored.Filled.QueueMusic,
+                contentDescription = playlist.title
+            )
         },
         lines = {
             if (!playlist.description.isNullOrBlank()) {
@@ -436,16 +494,15 @@ internal fun LbPlaylistDetailScreen(
             actions = actions,
             emptyMessage = "Esta playlist no tiene tracks",
             headerContent = {
-                if (!description.isNullOrBlank()) {
-                    Text(
-                        text = description,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
-                        maxLines = 3,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
+                val coverUri = remember(matched) {
+                    matched.detail.summary.coverUrl ?: matched.matches.firstArtworkUri()
                 }
+                DiscoverPlaylistHeaderBanner(
+                    title = matched.detail.summary.title,
+                    subtitle = description,
+                    coverUri = coverUri,
+                    fallbackIcon = Icons.AutoMirrored.Filled.QueueMusic
+                )
                 if (hasMatched || hasUnmatched) {
                     Row(
                         modifier = Modifier

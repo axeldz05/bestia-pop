@@ -101,6 +101,7 @@ class AppDatabaseMigrationTest {
         val migratedPending = musicDao.getPlaylistPendingTracksFlow(3L).first().single()
         assertEquals("Remote Album", migratedPending.releaseName)
         assertEquals(0, migratedPending.trackNumber)
+        assertNull(migratedPending.artworkUri)
         assertEquals("Display Album", musicDao.getAlbumOverride("Album")?.displayName)
         assertEquals("offline", database.pendingListenDao().getOldest(10).single().lastError)
 

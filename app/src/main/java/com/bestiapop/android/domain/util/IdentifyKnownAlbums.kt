@@ -5,6 +5,7 @@ import com.bestiapop.android.data.model.IdentifyConfidence
 import com.bestiapop.android.data.model.IdentifyProposal
 import com.bestiapop.android.data.model.OnlineCatalogTrack
 import com.bestiapop.android.data.model.Song
+import com.bestiapop.android.data.model.firstArtworkUri
 import com.bestiapop.android.data.util.albumTrackDisplayNumber
 import com.bestiapop.android.data.util.looksLikeStoragePath
 import kotlin.math.abs
@@ -129,7 +130,7 @@ fun knownAlbumsFromLibrary(
             key = albumGroupKey(artist, albumName),
             artist = artist,
             album = albumName,
-            artworkUri = group.firstNotNullOfOrNull { it.artworkUri?.takeIf { uri -> uri.isNotBlank() } },
+            artworkUri = group.firstArtworkUri(),
             tracks = group.map { it.toKnownAlbumTrack() }
         )
     }

@@ -75,12 +75,12 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImage
 import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.data.model.Playlist
 import com.bestiapop.android.data.model.PlaylistPendingTrack
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.data.model.toPlayable
+import com.bestiapop.android.data.model.toPlayableItem
 import com.bestiapop.android.ui.MusicPlayerViewModel
 import com.bestiapop.android.ui.state.PlaylistDetailNav
 import com.bestiapop.android.ui.components.ArtworkHero
@@ -402,6 +402,11 @@ private fun PlaylistDetailScreen(
         }
     }
 
+    val allPlayables = remember(localSongs, pendingTracks) {
+        val locals = localSongs.map { it.song.toPlayableItem(artworkUri = viewModel.resolveAlbumArtwork(it.song)) }
+        val remotes = pendingTracks.map { it.toPlayableItem() }
+        locals + remotes
+    }
     val totalCount = localSongs.size + pendingTracks.size
     val gestureSettings by viewModel.submenuGestureSettings.collectAsStateWithLifecycle()
     val songActions = rememberSongQueueActions(viewModel)
@@ -419,6 +424,10 @@ private fun PlaylistDetailScreen(
     val currentSong by viewModel.currentSong.collectAsStateWithLifecycle()
     val currentItem by viewModel.currentItem.collectAsStateWithLifecycle()
     val detailListState = rememberSaveable(playlist.id, saver = LazyListState.Saver) { LazyListState() }
+
+    LaunchedEffect(playlist.id) {
+        viewModel.enrichPlaylistPendingArtworks(playlist.id)
+    }
 
     CompositionLocalProvider(LocalSubmenuGestureSettings provides gestureSettings) {
         Surface(
@@ -524,10 +533,10 @@ private fun PlaylistDetailScreen(
             ) {
                 PlayShuffleIconPair(
                     onPlay = {
-                        if (localSongs.isNotEmpty()) viewModel.playCollection(localSongs.map { it.song })
+                        if (allPlayables.isNotEmpty()) viewModel.playPlaylist(playlist.id)
                     },
                     onShuffle = {
-                        if (localSongs.isNotEmpty()) viewModel.shuffleCollection(localSongs.map { it.song })
+                        if (allPlayables.isNotEmpty()) viewModel.playPlaylist(playlist.id, startShuffled = true)
                     },
                     playDescription = "Reproducir",
                     shuffleDescription = "Aleatorio"
@@ -599,17 +608,33 @@ private fun PlaylistDetailScreen(
                             index = index,
                             reorderCount = localSongs.size,
                             onReorder = onReorder,
-                            onClick = { viewModel.playCollection(localSongs.map { it.song }, startIndex = index) }
+                            onClick = { viewModel.playPlayableCollection(allPlayables, startIndex = index) }
                         )
                     }
-                    items(
+                    itemsIndexed(
                         items = pendingTracks,
-                        key = { "pending-${it.id}" },
-                        contentType = { "pending" }
-                    ) { pending ->
+                        key = { _, it -> "pending-${it.id}" },
+                        contentType = { _, _ -> "pending" }
+                    ) { pendingIndex, pending ->
                         PlaylistPendingTrackItem(
                             viewModel = viewModel,
-                            pending = pending
+                            pending = pending,
+                            highlighted = isCurrentPlaying(currentItem ?: currentSong?.toPlayable(), pending.artist, pending.title),
+                            onClick = {
+                                viewModel.playPlayableCollection(allPlayables, startIndex = localSongs.size + pendingIndex)
+                            },
+                            onDownload = {
+                                val playable = pending.toPlayableItem()
+                                if (playable is PlayableItem.Remote) {
+                                    viewModel.downloadRemoteItem(playable)
+                                }
+                            },
+                            onSwipeAction = {
+                                viewModel.executeSubmenuActionForPlayables(
+                                    gestureSettings.swipeLeftAction,
+                                    listOf(pending.toPlayableItem())
+                                )
+                            }
                         )
                     }
                 }
@@ -638,7 +663,12 @@ private fun PlaylistDetailScreen(
 @Composable
 private fun PlaylistPendingTrackItem(
     viewModel: MusicPlayerViewModel,
-    pending: PlaylistPendingTrack
+    pending: PlaylistPendingTrack,
+    highlighted: Boolean = false,
+    onClick: (() -> Unit)? = null,
+    onDownload: (() -> Unit)? = null,
+    swipeAction: SubmenuSwipeAction = LocalSubmenuGestureSettings.current.swipeLeftAction,
+    onSwipeAction: (() -> Unit)? = null
 ) {
     val download by remember(viewModel, pending.artist, pending.title) {
         viewModel.activeDownloads.map { list ->
@@ -646,23 +676,17 @@ private fun PlaylistPendingTrackItem(
         }.distinctUntilChanged()
     }.collectAsStateWithLifecycle(initialValue = null)
 
-    PlaylistPendingTrackRow(
-        pending = pending,
-        download = download
-    )
-}
-
-@Composable
-private fun PlaylistPendingTrackRow(
-    pending: PlaylistPendingTrack,
-    download: com.bestiapop.android.data.model.ActiveDownload? = null
-) {
     RemoteTrackPlaceholderRow(
         title = pending.title,
         artist = pending.artist,
         badge = DownloadMessages.pendingDownloadBadge,
         leadingIcon = Icons.Default.Download,
-        highlighted = false,
-        download = download
+        highlighted = highlighted,
+        artworkUri = pending.artworkUri,
+        onClick = onClick,
+        onDownload = onDownload,
+        download = download,
+        swipeAction = swipeAction,
+        onSwipeAction = onSwipeAction
     )
 }

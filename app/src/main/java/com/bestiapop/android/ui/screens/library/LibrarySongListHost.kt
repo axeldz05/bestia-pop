@@ -15,6 +15,7 @@ import com.bestiapop.android.data.model.Album
 import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.data.model.Playlist
 import com.bestiapop.android.data.model.Song
+import com.bestiapop.android.data.model.firstArtworkUri
 import com.bestiapop.android.data.preferences.FastScrollSettings
 import com.bestiapop.android.ui.MusicPlayerViewModel
 import com.bestiapop.android.data.preferences.SubmenuSwipeAction
@@ -282,7 +283,7 @@ fun SongActionDialogsHost(
     val targetPlaylistSongs = songsForPlaylistAddition ?: songForPlaylistAddition?.let { listOf(it) }
     targetPlaylistSongs?.takeIf { it.isNotEmpty() }?.let { songs ->
         val songIds = if (songs.size == 1) playlistSongIds(songs.first()) else songs.map { it.id }
-        val defaultCoverUri = songs.firstNotNullOfOrNull { it.artworkUri?.takeIf(String::isNotBlank) }
+        val defaultCoverUri = songs.firstArtworkUri()
         AddToPlaylistDialog(
             playlists = playlists,
             songCount = songs.size,

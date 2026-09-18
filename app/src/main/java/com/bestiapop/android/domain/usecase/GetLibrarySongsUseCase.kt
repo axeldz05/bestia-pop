@@ -5,6 +5,7 @@ import com.bestiapop.android.data.model.AlbumOverride
 import com.bestiapop.android.data.model.Artist
 import com.bestiapop.android.data.model.GenreGroup
 import com.bestiapop.android.data.model.Song
+import com.bestiapop.android.data.model.firstArtworkUri
 import com.bestiapop.android.domain.util.IdentifyQueryVariants
 import com.bestiapop.android.domain.util.IdentifyRanking
 import com.bestiapop.android.domain.util.MetadataSplitter
@@ -355,7 +356,7 @@ class GetLibrarySongsUseCase {
                 continue
             }
             val art = albumArtByKey[bucketKey]
-                ?: albumSongs.firstNotNullOfOrNull { it.artworkUri?.takeIf(String::isNotBlank) }
+                ?: albumSongs.firstArtworkUri()
                 ?: continue
             for (song in albumSongs) {
                 out[song.id] = art
@@ -489,7 +490,7 @@ class GetLibrarySongsUseCase {
             }
             val photoArt = artistPhotoMap[displayName]
                 ?: variants.firstNotNullOfOrNull { artistPhotoMap[it] }
-                ?: artistSongs.firstNotNullOfOrNull { it.artworkUri?.takeIf(String::isNotBlank) }
+                ?: artistSongs.firstArtworkUri()
             Artist(
                 name = displayName,
                 songCount = artistSongs.size,

@@ -5,6 +5,7 @@ import com.bestiapop.android.data.model.CatalogGenre
 import com.bestiapop.android.data.model.CatalogPlaylist
 import com.bestiapop.android.data.model.CatalogTrackCandidate
 import com.bestiapop.android.data.model.OnlineCatalogTrack
+import com.bestiapop.android.data.model.firstArtworkUri
 import com.bestiapop.android.data.network.MetadataFetcher
 import com.bestiapop.android.data.network.YouTubeExtractor
 import com.bestiapop.android.domain.usecase.RelatedAlbumItem
@@ -160,7 +161,8 @@ class CatalogInspectionCoordinator(
         catalogCollectionJob = scope.launch {
             val candidates = fetch()
             updateCatalogCollection(requestKey) { state ->
-                state.copy(candidates = candidates, isLoading = false)
+                val resolvedCover = state.coverUrl ?: candidates.firstArtworkUri()
+                state.copy(candidates = candidates, coverUrl = resolvedCover, isLoading = false)
             }
         }
     }

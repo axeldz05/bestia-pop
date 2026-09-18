@@ -97,3 +97,7 @@ fun TrackIdentity.toListenBrainzCatalogTrack(mbid: String?): OnlineCatalogTrack 
         id = mbid?.takeIf { it.isNotBlank() },
         provider = "ListenBrainz"
     )
+
+/** First usable artwork URI across tracks/items implementing [TrackMeta]. */
+fun Iterable<TrackMeta>.firstArtworkUri(): String? =
+    firstNotNullOfOrNull { it.artworkUri?.takeIf(String::isNotBlank) }

@@ -53,6 +53,7 @@ data class PlaylistPendingTrackEntity(
     val releaseName: String? = null,
     val trackNumber: Int = 0,
     val recordingMbid: String? = null,
+    val artworkUri: String? = null,
     val position: Int = 0
 )
 

@@ -133,8 +133,7 @@ internal class SongEnhancementOperator(
             if (!embedded.isNullOrEmpty()) {
                 artUrl = embedded
             } else if (!IdentifyRanking.isPlaceholderArtist(persisted.artist)) {
-                val queryTerm = if (albumName != "Unknown Album") albumName else persisted.title
-                artUrl = metadataSource.fetchAlbumArtUrl(persisted.artist, queryTerm)
+                artUrl = metadataSource.fetchTrackArtwork(persisted)
             }
         }
 

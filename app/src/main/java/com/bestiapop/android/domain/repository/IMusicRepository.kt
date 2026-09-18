@@ -15,6 +15,7 @@ import com.bestiapop.android.data.model.Playlist
 import com.bestiapop.android.data.model.PlaylistPendingTrack
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.data.model.SongPathRef
+import com.bestiapop.android.data.model.firstArtworkUri
 import com.bestiapop.android.data.util.TagSyncSummary
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -193,10 +194,12 @@ interface IMusicRepository {
         allowEmpty: Boolean = false
     ): Long? {
         if (items.isEmpty() && !allowEmpty) return null
+        val effectiveCover = coverUri?.takeIf(String::isNotBlank)
+            ?: items.firstArtworkUri()
         val playlistId = createPlaylist(
             name = name,
             description = description,
-            coverUri = coverUri
+            coverUri = effectiveCover
         )
         val pending = ArrayList<PlaylistPendingTrack>()
         items.forEachIndexed { index, item ->
@@ -204,7 +207,9 @@ interface IMusicRepository {
                 is PlayableItem.Local -> addSongToPlaylist(playlistId, item.song.id)
                 is PlayableItem.Remote -> pending.add(
                     PlaylistPendingTrack(
-                        identity = item.identity,
+                        identity = item.identity.copy(
+                            artworkUri = item.artworkUri?.takeIf(String::isNotBlank) ?: item.identity.artworkUri
+                        ),
                         playlistId = playlistId,
                         recordingMbid = item.recordingMbid,
                         position = index
@@ -225,8 +230,11 @@ interface IMusicRepository {
     suspend fun getCoPlaylistSongIds(songId: Long): Set<Long>
 
     fun getPlaylistPendingTracksFlow(playlistId: Long): Flow<List<PlaylistPendingTrack>>
+    suspend fun getPlaylistPendingTracks(playlistId: Long): List<PlaylistPendingTrack> = emptyList()
+    suspend fun getPlaylistPlayables(playlistId: Long): List<PlayableItem> = emptyList()
     suspend fun addPlaylistPendingTracks(tracks: List<PlaylistPendingTrack>)
     suspend fun removePlaylistPendingTrack(playlistId: Long, artist: String, title: String)
+    suspend fun enrichPlaylistPendingArtworks(playlistId: Long) {}
 
     suspend fun downloadAndSaveOnlineTrack(
         track: OnlineCatalogTrack,

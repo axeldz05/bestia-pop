@@ -3,11 +3,13 @@ package com.bestiapop.android.ui.state
 import com.bestiapop.android.data.listenbrainz.LbApiResult
 import com.bestiapop.android.data.listenbrainz.MatchedLbPlaylist
 import com.bestiapop.android.data.listenbrainz.rematchLocals
+import com.bestiapop.android.data.listenbrainz.withArtwork
 import com.bestiapop.android.data.model.DownloadMessages
 import com.bestiapop.android.data.model.OnlineCatalogTrack
 import com.bestiapop.android.data.model.PlaylistPendingTrack
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.data.network.ListenBrainzClient
+import com.bestiapop.android.data.network.MetadataFetcher
 import com.bestiapop.android.data.preferences.ListenBrainzPreferencesRepository
 import com.bestiapop.android.domain.repository.IMusicRepository
 import com.bestiapop.android.domain.usecase.ImportListenBrainzPlaylistUseCase
@@ -158,6 +160,7 @@ class ListenBrainzIntegrationCoordinator(
                 // Only publish if this mbid is still the one on screen.
                 if (!forRestore && !isListenBrainzDetailCurrent(mbid)) return false
                 _lbPlaylistDetail.update { it.success(matched) }
+                enrichLbPlaylistDetailArtwork(mbid, matched)
                 true
             }
 
@@ -168,6 +171,34 @@ class ListenBrainzIntegrationCoordinator(
                     _lbPlaylistDetail.update { it.failure(result.message, data = null) }
                 }
                 false
+            }
+        }
+    }
+
+    private fun enrichLbPlaylistDetailArtwork(mbid: String, matched: MatchedLbPlaylist) {
+        val tracksMissingArt = matched.matches.filter { it.localSong == null && it.identity.artworkUri.isNullOrBlank() }
+        val coverMissing = matched.detail.summary.coverUrl.isNullOrBlank()
+        if (tracksMissingArt.isEmpty() && !coverMissing) return
+
+        scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            kotlinx.coroutines.coroutineScope {
+                tracksMissingArt.forEach { track ->
+                    launch {
+                        val art = MetadataFetcher.fetchTrackArtwork(track.identity)
+                        if (!art.isNullOrBlank()) {
+                            _lbPlaylistDetail.update { state ->
+                                val cur = state.data ?: return@update state
+                                if (cur.detail.summary.mbid != mbid) return@update state
+                                val updatedMatches = cur.matches.withArtwork(track.identity.artist, track.identity.title, art)
+                                val updatedCover = cur.detail.summary.coverUrl ?: art
+                                cur.copy(
+                                    detail = cur.detail.copy(summary = cur.detail.summary.copy(coverUrl = updatedCover)),
+                                    matches = updatedMatches
+                                ).let { state.copy(data = it) }
+                            }
+                        }
+                    }
+                }
             }
         }
     }

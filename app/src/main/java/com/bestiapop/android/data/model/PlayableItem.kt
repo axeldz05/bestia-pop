@@ -1,5 +1,6 @@
 package com.bestiapop.android.data.model
 
+import com.bestiapop.android.data.network.YouTubeExtractor
 import java.util.UUID
 
 private val queueEntryCounter = java.util.concurrent.atomic.AtomicLong(1L)
@@ -33,6 +34,17 @@ sealed class PlayableItem : TrackMeta {
         val lyrics: String? = null,
         override val queueEntryId: String = newQueueEntryId()
     ) : PlayableItem(), TrackMeta by identity {
+        override val artworkUri: String?
+            get() {
+                val direct = identity.artworkUri?.takeIf { it.isNotBlank() }
+                if (direct != null) return direct
+                val res = resolved?.artworkUri?.takeIf { it.isNotBlank() }
+                if (res != null) return res
+                val vid = resolved?.videoId?.takeIf { it.isNotBlank() }
+                    ?: youtubeQueryOrId?.trim()?.takeIf { it.length == 11 && !it.contains(' ') }
+                return vid?.let(YouTubeExtractor::videoThumbnailUrl)
+            }
+
         override val mediaId: String
             get() {
                 val query = youtubeQueryOrId?.takeIf { it.isNotBlank() }
@@ -136,7 +148,8 @@ data class ResolvedStream(
     val audioUrl: String,
     val userAgent: String,
     val videoId: String,
-    val resolvedAtEpochMs: Long
+    val resolvedAtEpochMs: Long,
+    val artworkUri: String? = null
 )
 
 private inline fun <T, R> List<T>.mapFast(transform: (T) -> R): List<R> {
@@ -165,6 +178,13 @@ fun Song.toPlayableItem(
 
 fun List<Song>.toPlayableItems(artworkLookup: ((Song) -> String?)? = null): List<PlayableItem> =
     mapFast { it.toPlayableItem(artworkUri = artworkLookup?.invoke(it)) }
+
+fun PlaylistPendingTrack.toPlayableItem(local: Song? = null): PlayableItem =
+    PlayableItem.fromLibraryOrRemote(
+        local = local,
+        identity = identity,
+        recordingMbid = recordingMbid
+    )
 
 /** Transforms songs into playable items with fresh queue IDs in a single pass. */
 fun List<Song>.toPlayableItemsWithFreshIds(artworkLookup: ((Song) -> String?)? = null): List<PlayableItem> =

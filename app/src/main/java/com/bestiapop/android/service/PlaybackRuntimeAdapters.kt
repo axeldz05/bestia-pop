@@ -52,7 +52,18 @@ internal class StreamResolverRuntimeAccess(
     override suspend fun resolve(item: PlayableItem.Remote): PlayableItem.Remote? =
         resolver.resolve(item)
             .getOrNull()
-            ?.let { item.copy(resolved = it) }
+            ?.let { resolved ->
+                val resolvedArt = item.identity.artworkUri?.takeIf { it.isNotBlank() }
+                    ?: resolved.artworkUri
+                item.copy(
+                    resolved = resolved,
+                    identity = if (resolvedArt != null && item.identity.artworkUri != resolvedArt) {
+                        item.identity.copy(artworkUri = resolvedArt)
+                    } else {
+                        item.identity
+                    }
+                )
+            }
 
     override suspend fun invalidate(item: PlayableItem.Remote) {
         resolver.invalidate(item)

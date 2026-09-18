@@ -9,6 +9,7 @@ import com.bestiapop.android.data.model.CatalogAlbum
 import com.bestiapop.android.data.model.OnlineCatalogTrack
 import com.bestiapop.android.data.model.PlaylistPendingTrack
 import com.bestiapop.android.data.model.TrackIdentity
+import com.bestiapop.android.data.model.TrackMeta
 import com.bestiapop.android.data.model.isRemote
 import com.bestiapop.android.data.model.toListenBrainzCatalogTrack
 import com.bestiapop.android.data.network.ListenBrainzClient
@@ -90,6 +91,14 @@ internal class AndroidRepositoryFileStore(
 /** Network metadata seam; keeps repository tests hermetic without changing production behavior. */
 internal interface RepositoryMetadataSource {
     suspend fun fetchAlbumArtUrl(artist: String, titleOrAlbum: String): String?
+    suspend fun fetchTrackArtwork(track: TrackMeta): String? {
+        val query = track.album.takeIf { it.isNotBlank() && !it.equals("Unknown Album", ignoreCase = true) } ?: track.title
+        var art = fetchAlbumArtUrl(track.artist, query)
+        if (art.isNullOrBlank() && query != track.title && track.title.isNotBlank()) {
+            art = fetchAlbumArtUrl(track.artist, track.title)
+        }
+        return art
+    }
     suspend fun fetchLyrics(artist: String, title: String): String?
     suspend fun fetchTrackDurationMs(artist: String, title: String): Long
     suspend fun fetchFullTrackMetadata(artist: String, title: String): TrackIdentity?
@@ -134,6 +143,9 @@ internal interface RepositoryMetadataSource {
 internal object ProductionRepositoryMetadataSource : RepositoryMetadataSource {
     override suspend fun fetchAlbumArtUrl(artist: String, titleOrAlbum: String): String? =
         MetadataFetcher.fetchAlbumArtUrl(artist, titleOrAlbum)
+
+    override suspend fun fetchTrackArtwork(track: TrackMeta): String? =
+        MetadataFetcher.fetchTrackArtwork(track)
 
     override suspend fun fetchLyrics(artist: String, title: String): String? =
         MetadataFetcher.fetchLyrics(artist, title)
@@ -246,6 +258,7 @@ internal fun PlaylistPendingTrackEntity.toPendingTrack() = PlaylistPendingTrack(
         title = title,
         artist = artist,
         album = releaseName.orEmpty(),
+        artworkUri = artworkUri,
         trackNumber = trackNumber
     ),
     id = id,
@@ -262,6 +275,7 @@ internal fun PlaylistPendingTrack.toEntity() = PlaylistPendingTrackEntity(
     releaseName = album.takeIf { it.isNotBlank() },
     trackNumber = trackNumber,
     recordingMbid = recordingMbid,
+    artworkUri = artworkUri,
     position = position
 )
 

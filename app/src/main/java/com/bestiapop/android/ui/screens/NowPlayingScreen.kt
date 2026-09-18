@@ -7,6 +7,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -213,6 +214,31 @@ fun NowPlayingScreen(
         onDismiss()
     }
 
+    val isGenericAlbum = item.album.equals("Single", ignoreCase = true) ||
+        item.album.equals("Unknown Album", ignoreCase = true) ||
+        item.album.equals("Stream", ignoreCase = true) ||
+        item.album.equals("YouTube", ignoreCase = true)
+    val effectiveAlbumName = matchedAlbum?.name ?: item.album.takeIf { it.isNotBlank() && !isGenericAlbum }
+    val effectiveArtistName = matchedArtist?.name ?: item.artist.takeIf { it.isNotBlank() && !it.equals("Unknown Artist", ignoreCase = true) }
+
+    val navigateToAlbum: (String) -> Unit = { name ->
+        val local = matchedAlbum
+        if (local != null) {
+            goToLibrary { viewModel.openLibraryAlbum(local.name, fromNestedParent = false) }
+        } else {
+            goToDiscover { viewModel.selectAlbumForInspection(title = name, artist = item.artist, coverUrl = item.artworkUri) }
+        }
+    }
+
+    val navigateToArtist: (String) -> Unit = { name ->
+        val local = matchedArtist
+        if (local != null) {
+            goToLibrary { viewModel.openLibraryArtist(local.name) }
+        } else {
+            goToDiscover { viewModel.selectArtistForInspection(name) }
+        }
+    }
+
     val coroutineScope = rememberCoroutineScope()
     val configuration = LocalConfiguration.current
     val density = configuration.densityDpi / 160f
@@ -392,15 +418,39 @@ fun NowPlayingScreen(
                                                 modifier = Modifier.fillMaxWidth()
                                             )
                                             Spacer(modifier = Modifier.height(4.dp))
-                                            Text(
-                                                text = "${item.artist} • $albumLabel",
-                                                style = MaterialTheme.typography.bodyMedium,
-                                                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis,
-                                                textAlign = TextAlign.Center,
-                                                modifier = Modifier.fillMaxWidth()
-                                            )
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.Center,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                val artistModifier = if (effectiveArtistName != null) {
+                                                    Modifier.clickable { navigateToArtist(effectiveArtistName) }
+                                                } else Modifier
+                                                Text(
+                                                    text = item.artist,
+                                                    style = MaterialTheme.typography.bodyMedium,
+                                                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                    modifier = artistModifier
+                                                )
+                                                Text(
+                                                    text = " • ",
+                                                    style = MaterialTheme.typography.bodyMedium,
+                                                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f)
+                                                )
+                                                val albumModifier = if (effectiveAlbumName != null) {
+                                                    Modifier.clickable { navigateToAlbum(effectiveAlbumName) }
+                                                } else Modifier
+                                                Text(
+                                                    text = albumLabel,
+                                                    style = MaterialTheme.typography.bodyMedium,
+                                                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                    modifier = albumModifier
+                                                )
+                                            }
                                             if (resolvingRemote) {
                                                 Spacer(modifier = Modifier.height(4.dp))
                                                 Text(
@@ -436,14 +486,16 @@ fun NowPlayingScreen(
                                             NowPlayingActionsMenu(
                                                 expanded = actionsMenuExpanded,
                                                 onDismiss = { actionsMenuExpanded = false },
-                                                matchedAlbumName = matchedAlbum?.name,
-                                                matchedArtistName = matchedArtist?.name,
+                                                matchedAlbumName = effectiveAlbumName,
+                                                matchedArtistName = effectiveArtistName,
                                                 containingPlaylists = containingPlaylists,
                                                 discoverOrigin = discoverOrigin,
                                                 isLocal = localSong != null,
                                                 canEditAlbum = localSong != null && matchedAlbum != null,
                                                 actions = remember(
                                                     matchedAlbum,
+                                                    effectiveAlbumName,
+                                                    effectiveArtistName,
                                                     localSong,
                                                     songDialogs,
                                                     viewModel,
@@ -451,16 +503,8 @@ fun NowPlayingScreen(
                                                 ) {
                                                     NowPlayingMenuActions(
                                                         navigation = NowPlayingNavigationActions(
-                                                            onGoToAlbum = { name ->
-                                                                goToLibrary { viewModel.openLibraryAlbum(name, fromNestedParent = false) }
-                                                            },
-                                                            onGoToArtist = { name ->
-                                                                if (item is PlayableItem.Remote) {
-                                                                    goToDiscover { viewModel.selectArtistForInspection(name) }
-                                                                } else {
-                                                                    goToLibrary { viewModel.openLibraryArtist(name) }
-                                                                }
-                                                            },
+                                                            onGoToAlbum = navigateToAlbum,
+                                                            onGoToArtist = navigateToArtist,
                                                             onGoToLocalPlaylist = { id ->
                                                                 goToPlaylists { viewModel.openLocalPlaylist(id) }
                                                             },

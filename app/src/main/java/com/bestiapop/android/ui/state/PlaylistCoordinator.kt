@@ -1,11 +1,13 @@
 package com.bestiapop.android.ui.state
 
+import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.data.model.Playlist
 import com.bestiapop.android.data.model.PlaylistPendingTrack
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.domain.repository.IMusicRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 /**
@@ -83,6 +85,30 @@ class PlaylistCoordinator(
             val songs = repository.getPlaylistSongsOrdered(playlistId)
             if (songs.isNotEmpty()) {
                 action(songs)
+            }
+        }
+    }
+
+    fun runWithPlaylistPlayables(playlistId: Long, action: (List<PlayableItem>) -> Unit) {
+        scope.launch {
+            val playables = repository.getPlaylistPlayables(playlistId)
+            if (playables.isNotEmpty()) {
+                action(playables)
+            }
+        }
+    }
+
+    fun enrichPlaylistPendingArtworks(playlistId: Long) {
+        scope.launch {
+            repository.enrichPlaylistPendingArtworks(playlistId)
+        }
+    }
+
+    fun enrichAllPlaylistsPendingArtworks() {
+        scope.launch {
+            val playlists = repository.playlistsFlow.first()
+            for (p in playlists) {
+                repository.enrichPlaylistPendingArtworks(p.id)
             }
         }
     }

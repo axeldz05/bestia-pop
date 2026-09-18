@@ -223,6 +223,11 @@ interface MusicDao {
                 WHERE refs.playlistId = playlists.playlistId AND songs.artworkUri IS NOT NULL AND songs.artworkUri != '' 
                 ORDER BY refs.position ASC, refs.id ASC 
                 LIMIT 1
+            ), (
+                SELECT playlist_pending_tracks.artworkUri FROM playlist_pending_tracks 
+                WHERE playlist_pending_tracks.playlistId = playlists.playlistId AND playlist_pending_tracks.artworkUri IS NOT NULL AND playlist_pending_tracks.artworkUri != '' 
+                ORDER BY playlist_pending_tracks.position ASC, playlist_pending_tracks.id ASC 
+                LIMIT 1
             )) AS coverUri, 
             (
                 (SELECT COUNT(*) FROM playlist_song_cross_ref WHERE playlist_song_cross_ref.playlistId = playlists.playlistId) +
@@ -309,19 +314,30 @@ interface MusicDao {
             playlistId, 
             name, 
             description, 
-            COALESCE(NULLIF(coverUri, ''), (
-                SELECT songs.artworkUri FROM songs 
-                INNER JOIN playlist_song_cross_ref AS refs ON refs.songId = songs.id 
-                WHERE refs.playlistId = playlists.playlistId AND songs.artworkUri IS NOT NULL AND songs.artworkUri != '' 
-                ORDER BY refs.position ASC, refs.id ASC 
-                LIMIT 1
-            )) AS coverUri, 
+            COALESCE(
+                NULLIF(coverUri, ''),
+                (SELECT songs.artworkUri FROM songs 
+                 INNER JOIN playlist_song_cross_ref AS refs ON refs.songId = songs.id 
+                 WHERE refs.playlistId = playlists.playlistId AND songs.artworkUri IS NOT NULL AND songs.artworkUri != '' 
+                 ORDER BY refs.position ASC, refs.id ASC 
+                 LIMIT 1),
+                (SELECT ppt.artworkUri FROM playlist_pending_tracks AS ppt
+                 WHERE ppt.playlistId = playlists.playlistId AND ppt.artworkUri IS NOT NULL AND ppt.artworkUri != ''
+                 ORDER BY ppt.position ASC, ppt.id ASC
+                 LIMIT 1)
+            ) AS coverUri, 
             createdAt 
         FROM playlists 
         WHERE playlistId = :playlistId
         """
     )
     fun getPlaylistByIdFlow(playlistId: Long): Flow<PlaylistEntity?>
+
+    @Query("UPDATE playlist_pending_tracks SET artworkUri = :artworkUri WHERE id = :id")
+    suspend fun updatePlaylistPendingTrackArtwork(id: Long, artworkUri: String)
+
+    @Query("UPDATE playlists SET coverUri = :coverUri WHERE playlistId = :id AND (coverUri IS NULL OR coverUri = '')")
+    suspend fun updatePlaylistCoverIfEmpty(id: Long, coverUri: String)
 
     @Transaction
     @Query("SELECT * FROM playlists WHERE playlistId = :playlistId")
@@ -350,6 +366,9 @@ interface MusicDao {
     // Pending playlist tracks (metadata until download)
     @Query("SELECT * FROM playlist_pending_tracks WHERE playlistId = :playlistId ORDER BY position ASC, id ASC")
     fun getPlaylistPendingTracksFlow(playlistId: Long): Flow<List<PlaylistPendingTrackEntity>>
+
+    @Query("SELECT * FROM playlist_pending_tracks WHERE playlistId = :playlistId ORDER BY position ASC, id ASC")
+    suspend fun getPlaylistPendingTracks(playlistId: Long): List<PlaylistPendingTrackEntity>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertPlaylistPendingTracks(tracks: List<PlaylistPendingTrackEntity>)

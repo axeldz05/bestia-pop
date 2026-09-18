@@ -4,11 +4,14 @@ import com.bestiapop.android.data.listenbrainz.LbApiResult
 import com.bestiapop.android.data.listenbrainz.LbPlaylistSummary
 import com.bestiapop.android.data.listenbrainz.MatchedCfRecommendations
 import com.bestiapop.android.data.listenbrainz.rematchLocals
+import com.bestiapop.android.data.listenbrainz.withArtwork
 import com.bestiapop.android.domain.usecase.DiscoverFeed
 import com.bestiapop.android.data.model.Song
 import com.bestiapop.android.domain.usecase.TopRelatedFeed
+import com.bestiapop.android.data.model.firstArtworkUri
 import com.bestiapop.android.data.model.toListenBrainzCatalogTrack
 import com.bestiapop.android.data.network.ListenBrainzClient
+import com.bestiapop.android.data.network.MetadataFetcher
 import com.bestiapop.android.data.preferences.DiscoverSourcePreference
 import com.bestiapop.android.data.preferences.LibraryPreferencesRepository
 import com.bestiapop.android.data.preferences.ListenBrainzPreferencesRepository
@@ -18,6 +21,8 @@ import com.bestiapop.android.domain.usecase.FetchAndMatchCfRecommendationsUseCas
 import com.bestiapop.android.domain.usecase.GetDiscoverRecommendationsUseCase
 import com.bestiapop.android.domain.usecase.GetTopRelatedItemsUseCase
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -131,6 +136,7 @@ class DiscoverFeedCoordinator(
             ) {
                 is LbApiResult.Success -> {
                     _lbDiscover.update { it.success(result.data) }
+                    enrichLbPlaylistCovers(result.data, settings.userToken)
                 }
 
                 is LbApiResult.Failure -> {
@@ -138,6 +144,57 @@ class DiscoverFeedCoordinator(
                 }
             }
             refreshCfRecommendationsInternal(settings)
+        }
+    }
+
+    private fun enrichLbPlaylistCovers(summaries: List<LbPlaylistSummary>, token: String?) {
+        val missing = summaries.filter { it.coverUrl == null }
+        if (missing.isEmpty()) return
+        scope.launch(Dispatchers.IO) {
+            coroutineScope {
+                missing.forEach { summary ->
+                    launch {
+                        val detailResult = ListenBrainzClient.fetchPlaylist(summary.mbid, token)
+                        if (detailResult is LbApiResult.Success) {
+                            val firstTrack = detailResult.data.tracks.firstOrNull()
+                            val cover = detailResult.data.summary.coverUrl?.takeIf(String::isNotBlank)
+                                ?: detailResult.data.tracks.firstArtworkUri()
+                                ?: firstTrack?.let { MetadataFetcher.fetchTrackArtwork(it) }
+                            if (cover != null) {
+                                _lbDiscover.update { state ->
+                                    val currentList = state.data ?: return@update state
+                                    val updated = currentList.map { item ->
+                                        if (item.mbid == summary.mbid) item.copy(coverUrl = cover) else item
+                                    }
+                                    state.copy(data = updated)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private fun enrichCfRecommendationsArtwork(matched: MatchedCfRecommendations) {
+        val missing = matched.matches.filter { it.localSong == null && it.identity.artworkUri.isNullOrBlank() }
+        if (missing.isEmpty()) return
+
+        scope.launch(Dispatchers.IO) {
+            coroutineScope {
+                missing.forEach { track ->
+                    launch {
+                        val art = MetadataFetcher.fetchTrackArtwork(track.identity)
+                        if (!art.isNullOrBlank()) {
+                            _cfRecommendations.update { state ->
+                                val cur = state.data ?: return@update state
+                                cur.copy(matches = cur.matches.withArtwork(track.identity.artist, track.identity.title, art))
+                                    .let { state.copy(data = it) }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -170,6 +227,7 @@ class DiscoverFeedCoordinator(
         ) {
             is LbApiResult.Success -> {
                 _cfRecommendations.update { it.success(result.data) }
+                enrichCfRecommendationsArtwork(result.data)
             }
 
             is LbApiResult.Failure -> {

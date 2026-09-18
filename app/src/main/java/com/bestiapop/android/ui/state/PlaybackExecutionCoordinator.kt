@@ -92,6 +92,16 @@ class PlaybackExecutionCoordinator(
         }
     }
 
+    fun executeGroupPlaybackForPlayables(items: List<PlayableItem>, action: GroupPlaybackAction) {
+        if (items.isEmpty()) return
+        when (action) {
+            GroupPlaybackAction.PLAY -> playPlayableCollection(items, startIndex = 0, rotate = false)
+            GroupPlaybackAction.PLAY_SHUFFLED -> shufflePlayableCollection(items)
+            GroupPlaybackAction.PLAY_NEXT -> playNextPlayableBatch(items)
+            GroupPlaybackAction.ENQUEUE -> addPlayableBatch(items)
+        }
+    }
+
     fun playAlbum(albumName: String, startShuffled: Boolean = false) {
         executeGroupPlayback(
             getLibrarySongsUseCase.songsForAlbum(libraryProjection.songs.value, albumName),
@@ -166,14 +176,14 @@ class PlaybackExecutionCoordinator(
         if (filter == LibraryBrowseFilter.PLAYLISTS) {
             scope.launch {
                 val detailId = (getPlaylistDetail() as? PlaylistDetailNav.Local)?.id
-                val songsToPlay = if (detailId != null) {
-                    repository.getPlaylistSongsOrdered(detailId)
+                val playablesToPlay = if (detailId != null) {
+                    repository.getPlaylistPlayables(detailId)
                 } else {
                     val currentPlaylists = playlistsFlow.first()
-                    currentPlaylists.flatMap { repository.getPlaylistSongsOrdered(it.id) }
+                    currentPlaylists.flatMap { repository.getPlaylistPlayables(it.id) }
                 }
-                if (songsToPlay.isEmpty()) return@launch
-                if (shuffle) shuffleCollection(songsToPlay) else playCollection(songsToPlay)
+                if (playablesToPlay.isEmpty()) return@launch
+                if (shuffle) shufflePlayableCollection(playablesToPlay) else playPlayableCollection(playablesToPlay, startIndex = 0, rotate = false)
             }
             return
         }

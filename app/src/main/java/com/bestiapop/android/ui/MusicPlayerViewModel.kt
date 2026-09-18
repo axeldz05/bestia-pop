@@ -1050,6 +1050,10 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             }
         }
 
+        viewModelScope.launch(Dispatchers.IO) {
+            playlistCoordinator.enrichAllPlaylistsPendingArtworks()
+        }
+
 
         viewModelScope.launch {
             WebServerService.transfers
@@ -1896,26 +1900,23 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     fun reorderPlaylistSongs(playlistId: Long, songIds: List<Long>) =
         playlistCoordinator.reorderPlaylistSongs(playlistId, songIds)
 
-    private fun runWithPlaylistSongs(playlistId: Long, action: (List<Song>) -> Unit) =
-        playlistCoordinator.runWithPlaylistSongs(playlistId, action)
+    fun enrichPlaylistPendingArtworks(playlistId: Long) =
+        playlistCoordinator.enrichPlaylistPendingArtworks(playlistId)
 
-    fun playPlaylist(playlistId: Long, startShuffled: Boolean = false) {
-        runWithPlaylistSongs(playlistId) { songs ->
-            executeGroupPlayback(songs, if (startShuffled) GroupPlaybackAction.PLAY_SHUFFLED else GroupPlaybackAction.PLAY)
+    private fun executePlaylistAction(playlistId: Long, action: GroupPlaybackAction) {
+        playlistCoordinator.runWithPlaylistPlayables(playlistId) { playables ->
+            playbackExecutionCoordinator.executeGroupPlaybackForPlayables(playables, action)
         }
     }
 
-    fun playPlaylistNext(playlistId: Long) {
-        runWithPlaylistSongs(playlistId) { songs ->
-            executeGroupPlayback(songs, GroupPlaybackAction.PLAY_NEXT)
-        }
-    }
+    fun playPlaylist(playlistId: Long, startShuffled: Boolean = false) =
+        executePlaylistAction(playlistId, if (startShuffled) GroupPlaybackAction.PLAY_SHUFFLED else GroupPlaybackAction.PLAY)
 
-    fun enqueuePlaylist(playlistId: Long) {
-        runWithPlaylistSongs(playlistId) { songs ->
-            executeGroupPlayback(songs, GroupPlaybackAction.ENQUEUE)
-        }
-    }
+    fun playPlaylistNext(playlistId: Long) =
+        executePlaylistAction(playlistId, GroupPlaybackAction.PLAY_NEXT)
+
+    fun enqueuePlaylist(playlistId: Long) =
+        executePlaylistAction(playlistId, GroupPlaybackAction.ENQUEUE)
 
     // Theme Actions
     fun selectThemePreset(presetId: String) {

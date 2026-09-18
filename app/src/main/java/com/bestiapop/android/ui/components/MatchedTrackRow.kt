@@ -97,6 +97,7 @@ fun MatchedTrackRow(
             badge = remoteBadge,
             leadingIcon = leadingIcon,
             highlighted = isCurrentPlaying,
+            artworkUri = meta.artworkUri ?: remote.artworkUri,
             onClick = onPlayAt,
             onDownload = { onDownloadRemote(remote) },
             download = download,

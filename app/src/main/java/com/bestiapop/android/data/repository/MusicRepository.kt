@@ -20,6 +20,8 @@ import com.bestiapop.android.data.model.PlayableItem
 import com.bestiapop.android.data.model.Playlist
 import com.bestiapop.android.data.model.PlaylistPendingTrack
 import com.bestiapop.android.data.model.Song
+import com.bestiapop.android.data.model.toPlayableItem
+import com.bestiapop.android.data.model.toPlayableItems
 import com.bestiapop.android.data.model.SongPathRef
 import com.bestiapop.android.data.network.HttpClients
 import com.bestiapop.android.data.preferences.LibraryTagWritePreferencesRepository
@@ -143,6 +145,7 @@ class MusicRepository private constructor(
 
     private val playlistRepositoryOperator = PlaylistRepositoryOperator(
         musicDao = musicDao,
+        metadataSource = metadataSource,
         savePlaylistCoverImage = { albumMetadataOperator.savePlaylistCoverImage(it) }
     )
 
@@ -334,11 +337,25 @@ class MusicRepository private constructor(
     override fun getPlaylistPendingTracksFlow(playlistId: Long): Flow<List<PlaylistPendingTrack>> =
         playlistRepositoryOperator.getPlaylistPendingTracksFlow(playlistId)
 
+    override suspend fun getPlaylistPendingTracks(playlistId: Long): List<PlaylistPendingTrack> =
+        playlistRepositoryOperator.getPlaylistPendingTracks(playlistId)
+
+    override suspend fun getPlaylistPlayables(playlistId: Long): List<PlayableItem> {
+        val songs = getPlaylistSongsOrdered(playlistId)
+        val pending = getPlaylistPendingTracks(playlistId)
+        val localPlayables = songs.toPlayableItems()
+        val remotePlayables = pending.map { it.toPlayableItem() }
+        return localPlayables + remotePlayables
+    }
+
     override suspend fun addPlaylistPendingTracks(tracks: List<PlaylistPendingTrack>) =
         playlistRepositoryOperator.addPlaylistPendingTracks(tracks)
 
     override suspend fun removePlaylistPendingTrack(playlistId: Long, artist: String, title: String) =
         playlistRepositoryOperator.removePlaylistPendingTrack(playlistId, artist, title)
+
+    override suspend fun enrichPlaylistPendingArtworks(playlistId: Long) =
+        playlistRepositoryOperator.enrichPlaylistPendingArtworks(playlistId)
 
     // Songs library queries & CRUD
     override suspend fun getAllSongsSync(): List<Song> = withContext(Dispatchers.IO) {

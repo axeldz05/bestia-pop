@@ -940,6 +940,46 @@ class MusicRepositoryRoomIntegrationTest {
         assertEquals(localSongId, songs[0].id)
         assertEquals(timestamp, stats[localSongId])
     }
+
+    @Test
+    fun createPlaylistWithPlayables_persistsPendingArtwork_andProvidesPlayables() = runTest {
+        val repo = repository()
+        val localSongId = database.musicDao.insertSong(
+            song("local.mp3", "Local Song", artist = "Local Artist")
+        )
+        val localSong = database.musicDao.getSongById(localSongId)!!
+        val remoteItem = PlayableItem.Remote(
+            identity = TrackIdentity(
+                title = "Remote Track",
+                artist = "Remote Artist",
+                album = "Remote Album",
+                artworkUri = "https://example.com/cover.jpg"
+            ),
+            recordingMbid = "mbid-123"
+        )
+
+        val playlistId = repo.createPlaylistWithPlayables(
+            name = "Mixed Playlist",
+            items = listOf(PlayableItem.Local(localSong), remoteItem)
+        )
+        assertNotNull(playlistId)
+
+        val pendingTracks = repo.getPlaylistPendingTracks(playlistId!!)
+        assertEquals(1, pendingTracks.size)
+        assertEquals("https://example.com/cover.jpg", pendingTracks[0].artworkUri)
+
+        val playables = repo.getPlaylistPlayables(playlistId)
+        assertEquals(2, playables.size)
+        assertTrue(playables[0] is PlayableItem.Local)
+        assertEquals("Local Song", playables[0].title)
+        assertTrue(playables[1] is PlayableItem.Remote)
+        assertEquals("Remote Track", playables[1].title)
+        assertEquals("https://example.com/cover.jpg", playables[1].artworkUri)
+
+        val playlists = repo.playlistsFlow.first()
+        val playlist = playlists.single { it.id == playlistId }
+        assertEquals("https://example.com/cover.jpg", playlist.coverUri)
+    }
 }
 
 internal class EphemeralCoverContentProvider : ContentProvider() {

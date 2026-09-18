@@ -9,7 +9,8 @@ data class LbPlaylistSummary(
     val mbid: String,
     val title: String,
     val description: String?,
-    val trackCount: Int
+    val trackCount: Int,
+    val coverUrl: String? = null
 )
 
 data class LbPlaylistTrack(

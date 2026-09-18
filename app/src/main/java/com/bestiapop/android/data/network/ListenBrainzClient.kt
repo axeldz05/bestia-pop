@@ -599,19 +599,25 @@ object ListenBrainzClient {
             if (title.isBlank() && artist.isBlank()) continue
             val recordingMbid = extractRecordingMbid(trackObj.opt("identifier"))
             val releaseName = trackObj.optString("album").takeIf { it.isNotBlank() }
+            val artworkUri = extractTrackArtwork(trackObj)
             tracks.add(
                 LbPlaylistTrack(
                     identity = TrackIdentity(
                         title = title.ifBlank { "Unknown Title" },
                         artist = artist.ifBlank { "Unknown Artist" },
-                        album = releaseName.orEmpty()
+                        album = releaseName.orEmpty(),
+                        artworkUri = artworkUri
                     ),
                     recordingMbid = recordingMbid
                 )
             )
         }
+        val detailCover = summary.coverUrl ?: tracks.firstNotNullOfOrNull { it.identity.artworkUri }
         return LbPlaylistDetail(
-            summary = summary.copy(trackCount = if (summary.trackCount > 0) summary.trackCount else tracks.size),
+            summary = summary.copy(
+                trackCount = if (summary.trackCount > 0) summary.trackCount else tracks.size,
+                coverUrl = detailCover
+            ),
             tracks = tracks
         )
     }
@@ -627,11 +633,14 @@ object ListenBrainzClient {
         val trackCount = playlist.optJSONArray("track")?.length()
             ?: playlist.optInt("num_tracks", 0).takeIf { it > 0 }
             ?: extensionTrackCount(playlist)
+        val coverUrl = playlist.optString("image").takeIf { it.isNotBlank() }
+            ?: extractExtensionImage(playlist)
         return LbPlaylistSummary(
             mbid = mbid,
             title = title,
             description = description,
-            trackCount = trackCount
+            trackCount = trackCount,
+            coverUrl = coverUrl
         )
     }
 
@@ -671,6 +680,46 @@ object ListenBrainzClient {
             else -> null
         } ?: return null
         val marker = "/recording/"
+        val idx = raw.lastIndexOf(marker)
+        if (idx >= 0) {
+            return raw.substring(idx + marker.length).substringBefore('?').trim().ifBlank { null }
+        }
+        return raw.trim().takeIf { it.length == 36 }
+    }
+
+    private fun extractExtensionImage(obj: JSONObject): String? {
+        val directImage = obj.optString("image").takeIf { it.isNotBlank() }
+        if (directImage != null) return directImage
+        val extension = obj.optJSONObject("extension") ?: return null
+        val keys = extension.keys()
+        while (keys.hasNext()) {
+            val key = keys.next()
+            val ns = extension.optJSONObject(key) ?: continue
+            val img = ns.optString("image").takeIf { it.isNotBlank() }
+                ?: ns.optString("artwork_url").takeIf { it.isNotBlank() }
+                ?: ns.optString("cover_art_url").takeIf { it.isNotBlank() }
+            if (img != null) return img
+            val releaseId = ns.optString("caa_release_mbid").takeIf { it.isNotBlank() }
+                ?: ns.optString("release_identifier").takeIf { it.isNotBlank() }
+                ?: ns.optString("release_mbid").takeIf { it.isNotBlank() }
+            val mbid = extractReleaseMbidFromUrlOrId(releaseId)
+            if (mbid != null) return coverArtArchiveUrl(mbid)
+            val additional = ns.optJSONObject("additional_metadata")
+            val addMbid = additional?.optString("caa_release_mbid")?.takeIf { it.isNotBlank() }
+                ?: additional?.optString("release_mbid")?.takeIf { it.isNotBlank() }
+            if (addMbid != null) {
+                val caaId = additional?.optLong("caa_id", 0L)?.takeIf { it > 0 }
+                return coverArtArchiveUrl(addMbid, caaId)
+            }
+        }
+        return null
+    }
+
+    private fun extractTrackArtwork(trackObj: JSONObject): String? = extractExtensionImage(trackObj)
+
+    private fun extractReleaseMbidFromUrlOrId(raw: String?): String? {
+        if (raw.isNullOrBlank()) return null
+        val marker = "/release/"
         val idx = raw.lastIndexOf(marker)
         if (idx >= 0) {
             return raw.substring(idx + marker.length).substringBefore('?').trim().ifBlank { null }
@@ -773,11 +822,19 @@ object ListenBrainzClient {
                 ?: "Unknown Artist"
             val releaseObj = entry.optJSONObject("release")
             val releaseName = releaseObj?.optString("name")?.takeIf { it.isNotBlank() }
+            val releaseMbid = releaseObj?.optString("mbid")?.takeIf { it.isNotBlank() }
+                ?: releaseObj?.optString("release_mbid")?.takeIf { it.isNotBlank() }
+                ?: releaseObj?.optString("caa_release_mbid")?.takeIf { it.isNotBlank() }
+                ?: entry.optString("release_mbid").takeIf { it.isNotBlank() }
+            val artworkUri = releaseMbid?.let(::coverArtArchiveUrl)
+                ?: entry.optString("cover_art_url").takeIf { it.isNotBlank() }
+                ?: entry.optString("artwork_url").takeIf { it.isNotBlank() }
             result[mbid] = LbRecordingMetadata(
                 identity = TrackIdentity(
                     title = title,
                     artist = artist,
-                    album = releaseName.orEmpty()
+                    album = releaseName.orEmpty(),
+                    artworkUri = artworkUri
                 ),
                 recordingMbid = mbid
             )

@@ -36,6 +36,7 @@ fun RemoteTrackPlaceholderRow(
     badge: String,
     leadingIcon: ImageVector,
     highlighted: Boolean,
+    artworkUri: String? = null,
     onClick: (() -> Unit)? = null,
     onDownload: (() -> Unit)? = null,
     download: ActiveDownload? = null,
@@ -70,29 +71,13 @@ fun RemoteTrackPlaceholderRow(
                 .padding(ListDensity.rowInnerPadding),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Box(
-                modifier = Modifier
-                    .size(ListDensity.artworkSong)
-                    .clip(RoundedCornerShape(ListDensity.corner))
-                    .background(
-                        if (highlighted) {
-                            MaterialTheme.colorScheme.primaryContainer
-                        } else {
-                            MaterialTheme.colorScheme.surfaceVariant
-                        }
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = leadingIcon,
-                    contentDescription = null,
-                    tint = if (highlighted) {
-                        MaterialTheme.colorScheme.onPrimaryContainer
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    }
-                )
-            }
+            ArtworkThumbnail(
+                artworkUri = artworkUri,
+                size = ListDensity.artworkSong,
+                cornerRadius = ListDensity.corner,
+                fallbackIcon = leadingIcon,
+                contentDescription = title
+            )
             Spacer(modifier = Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 TrackTextColumn(

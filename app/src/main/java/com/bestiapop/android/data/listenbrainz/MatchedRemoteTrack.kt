@@ -18,6 +18,10 @@ data class MatchedRemoteTrack(
     val localSong: Song?,
     val score: Double? = null
 ) : TrackMeta by identity {
+    override val artworkUri: String?
+        get() = localSong?.artworkUri?.takeIf(String::isNotBlank)
+            ?: identity.artworkUri?.takeIf(String::isNotBlank)
+
     fun toPlayableItem(): PlayableItem = PlayableItem.fromLibraryOrRemote(
         local = localSong,
         identity = identity,
@@ -56,3 +60,15 @@ fun List<MatchedRemoteTrack>.rematchLocals(library: List<Song>): List<MatchedRem
 
 fun List<MatchedRemoteTrack>.unmatchedCatalogTracks(): List<OnlineCatalogTrack> =
     filter { it.localSong == null }.map { it.toOnlineCatalogTrack() }
+
+/** Returns a copy with the updated artwork URI applied to the matching track. */
+fun List<MatchedRemoteTrack>.withArtwork(artist: String, title: String, artworkUri: String): List<MatchedRemoteTrack> =
+    map { match ->
+        if (match.identity.artist.equals(artist, ignoreCase = true) &&
+            match.identity.title.equals(title, ignoreCase = true)
+        ) {
+            match.copy(identity = match.identity.copy(artworkUri = artworkUri))
+        } else {
+            match
+        }
+    }

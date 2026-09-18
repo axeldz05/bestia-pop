@@ -182,6 +182,17 @@ internal fun parseMusicBrainzRecordingSearch(
     return out
 }
 
+internal fun coverArtArchiveUrl(
+    releaseMbid: String,
+    caaId: Long? = null,
+    baseUrl: String = "https://coverartarchive.org"
+): String =
+    if (caaId != null && caaId > 0) {
+        "${baseUrl.trimEnd('/')}/release/$releaseMbid/$caaId-500.jpg"
+    } else {
+        "${baseUrl.trimEnd('/')}/release/$releaseMbid/front-500"
+    }
+
 private fun toCatalogTrack(rec: JSONObject, coverArtBaseUrl: String): OnlineCatalogTrack? {
     val recordingId = rec.optString("id").trim()
     val title = rec.optString("title").trim()
@@ -193,7 +204,7 @@ private fun toCatalogTrack(rec: JSONObject, coverArtBaseUrl: String): OnlineCata
     val releaseId = release?.optString("id")?.trim().orEmpty()
     val album = release?.optString("title")?.trim().orEmpty()
     val artworkUri = releaseId.takeIf { it.isNotEmpty() }?.let {
-        "${coverArtBaseUrl.trimEnd('/')}/release/$it/front-500"
+        coverArtArchiveUrl(it, baseUrl = coverArtBaseUrl)
     }
     val year = MetadataFetcher.parseReleaseYear(release?.optString("date"))
     val trackNumber = release?.let { extractTrackNumber(it, title) } ?: 0

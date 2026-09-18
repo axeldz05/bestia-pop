@@ -61,6 +61,9 @@ internal data class YouTubeEndpoints(
 
 object YouTubeExtractor {
 
+    fun videoThumbnailUrl(videoId: String): String =
+        "https://i.ytimg.com/vi/$videoId/hqdefault.jpg"
+
     private val defaultClient = HttpClients.api.newBuilder()
         .readTimeout(10, TimeUnit.SECONDS)
         .build()
@@ -520,7 +523,7 @@ object YouTubeExtractor {
                 val artworkUrl = thumbnails?.let {
                     if (it.length() > 0) it.optJSONObject(it.length() - 1)?.optString("url")
                     else null
-                }
+                }?.takeIf(String::isNotBlank) ?: videoThumbnailUrl(videoId)
 
                 val lengthTextObj = video.optJSONObject("lengthText")
                 var rawDurationText = lengthTextObj?.optJSONArray("runs")?.optJSONObject(0)?.optString("text")

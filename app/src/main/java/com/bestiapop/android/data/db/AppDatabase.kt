@@ -26,7 +26,7 @@ import com.bestiapop.android.data.model.SongPlayStat
         AlbumArtistCrossRef::class,
         AlbumGenreCrossRef::class
     ],
-    version = 15,
+    version = 16,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -309,8 +309,14 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_15_16 = object : Migration(15, 16) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `playlist_pending_tracks` ADD COLUMN `artworkUri` TEXT DEFAULT NULL")
+            }
+        }
+
         /** Kept in sync with the `@Database` version so a downgrade can be detected and reported. */
-        const val VERSION = 15
+        const val VERSION = 16
 
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
@@ -333,7 +339,8 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_11_12,
                     MIGRATION_12_13,
                     MIGRATION_13_14,
-                    MIGRATION_14_15
+                    MIGRATION_14_15,
+                    MIGRATION_15_16
                 )
                 // Sideloading an older APK is plausible here (GitHub Releases), and Room would refuse
                 // to open a newer schema, so the app has to stay usable. The wipe is not silent:

@@ -18,6 +18,9 @@ Treat your code like a dictionary compressor that runs continuously. Write concr
    - Turn functions into methods if they operate on the same struct.
 4. **Postpone or eliminate fragile calculations** – e.g., compute total height after building rows rather than pre-counting.
 5. **Keep the call site readable** – the final API should read like a step‑by‑step recipe, minimising noise.
+6. **Check for existing primitives before authoring** – always search the codebase (`grep_search`) for existing normalization, parsing, or utility functions before writing a helper. Avoid re-inventing what already exists.
+7. **Complete global adoption** – when an operation is compressed into a canonical helper (e.g., `Iterable<TrackMeta>.firstArtworkUri()`, `fetchTrackArtwork(track: TrackMeta)`), actively replace all ad-hoc repetitions across all modules and layers.
+8. **Prune obsolete and orphan functions** – remove the old specific functions or temporary bridges once all call sites are migrated. Leave zero unused helpers or dead code behind.
 
 ## Typical Process (Example)
 From repetitive inline layout code:

@@ -300,11 +300,12 @@ class StreamResolver internal constructor(
         audioUrl = audioUrl,
         userAgent = userAgent,
         videoId = videoId,
-        resolvedAtEpochMs = clockMs()
+        resolvedAtEpochMs = clockMs(),
+        artworkUri = identity.artworkUri?.takeIf { it.isNotBlank() } ?: YouTubeExtractor.videoThumbnailUrl(videoId)
     )
 
     private fun ResolvedStream.toStreamResultStub() = YouTubeStreamResult(
-        identity = TrackIdentity(title = ""),
+        identity = TrackIdentity(title = "", artworkUri = artworkUri),
         videoId = videoId,
         audioUrl = audioUrl,
         userAgent = userAgent

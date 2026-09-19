@@ -1369,6 +1369,244 @@ class PlaybackRuntimeContinuityTest {
     }
 
     @Test
+    fun playCollection_whileShuffledAndKeepShuffleOnManualPlay_permutesNewListStartingWithSelected() {
+        val settings = MutableStateFlow(
+            PlaybackSettings(clearShuffleOnManualPlay = false)
+        )
+        val fixture = fixture(playbackSettings = settings)
+        try {
+            // First collection: Album 1
+            val album1 = (1..5).map { PlayableItem.Local(song(it.toLong(), "Album1 Song $it")) }
+            fixture.runtime.playPlayableCollection(album1, rotate = false)
+            fixture.runtime.toggleShuffle()
+            assertTrue(fixture.runtime.isShuffle.value)
+
+            // Second collection: Album 2, select index 2 (Song 12)
+            val album2 = (10..15).map { PlayableItem.Local(song(it.toLong(), "Album2 Song $it")) }
+            fixture.runtime.playPlayableCollection(album2, startIndex = 2, rotate = true)
+
+            // Assertions
+            assertTrue("Shuffle must remain active", fixture.runtime.isShuffle.value)
+            val currentQueue = fixture.runtime.queue.value
+            assertEquals(album2.size, currentQueue.size)
+            // Selected song must be first
+            val currentSong = fixture.runtime.currentItem.value as? PlayableItem.Local
+            assertEquals(12L, currentSong?.song?.id)
+            assertEquals(12L, (currentQueue[0] as? PlayableItem.Local)?.song?.id)
+
+            // Other songs must be permuted and contain all other album2 tracks
+            val queuedIds = currentQueue.map { (it as PlayableItem.Local).song.id }
+            assertEquals(album2.map { it.song.id }.toSet(), queuedIds.toSet())
+
+            // Toggling shuffle off restores pristine album 2 order
+            fixture.runtime.toggleShuffle()
+            assertFalse(fixture.runtime.isShuffle.value)
+            val restoredIds = fixture.runtime.queue.value.map { (it as PlayableItem.Local).song.id }
+            assertEquals(album2.map { it.song.id }, restoredIds)
+            assertEquals(12L, (fixture.runtime.currentItem.value as? PlayableItem.Local)?.song?.id)
+        } finally {
+            fixture.close()
+        }
+    }
+
+    @Test
+    fun playCollection_whileShuffledAndClearShuffleOnManualPlay_turnsOffShuffleAndPlaysInOrder() {
+        val settings = MutableStateFlow(
+            PlaybackSettings(clearShuffleOnManualPlay = true)
+        )
+        val fixture = fixture(playbackSettings = settings)
+        try {
+            // Start with shuffle active
+            val album1 = (1..3).map { PlayableItem.Local(song(it.toLong(), "Song $it")) }
+            fixture.runtime.playPlayableCollection(album1, rotate = false)
+            fixture.runtime.toggleShuffle()
+            assertTrue(fixture.runtime.isShuffle.value)
+
+            // Play new collection
+            val album2 = (10..13).map { PlayableItem.Local(song(it.toLong(), "Album2 $it")) }
+            fixture.runtime.playPlayableCollection(album2, startIndex = 0, rotate = false)
+
+            assertFalse("Shuffle must be turned off", fixture.runtime.isShuffle.value)
+            val queueIds = fixture.runtime.queue.value.map { (it as PlayableItem.Local).song.id }
+            assertEquals(album2.map { it.song.id }, queueIds)
+        } finally {
+            fixture.close()
+        }
+    }
+
+    @Test
+    fun skipToNext_withClearShuffleOnSkip_disablesShuffleWithoutReorderingQueue() {
+        val settings = MutableStateFlow(
+            PlaybackSettings(clearShuffleOnSkip = true)
+        )
+        val fixture = fixture(playbackSettings = settings)
+        try {
+            val album = (1..5).map { PlayableItem.Local(song(it.toLong(), "Song $it")) }
+            fixture.runtime.playPlayableCollection(album, rotate = false)
+            fixture.runtime.toggleShuffle()
+            assertTrue(fixture.runtime.isShuffle.value)
+
+            val queueBeforeSkip = fixture.runtime.queue.value.map { it.queueEntryId }
+
+            fixture.runtime.skipToNext()
+
+            assertFalse("Shuffle must be disabled after skip", fixture.runtime.isShuffle.value)
+            val queueAfterSkip = fixture.runtime.queue.value.map { it.queueEntryId }
+            assertEquals("Queue must NOT be reordered", queueBeforeSkip, queueAfterSkip)
+        } finally {
+            fixture.close()
+        }
+    }
+
+    @Test
+    fun skipToNext_withRepeatModeOneAndKeepRepeatOneOnSkip_advancesToNextTrackAndPreservesRepeatModeOne() {
+        val settings = MutableStateFlow(
+            PlaybackSettings(clearRepeatOneOnSkip = false)
+        )
+        val fixture = fixture(playbackSettings = settings)
+        try {
+            val album = (1..3).map { PlayableItem.Local(song(it.toLong(), "Song $it")) }
+            fixture.runtime.playPlayableCollection(album, rotate = false)
+            fixture.runtime.setRepeatMode(RepeatMode.ONE)
+            assertEquals(RepeatMode.ONE, fixture.runtime.repeatMode.value)
+            assertEquals("Song 1", fixture.runtime.currentItem.value?.title)
+
+            fixture.runtime.skipToNext()
+
+            assertEquals("Song 2", fixture.runtime.currentItem.value?.title)
+            assertEquals(
+                "RepeatMode.ONE must be preserved when clearRepeatOneOnSkip is false",
+                RepeatMode.ONE,
+                fixture.runtime.repeatMode.value
+            )
+        } finally {
+            fixture.close()
+        }
+    }
+
+    @Test
+    fun skipToPrevious_withRepeatModeOneAndKeepRepeatOneOnSkip_advancesToPreviousTrackAndPreservesRepeatModeOne() {
+        val settings = MutableStateFlow(
+            PlaybackSettings(clearRepeatOneOnSkip = false)
+        )
+        val fixture = fixture(playbackSettings = settings)
+        try {
+            val album = (1..3).map { PlayableItem.Local(song(it.toLong(), "Song $it")) }
+            fixture.runtime.playPlayableCollection(album, startIndex = 1, rotate = false)
+            fixture.runtime.setRepeatMode(RepeatMode.ONE)
+            assertEquals(RepeatMode.ONE, fixture.runtime.repeatMode.value)
+            assertEquals("Song 2", fixture.runtime.currentItem.value?.title)
+
+            fixture.runtime.skipToPrevious()
+
+            assertEquals("Song 1", fixture.runtime.currentItem.value?.title)
+            assertEquals(
+                "RepeatMode.ONE must be preserved when clearRepeatOneOnSkip is false",
+                RepeatMode.ONE,
+                fixture.runtime.repeatMode.value
+            )
+        } finally {
+            fixture.close()
+        }
+    }
+
+    @Test
+    fun shuffleCollection_withRepeatModeOneAndClearRepeatOneOnManualPlay_clearsRepeatOneAndStartsShuffled() {
+        val settings = MutableStateFlow(
+            PlaybackSettings(
+                clearRepeatOneOnManualPlay = true,
+                clearShuffleOnManualPlay = true
+            )
+        )
+        val fixture = fixture(playbackSettings = settings)
+        try {
+            val album1 = (1..3).map { PlayableItem.Local(song(it.toLong(), "Song $it")) }
+            fixture.runtime.playPlayableCollection(album1, rotate = false)
+            fixture.runtime.setRepeatMode(RepeatMode.ONE)
+            assertEquals(RepeatMode.ONE, fixture.runtime.repeatMode.value)
+
+            val album2 = (10..15).map { PlayableItem.Local(song(it.toLong(), "Album2 Song $it")) }
+            fixture.runtime.playPlayableCollection(
+                album2,
+                startIndex = 0,
+                rotate = false,
+                applyManualModes = false,
+                startShuffled = true
+            )
+
+            assertTrue("Playback must start shuffled", fixture.runtime.isShuffle.value)
+            assertEquals(
+                "RepeatMode.ONE must be cleared when clearRepeatOneOnManualPlay is true",
+                RepeatMode.OFF,
+                fixture.runtime.repeatMode.value
+            )
+        } finally {
+            fixture.close()
+        }
+    }
+
+    @Test
+    fun shuffleCollection_withRepeatModeOneAndKeepRepeatOneOnManualPlay_preservesRepeatOneAndStartsShuffled() {
+        val settings = MutableStateFlow(
+            PlaybackSettings(
+                clearRepeatOneOnManualPlay = false
+            )
+        )
+        val fixture = fixture(playbackSettings = settings)
+        try {
+            val album1 = (1..3).map { PlayableItem.Local(song(it.toLong(), "Song $it")) }
+            fixture.runtime.playPlayableCollection(album1, rotate = false)
+            fixture.runtime.setRepeatMode(RepeatMode.ONE)
+            assertEquals(RepeatMode.ONE, fixture.runtime.repeatMode.value)
+
+            val album2 = (10..15).map { PlayableItem.Local(song(it.toLong(), "Album2 Song $it")) }
+            fixture.runtime.playPlayableCollection(
+                album2,
+                startIndex = 0,
+                rotate = false,
+                applyManualModes = false,
+                startShuffled = true
+            )
+
+            assertTrue("Playback must start shuffled", fixture.runtime.isShuffle.value)
+            assertEquals(
+                "RepeatMode.ONE must be preserved when clearRepeatOneOnManualPlay is false",
+                RepeatMode.ONE,
+                fixture.runtime.repeatMode.value
+            )
+        } finally {
+            fixture.close()
+        }
+    }
+
+    @Test
+    fun playCollection_withRepeatModeAllAndClearRepeatAllOnManualPlay_clearsRepeatAll() {
+        val settings = MutableStateFlow(
+            PlaybackSettings(
+                clearRepeatAllOnManualPlay = true
+            )
+        )
+        val fixture = fixture(playbackSettings = settings)
+        try {
+            val album1 = (1..3).map { PlayableItem.Local(song(it.toLong(), "Song $it")) }
+            fixture.runtime.playPlayableCollection(album1, rotate = false)
+            fixture.runtime.setRepeatMode(RepeatMode.ALL)
+            assertEquals(RepeatMode.ALL, fixture.runtime.repeatMode.value)
+
+            val album2 = (10..13).map { PlayableItem.Local(song(it.toLong(), "Album2 Song $it")) }
+            fixture.runtime.playPlayableCollection(album2, startIndex = 0, rotate = false)
+
+            assertEquals(
+                "RepeatMode.ALL must be cleared when clearRepeatAllOnManualPlay is true",
+                RepeatMode.OFF,
+                fixture.runtime.repeatMode.value
+            )
+        } finally {
+            fixture.close()
+        }
+    }
+
+    @Test
     fun hydration_waitsForFirstRealPlaybackSettingsEmission() = runBlocking {
         val first = song(1, "First")
         val second = song(2, "Second")
@@ -2241,6 +2479,7 @@ class PlaybackRuntimeContinuityTest {
         private fun previousMediaItemIndex(): Int? = adjacentMediaItemIndex(offset = -1)
 
         private fun adjacentMediaItemIndex(offset: Int): Int? {
+            if (repeatModeValue == Player.REPEAT_MODE_ONE) return index.takeIf { it in timeline.indices }
             if (!shuffle) return (index + offset).takeIf { it in timeline.indices }
             val traversalIndex = shuffleOrder.indexOf(index)
             return shuffleOrder.getOrNull(traversalIndex + offset)

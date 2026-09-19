@@ -26,8 +26,6 @@ import com.bestiapop.android.data.playback.PlaybackSelectionIntentGate
 import com.bestiapop.android.data.preferences.HydratedQueue
 import com.bestiapop.android.data.preferences.ListenBrainzPreferencesRepository
 import com.bestiapop.android.data.preferences.ListenBrainzSettings
-import com.bestiapop.android.data.preferences.PlaybackModeClear
-import com.bestiapop.android.data.preferences.PlaybackModeRestore
 import com.bestiapop.android.data.preferences.PlaybackPreferencesRepository
 import com.bestiapop.android.data.preferences.PlaybackSessionStore
 import com.bestiapop.android.data.preferences.PlaybackSettings
@@ -636,26 +634,7 @@ class PlaybackRuntime internal constructor(
     }
 
     private fun reconcileExternalShuffleMode(enabled: Boolean) {
-        if (enabled == _isShuffle.value) return
-        invalidatePlaybackWork(clearRejectedEntries = false)
-        val items = _queue.value
-        val position = _playbackPositionMs.value
-        if (enabled && items.isNotEmpty()) {
-            val (shuffled, index) = permuteQueueToPlayOrder(
-                items = items,
-                currentIndex = currentQueueIndex(),
-                backupSource = true
-            )
-            setShuffleEnabled(true)
-            applyQueueReorder(shuffled, index, position, playWhenReadyIntent)
-        } else if (!enabled) {
-            disableShuffleRestoringOrder()
-        } else {
-            setShuffleEnabled(true)
-        }
-        bumpQueueFocus()
-        persistPlaybackSession(force = true)
-        restartAsyncPlaybackWork()
+        queueCoordinator.setShuffleMode(enabled)
     }
 
     private fun setCurrentItem(
@@ -730,16 +709,10 @@ class PlaybackRuntime internal constructor(
     }
 
     private fun restorePlaybackModes() {
-        if (!dependencies.playbackSettingsReady.value) return
-        val settings = dependencies.playbackSettings.value
         val player = controller
         val hasLiveSession = (player?.mediaItemCount ?: 0) > 0
         val liveRepeat = repeatModeFromPlayer(player?.repeatMode ?: Player.REPEAT_MODE_OFF)
-        val resolved = PlaybackModeRestore.resolve(settings, hasLiveSession, liveRepeat)
-        _isShuffle.value = resolved.shuffle
-        _repeatMode.value = resolved.repeat
-        if (resolved.applyRepeatToPlayer) applyRepeatModeToController(resolved.repeat)
-        syncShuffleToPlayer()
+        queueCoordinator.restorePlaybackModes(hasLiveSession, liveRepeat)
     }
 
     private fun applyPendingExternalPlaybackModes() {
@@ -821,10 +794,20 @@ class PlaybackRuntime internal constructor(
         clearDiscoverPlaybackOrigin()
         val staged = items.ensureFreshQueueEntryIds()
         val index = startIndex.coerceIn(staged.indices)
-        stageQueueCore(staged, index)
-        queueCoordinator.preShuffleOrder = null
-        applyManualPlayModes(deferPlayerSync = true)
-        val snapshot = publishStagedCollectionCore(staged, index, startPositionMs)
+        val launchModes = queueCoordinator.resolveLaunchModes(
+            startShuffled = false,
+            applyManualModes = true,
+            fromRadio = false
+        )
+        val (playItems, playIndex) = if (launchModes.willShuffle) {
+            permuteQueueToPlayOrder(staged, index, backupSource = true)
+        } else {
+            queueCoordinator.preShuffleOrder = null
+            staged to index
+        }
+        stageQueueCore(playItems, playIndex)
+        queueCoordinator.applyLaunchModes(launchModes, deferPlayerSync = true)
+        val snapshot = publishStagedCollectionCore(playItems, playIndex, startPositionMs)
         timelineMaterialized = false
         persistPlaybackSession(force = true)
         return snapshot
@@ -840,12 +823,16 @@ class PlaybackRuntime internal constructor(
         resumeAtMs: Long?
     ) {
         if (!fromRadio) radioCoordinator.clearRadioSession()
+        val launchModes = queueCoordinator.resolveLaunchModes(
+            startShuffled = startShuffled,
+            applyManualModes = applyManualModes,
+            fromRadio = fromRadio
+        )
         val validIndex = startIndex.coerceIn(0, items.lastIndex)
-        val shouldRotate = rotate && !fromRadio && validIndex > 0
+        val shouldRotate = rotate && !fromRadio && !launchModes.willShuffle && validIndex > 0
         val ordered = if (shouldRotate) PlaybackQueueOrder.rotateToStart(items, validIndex) else items
         val startAt = if (shouldRotate) 0 else validIndex
-        val shouldApplyManualModes = applyManualModes && !fromRadio
-        val resumePosition = if (startShuffled) null else resumeAtMs?.takeIf { it > 0L }
+        val resumePosition = if (launchModes.willShuffle) null else resumeAtMs?.takeIf { it > 0L }
         if (controller == null) {
             playWhenReadyIntent = true
             beginPendingPlayIntent()
@@ -853,9 +840,8 @@ class PlaybackRuntime internal constructor(
         val playingIndex = finishPlayPlayableCollection(
             items = ordered,
             index = startAt,
-            applyManualModes = shouldApplyManualModes,
             fromRadio = fromRadio,
-            startShuffled = startShuffled,
+            launchModes = launchModes,
             resumeAtMs = resumePosition
         )
         ensureControllerConnection()
@@ -867,34 +853,25 @@ class PlaybackRuntime internal constructor(
     private fun finishPlayPlayableCollection(
         items: List<PlayableItem>,
         index: Int,
-        applyManualModes: Boolean,
         fromRadio: Boolean,
-        startShuffled: Boolean = false,
+        launchModes: ResolvedLaunchModes? = null,
         resumeAtMs: Long? = null,
         startPlaying: Boolean = true
     ): Int {
-        val (playItems, playIndex) = if (startShuffled) {
+        val resolvedModes = launchModes ?: queueCoordinator.resolveLaunchModes(
+            startShuffled = false,
+            applyManualModes = false,
+            fromRadio = fromRadio
+        )
+        val (playItems, playIndex) = if (resolvedModes.willShuffle) {
             permuteQueueToPlayOrder(items, index, backupSource = true)
         } else {
-            if (!fromRadio && (applyManualModes || !_isShuffle.value)) queueCoordinator.preShuffleOrder = null
+            if (!fromRadio && !_isShuffle.value) queueCoordinator.preShuffleOrder = null
             items to index
         }
         stageQueueCore(playItems, playIndex)
-        val startPosition = if (startShuffled) 0L else resumeAtMs?.coerceAtLeast(0L) ?: 0L
-        when {
-            startShuffled -> {
-                setShuffleEnabled(true)
-                val (_, nextRepeat) = PlaybackModeClear.afterManualPlay(
-                    shuffle = true,
-                    repeat = _repeatMode.value,
-                    settings = dependencies.playbackSettings.value
-                )
-                if (nextRepeat != _repeatMode.value) setRepeatMode(nextRepeat)
-            }
-
-            applyManualModes -> applyManualPlayModes()
-            fromRadio -> setShuffleEnabled(false)
-        }
+        val startPosition = if (resolvedModes.willShuffle) 0L else resumeAtMs?.coerceAtLeast(0L) ?: 0L
+        queueCoordinator.applyLaunchModes(resolvedModes)
         val snapshot = publishStagedCollectionCore(playItems, playIndex, startPosition)
         playWhenReadyIntent = startPlaying
         reloadPlayerTimeline(
@@ -1029,21 +1006,14 @@ class PlaybackRuntime internal constructor(
     fun skipToNext() {
         invalidatePlaybackWork()
         bumpQueueFocus()
-        applySkipModes()
-        controller?.seekToNextMediaItem()
+        queueCoordinator.skipToNext(::skipToQueueIndex)
         ensurePreparedForPlayback()
     }
 
     fun skipToPrevious() {
         invalidatePlaybackWork()
         bumpQueueFocus()
-        applySkipModes()
-        controller?.let { player ->
-            when {
-                player.hasPreviousMediaItem() -> player.seekToPreviousMediaItem()
-                player.mediaItemCount > 1 -> player.seekTo(player.mediaItemCount - 1, 0L)
-            }
-        }
+        queueCoordinator.skipToPrevious(::skipToQueueIndex)
         ensurePreparedForPlayback()
     }
 
@@ -1194,7 +1164,6 @@ class PlaybackRuntime internal constructor(
             finishPlayPlayableCollection(
                 items,
                 slot,
-                applyManualModes = false,
                 fromRadio = radioActive.value,
                 startPlaying = startPlaying
             )
@@ -1222,12 +1191,12 @@ class PlaybackRuntime internal constructor(
         }
         val queueSize = _queue.value.size
         val wrappedShuffleCycle = !suppressShuffleWrapDetection &&
-                _isShuffle.value &&
-                _repeatMode.value == RepeatMode.ALL &&
-                reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO &&
-                lastMediaItemIndex == queueSize - 1 &&
-                newIndex == 0 &&
-                queueSize > 1
+                queueCoordinator.shouldReshuffleOnWrap(
+                    reason = reason,
+                    lastIndex = lastMediaItemIndex,
+                    newIndex = newIndex,
+                    queueSize = queueSize
+                )
 
         if (wrappedShuffleCycle) {
             val previous = _currentItem.value
@@ -1542,14 +1511,6 @@ class PlaybackRuntime internal constructor(
     private fun preShuffleQueueOrNull(): List<PlayableItem>? =
         queueCoordinator.preShuffleQueueOrNull()
 
-    private fun setShuffleEnabled(enabled: Boolean) {
-        queueCoordinator.setShuffleEnabled(enabled)
-    }
-
-    private fun disableShuffleRestoringOrder() {
-        queueCoordinator.disableShuffleRestoringOrder()
-    }
-
     private fun syncShuffleToPlayer() {
         queueCoordinator.syncShuffleToPlayer()
     }
@@ -1560,14 +1521,6 @@ class PlaybackRuntime internal constructor(
 
     private fun applyRepeatModeToController(mode: RepeatMode) {
         queueCoordinator.applyRepeatModeToController(mode)
-    }
-
-    private fun applyManualPlayModes(deferPlayerSync: Boolean = false) {
-        queueCoordinator.applyManualPlayModes(deferPlayerSync)
-    }
-
-    private fun applySkipModes() {
-        queueCoordinator.applySkipModes()
     }
 
     private fun applyRadioStartModes() {

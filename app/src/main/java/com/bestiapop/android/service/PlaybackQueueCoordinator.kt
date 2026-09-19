@@ -6,10 +6,16 @@ import com.bestiapop.android.data.model.RepeatMode
 import com.bestiapop.android.data.model.withFreshQueueEntryIds
 import com.bestiapop.android.data.playback.PlaybackChangeHint
 import com.bestiapop.android.data.preferences.PlaybackModeClear
+import com.bestiapop.android.data.preferences.PlaybackModeRestore
 import com.bestiapop.android.data.playback.PlaybackQueueOrder
 import com.bestiapop.android.data.playback.PlaybackQueueSlots
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
+
+internal data class ResolvedLaunchModes(
+    val willShuffle: Boolean,
+    val nextRepeat: RepeatMode
+)
 
 internal class PlaybackQueueCoordinator(
     private val scope: CoroutineScope,
@@ -59,9 +65,9 @@ internal class PlaybackQueueCoordinator(
         )
     }
 
-    fun toggleShuffle() {
+    fun setShuffleMode(enabled: Boolean) {
+        if (enabled == isShuffle()) return
         onInvalidatePlaybackWork(false)
-        val enabling = !isShuffle()
         val items = getQueue()
         val position = if (hasMaterializedTimeline()) {
             getController()?.currentPosition?.coerceAtLeast(0L) ?: getPlaybackPositionMs()
@@ -69,7 +75,7 @@ internal class PlaybackQueueCoordinator(
             getPlaybackPositionMs()
         }
         val wasPlaying = isPlayWhenReadyIntent()
-        if (enabling) {
+        if (enabled) {
             setShuffleEnabled(true)
             if (items.isNotEmpty()) {
                 val (shuffled, index) = permuteQueueToPlayOrder(
@@ -92,6 +98,10 @@ internal class PlaybackQueueCoordinator(
         onBumpQueueFocus()
         onPersistPlaybackSession(true)
         onRestartAsyncPlaybackWork()
+    }
+
+    fun toggleShuffle() {
+        setShuffleMode(!isShuffle())
     }
 
     fun addPlayableBatch(items: List<PlayableItem>) {
@@ -305,21 +315,57 @@ internal class PlaybackQueueCoordinator(
         else -> RepeatMode.OFF
     }
 
-    fun applyManualPlayModes(deferPlayerSync: Boolean = false) {
-        val (shuffle, repeat) = PlaybackModeClear.afterManualPlay(
-            isShuffle(),
-            getRepeatMode(),
-            dependencies.playbackSettings.value
-        )
-        if (deferPlayerSync) {
-            onSetShuffleState(shuffle)
-            onSetRepeatModeState(repeat)
-            scope.launch { dependencies.persistShuffle(shuffle) }
-            scope.launch { dependencies.persistRepeat(repeat) }
-            onSetPendingExternalPlaybackModes(shuffle to repeat)
+    fun resolveLaunchModes(
+        startShuffled: Boolean,
+        applyManualModes: Boolean,
+        fromRadio: Boolean
+    ): ResolvedLaunchModes {
+        val isManual = !fromRadio && (applyManualModes || startShuffled)
+        val (shuffleAfterManual, repeatAfterManual) = if (isManual) {
+            PlaybackModeClear.afterManualPlay(
+                isShuffle(),
+                getRepeatMode(),
+                dependencies.playbackSettings.value
+            )
         } else {
-            applyResolvedModes(shuffle, repeat)
+            isShuffle() to getRepeatMode()
         }
+        val willShuffle = when {
+            fromRadio -> false
+            startShuffled -> true
+            applyManualModes -> shuffleAfterManual
+            else -> isShuffle()
+        }
+        val nextRepeat = when {
+            fromRadio -> PlaybackModeClear.afterRadioStart(isShuffle(), getRepeatMode()).second
+            isManual -> repeatAfterManual
+            else -> getRepeatMode()
+        }
+        return ResolvedLaunchModes(willShuffle = willShuffle, nextRepeat = nextRepeat)
+    }
+
+    fun applyLaunchModes(resolved: ResolvedLaunchModes, deferPlayerSync: Boolean = false) {
+        if (deferPlayerSync) {
+            onSetShuffleState(resolved.willShuffle)
+            onSetRepeatModeState(resolved.nextRepeat)
+            scope.launch { dependencies.persistShuffle(resolved.willShuffle) }
+            scope.launch { dependencies.persistRepeat(resolved.nextRepeat) }
+            onSetPendingExternalPlaybackModes(resolved.willShuffle to resolved.nextRepeat)
+        } else {
+            setShuffleEnabled(resolved.willShuffle)
+            if (resolved.nextRepeat != getRepeatMode()) {
+                setRepeatMode(resolved.nextRepeat)
+            }
+        }
+    }
+
+    fun applyManualPlayModes(deferPlayerSync: Boolean = false) {
+        val resolved = resolveLaunchModes(
+            startShuffled = false,
+            applyManualModes = true,
+            fromRadio = false
+        )
+        applyLaunchModes(resolved, deferPlayerSync)
     }
 
     fun applySkipModes() {
@@ -328,8 +374,92 @@ internal class PlaybackQueueCoordinator(
             getRepeatMode(),
             dependencies.playbackSettings.value
         )
-        applyResolvedModes(shuffle, repeat)
+        if (shuffle != isShuffle()) {
+            setShuffleEnabled(shuffle)
+        }
+        if (repeat != getRepeatMode()) setRepeatMode(repeat)
     }
+
+    fun skipToNext(onSkipToIndex: (Int) -> Unit) {
+        applySkipModes()
+        val player = getController()
+        if (player != null) {
+            if (player.repeatMode == Player.REPEAT_MODE_ONE) {
+                val nextIndex = if (player.mediaItemCount > 0) {
+                    (player.currentMediaItemIndex + 1) % player.mediaItemCount
+                } else {
+                    0
+                }
+                player.seekTo(nextIndex, 0L)
+            } else {
+                player.seekToNextMediaItem()
+            }
+        } else {
+            val q = getQueue()
+            if (q.isEmpty()) return
+            val nextIndex = if (getRepeatMode() == RepeatMode.ALL || getRepeatMode() == RepeatMode.ONE) {
+                (getLastMediaItemIndex() + 1) % q.size
+            } else {
+                (getLastMediaItemIndex() + 1).coerceAtMost(q.lastIndex)
+            }
+            onSkipToIndex(nextIndex)
+        }
+    }
+
+    fun skipToPrevious(onSkipToIndex: (Int) -> Unit) {
+        applySkipModes()
+        val player = getController()
+        if (player != null) {
+            if (player.repeatMode == Player.REPEAT_MODE_ONE) {
+                val prevIndex = if (player.mediaItemCount > 0) {
+                    if (player.currentMediaItemIndex > 0) {
+                        player.currentMediaItemIndex - 1
+                    } else {
+                        player.mediaItemCount - 1
+                    }
+                } else {
+                    0
+                }
+                player.seekTo(prevIndex, 0L)
+            } else {
+                when {
+                    player.hasPreviousMediaItem() -> player.seekToPreviousMediaItem()
+                    player.mediaItemCount > 1 -> player.seekTo(player.mediaItemCount - 1, 0L)
+                }
+            }
+        } else {
+            val q = getQueue()
+            if (q.isEmpty()) return
+            val prevIndex = if (getRepeatMode() == RepeatMode.ALL || getRepeatMode() == RepeatMode.ONE) {
+                if (getLastMediaItemIndex() > 0) getLastMediaItemIndex() - 1 else q.lastIndex
+            } else {
+                (getLastMediaItemIndex() - 1).coerceAtLeast(0)
+            }
+            onSkipToIndex(prevIndex)
+        }
+    }
+
+    fun restorePlaybackModes(hasLiveSession: Boolean, liveRepeat: RepeatMode) {
+        if (!dependencies.playbackSettingsReady.value) return
+        val settings = dependencies.playbackSettings.value
+        val resolved = PlaybackModeRestore.resolve(settings, hasLiveSession, liveRepeat)
+        onSetShuffleState(resolved.shuffle)
+        onSetRepeatModeState(resolved.repeat)
+        if (resolved.applyRepeatToPlayer) applyRepeatModeToController(resolved.repeat)
+        syncShuffleToPlayer()
+    }
+
+    fun shouldReshuffleOnWrap(
+        reason: Int,
+        lastIndex: Int,
+        newIndex: Int,
+        queueSize: Int
+    ): Boolean = isShuffle() &&
+            getRepeatMode() == RepeatMode.ALL &&
+            reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO &&
+            lastIndex == queueSize - 1 &&
+            newIndex == 0 &&
+            queueSize > 1
 
     fun applyRadioStartModes() {
         val (shuffle, repeat) = PlaybackModeClear.afterRadioStart(

@@ -55,6 +55,14 @@ fun VolumeBoostSettingsScreen(viewModel: MusicPlayerViewModel) {
             onCheckedChange = { viewModel.setVolumeBoostEnabled(it) }
         )
 
+        if (settings.volumeBoostEnabled) {
+            Spacer(modifier = Modifier.height(16.dp))
+            BoostGainSlider(
+                value = settings.volumeBoostAmount,
+                onValueChange = { viewModel.setVolumeBoostAmount(it) }
+            )
+        }
+
         Spacer(modifier = Modifier.height(28.dp))
 
         Row(
@@ -125,6 +133,42 @@ private fun StereoGainSlider(
             valueRange = 0f..1f,
             modifier = Modifier.semantics {
                 contentDescription = "Balance $label"
+            }
+        )
+    }
+}
+
+@Composable
+private fun BoostGainSlider(
+    value: Float,
+    onValueChange: (Float) -> Unit
+) {
+    val boostPercent = (value.coerceIn(0f, 1f) * 100f).roundToInt()
+    val totalPercent = 100 + boostPercent
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Nivel de amplificación",
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onBackground
+            )
+            Text(
+                text = "+$boostPercent% ($totalPercent%)",
+                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                color = MaterialTheme.colorScheme.tertiary
+            )
+        }
+        Slider(
+            value = value.coerceIn(0f, 1f),
+            onValueChange = onValueChange,
+            valueRange = 0f..1f,
+            steps = 9,
+            modifier = Modifier.semantics {
+                contentDescription = "Nivel de amplificación"
             }
         )
     }

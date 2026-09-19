@@ -1,6 +1,7 @@
 package com.bestiapop.android.ui.screens
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -25,9 +26,19 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -69,13 +80,27 @@ fun LibrarySettingsScreen(viewModel: MusicPlayerViewModel) {
         val enabledCount = blobItems.count { it.enabled }
         val primaryFilter = libraryBlobsSettings.primaryFilter
 
+        var isDraggingAny by remember { mutableStateOf(false) }
+        val nestedScrollConnection = remember {
+            object : NestedScrollConnection {
+                override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                    if (isDraggingAny) {
+                        return available
+                    }
+                    return Offset.Zero
+                }
+            }
+        }
+
         Card(
             shape = RoundedCornerShape(16.dp),
             colors = CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
             ),
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier
+                .fillMaxWidth()
+                .nestedScroll(nestedScrollConnection)
         ) {
             Column(
                 modifier = Modifier
@@ -83,29 +108,32 @@ fun LibrarySettingsScreen(viewModel: MusicPlayerViewModel) {
                     .padding(vertical = 4.dp)
             ) {
                 blobItems.forEachIndexed { index, blobConfig ->
-                    val drag = rememberVerticalReorderDrag(
-                        index = index,
-                        reorderCount = blobItems.size,
-                        enabled = true,
-                        onReorder = { from, to ->
-                            val updated = blobItems.toMutableList()
-                            val moved = updated.removeAt(from)
-                            updated.add(to, moved)
-                            viewModel.setLibraryBlobsSettings(LibraryBlobsSettings(items = updated))
-                        }
-                    )
-                    LibraryBlobReorderRow(
-                        config = blobConfig,
-                        isPrimary = blobConfig.enabled && blobConfig.filter == primaryFilter,
-                        canDisable = !blobConfig.enabled || enabledCount > 1,
-                        onToggle = { isEnabled ->
-                            val updated = blobItems.map {
-                                if (it.filter == blobConfig.filter) it.copy(enabled = isEnabled) else it
+                    key(blobConfig.filter) {
+                        val drag = rememberVerticalReorderDrag(
+                            index = index,
+                            reorderCount = blobItems.size,
+                            enabled = true,
+                            onDragStateChanged = { isDraggingAny = it },
+                            onReorder = { from, to ->
+                                val updated = blobItems.toMutableList()
+                                val moved = updated.removeAt(from)
+                                updated.add(to, moved)
+                                viewModel.setLibraryBlobsSettings(LibraryBlobsSettings(items = updated))
                             }
-                            viewModel.setLibraryBlobsSettings(LibraryBlobsSettings(items = updated))
-                        },
-                        drag = drag
-                    )
+                        )
+                        LibraryBlobReorderRow(
+                            config = blobConfig,
+                            isPrimary = blobConfig.enabled && blobConfig.filter == primaryFilter,
+                            canDisable = !blobConfig.enabled || enabledCount > 1,
+                            onToggle = { isEnabled ->
+                                val updated = blobItems.map {
+                                    if (it.filter == blobConfig.filter) it.copy(enabled = isEnabled) else it
+                                }
+                                viewModel.setLibraryBlobsSettings(LibraryBlobsSettings(items = updated))
+                            },
+                            drag = drag
+                        )
+                    }
                 }
             }
         }
@@ -349,26 +377,38 @@ private fun LibraryBlobReorderRow(
     onToggle: (Boolean) -> Unit,
     drag: ReorderDragModifiers
 ) {
+    val rowBackground = if (drag.isDragging) {
+        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
+    } else {
+        Color.Transparent
+    }
+
     Row(
         modifier = drag.rowModifier
             .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(rowBackground)
             .padding(horizontal = 12.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         if (drag.handleModifier != null) {
             Icon(
                 imageVector = Icons.Default.DragHandle,
-                contentDescription = "Reordenar categoría",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                contentDescription = "Arrastrar para reordenar",
+                tint = if (drag.isDragging) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                },
                 modifier = drag.handleModifier
-                    .size(36.dp)
-                    .padding(6.dp)
+                    .size(40.dp)
+                    .padding(8.dp)
             )
         } else {
-            Spacer(modifier = Modifier.size(36.dp))
+            Spacer(modifier = Modifier.size(40.dp))
         }
 
-        Spacer(modifier = Modifier.width(8.dp))
+        Spacer(modifier = Modifier.width(6.dp))
 
         Row(
             modifier = Modifier.weight(1f),
@@ -380,7 +420,11 @@ private fun LibraryBlobReorderRow(
                 style = MaterialTheme.typography.bodyLarge.copy(
                     fontWeight = if (isPrimary) FontWeight.Bold else FontWeight.Medium
                 ),
-                color = if (config.enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                color = if (config.enabled) {
+                    MaterialTheme.colorScheme.onSurface
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                }
             )
 
             if (isPrimary) {

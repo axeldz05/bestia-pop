@@ -44,6 +44,24 @@ class StereoBalanceAudioProcessorTest {
         assertEquals(listOf(0, 500).map(Int::toShort), queue(processor, 1_000, 1_000))
     }
 
+    @Test
+    fun boostGain_scalesLinearRegionAndSoftSaturatesPeaks() {
+        val processor = configuredProcessor(channels = 2, leftGain = 1f, rightGain = 1f).apply {
+            boostGain = 1.5f
+        }
+
+        val output = queue(processor, 10_000, 20_000, -10_000, 30_000)
+
+        // 10_000 * 1.5 = 15_000 (linear region <= 21_400)
+        assertEquals(15_000.toShort(), output[0])
+        // -10_000 * 1.5 = -15_000 (linear region)
+        assertEquals((-15_000).toShort(), output[2])
+        // 20_000 * 1.5 = 30_000 (> 21_400, smoothly compressed to 26_295 without clipping)
+        assertEquals(26_295.toShort(), output[1])
+        // 30_000 * 1.5 = 45_000 (extreme peak, smoothly compressed to 29_071 <= 32_767)
+        assertEquals(29_071.toShort(), output[3])
+    }
+
     private fun configuredProcessor(
         channels: Int,
         leftGain: Float,

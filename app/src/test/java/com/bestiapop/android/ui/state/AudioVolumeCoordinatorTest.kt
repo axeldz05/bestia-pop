@@ -71,59 +71,6 @@ class AudioVolumeCoordinatorTest {
     }
 
     @Test
-    fun handleVolumeUp_whenSystemVolumeAtMax_incrementsBoost() = runTest {
-        val context: Context = ApplicationProvider.getApplicationContext()
-        val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-        val maxVol = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
-        audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, maxVol, 0)
-
-        val storage = TemporaryPreferencesDataStore(context, "audio-volume-test-3")
-        val preferences = PlaybackPreferencesRepository(storage.dataStore)
-
-        var currentSettings = PlaybackSettings(volumeBoostEnabled = true, volumeBoostAmount = 0.2f)
-
-        val coordinator = AudioVolumeCoordinator(
-            audioManager = audioManager,
-            playbackPreferences = preferences,
-            scope = CoroutineScope(Dispatchers.Unconfined),
-            isBoostPrefEnabled = { true },
-            getPlaybackSettings = { currentSettings }
-        )
-
-        val handled = coordinator.handleVolumeUp()
-        assertTrue(handled)
-        assertEquals(1.3f, coordinator.volumeLevel.value, 0.01f)
-        assertTrue(coordinator.volumeBoostHudVisible.value)
-    }
-
-    @Test
-    fun handleVolumeDown_whenBoostActive_decrementsBoost() = runTest {
-        val context: Context = ApplicationProvider.getApplicationContext()
-        val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-        val maxVol = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
-        audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, maxVol, 0)
-
-        val storage = TemporaryPreferencesDataStore(context, "audio-volume-test-4")
-        val preferences = PlaybackPreferencesRepository(storage.dataStore)
-
-        var currentSettings = PlaybackSettings(volumeBoostEnabled = true, volumeBoostAmount = 0.3f)
-
-        val coordinator = AudioVolumeCoordinator(
-            audioManager = audioManager,
-            playbackPreferences = preferences,
-            scope = CoroutineScope(Dispatchers.Unconfined),
-            isBoostPrefEnabled = { true },
-            getPlaybackSettings = { currentSettings }
-        )
-
-        val handled = coordinator.handleVolumeDown()
-        assertTrue(handled)
-        assertEquals(1.2f, coordinator.volumeLevel.value, 0.01f)
-        assertTrue(coordinator.consumeVolumeDownUpAction())
-        assertFalse(coordinator.consumeVolumeDownUpAction())
-    }
-
-    @Test
     fun restoreVolumeBoost_restoresLevelCorrectly() = runTest {
         val context: Context = ApplicationProvider.getApplicationContext()
         val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
@@ -141,5 +88,24 @@ class AudioVolumeCoordinatorTest {
         val settings = PlaybackSettings(volumeBoostEnabled = true, volumeBoostAmount = 0.4f)
         coordinator.restoreVolumeBoost(settings)
         assertEquals(1.4f, coordinator.volumeLevel.value, 0.01f)
+    }
+
+    @Test
+    fun setVolumeBoostAmount_updatesLevelAndPersists() = runTest {
+        val context: Context = ApplicationProvider.getApplicationContext()
+        val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        val storage = TemporaryPreferencesDataStore(context, "audio-volume-test-6")
+        val preferences = PlaybackPreferencesRepository(storage.dataStore)
+
+        val coordinator = AudioVolumeCoordinator(
+            audioManager = audioManager,
+            playbackPreferences = preferences,
+            scope = CoroutineScope(Dispatchers.Unconfined),
+            isBoostPrefEnabled = { true },
+            getPlaybackSettings = { PlaybackSettings(volumeBoostEnabled = true, volumeBoostAmount = 0f) }
+        )
+
+        coordinator.setVolumeBoostAmount(0.6f)
+        assertEquals(1.6f, coordinator.volumeLevel.value, 0.01f)
     }
 }

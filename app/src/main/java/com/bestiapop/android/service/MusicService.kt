@@ -205,8 +205,13 @@ class MusicService : MediaLibraryService() {
                     updateCrossfadeLoop()
                     if (playbackState == Player.STATE_BUFFERING) {
                         acquireTransientWakeLock(10_000L)
-                    } else if (playbackState == Player.STATE_READY && p.isPlaying) {
-                        releaseTransientWakeLock()
+                    } else if (playbackState == Player.STATE_READY) {
+                        if (p.isPlaying) {
+                            releaseTransientWakeLock()
+                        }
+                        if (latestPlaybackSettings.volumeBoostEnabled && latestPlaybackSettings.volumeBoostAmount > 0f) {
+                            applyBoost(latestPlaybackSettings)
+                        }
                     } else if (playbackState == Player.STATE_ENDED && p.playWhenReady && p.mediaItemCount > 0) {
                         acquireTransientWakeLock(10_000L)
                     }
@@ -217,9 +222,11 @@ class MusicService : MediaLibraryService() {
                         PlaybackDiagnostics.TAG_SERVICE,
                         "ExoPlayer.onAudioSessionIdChanged: sessionId=$audioSessionId"
                     )
-                    if (audioSessionId == 0 || audioSessionId == boundAudioSessionId) return
-                    releaseLoudnessEnhancer()
-                    applyBoost(latestPlaybackSettings)
+                    if (audioSessionId == 0) return
+                    if (audioSessionId != boundAudioSessionId) {
+                        releaseLoudnessEnhancer()
+                    }
+                    applyBoost(latestPlaybackSettings, explicitSessionId = audioSessionId)
                 }
 
                 override fun onPlayerError(error: PlaybackException) {
@@ -439,29 +446,28 @@ class MusicService : MediaLibraryService() {
         publishAppliedSettings()
     }
 
-    private fun applyBoost(settings: PlaybackSettings) {
+    private fun applyBoost(settings: PlaybackSettings, explicitSessionId: Int? = null) {
         val clampedAmount =
             if (settings.volumeBoostEnabled) settings.volumeBoostAmount.coerceIn(0f, 1f) else 0f
         if (clampedAmount <= 0f) {
             releaseLoudnessEnhancer()
+            stereoBalanceProcessor.boostGain = 1f
             appliedSettings = appliedSettings.copy(targetGainMb = 0)
             publishAppliedSettings()
             return
         }
         val gainMb = (clampedAmount * MAX_VOLUME_BOOST_GAIN_MB).toInt()
         appliedSettings = appliedSettings.copy(targetGainMb = gainMb)
-        ensureLoudnessEnhancer()
-        val enhancer = loudnessEnhancer
-        if (enhancer == null) {
-            publishAppliedSettings()
-            return
-        }
-        try {
-            enhancer.setTargetGain(gainMb)
-            enhancer.enabled = true
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
+
+        // Software boost via soft-saturation processor (always active and guaranteed across all HALs):
+        // Maps 0f..1f amount to 1.0x..3.0x gain (+0 dB to +9.5 dB) with warm soft-knee saturation.
+        stereoBalanceProcessor.boostGain = 1f + (clampedAmount * 2.0f)
+        releaseLoudnessEnhancer()
+
+        PlaybackDiagnostics.log(
+            PlaybackDiagnostics.TAG_SERVICE,
+            "applyBoost: soft-saturation boost active (boostGain=${stereoBalanceProcessor.boostGain})"
+        )
         publishAppliedSettings()
     }
 
@@ -469,16 +475,23 @@ class MusicService : MediaLibraryService() {
         MusicServiceSettingsProbe.publish(appliedSettings)
     }
 
-    private fun ensureLoudnessEnhancer() {
-        val sessionId = player?.audioSessionId ?: 0
+    private fun ensureLoudnessEnhancer(explicitSessionId: Int? = null) {
+        val sessionId = explicitSessionId?.takeIf { it > 0 } ?: (player?.audioSessionId ?: 0)
         if (sessionId == 0) return
         if (loudnessEnhancer != null && boundAudioSessionId == sessionId) return
         releaseLoudnessEnhancer()
         try {
             loudnessEnhancer = LoudnessEnhancer(sessionId)
             boundAudioSessionId = sessionId
+            PlaybackDiagnostics.log(
+                PlaybackDiagnostics.TAG_SERVICE,
+                "ensureLoudnessEnhancer: bound LoudnessEnhancer to sessionId=$sessionId"
+            )
         } catch (e: Exception) {
-            e.printStackTrace()
+            PlaybackDiagnostics.log(
+                PlaybackDiagnostics.TAG_SERVICE,
+                "ensureLoudnessEnhancer: failed on sessionId=$sessionId: ${e.message}"
+            )
             loudnessEnhancer = null
             boundAudioSessionId = 0
         }

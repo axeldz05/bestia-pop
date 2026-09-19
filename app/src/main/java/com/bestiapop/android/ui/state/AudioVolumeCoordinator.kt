@@ -24,7 +24,6 @@ class AudioVolumeCoordinator(
     private val getPlaybackSettings: () -> PlaybackSettings
 ) {
     companion object {
-        const val VOLUME_BOOST_STEP = 0.10f
         const val VOLUME_BOOST_HUD_DURATION_MS = 2000L
     }
 
@@ -35,7 +34,6 @@ class AudioVolumeCoordinator(
     val volumeBoostHudVisible: StateFlow<Boolean> = _volumeBoostHudVisible.asStateFlow()
 
     private var hudHideJob: Job? = null
-    private var handledVolumeDownAction = false
 
     fun getDeviceVolumeRatio(): Float {
         val current = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
@@ -66,17 +64,24 @@ class AudioVolumeCoordinator(
         }
     }
 
+    fun setVolumeBoostAmount(amount: Float) {
+        val clamped = amount.coerceIn(0f, 1f)
+        if (isBoostPrefEnabled()) {
+            _volumeLevel.value = 1f + clamped
+        }
+        scope.launch { playbackPreferences.setVolumeBoostAmount(clamped) }
+    }
+
     fun setVolumeBoostEnabled(enabled: Boolean) {
         scope.launch {
             playbackPreferences.setVolumeBoostEnabled(enabled)
             if (enabled) {
-                val amount = getPlaybackSettings().volumeBoostAmount.coerceIn(0f, 1f)
-                if (amount > 0f) {
-                    setSystemVolumeRatio(1f)
-                    _volumeLevel.value = 1f + amount
-                } else {
-                    _volumeLevel.value = getDeviceVolumeRatio().coerceAtMost(1f)
+                var amount = getPlaybackSettings().volumeBoostAmount.coerceIn(0f, 1f)
+                if (amount <= 0f) {
+                    amount = 0.20f
+                    playbackPreferences.setVolumeBoostAmount(amount)
                 }
+                _volumeLevel.value = 1f + amount
             } else {
                 _volumeLevel.value = getDeviceVolumeRatio().coerceAtMost(1f)
             }
@@ -92,7 +97,6 @@ class AudioVolumeCoordinator(
         }
         val amount = settings.volumeBoostAmount.coerceIn(0f, 1f)
         if (amount > 0f) {
-            setSystemVolumeRatio(1f)
             _volumeLevel.value = 1f + amount
         } else {
             _volumeLevel.value = getDeviceVolumeRatio().coerceAtMost(1f)
@@ -111,54 +115,6 @@ class AudioVolumeCoordinator(
     fun hideVolumeBoostHud() {
         hudHideJob?.cancel()
         _volumeBoostHudVisible.value = false
-    }
-
-    fun handleVolumeUp(): Boolean {
-        val boostEnabled = isBoostPrefEnabled()
-        if (!boostEnabled) return false
-
-        val currentVol = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
-        val maxVol = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
-
-        if (currentVol < maxVol) {
-            if (getPlaybackSettings().volumeBoostAmount > 0f) {
-                scope.launch { playbackPreferences.setVolumeBoostAmount(0f) }
-            }
-            return false
-        }
-
-        // System volume is at 100%. Increase boost in steps of 10% (0.10f).
-        val currentBoost = getPlaybackSettings().volumeBoostAmount.coerceIn(0f, 1f)
-        val newBoost = (currentBoost + VOLUME_BOOST_STEP).coerceIn(0f, 1f)
-        val newRatio = 1f + newBoost
-        _volumeLevel.value = newRatio
-        scope.launch { playbackPreferences.setVolumeBoostAmount(newBoost) }
-        showVolumeBoostHud()
-        return true
-    }
-
-    fun handleVolumeDown(): Boolean {
-        val boostEnabled = isBoostPrefEnabled()
-        val currentBoost = if (boostEnabled) getPlaybackSettings().volumeBoostAmount.coerceIn(0f, 1f) else 0f
-        if (boostEnabled && currentBoost > 0.001f) {
-            handledVolumeDownAction = true
-            val newBoost = (currentBoost - VOLUME_BOOST_STEP).coerceAtLeast(0f)
-            scope.launch { playbackPreferences.setVolumeBoostAmount(newBoost) }
-            val newRatio = 1f + newBoost
-            _volumeLevel.value = newRatio
-            showVolumeBoostHud()
-            return true
-        }
-
-        hideVolumeBoostHud()
-        handledVolumeDownAction = false
-        return false
-    }
-
-    fun consumeVolumeDownUpAction(): Boolean {
-        val wasHandled = handledVolumeDownAction
-        handledVolumeDownAction = false
-        return wasHandled
     }
 
     fun isVolumeBoostActive(): Boolean {

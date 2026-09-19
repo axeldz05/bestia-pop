@@ -898,11 +898,9 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     fun setVolume(ratio: Float) = audioVolumeCoordinator.setVolume(ratio)
     fun setVolumeBoostEnabled(enabled: Boolean) = audioVolumeCoordinator.setVolumeBoostEnabled(enabled)
+    fun setVolumeBoostAmount(amount: Float) = audioVolumeCoordinator.setVolumeBoostAmount(amount)
     fun showVolumeBoostHud() = audioVolumeCoordinator.showVolumeBoostHud()
     fun hideVolumeBoostHud() = audioVolumeCoordinator.hideVolumeBoostHud()
-    fun handleVolumeUp(): Boolean = audioVolumeCoordinator.handleVolumeUp()
-    fun handleVolumeDown(): Boolean = audioVolumeCoordinator.handleVolumeDown()
-    fun consumeVolumeDownUpAction(): Boolean = audioVolumeCoordinator.consumeVolumeDownUpAction()
     fun isVolumeBoostActive(): Boolean = audioVolumeCoordinator.isVolumeBoostActive()
 
     fun setDownloadOnMeteredNetwork(enabled: Boolean) {

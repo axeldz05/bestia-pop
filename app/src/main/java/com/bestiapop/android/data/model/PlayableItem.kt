@@ -149,7 +149,8 @@ data class ResolvedStream(
     val userAgent: String,
     val videoId: String,
     val resolvedAtEpochMs: Long,
-    val artworkUri: String? = null
+    val artworkUri: String? = null,
+    val clientName: String? = null
 )
 
 private inline fun <T, R> List<T>.mapFast(transform: (T) -> R): List<R> {

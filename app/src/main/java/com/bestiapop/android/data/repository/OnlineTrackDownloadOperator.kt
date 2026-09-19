@@ -18,12 +18,14 @@ import com.bestiapop.android.data.network.YouTubeExtractor
 import com.bestiapop.android.data.network.YouTubeStreamResult
 import com.bestiapop.android.data.stream.BestiaPopMediaCache
 import com.bestiapop.android.data.stream.StreamResolver
+import com.bestiapop.android.data.util.MediaDemuxer
 import com.bestiapop.android.data.util.UploadNameSanitizer
 import com.bestiapop.android.data.util.copyTransferToFile
 import com.bestiapop.android.domain.util.IdentifyRanking
 import com.bestiapop.android.domain.util.albumNamesMatch
 import com.bestiapop.android.domain.util.pickPersistedAlbumName
 import com.bestiapop.android.domain.util.pickPersistedArtistName
+import java.io.File
 import java.io.IOException
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -58,7 +60,7 @@ internal class OnlineTrackDownloadOperator(
             throw IOException(e.message ?: "No se pudo resolver el stream de YouTube")
         }
         val downloadUrl = ytStream.audioUrl
-        val userAgentToUse = ytStream.userAgent
+        var userAgentToUse = ytStream.userAgent
         var identity = track.identity.copy(
             title = track.title.takeUnless { isPlaceholderTitle(it) }.orEmpty(),
             artist = track.artist.takeUnless { IdentifyRanking.isPlaceholderArtist(it) }.orEmpty()
@@ -101,6 +103,7 @@ internal class OnlineTrackDownloadOperator(
         val ext = when {
             downloadUrl.contains("audio/mp4") || downloadUrl.contains("mime=audio%2Fmp4") || downloadUrl.endsWith(".m4a") -> "m4a"
             downloadUrl.contains("audio/webm") || downloadUrl.contains("mime=audio%2Fwebm") || downloadUrl.endsWith(".webm") -> "webm"
+            downloadUrl.contains("video/mp4") || downloadUrl.contains("mime=video%2Fmp4") || downloadUrl.endsWith(".mp4") -> "mp4"
             downloadUrl.endsWith(".aac") -> "aac"
             downloadUrl.endsWith(".ogg") -> "ogg"
             downloadUrl.endsWith(".wav") -> "wav"
@@ -282,9 +285,13 @@ internal class OnlineTrackDownloadOperator(
                         file.delete()
                     }
                 } else if (lastResponseCode == 403 || lastResponseCode == 410) {
+                    ytStream.clientName.takeIf { it.isNotBlank() }?.let {
+                        YouTubeExtractor.reportClientHttpFailure(it, lastResponseCode)
+                    }
                     val refreshed = resolveTrackStreamForDownload(track, forceRefresh = true).getOrNull()
                     refreshed?.let {
                         currentUrl = it.audioUrl
+                        userAgentToUse = it.userAgent
                         downloadedBytes = 0L
                         expectedTotalBytes = -1L
                         if (file.exists()) {
@@ -309,7 +316,37 @@ internal class OnlineTrackDownloadOperator(
             )
         }
 
-        val savedRef = audioStore.canonicalize(pendingWrite.publish())
+        val isMuxedVideo = currentUrl.contains("video/mp4") ||
+            currentUrl.contains("mime=video%2Fmp4") ||
+            currentUrl.endsWith(".mp4")
+
+        val savedRef = if (isMuxedVideo) {
+            val rawVideoFile = if (file.name.endsWith(".mp4", ignoreCase = true)) {
+                file
+            } else {
+                val tempMp4 = File(context.cacheDir, "stage_${System.currentTimeMillis()}_$sanitizedName.mp4")
+                if (file.exists()) {
+                    file.renameTo(tempMp4)
+                }
+                tempMp4
+            }
+            val m4aWrite = audioStore.prepareWrite("$sanitizedName.m4a")
+            val demuxed = MediaDemuxer.extractAudioTrack(
+                sourceFile = rawVideoFile,
+                destinationFile = m4aWrite.stagingFile
+            )
+            if (demuxed) {
+                rawVideoFile.delete()
+                audioStore.canonicalize(m4aWrite.publish())
+            } else {
+                if (rawVideoFile != file && rawVideoFile.exists()) {
+                    rawVideoFile.renameTo(file)
+                }
+                audioStore.canonicalize(pendingWrite.publish())
+            }
+        } else {
+            audioStore.canonicalize(pendingWrite.publish())
+        }
 
         onProgress?.invoke(DownloadPhase.FetchingMetadata)
 

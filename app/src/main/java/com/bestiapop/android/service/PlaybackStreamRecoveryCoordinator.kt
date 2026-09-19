@@ -172,6 +172,9 @@ internal class PlaybackStreamRecoveryCoordinator(
             ensureRemoteReadyAt(index, startPlaying = true)
             return
         }
+        remote.resolved.clientName?.let { clientName ->
+            com.bestiapop.android.data.network.YouTubeExtractor.reportClientHttpFailure(clientName, 403)
+        }
         val graceMs = dependencies.playbackSettings.value.streamSkipGraceSeconds
             .coerceAtLeast(0)
             .times(1000L)

@@ -23,7 +23,8 @@ data class YouTubeStreamResult(
     val identity: TrackIdentity,
     val videoId: String,
     val audioUrl: String,
-    val userAgent: String
+    val userAgent: String,
+    val clientName: String = "VISIONOS"
 ) : TrackMeta by identity {
     companion object {
         /** L2: flat stream construction (identity is Level 1). */
@@ -34,7 +35,8 @@ data class YouTubeStreamResult(
             artworkUrl: String? = null,
             durationMs: Long = 0L,
             audioUrl: String,
-            userAgent: String
+            userAgent: String,
+            clientName: String = "VISIONOS"
         ): YouTubeStreamResult = YouTubeStreamResult(
             identity = TrackIdentity(
                 title = title,
@@ -44,7 +46,8 @@ data class YouTubeStreamResult(
             ),
             videoId = videoId,
             audioUrl = audioUrl,
-            userAgent = userAgent
+            userAgent = userAgent,
+            clientName = clientName
         )
     }
 }
@@ -85,6 +88,7 @@ object YouTubeExtractor {
         client = defaultClient
         endpoints = YouTubeEndpoints()
         cachedVisitorData = null
+        resetClientCooldowns()
     }
 
     private fun endpoint(baseUrl: String, pathAndQuery: String): String =
@@ -157,8 +161,35 @@ object YouTubeExtractor {
         extraContextJson = """{"androidSdkVersion":30}"""
     )
 
-    // ANDROID_VR 1.65.10 omitted: since 2026.08.17 those URLs 403 after ~1MB.
-    private val AUDIO_CLIENTS = listOf(TV_DOWNGRADED, VISION_OS, ANDROID_MAIN, ANDROID_MUSIC, TV_EMBED)
+    // All audio-only clients are attempted first to preserve minimal bandwidth (~3-4MB).
+    // ANDROID_MAIN is the last resort (fallback on CDN 403/410; provides muxed format 18 AAC).
+    private val AUDIO_CLIENTS = listOf(VISION_OS, TV_DOWNGRADED, ANDROID_MUSIC, TV_EMBED, ANDROID_MAIN)
+
+    private val clientCooldowns = java.util.concurrent.ConcurrentHashMap<String, Long>()
+    const val DEFAULT_CLIENT_COOLDOWN_MS = 30 * 60 * 1000L
+
+    fun reportClientHttpFailure(clientName: String, httpCode: Int) {
+        if (httpCode == 403 || httpCode == 410) {
+            clientCooldowns[clientName] = System.currentTimeMillis() + DEFAULT_CLIENT_COOLDOWN_MS
+        }
+    }
+
+    fun resetClientCooldowns() {
+        clientCooldowns.clear()
+    }
+
+    fun isClientOnCooldown(clientName: String): Boolean {
+        val expiry = clientCooldowns[clientName] ?: return false
+        if (System.currentTimeMillis() > expiry) {
+            clientCooldowns.remove(clientName)
+            return false
+        }
+        return true
+    }
+
+    internal fun setClientCooldownForTest(clientName: String, expiryEpochMs: Long) {
+        clientCooldowns[clientName] = expiryEpochMs
+    }
 
     private val AUDIO_ONLY_TITLE = Regex(
         """(?i)(?:\b(?:official\s+)?audio\b|\baudio\s+oficial\b|\báudio\s+oficial\b)"""
@@ -734,12 +765,14 @@ object YouTubeExtractor {
     suspend fun extractAudioStream(
         urlOrQuery: String,
         expected: TrackMeta? = null,
-        fallbackQuery: String? = null
+        fallbackQuery: String? = null,
+        excludedClients: Set<String> = emptySet()
     ): YouTubeStreamResult? {
         val res = extractAudioStreamDetailed(
             urlOrQuery = urlOrQuery,
             expected = expected,
-            fallbackQuery = fallbackQuery
+            fallbackQuery = fallbackQuery,
+            excludedClients = excludedClients
         )
         return if (res is YouTubeExtractResult.Success) res.result else null
     }
@@ -768,7 +801,8 @@ object YouTubeExtractor {
     suspend fun extractAudioStreamDetailed(
         urlOrQuery: String,
         expected: TrackMeta? = null,
-        fallbackQuery: String? = null
+        fallbackQuery: String? = null,
+        excludedClients: Set<String> = emptySet()
     ): YouTubeExtractResult = withContext(Dispatchers.IO) {
         val trimmed = urlOrQuery.trim()
 
@@ -826,7 +860,13 @@ object YouTubeExtractor {
 
         var lastErrorReason = ""
 
-        for (clientProfile in AUDIO_CLIENTS) {
+        val candidateProfiles = AUDIO_CLIENTS.filter {
+            it.name !in excludedClients && !isClientOnCooldown(it.name)
+        }.ifEmpty {
+            AUDIO_CLIENTS.filter { it.name !in excludedClients }.ifEmpty { AUDIO_CLIENTS }
+        }
+
+        for (clientProfile in candidateProfiles) {
             try {
                 val (res, reason) = callPlayerApi(clientProfile, videoId)
                 if (res != null) {
@@ -1056,7 +1096,8 @@ object YouTubeExtractor {
                     artworkUrl = thumbUrl,
                     durationMs = durationSec * 1000L,
                     audioUrl = bestAudioUrl!!,
-                    userAgent = clientProfile.userAgent.removeSuffix(" gzip").trim()
+                    userAgent = clientProfile.userAgent.removeSuffix(" gzip").trim(),
+                    clientName = clientProfile.name
                 )
                 return Pair(streamResult, null)
             }

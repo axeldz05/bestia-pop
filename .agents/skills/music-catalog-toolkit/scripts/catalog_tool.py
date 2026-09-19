@@ -308,22 +308,37 @@ def resolve_album_tracks(
 class YouTubeExtractorClient:
     CLIENT_PROFILES = [
         {
-            "name": "TVHTML5",
-            "version": "5.20260707",
-            "clientId": "7",
-            "userAgent": "Mozilla/5.0 (ChromiumStylePlatform) Cobalt/Version",
-            "osName": "TV",
-            "osVersion": "5.0",
-            "apiKey": ""
-        },
-        {
             "name": "VISIONOS",
             "version": "1.02",
             "clientId": "101",
             "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_7_3) AppleWebKit/605.1.15",
             "osName": "visionOS",
             "osVersion": "26.5.23O471",
-            "apiKey": ""
+            "apiKey": "",
+            "extra_context": {"deviceMake": "Apple", "deviceModel": "RealityDevice17,1"},
+            "is_audio_only": True
+        },
+        {
+            "name": "TVHTML5",
+            "version": "5.20260707",
+            "clientId": "7",
+            "userAgent": "Mozilla/5.0 (ChromiumStylePlatform) Cobalt/Version",
+            "osName": "TV",
+            "osVersion": "5.0",
+            "apiKey": "",
+            "extra_context": None,
+            "is_audio_only": True
+        },
+        {
+            "name": "ANDROID_MUSIC",
+            "version": "7.27.52",
+            "clientId": "21",
+            "userAgent": "com.google.android.apps.youtube.music/7.27.52 (Linux; U; Android 14)",
+            "osName": "Android",
+            "osVersion": "14",
+            "apiKey": "AIzaSyAOghZGza2MQSZkY_zfZ370N-PUdXEo8AI",
+            "extra_context": {"androidSdkVersion": 34},
+            "is_audio_only": True
         },
         {
             "name": "ANDROID",
@@ -332,7 +347,9 @@ class YouTubeExtractorClient:
             "userAgent": "com.google.android.youtube/21.26.364 (Linux; U; Android 11) gzip",
             "osName": "Android",
             "osVersion": "11",
-            "apiKey": "AIzaSyA8eiZmM1FaDVjRy-df2KTyQ_vz_yYM39w"
+            "apiKey": "AIzaSyA8eiZmM1FaDVjRy-df2KTyQ_vz_yYM39w",
+            "extra_context": {"androidSdkVersion": 30},
+            "is_audio_only": False  # Last resort fallback providing muxed format 18
         }
     ]
 
@@ -422,18 +439,22 @@ class YouTubeExtractorClient:
                 if not profile["apiKey"]
                 else f"{YOUTUBE_API_BASE}/youtubei/v1/player?key={profile['apiKey']}"
             )
+            client_ctx = {
+                "clientName": profile["name"],
+                "clientVersion": profile["version"],
+                "hl": "es",
+                "gl": "US",
+                "userAgent": profile["userAgent"],
+                "osName": profile["osName"],
+                "osVersion": profile["osVersion"]
+            }
+            if profile.get("extra_context"):
+                client_ctx.update(profile["extra_context"])
+
             payload = {
                 "videoId": video_id,
                 "context": {
-                    "client": {
-                        "clientName": profile["name"],
-                        "clientVersion": profile["version"],
-                        "hl": "es",
-                        "gl": "US",
-                        "userAgent": profile["userAgent"],
-                        "osName": profile["osName"],
-                        "osVersion": profile["osVersion"]
-                    }
+                    "client": client_ctx
                 },
                 "playbackContext": {"contentPlaybackContext": {"html5Preference": "HTML5_PREF_WANTS"}},
                 "contentCheckOk": True,
@@ -457,6 +478,12 @@ class YouTubeExtractorClient:
                     if f.get("mimeType", "").startswith("audio/") and "url" in f
                 ]
                 if not audio_formats:
+                    # Fallback to muxed MP4 (e.g. format 18 AAC)
+                    audio_formats = [
+                        f for f in formats
+                        if (f.get("itag") == 18 or "mp4a" in f.get("mimeType", "")) and "url" in f
+                    ]
+                if not audio_formats:
                     continue
                 best_audio = max(audio_formats, key=lambda x: x.get("bitrate", 0))
                 video_details = res_data.get("videoDetails", {})
@@ -468,10 +495,278 @@ class YouTubeExtractorClient:
                     "audio_url": best_audio["url"],
                     "mime_type": best_audio.get("mimeType", ""),
                     "bitrate": best_audio.get("bitrate", 0),
-                    "client_used": profile["name"]
+                    "client_used": profile["name"],
+                    "is_audio_only": profile.get("is_audio_only", True)
                 }
             except Exception:
                 continue
+        return None
+
+    def test_clients(self, query_or_url: str) -> Dict[str, Any]:
+        """Test all InnerTube client profiles against video and verify CDN stream accessibility."""
+        trimmed = query_or_url.strip()
+        vid_match = re.search(r"(?:v=|/v/|youtu\.be/|/embed/|^)([a-zA-Z0-9_-]{11})(?:[&?]|$)", trimmed)
+        video_id = vid_match.group(1) if vid_match else None
+
+        if not video_id:
+            hits = self.search(trimmed, limit=1)
+            if hits:
+                video_id = hits[0]["id"]
+            else:
+                return {"error": f"Could not find YouTube video for query: {query_or_url}"}
+
+        results = []
+        for profile in self.CLIENT_PROFILES:
+            endpoint = (
+                f"{YOUTUBE_WEB_BASE}/youtubei/v1/player"
+                if not profile["apiKey"]
+                else f"{YOUTUBE_API_BASE}/youtubei/v1/player?key={profile['apiKey']}"
+            )
+            client_ctx = {
+                "clientName": profile["name"],
+                "clientVersion": profile["version"],
+                "hl": "es",
+                "gl": "US",
+                "userAgent": profile["userAgent"],
+                "osName": profile["osName"],
+                "osVersion": profile["osVersion"]
+            }
+            if profile.get("extra_context"):
+                client_ctx.update(profile["extra_context"])
+
+            payload = {
+                "videoId": video_id,
+                "context": {
+                    "client": client_ctx
+                },
+                "playbackContext": {"contentPlaybackContext": {"html5Preference": "HTML5_PREF_WANTS"}},
+                "contentCheckOk": True,
+                "racyCheckOk": True
+            }
+            headers = {
+                "User-Agent": profile["userAgent"],
+                "X-YouTube-Client-Name": profile["clientId"],
+                "X-YouTube-Client-Version": profile["version"],
+                "Content-Type": "application/json"
+            }
+            client_res = {
+                "client": profile["name"],
+                "is_audio_only": profile.get("is_audio_only", True),
+                "is_last_resort": profile["name"] == "ANDROID",
+                "player_api_http": None,
+                "playability_status": None,
+                "stream_found": False,
+                "stream_itag": None,
+                "mime_type": None,
+                "bitrate": None,
+                "bandwidth_tier": "~3.5 MB (audio-only)" if profile.get("is_audio_only", True) else "~16 MB (muxed video last resort)",
+                "cdn_http_status": None,
+                "cdn_playable": False,
+                "error": None
+            }
+            try:
+                resp = self.session.post(endpoint, json=payload, headers=headers, timeout=self.timeout)
+                client_res["player_api_http"] = resp.status_code
+                if resp.status_code == 200:
+                    res_data = resp.json()
+                    playability = res_data.get("playabilityStatus", {})
+                    client_res["playability_status"] = playability.get("status")
+                    client_res["playability_reason"] = playability.get("reason")
+                    streaming_data = res_data.get("streamingData", {})
+                    formats = streaming_data.get("adaptiveFormats", []) + streaming_data.get("formats", [])
+                    audio_formats = [
+                        f for f in formats
+                        if f.get("mimeType", "").startswith("audio/") and "url" in f
+                    ]
+                    if not audio_formats:
+                        audio_formats = [
+                            f for f in formats
+                            if (f.get("itag") == 18 or "mp4a" in f.get("mimeType", "")) and "url" in f
+                        ]
+                    if audio_formats:
+                        best = max(audio_formats, key=lambda x: x.get("bitrate", 0))
+                        client_res["stream_found"] = True
+                        client_res["stream_itag"] = best.get("itag")
+                        client_res["mime_type"] = best.get("mimeType", "").split(";")[0]
+                        client_res["bitrate"] = best.get("bitrate")
+
+                        # Verify CDN accessibility with Range request
+                        cdn_headers = {
+                            "User-Agent": profile["userAgent"],
+                            "Range": "bytes=0-1024"
+                        }
+                        try:
+                            cdn_resp = self.session.get(best["url"], headers=cdn_headers, timeout=self.timeout)
+                            client_res["cdn_http_status"] = cdn_resp.status_code
+                            client_res["cdn_playable"] = cdn_resp.status_code in (200, 206)
+                        except Exception as cdn_err:
+                            client_res["error"] = f"CDN check error: {cdn_err}"
+            except Exception as api_err:
+                client_res["error"] = f"Player API error: {api_err}"
+
+            results.append(client_res)
+
+        return {"video_id": video_id, "results": results}
+
+    def simulate_cgnat(self, query_or_url: str, blocked_clients: Optional[List[str]] = None) -> Dict[str, Any]:
+        """Simulate CGNAT conditions where specified clients encounter HTTP 403 on CDN, demonstrating dynamic fallback."""
+        audio_only_names = [p["name"] for p in self.CLIENT_PROFILES if p.get("is_audio_only", True)]
+        if blocked_clients is None:
+            blocked_clients = ["VISIONOS"]
+        elif "all-audio" in [b.lower() for b in blocked_clients]:
+            blocked_clients = list(audio_only_names)
+
+        trimmed = query_or_url.strip()
+        vid_match = re.search(r"(?:v=|/v/|youtu\.be/|/embed/|^)([a-zA-Z0-9_-]{11})(?:[&?]|$)", trimmed)
+        video_id = vid_match.group(1) if vid_match else None
+
+        if not video_id:
+            hits = self.search(trimmed, limit=1)
+            if hits:
+                video_id = hits[0]["id"]
+            else:
+                return {"error": f"Could not find YouTube video for query: {query_or_url}"}
+
+        cooldowns = set()
+        trace = []
+        final_stream = None
+
+        for profile in self.CLIENT_PROFILES:
+            client_name = profile["name"]
+            if client_name in cooldowns:
+                trace.append({
+                    "client": client_name,
+                    "action": "SKIPPED",
+                    "reason": "On cooldown from previous failure"
+                })
+                continue
+
+            step = {
+                "client": client_name,
+                "action": "ATTEMPT_PLAYER_API",
+                "status": None,
+                "stream_found": False,
+                "cdn_status": None,
+                "outcome": None
+            }
+
+            endpoint = (
+                f"{YOUTUBE_WEB_BASE}/youtubei/v1/player"
+                if not profile["apiKey"]
+                else f"{YOUTUBE_API_BASE}/youtubei/v1/player?key={profile['apiKey']}"
+            )
+            client_ctx = {
+                "clientName": profile["name"],
+                "clientVersion": profile["version"],
+                "hl": "es",
+                "gl": "US",
+                "userAgent": profile["userAgent"],
+                "osName": profile["osName"],
+                "osVersion": profile["osVersion"]
+            }
+            if profile.get("extra_context"):
+                client_ctx.update(profile["extra_context"])
+
+            payload = {
+                "videoId": video_id,
+                "context": {
+                    "client": client_ctx
+                },
+                "playbackContext": {"contentPlaybackContext": {"html5Preference": "HTML5_PREF_WANTS"}},
+                "contentCheckOk": True,
+                "racyCheckOk": True
+            }
+            headers = {
+                "User-Agent": profile["userAgent"],
+                "X-YouTube-Client-Name": profile["clientId"],
+                "X-YouTube-Client-Version": profile["version"],
+                "Content-Type": "application/json"
+            }
+            try:
+                resp = self.session.post(endpoint, json=payload, headers=headers, timeout=self.timeout)
+                step["status"] = resp.status_code
+                if resp.status_code != 200:
+                    cooldowns.add(client_name)
+                    step["outcome"] = f"Player API HTTP {resp.status_code} -> Cooldown activated"
+                    trace.append(step)
+                    continue
+
+                res_data = resp.json()
+                playability = res_data.get("playabilityStatus", {}).get("status")
+                step["playability"] = playability
+                if playability != "OK":
+                    cooldowns.add(client_name)
+                    reason = res_data.get("playabilityStatus", {}).get("reason", playability)
+                    step["outcome"] = f"Playability {playability} ({reason}) -> Cooldown activated"
+                    trace.append(step)
+                    continue
+
+                streaming_data = res_data.get("streamingData", {})
+                formats = streaming_data.get("adaptiveFormats", []) + streaming_data.get("formats", [])
+                audio_formats = [
+                    f for f in formats
+                    if f.get("mimeType", "").startswith("audio/") and "url" in f
+                ]
+                if not audio_formats:
+                    audio_formats = [
+                        f for f in formats
+                        if (f.get("itag") == 18 or "mp4a" in f.get("mimeType", "")) and "url" in f
+                    ]
+
+                if not audio_formats:
+                    cooldowns.add(client_name)
+                    step["outcome"] = "No direct URL streams found in player response -> Cooldown activated"
+                    trace.append(step)
+                    continue
+
+                best = max(audio_formats, key=lambda x: x.get("bitrate", 0))
+                step["stream_found"] = True
+                step["itag"] = best.get("itag")
+                step["mimeType"] = best.get("mimeType", "").split(";")[0]
+
+                # Check if this client is configured to simulate a CGNAT 403 block
+                if client_name in blocked_clients:
+                    cooldowns.add(client_name)
+                    step["cdn_status"] = 403
+                    step["outcome"] = "SIMULATED_CGNAT_BLOCK (HTTP 403 Forbidden on CDN) -> Cooldown activated"
+                    trace.append(step)
+                    continue
+
+                # Actual CDN check
+                cdn_headers = {
+                    "User-Agent": profile["userAgent"],
+                    "Range": "bytes=0-1024"
+                }
+                cdn_resp = self.session.get(best["url"], headers=cdn_headers, timeout=self.timeout)
+                step["cdn_status"] = cdn_resp.status_code
+                if cdn_resp.status_code in (200, 206):
+                    step["outcome"] = f"SUCCESS: CDN stream accessible ({cdn_resp.status_code})"
+                    final_stream = {
+                        "video_id": video_id,
+                        "client_used": client_name,
+                        "itag": best.get("itag"),
+                        "mime_type": step["mimeType"],
+                        "audio_url": best["url"],
+                        "is_audio_only": profile.get("is_audio_only", True),
+                        "bandwidth_tier": "~3.5 MB" if profile.get("is_audio_only", True) else "~16 MB (demuxed to ~3.5 MB locally)"
+                    }
+                    trace.append(step)
+                    break
+                else:
+                    cooldowns.add(client_name)
+                    step["outcome"] = f"CDN returned HTTP {cdn_resp.status_code} -> Cooldown activated"
+                    trace.append(step)
+            except Exception as e:
+                cooldowns.add(client_name)
+                step["outcome"] = f"Error {e} -> Cooldown activated"
+                trace.append(step)
+
+        return {
+            "video_id": video_id,
+            "blocked_clients_simulated": blocked_clients,
+            "trace": trace,
+            "resolved_stream": final_stream
+        }
 
         # Fallback: Invidious public instance helper
         for inv_host in ["https://invidious.nerdvpn.de", "https://inv.nadeko.net"]:
@@ -652,6 +947,15 @@ def main():
     p_yt_stream = yt_subs.add_parser("extract-stream", help="Extract audio stream URL for video or query")
     p_yt_stream.add_argument("query_or_url", help="YouTube video ID, URL, or song search term")
 
+    p_yt_test = yt_subs.add_parser("test-clients", help="Test YouTube clients against InnerTube API and verify CDN stream accessibility")
+    p_yt_test.add_argument("query_or_url", help="YouTube video ID, URL, or song search term")
+    p_yt_test.add_argument("--json", action="store_true", help="Print raw JSON output")
+
+    p_yt_sim = yt_subs.add_parser("simulate-cgnat", help="Simulate CGNAT CDN 403 blocks and verify dynamic client fallback")
+    p_yt_sim.add_argument("query_or_url", help="YouTube video ID, URL, or song search term")
+    p_yt_sim.add_argument("--blocked", default="VISIONOS", help="Comma-separated client names to simulate 403 block on (default: VISIONOS)")
+    p_yt_sim.add_argument("--json", action="store_true", help="Print raw JSON output")
+
     # --- Download Subcommands ---
     p_dl = subparsers.add_parser("download", help="Download audio streams to local disk")
     dl_subs = p_dl.add_subparsers(dest="dl_action", required=True)
@@ -731,6 +1035,65 @@ def main():
             else:
                 print("Error: Could not extract audio stream (InnerTube bot detection or restricted video).", file=sys.stderr)
                 sys.exit(1)
+        elif args.yt_action == "test-clients":
+            report = yt.test_clients(args.query_or_url)
+            if args.json:
+                print(json.dumps(report, indent=2, ensure_ascii=False))
+            else:
+                if "error" in report:
+                    print(f"Error: {report['error']}", file=sys.stderr)
+                    sys.exit(1)
+                print(f"\n=========================================================================================================")
+                print(f" YouTube Client Diagnostic: Video ID {report['video_id']}")
+                print(f"=========================================================================================================")
+                for r in report.get("results", []):
+                    c_name = r["client"]
+                    role = "[Audio-Only]" if r.get("is_audio_only") else "[LAST RESORT]"
+                    api_st = r["player_api_http"]
+                    play_st = r["playability_status"]
+                    cdn_st = r["cdn_http_status"]
+                    playable = "OK (PLAYABLE)" if r["cdn_playable"] else ("FORBIDDEN 403" if cdn_st == 403 else f"FAIL ({cdn_st})")
+                    itag_info = f"itag={r['stream_itag']} ({r['mime_type']})" if r["stream_found"] else "no direct url"
+                    bw = r.get("bandwidth_tier", "")
+                    print(f" {role:<14} [{c_name:<13}] API={api_st} ({play_st}) -> Stream: {itag_info:<26} -> BW: {bw:<15} -> CDN: {playable}")
+                    if r.get("error"):
+                        print(f"                 Error: {r['error']}")
+                print("=========================================================================================================\n")
+        elif args.yt_action == "simulate-cgnat":
+            blocked = [b.strip() for b in args.blocked.split(",") if b.strip()]
+            report = yt.simulate_cgnat(args.query_or_url, blocked_clients=blocked)
+            if args.json:
+                print(json.dumps(report, indent=2, ensure_ascii=False))
+            else:
+                if "error" in report:
+                    print(f"Error: {report['error']}", file=sys.stderr)
+                    sys.exit(1)
+                print(f"\n=======================================================================")
+                print(f" CGNAT Dynamic Fallback Simulation: Video ID {report['video_id']}")
+                print(f" Simulated CDN 403 Clients: {', '.join(report['blocked_clients_simulated'])}")
+                print(f"=======================================================================")
+                for idx, step in enumerate(report.get("trace", []), start=1):
+                    c_name = step["client"]
+                    act = step.get("action", "")
+                    outcome = step.get("outcome") or step.get("reason") or ""
+                    tag = f"itag={step.get('itag')} ({step.get('mimeType')})" if step.get("stream_found") else ""
+                    print(f" Step {idx}: [{c_name:<13}] {act:<20} {tag:<22} -> {outcome}")
+
+                res = report.get("resolved_stream")
+                print("-----------------------------------------------------------------------")
+                if res:
+                    c_used = res['client_used']
+                    is_audio = res.get('is_audio_only', True)
+                    bw_tier = res.get('bandwidth_tier', '')
+                    print(f" [RESULT] Dynamic Fallback SUCCEEDED! Client used: {c_used} (itag={res['itag']}, {res['mime_type']})")
+                    if is_audio:
+                        print(f"          [BANDWIDTH OPTIMAL] Audio-only stream preserved ({bw_tier}). Minimal data used.")
+                    else:
+                        print(f"          [BANDWIDTH WARNING] Using ANDROID (LAST RESORT, {bw_tier}).")
+                        print(f"          [LOCAL STORAGE] MediaDemuxer will strip video to .m4a locally (drops from ~16 MB to ~3.5 MB on disk).")
+                else:
+                    print(" [RESULT] Dynamic Fallback FAILED! No client could resolve a playable stream.")
+                print("=======================================================================\n")
 
     elif args.command == "download":
         yt = YouTubeExtractorClient()

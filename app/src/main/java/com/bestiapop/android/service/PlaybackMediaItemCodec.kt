@@ -23,7 +23,8 @@ internal data class PlaybackMediaItemPortablePayload(
     val queryOrId: String? = null,
     val videoId: String? = null,
     val userAgent: String? = null,
-    val resolvedAtEpochMs: Long = 0L
+    val resolvedAtEpochMs: Long = 0L,
+    val clientName: String? = null
 )
 
 /**
@@ -49,6 +50,7 @@ object PlaybackMediaItemCodec {
     private const val EXTRA_VIDEO_ID = "bestiapop.playback.videoId"
     private const val EXTRA_USER_AGENT = "bestiapop.playback.userAgent"
     private const val EXTRA_RESOLVED_AT = "bestiapop.playback.resolvedAt"
+    private const val EXTRA_CLIENT_NAME = "bestiapop.playback.clientName"
 
     fun encode(
         item: PlayableItem,
@@ -78,7 +80,8 @@ object PlaybackMediaItemCodec {
                 queryOrId = item.youtubeQueryOrId,
                 videoId = item.resolved?.videoId,
                 userAgent = item.resolved?.userAgent,
-                resolvedAtEpochMs = item.resolved?.resolvedAtEpochMs ?: 0L
+                resolvedAtEpochMs = item.resolved?.resolvedAtEpochMs ?: 0L,
+                clientName = item.resolved?.clientName
             )
         }
 
@@ -115,18 +118,21 @@ object PlaybackMediaItemCodec {
                 val videoId = payload.videoId?.takeIf { it.isNotBlank() }
                 val userAgent = payload.userAgent?.takeIf { it.isNotBlank() }
                 val audioUrl = mediaUri?.takeIf { it.isNotBlank() }
+                val clientName = payload.clientName
                 val resolved = when {
                     audioUrl != null && videoId != null && userAgent != null -> ResolvedStream(
                         audioUrl = audioUrl,
                         userAgent = userAgent,
                         videoId = videoId,
-                        resolvedAtEpochMs = payload.resolvedAtEpochMs
+                        resolvedAtEpochMs = payload.resolvedAtEpochMs,
+                        clientName = clientName
                     )
                     videoId != null -> ResolvedStream(
                         audioUrl = "",
                         userAgent = userAgent.orEmpty(),
                         videoId = videoId,
-                        resolvedAtEpochMs = 0L
+                        resolvedAtEpochMs = 0L,
+                        clientName = clientName
                     )
                     else -> null
                 }
@@ -171,7 +177,8 @@ object PlaybackMediaItemCodec {
             queryOrId = extras.getString(EXTRA_QUERY_OR_ID),
             videoId = extras.getString(EXTRA_VIDEO_ID) ?: tag?.videoId,
             userAgent = extras.getString(EXTRA_USER_AGENT) ?: tag?.userAgent,
-            resolvedAtEpochMs = extras.getLong(EXTRA_RESOLVED_AT, 0L)
+            resolvedAtEpochMs = extras.getLong(EXTRA_RESOLVED_AT, 0L),
+            clientName = extras.getString(EXTRA_CLIENT_NAME) ?: tag?.clientName
         )
         return restore(
             payload = payload,
@@ -213,6 +220,8 @@ object PlaybackMediaItemCodec {
                 ?.let { putString(EXTRA_VIDEO_ID, it) }
             payload.userAgent?.takeIf { it.isNotBlank() }
                 ?.let { putString(EXTRA_USER_AGENT, it) }
+            payload.clientName?.takeIf { it.isNotBlank() }
+                ?.let { putString(EXTRA_CLIENT_NAME, it) }
             putLong(EXTRA_RESOLVED_AT, payload.resolvedAtEpochMs)
         }
         val builder = MediaItem.Builder()
@@ -224,7 +233,8 @@ object PlaybackMediaItemCodec {
             builder.setStreamPlaybackTag(
                 StreamPlaybackTag(
                     userAgent = resolved.userAgent,
-                    videoId = resolved.videoId
+                    videoId = resolved.videoId,
+                    clientName = resolved.clientName
                 )
             )
         }

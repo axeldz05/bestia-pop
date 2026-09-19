@@ -19,12 +19,14 @@ class StreamResolver internal constructor(
     private val extractDetailed: suspend (
         queryOrId: String,
         expected: TrackMeta?,
-        fallbackQuery: String?
-    ) -> YouTubeExtractResult = { q, exp, fb ->
+        fallbackQuery: String?,
+        excludedClients: Set<String>
+    ) -> YouTubeExtractResult = { q, exp, fb, excl ->
         YouTubeExtractor.extractAudioStreamDetailed(
             urlOrQuery = q,
             expected = exp,
-            fallbackQuery = fb
+            fallbackQuery = fb,
+            excludedClients = excl
         )
     },
     private val clockMs: () -> Long = { System.currentTimeMillis() },
@@ -32,12 +34,28 @@ class StreamResolver internal constructor(
     private val onKeyLockReserved: suspend (String, Any) -> Unit = { _, _ -> }
 ) {
     constructor(
+        extractDetailed3: suspend (
+            queryOrId: String,
+            expected: TrackMeta?,
+            fallbackQuery: String?
+        ) -> YouTubeExtractResult,
+        clockMs: () -> Long = { System.currentTimeMillis() },
+        ttlMs: Long = DEFAULT_TTL_MS,
+        onKeyLockReserved: suspend (String, Any) -> Unit = { _, _ -> }
+    ) : this(
+        extractDetailed = { q, exp, fb, _ -> extractDetailed3(q, exp, fb) },
+        clockMs = clockMs,
+        ttlMs = ttlMs,
+        onKeyLockReserved = onKeyLockReserved
+    )
+
+    constructor(
         extract: suspend (String) -> YouTubeExtractResult,
         clockMs: () -> Long = { System.currentTimeMillis() },
         ttlMs: Long = DEFAULT_TTL_MS,
         onKeyLockReserved: suspend (String, Any) -> Unit = { _, _ -> }
     ) : this(
-        extractDetailed = { q, _, _ -> extract(q) },
+        extractDetailed = { q, _, _, _ -> extract(q) },
         clockMs = clockMs,
         ttlMs = ttlMs,
         onKeyLockReserved = onKeyLockReserved
@@ -67,7 +85,8 @@ class StreamResolver internal constructor(
         queryOrId: String,
         forceRefresh: Boolean = false,
         expected: TrackMeta? = null,
-        fallbackQuery: String? = null
+        fallbackQuery: String? = null,
+        excludedClients: Set<String> = emptySet()
     ): Result<YouTubeStreamResult> {
         val query = queryOrId.trim()
         if (query.isBlank()) {
@@ -78,16 +97,19 @@ class StreamResolver internal constructor(
         // Serialized per key: without it, ensureRemoteReadyAt + prefetch + retry each ran a full
         // extraction (several HTTP round trips) for the same video and the last writer won.
         return withKeyLock(qKey) {
-            if (!forceRefresh) {
+            if (!forceRefresh && excludedClients.isEmpty()) {
                 cachedStream(qKey, query, ttlMs)?.let {
-                    return@withKeyLock Result.success(it)
+                    if (it.clientName !in excludedClients && !YouTubeExtractor.isClientOnCooldown(it.clientName)) {
+                        return@withKeyLock Result.success(it)
+                    }
                 }
             }
             extractAndCache(
                 query = query,
                 qKey = qKey,
                 expected = expected,
-                fallbackQuery = fallbackQuery
+                fallbackQuery = fallbackQuery,
+                excludedClients = excludedClients
             ).map { it.stream }
         }
     }
@@ -235,12 +257,14 @@ class StreamResolver internal constructor(
         query: String,
         qKey: String,
         expected: TrackMeta? = null,
-        fallbackQuery: String? = null
+        fallbackQuery: String? = null,
+        excludedClients: Set<String> = emptySet()
     ): Result<CachedExtraction> = when (
         val result = extractDetailed(
             query,
             expected,
-            fallbackQuery
+            fallbackQuery,
+            excludedClients
         )
     ) {
         is YouTubeExtractResult.Success -> {
@@ -293,22 +317,28 @@ class StreamResolver internal constructor(
     private fun cacheAgeMs(resolved: ResolvedStream, now: Long): Long =
         if (now >= resolved.resolvedAtEpochMs) now - resolved.resolvedAtEpochMs else 0L
 
-    private fun isFreshAt(resolved: ResolvedStream, now: Long): Boolean =
-        cacheAgeMs(resolved, now) < ttlMs
+    private fun isFreshAt(resolved: ResolvedStream, now: Long): Boolean {
+        if (resolved.clientName != null && YouTubeExtractor.isClientOnCooldown(resolved.clientName)) {
+            return false
+        }
+        return cacheAgeMs(resolved, now) < ttlMs
+    }
 
     private fun YouTubeStreamResult.toResolvedStream() = ResolvedStream(
         audioUrl = audioUrl,
         userAgent = userAgent,
         videoId = videoId,
         resolvedAtEpochMs = clockMs(),
-        artworkUri = identity.artworkUri?.takeIf { it.isNotBlank() } ?: YouTubeExtractor.videoThumbnailUrl(videoId)
+        artworkUri = identity.artworkUri?.takeIf { it.isNotBlank() } ?: YouTubeExtractor.videoThumbnailUrl(videoId),
+        clientName = clientName
     )
 
     private fun ResolvedStream.toStreamResultStub() = YouTubeStreamResult(
         identity = TrackIdentity(title = "", artworkUri = artworkUri),
         videoId = videoId,
         audioUrl = audioUrl,
-        userAgent = userAgent
+        userAgent = userAgent,
+        clientName = clientName ?: "VISIONOS"
     )
 
     companion object {

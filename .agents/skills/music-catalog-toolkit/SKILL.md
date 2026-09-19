@@ -76,6 +76,14 @@ python3 .agents/skills/music-catalog-toolkit/scripts/catalog_tool.py youtube sea
 # Extraer URL directa de streaming de audio
 python3 .agents/skills/music-catalog-toolkit/scripts/catalog_tool.py youtube extract-stream "Asian Kung-Fu Generation Haruka Kanata"
 python3 .agents/skills/music-catalog-toolkit/scripts/catalog_tool.py youtube extract-stream "https://www.youtube.com/watch?v=nJ6A6GC_ki4"
+
+# Diagnóstico de clientes InnerTube, consumo de ancho de banda y accesibilidad CDN (403 Forbidden / bot detection)
+python3 .agents/skills/music-catalog-toolkit/scripts/catalog_tool.py youtube test-clients "Bohemian Rhapsody"
+python3 .agents/skills/music-catalog-toolkit/scripts/catalog_tool.py youtube test-clients "Jorge Rivera-Herrans"
+
+# Simulación dinámica de fallo CGNAT con rotación waterfall (audio-only prioritario, ANDROID última instancia)
+python3 .agents/skills/music-catalog-toolkit/scripts/catalog_tool.py youtube simulate-cgnat "Bohemian Rhapsody" --blocked "VISIONOS"
+python3 .agents/skills/music-catalog-toolkit/scripts/catalog_tool.py youtube simulate-cgnat "Jorge Rivera-Herrans" --blocked all-audio
 ```
 
 ### E. Descargas de Audio

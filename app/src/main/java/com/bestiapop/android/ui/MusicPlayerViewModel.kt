@@ -606,6 +606,48 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     )
     val similarPlaylistPreview: StateFlow<SimilarPlaylistPreviewState?> = similarPlaylistCoordinator.state
 
+    private val _suggestedQueueTracks = MutableStateFlow<List<PlayableItem>>(emptyList())
+    val suggestedQueueTracks: StateFlow<List<PlayableItem>> = _suggestedQueueTracks.asStateFlow()
+
+    private val _isLoadingQueueSuggestions = MutableStateFlow(false)
+    val isLoadingQueueSuggestions: StateFlow<Boolean> = _isLoadingQueueSuggestions.asStateFlow()
+
+    fun refreshQueueSuggestions() {
+        val seed = currentItem.value ?: return
+        viewModelScope.launch(Dispatchers.Default) {
+            _isLoadingQueueSuggestions.value = true
+            try {
+                val library = repository.allSongsFlow.first()
+                val excludeKeys = displayQueue.value.map { TrackMatchKeys.matchKey(it.artist, it.title) }.toSet()
+                val mode = resolvePreferredRadioMode(null)
+                val networkOnline = connectivityObserver.isCurrentlyOnline()
+                val lb = listenBrainzSettings.value
+                val result =
+                    radioEngine.suggest(
+                        seed = seed,
+                        library = library,
+                        mode = mode,
+                        excludeKeys = excludeKeys,
+                        limit = 8,
+                        lbToken = lb.userToken.takeIf { lb.enabled },
+                        lbAvailable = lb.enabled && !lb.userToken.isNullOrBlank(),
+                        lbUsername = lb.username.takeIf { lb.enabled },
+                        networkAvailable = networkOnline,
+                    )
+                _suggestedQueueTracks.value = result.items
+            } catch (_: Exception) {
+                _suggestedQueueTracks.value = emptyList()
+            } finally {
+                _isLoadingQueueSuggestions.value = false
+            }
+        }
+    }
+
+    fun addPlayableToQueue(item: PlayableItem) {
+        addPlayableBatch(listOf(item))
+        _suggestedQueueTracks.value = _suggestedQueueTracks.value.filter { it.mediaId != item.mediaId }
+    }
+
     val queueFocusEpoch = playbackRuntime.queueFocusEpoch
 
     private val audioManager = getApplication<Application>().getSystemService(Context.AUDIO_SERVICE) as AudioManager

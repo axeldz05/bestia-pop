@@ -26,7 +26,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -36,6 +35,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bestiapop.android.data.model.PlayableItem
 import kotlinx.coroutines.flow.StateFlow
 
@@ -48,49 +48,52 @@ fun BottomPlayerBar(
     onPreviousClick: () -> Unit,
     onNextClick: () -> Unit,
     onBarClick: () -> Unit,
-    statusLabel: String? = null
+    modifier: Modifier = Modifier,
+    statusLabel: String? = null,
 ) {
     if (currentItem == null) return
 
-    val subtitle = if (!statusLabel.isNullOrBlank()) {
-        statusLabel
-    } else {
-        currentItem.artist
-    }
+    val subtitle =
+        if (!statusLabel.isNullOrBlank()) {
+            statusLabel
+        } else {
+            currentItem.artist
+        }
     val highlightStatus = !statusLabel.isNullOrBlank()
 
     Surface(
         color = MaterialTheme.colorScheme.surfaceVariant,
         shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
         shadowElevation = 12.dp,
-        modifier = Modifier.fillMaxWidth()
+        modifier = modifier.fillMaxWidth(),
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = ripple()
-                    ) { onBarClick() }
+                modifier =
+                    Modifier
+                        .weight(1f)
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = ripple(),
+                        ) { onBarClick() },
             ) {
                 BottomPlayerProgress(
                     positionMsFlow = positionMsFlow,
-                    durationMs = currentItem.durationMs
+                    durationMs = currentItem.durationMs,
                 )
 
                 Row(
                     modifier = Modifier.padding(start = 16.dp, top = 8.dp, bottom = 8.dp, end = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
                     ArtworkThumbnail(
                         artworkUri = currentItem.artworkUri,
                         size = 44.dp,
                         cornerRadius = 8.dp,
-                        contentDescription = currentItem.title
+                        contentDescription = currentItem.title,
                     )
 
                     Spacer(modifier = Modifier.width(12.dp))
@@ -100,11 +103,12 @@ fun BottomPlayerBar(
                         subtitle = subtitle,
                         modifier = Modifier.weight(1f),
                         titleWeight = FontWeight.SemiBold,
-                        subtitleColor = if (highlightStatus) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                        }
+                        subtitleColor =
+                            if (highlightStatus) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                            },
                     )
                 }
             }
@@ -113,7 +117,7 @@ fun BottomPlayerBar(
                 Icon(
                     imageVector = Icons.Default.SkipPrevious,
                     contentDescription = "Previous",
-                    tint = MaterialTheme.colorScheme.onSurface
+                    tint = MaterialTheme.colorScheme.onSurface,
                 )
             }
 
@@ -122,18 +126,18 @@ fun BottomPlayerBar(
                     imageVector = playPauseVector(isPlaying),
                     contentDescription = "Play/Pause",
                     tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(32.dp)
+                    modifier = Modifier.size(32.dp),
                 )
             }
 
             IconButton(
                 onClick = onNextClick,
-                modifier = Modifier.padding(end = 8.dp)
+                modifier = Modifier.padding(end = 8.dp),
             ) {
                 Icon(
                     imageVector = Icons.Default.SkipNext,
                     contentDescription = "Next",
-                    tint = MaterialTheme.colorScheme.onSurface
+                    tint = MaterialTheme.colorScheme.onSurface,
                 )
             }
         }
@@ -143,15 +147,16 @@ fun BottomPlayerBar(
 @Composable
 private fun BottomPlayerProgress(
     positionMsFlow: StateFlow<Long>,
-    durationMs: Long
+    durationMs: Long,
 ) {
     val positionState = positionMsFlow.collectAsStateWithLifecycle()
     LinearProgressIndicator(
         progress = { playbackProgressFraction(positionState.value, durationMs) },
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(3.dp),
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .height(3.dp),
         color = MaterialTheme.colorScheme.primary,
-        trackColor = MaterialTheme.colorScheme.surfaceVariant
+        trackColor = MaterialTheme.colorScheme.surfaceVariant,
     )
 }

@@ -1,15 +1,8 @@
 package com.bestiapop.android.ui.screens
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.Orientation
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
-import androidx.compose.foundation.gestures.draggable
-import androidx.compose.foundation.gestures.rememberDraggableState
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -41,7 +34,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -49,18 +41,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
-import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bestiapop.android.data.model.Album
@@ -72,7 +61,13 @@ import com.bestiapop.android.data.preferences.NAV_LIBRARY
 import com.bestiapop.android.ui.MusicPlayerViewModel
 import com.bestiapop.android.ui.components.ArtworkHero
 import com.bestiapop.android.ui.components.PlaybackScrubber
+import com.bestiapop.android.ui.components.ProgressiveSheetState
 import com.bestiapop.android.ui.components.RadioModeControl
+import com.bestiapop.android.ui.components.rememberProgressiveSheetState
+import com.bestiapop.android.ui.components.sheetDragDownDismiss
+import com.bestiapop.android.ui.components.sheetDragUpTrigger
+import com.bestiapop.android.ui.components.sheetLayout
+import com.bestiapop.android.ui.components.sheetNestedScrollConnection
 import com.bestiapop.android.ui.screens.library.AlbumEditDialogsHost
 import com.bestiapop.android.ui.screens.library.rememberSongActionDialogs
 import com.bestiapop.android.ui.screens.nowplaying.NowPlayingControlsRow
@@ -89,6 +84,7 @@ import kotlinx.coroutines.launch
 fun NowPlayingScreen(
     viewModel: MusicPlayerViewModel,
     onDismiss: () -> Unit,
+    sheetState: ProgressiveSheetState? = null,
 ) {
     val currentItem by viewModel.currentItem.collectAsStateWithLifecycle()
     val currentSong by viewModel.currentSong.collectAsStateWithLifecycle()
@@ -270,116 +266,55 @@ fun NowPlayingScreen(
     val configuration = LocalConfiguration.current
     val density = configuration.densityDpi / 160f
     val screenHeightPx = configuration.screenHeightDp * density
-    val dismissThresholdPx = screenHeightPx * 0.30f
 
-    var dragOffset by remember { mutableFloatStateOf(0f) }
-    val enterOffset = remember { Animatable(screenHeightPx) }
+    val effectiveSheetState =
+        sheetState ?: rememberProgressiveSheetState(
+            screenHeightPx = screenHeightPx,
+            onDismiss = onDismiss,
+        ).apply {
+            LaunchedEffect(Unit) { open() }
+        }
 
-    val queueOffsetY = remember { Animatable(screenHeightPx) }
-    val isQueueOpen by remember { derivedStateOf { queueOffsetY.value < screenHeightPx } }
+    val queueSheetState =
+        rememberProgressiveSheetState(
+            screenHeightPx = screenHeightPx,
+            onOpen = {
+                viewModel.refreshQueueSuggestions()
+            },
+        )
 
     BackHandler {
-        if (isQueueOpen) {
-            coroutineScope.launch {
-                queueOffsetY.animateTo(screenHeightPx, tween(250))
-            }
+        if (queueSheetState.isOpen) {
+            queueSheetState.dismiss()
         } else {
-            onDismiss()
-        }
-    }
-
-    LaunchedEffect(Unit) {
-        enterOffset.animateTo(0f, tween(280))
-    }
-
-    fun settleSwipeDismiss(velocity: Float = 0f) {
-        if (dragOffset > dismissThresholdPx || (velocity > 800f && dragOffset > 0f)) {
-            onDismiss()
-        } else if (dragOffset > 0f) {
-            val start = dragOffset
-            coroutineScope.launch {
-                Animatable(start).animateTo(0f, tween(200)) {
-                    dragOffset = value
-                }
-            }
+            effectiveSheetState.dismiss()
         }
     }
 
     val dismissDraggableModifier =
-        Modifier.draggable(
-            state =
-                rememberDraggableState { delta ->
-                    if (pagerState.currentPage == 0 && queueOffsetY.value >= screenHeightPx) {
-                        if (delta > 0f || dragOffset > 0f) {
-                            dragOffset = (dragOffset + delta).coerceAtLeast(0f)
-                        }
-                    }
-                },
-            orientation = Orientation.Vertical,
-            onDragStopped = { velocity ->
-                settleSwipeDismiss(velocity)
-            },
+        Modifier.sheetDragDownDismiss(
+            state = effectiveSheetState,
+            enabled = pagerState.currentPage == 0 && !queueSheetState.isOpen,
         )
-
-    val nestedScrollConnection =
-        remember(dismissThresholdPx, onDismiss, pagerState, queueOffsetY) {
-            object : NestedScrollConnection {
-                override fun onPreScroll(
-                    available: Offset,
-                    source: NestedScrollSource,
-                ): Offset {
-                    if (pagerState.currentPage != 0 || queueOffsetY.value < screenHeightPx) return Offset.Zero
-                    val delta = available.y
-                    if (dragOffset > 0f) {
-                        val old = dragOffset
-                        val newOffset = (old + delta).coerceAtLeast(0f)
-                        dragOffset = newOffset
-                        return Offset(0f, newOffset - old)
-                    }
-                    return Offset.Zero
-                }
-
-                override fun onPostScroll(
-                    consumed: Offset,
-                    available: Offset,
-                    source: NestedScrollSource,
-                ): Offset {
-                    if (pagerState.currentPage != 0 || queueOffsetY.value < screenHeightPx) return Offset.Zero
-                    if (source != NestedScrollSource.UserInput) return Offset.Zero
-                    val delta = available.y
-                    if (delta > 0f) {
-                        dragOffset = (dragOffset + delta).coerceAtLeast(0f)
-                        return available
-                    }
-                    return Offset.Zero
-                }
-
-                override suspend fun onPostFling(
-                    consumed: Velocity,
-                    available: Velocity,
-                ): Velocity {
-                    if (pagerState.currentPage == 0 && queueOffsetY.value >= screenHeightPx) {
-                        settleSwipeDismiss(available.y)
-                    }
-                    return available
-                }
-            }
-        }
 
     val surfaceModifier =
         Modifier
             .fillMaxSize()
-            .nestedScroll(nestedScrollConnection)
-            .graphicsLayer {
-                translationY = enterOffset.value + dragOffset
-                alpha = (1f - (dragOffset / screenHeightPx)).coerceIn(0f, 1f)
-            }
+            .sheetLayout(effectiveSheetState)
 
     Surface(
         modifier = surfaceModifier,
         color = MaterialTheme.colorScheme.background,
     ) {
-        Box(modifier = Modifier.fillMaxSize()) {
+        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+            val containerHeightPx = with(LocalDensity.current) { maxHeight.toPx() }
+            LaunchedEffect(containerHeightPx) {
+                if (containerHeightPx > 0f) {
+                    queueSheetState.updateScreenHeight(containerHeightPx)
+                    effectiveSheetState.updateScreenHeight(containerHeightPx)
+                }
+            }
+
             Column(
                 modifier =
                     Modifier
@@ -397,7 +332,7 @@ fun NowPlayingScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    IconButton(onClick = onDismiss) {
+                    IconButton(onClick = { effectiveSheetState.dismiss() }) {
                         Icon(
                             imageVector = Icons.Default.KeyboardArrowDown,
                             contentDescription = "Cerrar reproductor",
@@ -631,77 +566,6 @@ fun NowPlayingScreen(
                                             .fillMaxWidth()
                                             .padding(vertical = 4.dp),
                                 )
-
-                                Spacer(modifier = Modifier.weight(0.04f))
-
-                                // 5. Barra horizontal fina inferior - trigger con swipe up progresivo
-                                Column(
-                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                    verticalArrangement = Arrangement.Center,
-                                    modifier =
-                                        Modifier
-                                            .fillMaxWidth()
-                                            .height(48.dp)
-                                            .padding(bottom = 6.dp)
-                                            .clickable {
-                                                coroutineScope.launch {
-                                                    viewModel.refreshQueueSuggestions()
-                                                    queueOffsetY.animateTo(0f, tween(280))
-                                                }
-                                            }.pointerInput(screenHeightPx) {
-                                                detectVerticalDragGestures(
-                                                    onVerticalDrag = { change, dragAmount ->
-                                                        change.consume()
-                                                        coroutineScope.launch {
-                                                            val newY = (queueOffsetY.value + dragAmount).coerceIn(0f, screenHeightPx)
-                                                            queueOffsetY.snapTo(newY)
-                                                        }
-                                                    },
-                                                    onDragEnd = {
-                                                        val currentY = queueOffsetY.value
-                                                        coroutineScope.launch {
-                                                            if (currentY < screenHeightPx * 0.75f) {
-                                                                viewModel.refreshQueueSuggestions()
-                                                                queueOffsetY.animateTo(0f, tween(220))
-                                                            } else {
-                                                                queueOffsetY.animateTo(screenHeightPx, tween(220))
-                                                            }
-                                                        }
-                                                    },
-                                                    onDragCancel = {
-                                                        coroutineScope.launch {
-                                                            queueOffsetY.animateTo(screenHeightPx, tween(200))
-                                                        }
-                                                    },
-                                                )
-                                            },
-                                ) {
-                                    Box(
-                                        modifier =
-                                            Modifier
-                                                .width(42.dp)
-                                                .height(4.dp)
-                                                .clip(CircleShape)
-                                                .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)),
-                                    )
-                                    Spacer(modifier = Modifier.height(4.dp))
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.AutoMirrored.Filled.QueueMusic,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(14.dp),
-                                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                                        )
-                                        Text(
-                                            text = "Cola" + if (queueItems.isNotEmpty()) " (${queueItems.size})" else "",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
-                                        )
-                                    }
-                                }
                             }
                         }
 
@@ -724,56 +588,76 @@ fun NowPlayingScreen(
                         }
                     }
                 }
+
+                // 5. Barra horizontal fina inferior - trigger con swipe up progresivo (fuera del pager)
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .height(56.dp)
+                            .sheetDragUpTrigger(
+                                state = queueSheetState,
+                                onClick = {
+                                    viewModel.refreshQueueSuggestions()
+                                    queueSheetState.open()
+                                },
+                                onStartDrag = {
+                                    viewModel.refreshQueueSuggestions()
+                                },
+                            ),
+                ) {
+                    Box(
+                        modifier =
+                            Modifier
+                                .width(42.dp)
+                                .height(4.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)),
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.QueueMusic,
+                            contentDescription = null,
+                            modifier = Modifier.size(14.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                        )
+                        Text(
+                            text = "Cola" + if (queueItems.isNotEmpty()) " (${queueItems.size})" else "",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+                        )
+                    }
+                }
             }
 
             // Scrim overlay behind QueueScreen
-            if (isQueueOpen) {
-                val queueFraction = (1f - (queueOffsetY.value / screenHeightPx)).coerceIn(0f, 1f)
+            if (queueSheetState.isOpen) {
                 Box(
                     modifier =
                         Modifier
                             .fillMaxSize()
-                            .background(Color.Black.copy(alpha = 0.55f * queueFraction))
-                            .clickable(
-                                interactionSource = remember { MutableInteractionSource() },
-                                indication = null,
-                                onClick = {
-                                    coroutineScope.launch {
-                                        queueOffsetY.animateTo(screenHeightPx, tween(250))
-                                    }
-                                },
-                            ),
+                            .graphicsLayer {
+                                alpha = queueSheetState.progress * 0.55f
+                            }.background(Color.Black),
                 )
 
                 QueueScreen(
                     viewModel = viewModel,
                     onDismiss = {
-                        coroutineScope.launch {
-                            queueOffsetY.animateTo(screenHeightPx, tween(250))
-                        }
+                        queueSheetState.dismiss()
                     },
-                    onDragDownDelta = { delta ->
-                        coroutineScope.launch {
-                            queueOffsetY.snapTo((queueOffsetY.value + delta).coerceIn(0f, screenHeightPx))
-                        }
-                    },
-                    onDragDownSettle = {
-                        val currentOffset = queueOffsetY.value
-                        coroutineScope.launch {
-                            if (currentOffset > screenHeightPx * 0.25f) {
-                                queueOffsetY.animateTo(screenHeightPx, tween(250))
-                            } else {
-                                queueOffsetY.animateTo(0f, tween(200))
-                            }
-                        }
-                    },
+                    sheetState = queueSheetState,
                     backEnabled = true,
                     modifier =
                         Modifier
                             .fillMaxSize()
-                            .graphicsLayer {
-                                translationY = queueOffsetY.value
-                            },
+                            .sheetLayout(queueSheetState),
                 )
             }
         }

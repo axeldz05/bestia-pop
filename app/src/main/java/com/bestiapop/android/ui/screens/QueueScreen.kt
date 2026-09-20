@@ -3,7 +3,6 @@ package com.bestiapop.android.ui.screens
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -45,14 +44,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
-import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bestiapop.android.data.model.PlayableItem
@@ -60,15 +54,17 @@ import com.bestiapop.android.ui.MusicPlayerViewModel
 import com.bestiapop.android.ui.components.ArtworkThumbnail
 import com.bestiapop.android.ui.components.DismissibleQueueItemRow
 import com.bestiapop.android.ui.components.EmptyListHint
+import com.bestiapop.android.ui.components.ProgressiveSheetState
 import com.bestiapop.android.ui.components.focusedQueueIndex
 import com.bestiapop.android.ui.components.formatDuration
+import com.bestiapop.android.ui.components.sheetDragDownDismiss
+import com.bestiapop.android.ui.components.sheetNestedScrollConnection
 
 @Composable
 fun QueueScreen(
     viewModel: MusicPlayerViewModel,
     onDismiss: () -> Unit = {},
-    onDragDownDelta: ((Float) -> Unit)? = null,
-    onDragDownSettle: (() -> Unit)? = null,
+    sheetState: ProgressiveSheetState? = null,
     backEnabled: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
@@ -94,43 +90,21 @@ fun QueueScreen(
         viewModel.refreshQueueSuggestions()
     }
 
-    val nestedScrollConnection =
-        remember(onDragDownDelta, onDragDownSettle, listState) {
-            object : NestedScrollConnection {
-                override fun onPreScroll(
-                    available: Offset,
-                    source: NestedScrollSource,
-                ): Offset = Offset.Zero
-
-                override fun onPostScroll(
-                    consumed: Offset,
-                    available: Offset,
-                    source: NestedScrollSource,
-                ): Offset {
-                    if (source != NestedScrollSource.UserInput) return Offset.Zero
-                    val delta = available.y
-                    if (delta > 0f && listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset == 0) {
-                        onDragDownDelta?.invoke(delta)
-                        return available
-                    }
-                    return Offset.Zero
-                }
-
-                override suspend fun onPostFling(
-                    consumed: Velocity,
-                    available: Velocity,
-                ): Velocity {
-                    onDragDownSettle?.invoke()
-                    return available
-                }
-            }
+    val nestedScrollConn =
+        remember(sheetState, listState) {
+            sheetNestedScrollConnection(
+                state = sheetState,
+                canDismissAtTop = {
+                    listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset == 0
+                },
+            )
         }
 
     Surface(
         modifier =
             modifier
                 .fillMaxSize()
-                .nestedScroll(nestedScrollConnection),
+                .nestedScroll(nestedScrollConn),
         color = MaterialTheme.colorScheme.background,
         shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
     ) {
@@ -147,15 +121,7 @@ fun QueueScreen(
                     Modifier
                         .fillMaxWidth()
                         .height(24.dp)
-                        .pointerInput(Unit) {
-                            detectVerticalDragGestures(
-                                onVerticalDrag = { _, dragAmount ->
-                                    onDragDownDelta?.invoke(dragAmount)
-                                },
-                                onDragEnd = { onDragDownSettle?.invoke() },
-                                onDragCancel = { onDragDownSettle?.invoke() },
-                            )
-                        },
+                        .sheetDragDownDismiss(sheetState),
                 contentAlignment = Alignment.Center,
             ) {
                 Box(
@@ -173,6 +139,7 @@ fun QueueScreen(
                 modifier =
                     Modifier
                         .fillMaxWidth()
+                        .sheetDragDownDismiss(sheetState)
                         .padding(horizontal = 16.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,

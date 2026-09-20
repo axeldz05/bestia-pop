@@ -5,24 +5,24 @@ import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.DriveFolderUpload
 import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.LibraryMusic
-import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.DriveFolderUpload
-import com.bestiapop.android.ui.components.VolumeBoostHud
-import com.bestiapop.android.ui.screens.discover.DiscoverScreen
-import com.bestiapop.android.ui.state.LibraryBrowseFilter
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
@@ -40,7 +40,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
@@ -51,15 +50,24 @@ import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bestiapop.android.data.system.BackgroundExecutionProbe
 import com.bestiapop.android.ui.MusicPlayerViewModel
 import com.bestiapop.android.ui.components.BottomPlayerBar
+import com.bestiapop.android.ui.components.VolumeBoostHud
+import com.bestiapop.android.ui.components.rememberProgressiveSheetState
+import com.bestiapop.android.ui.components.sheetDragUpTrigger
+import com.bestiapop.android.ui.screens.discover.DiscoverScreen
+import com.bestiapop.android.ui.state.LibraryBrowseFilter
 import com.bestiapop.android.ui.update.AppUpdateDialogs
 import com.bestiapop.android.ui.update.AppUpdateUiState
 import com.bestiapop.android.ui.update.AppUpdateViewModel
@@ -72,10 +80,11 @@ fun MainScreen(
     viewModel: MusicPlayerViewModel,
     appUpdateViewModel: AppUpdateViewModel,
     onSelectFolderClick: () -> Unit,
-    onRequestUnknownSources: () -> Unit
+    onRequestUnknownSources: () -> Unit,
 ) {
     val selectedNavIndex by viewModel.selectedNavIndex.collectAsStateWithLifecycle()
     var showFullPlayer by remember { mutableStateOf(false) }
+
     /** Ignores only the same-gesture UP after mid-drag dismiss lands on the mini bar. */
     var suppressBarOpenUntilElapsedRealtime by remember { mutableLongStateOf(0L) }
     var lastExitBackAtMs by remember { mutableLongStateOf(0L) }
@@ -103,18 +112,21 @@ fun MainScreen(
     val volumeBoostHudVisible by viewModel.volumeBoostHudVisible.collectAsStateWithLifecycle()
     val backgroundExecutionStatus by viewModel.backgroundExecutionStatus.collectAsStateWithLifecycle()
     val oemScreenOffCleanupHintDismissed by viewModel.oemScreenOffCleanupHintDismissed.collectAsStateWithLifecycle()
-    val oemScreenOffCleanupIntent = remember(context) {
-        BackgroundExecutionProbe.oemScreenOffCleanupIntent(context)
-    }
-    val restrictionGuidance = remember {
-        BackgroundExecutionProbe.restrictionGuidance()
-    }
+    val oemScreenOffCleanupIntent =
+        remember(context) {
+            BackgroundExecutionProbe.oemScreenOffCleanupIntent(context)
+        }
+    val restrictionGuidance =
+        remember {
+            BackgroundExecutionProbe.restrictionGuidance()
+        }
 
-    val miniPlayerStatusLabel = when {
-        resolvingRemote -> "Resolviendo stream…"
-        radioLoading -> MusicPlayerViewModel.RADIO_LOADING_LABEL
-        else -> radioStatusLabel
-    }
+    val miniPlayerStatusLabel =
+        when {
+            resolvingRemote -> "Resolviendo stream…"
+            radioLoading -> MusicPlayerViewModel.RADIO_LOADING_LABEL
+            else -> radioStatusLabel
+        }
 
     fun clearPendingExit() {
         lastExitBackAtMs = 0L
@@ -129,7 +141,7 @@ fun MainScreen(
         identifyReview.isVisible,
         identifySetup != null,
         pendingAlbumMerge,
-        downloadConflict
+        downloadConflict,
     ) {
         clearPendingExit()
     }
@@ -169,10 +181,13 @@ fun MainScreen(
     var targetPlaylistForAddition by remember { mutableStateOf<com.bestiapop.android.data.model.Playlist?>(null) }
 
     val density = LocalDensity.current
+    val configuration = LocalConfiguration.current
+    val screenHeightPx = with(density) { configuration.screenHeightDp.dp.toPx() }
     var bottomChromeHeightPx by remember { mutableIntStateOf(0) }
-    val bottomChromePadding = with(density) {
-        if (bottomChromeHeightPx > 0) bottomChromeHeightPx.toDp() else 152.dp
-    }
+    val bottomChromePadding =
+        with(density) {
+            if (bottomChromeHeightPx > 0) bottomChromeHeightPx.toDp() else 152.dp
+        }
     val isOfflineMode by viewModel.isOfflineMode.collectAsStateWithLifecycle()
 
     LaunchedEffect(isOfflineMode, selectedNavIndex) {
@@ -181,21 +196,36 @@ fun MainScreen(
         }
     }
 
-    val navItems = remember(isOfflineMode) {
-        buildList {
-            add(NavItem(com.bestiapop.android.data.preferences.NAV_LIBRARY, "Biblioteca", Icons.Default.LibraryMusic))
-            if (!isOfflineMode) {
-                add(NavItem(com.bestiapop.android.data.preferences.NAV_DISCOVER, "Descubrir", Icons.Default.Explore))
+    val navItems =
+        remember(isOfflineMode) {
+            buildList {
+                add(NavItem(com.bestiapop.android.data.preferences.NAV_LIBRARY, "Biblioteca", Icons.Default.LibraryMusic))
+                if (!isOfflineMode) {
+                    add(NavItem(com.bestiapop.android.data.preferences.NAV_DISCOVER, "Descubrir", Icons.Default.Explore))
+                }
+                add(NavItem(com.bestiapop.android.data.preferences.NAV_DOWNLOADS, "Descargas", Icons.Default.Download))
+                add(NavItem(com.bestiapop.android.data.preferences.NAV_WIFI, "Añadir", Icons.Default.DriveFolderUpload))
+                add(NavItem(com.bestiapop.android.data.preferences.NAV_SETTINGS, "Ajustes", Icons.Default.Settings))
             }
-            add(NavItem(com.bestiapop.android.data.preferences.NAV_DOWNLOADS, "Descargas", Icons.Default.Download))
-            add(NavItem(com.bestiapop.android.data.preferences.NAV_WIFI, "Añadir", Icons.Default.DriveFolderUpload))
-            add(NavItem(com.bestiapop.android.data.preferences.NAV_SETTINGS, "Ajustes", Icons.Default.Settings))
         }
-    }
+
+    val nowPlayingSheetState =
+        rememberProgressiveSheetState(
+            screenHeightPx = screenHeightPx,
+            onDismiss = {
+                showFullPlayer = false
+                suppressBarOpenUntilElapsedRealtime = android.os.SystemClock.elapsedRealtime() + 50L
+            },
+            onOpen = {
+                showFullPlayer = true
+                clearPendingExit()
+            },
+        )
 
     fun openFullPlayer() {
         if (android.os.SystemClock.elapsedRealtime() < suppressBarOpenUntilElapsedRealtime) return
         showFullPlayer = true
+        nowPlayingSheetState.open()
         clearPendingExit()
     }
 
@@ -213,9 +243,7 @@ fun MainScreen(
     }
 
     fun dismissFullPlayer() {
-        showFullPlayer = false
-        // Brief enough to drop the same swipe's UP, not a deliberate follow-up tap.
-        suppressBarOpenUntilElapsedRealtime = android.os.SystemClock.elapsedRealtime() + 50L
+        nowPlayingSheetState.dismiss()
     }
 
     // Root-tab exit only: nested screens / Now Playing register their own BackHandlers above this.
@@ -237,48 +265,63 @@ fun MainScreen(
         // a empty strip between page content and BottomPlayerBar (worse with nested Scaffolds).
         Scaffold(
             containerColor = MaterialTheme.colorScheme.background,
-            contentWindowInsets = WindowInsets.statusBars
+            contentWindowInsets = WindowInsets.statusBars,
         ) { innerPadding ->
             Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding)
-                    .padding(bottom = bottomChromePadding)
+                modifier =
+                    Modifier
+                        .fillMaxSize()
+                        .padding(innerPadding)
+                        .padding(bottom = bottomChromePadding),
             ) {
                 navSaveableStateHolder.SaveableStateProvider(selectedNavIndex) {
                     when (selectedNavIndex) {
-                        0 -> LibraryScreen(
-                            viewModel = viewModel,
-                            targetPlaylistForAddition = targetPlaylistForAddition,
-                            onCompletePlaylistAddition = {
-                                val playlistId = targetPlaylistForAddition?.id
-                                targetPlaylistForAddition = null
-                                if (playlistId != null) viewModel.openLocalPlaylist(playlistId)
-                                viewModel.setLibraryBrowseFilter(LibraryBrowseFilter.PLAYLISTS)
-                                clearPendingExit()
-                            },
-                            onCancelPlaylistAddition = {
-                                val playlistId = targetPlaylistForAddition?.id
-                                targetPlaylistForAddition = null
-                                if (playlistId != null) viewModel.openLocalPlaylist(playlistId)
-                                viewModel.setLibraryBrowseFilter(LibraryBrowseFilter.PLAYLISTS)
-                                clearPendingExit()
-                            }
-                        )
-                        1 -> if (!isOfflineMode) DiscoverScreen(viewModel = viewModel)
-                        2 -> DownloadsScreen(viewModel = viewModel)
-                        3 -> WebServerScreen(
-                            viewModel = viewModel,
-                            onSelectFolderClick = onSelectFolderClick,
-                            onOpenDownloads = {
-                                viewModel.setSelectedNavIndex(2)
-                                clearPendingExit()
-                            }
-                        )
-                        4 -> SettingsScreen(
-                            viewModel = viewModel,
-                            appUpdateViewModel = appUpdateViewModel
-                        )
+                        0 -> {
+                            LibraryScreen(
+                                viewModel = viewModel,
+                                targetPlaylistForAddition = targetPlaylistForAddition,
+                                onCompletePlaylistAddition = {
+                                    val playlistId = targetPlaylistForAddition?.id
+                                    targetPlaylistForAddition = null
+                                    if (playlistId != null) viewModel.openLocalPlaylist(playlistId)
+                                    viewModel.setLibraryBrowseFilter(LibraryBrowseFilter.PLAYLISTS)
+                                    clearPendingExit()
+                                },
+                                onCancelPlaylistAddition = {
+                                    val playlistId = targetPlaylistForAddition?.id
+                                    targetPlaylistForAddition = null
+                                    if (playlistId != null) viewModel.openLocalPlaylist(playlistId)
+                                    viewModel.setLibraryBrowseFilter(LibraryBrowseFilter.PLAYLISTS)
+                                    clearPendingExit()
+                                },
+                            )
+                        }
+
+                        1 -> {
+                            if (!isOfflineMode) DiscoverScreen(viewModel = viewModel)
+                        }
+
+                        2 -> {
+                            DownloadsScreen(viewModel = viewModel)
+                        }
+
+                        3 -> {
+                            WebServerScreen(
+                                viewModel = viewModel,
+                                onSelectFolderClick = onSelectFolderClick,
+                                onOpenDownloads = {
+                                    viewModel.setSelectedNavIndex(2)
+                                    clearPendingExit()
+                                },
+                            )
+                        }
+
+                        4 -> {
+                            SettingsScreen(
+                                viewModel = viewModel,
+                                appUpdateViewModel = appUpdateViewModel,
+                            )
+                        }
                     }
                 }
             }
@@ -287,28 +330,30 @@ fun MainScreen(
         // Chrome sits above page content. Now Playing (when open) sits above chrome.
         // When dismissed, this Column is the topmost layer over the bar region — immediately tappable.
         Column(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .onGloballyPositioned { bottomChromeHeightPx = it.size.height }
+            modifier =
+                Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .onGloballyPositioned { bottomChromeHeightPx = it.size.height },
         ) {
             if (backgroundExecutionStatus.blocksBackgroundPlayback) {
                 Surface(
                     color = MaterialTheme.colorScheme.errorContainer,
                     contentColor = MaterialTheme.colorScheme.onErrorContainer,
                     shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
                 ) {
                     Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
                         Text(
                             text = restrictionGuidance.title,
-                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold)
+                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
                         )
                         Text(
                             text = restrictionGuidance.body,
-                            style = MaterialTheme.typography.bodySmall
+                            style = MaterialTheme.typography.bodySmall,
                         )
                         TextButton(onClick = viewModel::openPlaybackSettings) {
                             Text("Abrir ajustes")
@@ -317,6 +362,14 @@ fun MainScreen(
                 }
             }
             BottomPlayerBar(
+                modifier =
+                    Modifier.sheetDragUpTrigger(
+                        state = nowPlayingSheetState,
+                        onClick = { openFullPlayer() },
+                        onStartDrag = {
+                            showFullPlayer = true
+                        },
+                    ),
                 currentItem = currentItem,
                 isPlaying = isPlaying,
                 positionMsFlow = viewModel.playbackPositionMs,
@@ -324,12 +377,12 @@ fun MainScreen(
                 onPreviousClick = { viewModel.skipToPrevious() },
                 onNextClick = { viewModel.skipToNext() },
                 onBarClick = { openFullPlayer() },
-                statusLabel = miniPlayerStatusLabel
+                statusLabel = miniPlayerStatusLabel,
             )
 
             NavigationBar(
                 containerColor = MaterialTheme.colorScheme.surface,
-                contentColor = MaterialTheme.colorScheme.onSurface
+                contentColor = MaterialTheme.colorScheme.onSurface,
             ) {
                 navItems.forEach { item ->
                     NavigationBarItem(
@@ -345,10 +398,10 @@ fun MainScreen(
                                     badge = {
                                         Badge {
                                             Text(
-                                                if (downloadBadgeCount > 9) "9+" else downloadBadgeCount.toString()
+                                                if (downloadBadgeCount > 9) "9+" else downloadBadgeCount.toString(),
                                             )
                                         }
-                                    }
+                                    },
                                 ) {
                                     Icon(item.icon, contentDescription = item.label)
                                 }
@@ -357,11 +410,12 @@ fun MainScreen(
                             }
                         },
                         label = { Text(item.label) },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = MaterialTheme.colorScheme.primary,
-                            selectedTextColor = MaterialTheme.colorScheme.primary,
-                            indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
-                        )
+                        colors =
+                            NavigationBarItemDefaults.colors(
+                                selectedIconColor = MaterialTheme.colorScheme.primary,
+                                selectedTextColor = MaterialTheme.colorScheme.primary,
+                                indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                            ),
                     )
                 }
             }
@@ -369,21 +423,32 @@ fun MainScreen(
 
         SnackbarHost(
             hostState = snackbarHostState,
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(bottom = bottomChromePadding + 8.dp),
+            modifier =
+                Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = bottomChromePadding + 8.dp),
             snackbar = { data ->
                 Snackbar(
                     snackbarData = data,
-                    modifier = Modifier.testTag("root-exit-confirmation")
+                    modifier = Modifier.testTag("root-exit-confirmation"),
                 )
-            }
+            },
         )
 
-        if (showFullPlayer) {
+        if (showFullPlayer || nowPlayingSheetState.isOpen) {
+            Box(
+                modifier =
+                    Modifier
+                        .fillMaxSize()
+                        .graphicsLayer {
+                            alpha = nowPlayingSheetState.progress * 0.55f
+                        }.background(Color.Black),
+            )
+
             NowPlayingScreen(
                 viewModel = viewModel,
-                onDismiss = { dismissFullPlayer() }
+                onDismiss = { dismissFullPlayer() },
+                sheetState = nowPlayingSheetState,
             )
         }
 
@@ -400,7 +465,7 @@ fun MainScreen(
                 onOnlyGapsChanged = { viewModel.setIdentifySetupOnlyGaps(it) },
                 onFieldsChanged = { viewModel.setIdentifySetupFields(it) },
                 onConfirm = { viewModel.confirmIdentifySetup() },
-                onDismiss = { viewModel.dismissIdentifySetup() }
+                onDismiss = { viewModel.dismissIdentifySetup() },
             )
         }
 
@@ -409,7 +474,7 @@ fun MainScreen(
                 conflict = conflict,
                 onOverwrite = { viewModel.resolveDownloadConflictOverwrite() },
                 onSaveAs = { title -> viewModel.resolveDownloadConflictSaveAs(title) },
-                onCancel = { viewModel.cancelDownloadConflict() }
+                onCancel = { viewModel.cancelDownloadConflict() },
             )
         }
 
@@ -423,21 +488,22 @@ fun MainScreen(
                     val targetKey = pending.target.name
                     viewModel.confirmPendingAlbumMerge()
                     viewModel.renameRestoredLibraryAlbum(sourceKey, targetKey)
-                }
+                },
             )
         }
 
         AppUpdateDialogs(
             state = appUpdateState,
             onConfirmUpdate = { appUpdateViewModel.confirmUpdate() },
-            onDismiss = { appUpdateViewModel.dismiss() }
+            onDismiss = { appUpdateViewModel.dismiss() },
         )
 
-        val blockingOverlay = identifyReview.isOpen ||
-            identifySetup != null ||
-            downloadConflict != null ||
-            pendingAlbumMerge != null ||
-            appUpdateState !is AppUpdateUiState.Idle
+        val blockingOverlay =
+            identifyReview.isOpen ||
+                identifySetup != null ||
+                downloadConflict != null ||
+                pendingAlbumMerge != null ||
+                appUpdateState !is AppUpdateUiState.Idle
         if (
             oemScreenOffCleanupIntent != null &&
             backgroundExecutionStatus.oemScreenOffCleanupActive &&
@@ -450,7 +516,7 @@ fun MainScreen(
                 text = {
                     Text(
                         "Este teléfono puede cerrar apps al bloquear o apagar la pantalla y cortar " +
-                            "la reproducción. Desactivá esa opción en Batería para BestiaPop."
+                            "la reproducción. Desactivá esa opción en Batería para BestiaPop.",
                     )
                 },
                 confirmButton = {
@@ -458,7 +524,7 @@ fun MainScreen(
                         onClick = {
                             viewModel.dismissOemScreenOffCleanupHint()
                             BackgroundExecutionProbe.openOemScreenOffCleanupSettings(context)
-                        }
+                        },
                     ) {
                         Text("Abrir ajuste")
                     }
@@ -467,14 +533,14 @@ fun MainScreen(
                     TextButton(onClick = viewModel::dismissOemScreenOffCleanupHint) {
                         Text("Ahora no")
                     }
-                }
+                },
             )
         }
 
         VolumeBoostHud(
             volumeLevel = volumeLevel,
             visible = volumeBoostHudVisible,
-            onDismiss = viewModel::hideVolumeBoostHud
+            onDismiss = viewModel::hideVolumeBoostHud,
         )
     }
 }
@@ -482,5 +548,5 @@ fun MainScreen(
 private data class NavItem(
     val id: Int,
     val label: String,
-    val icon: androidx.compose.ui.graphics.vector.ImageVector
+    val icon: androidx.compose.ui.graphics.vector.ImageVector,
 )

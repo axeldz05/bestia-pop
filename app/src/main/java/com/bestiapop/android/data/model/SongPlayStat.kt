@@ -9,4 +9,5 @@ data class SongPlayStat(
     @PrimaryKey
     val songId: Long,
     val lastPlayedAt: Long,
+    val playCount: Int = 0,
 )

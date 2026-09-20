@@ -104,7 +104,7 @@ fun DiscoverHomeFeedView(
     lbActions: DiscoverListenBrainzActions = DiscoverListenBrainzActions(),
     showLbSections: Boolean = false,
     actions: DiscoverCatalogActions,
-    scrollState: ScrollState = rememberSaveable(saver = ScrollState.Saver) { ScrollState(0) },
+    scrollState: ScrollState? = rememberSaveable(saver = ScrollState.Saver) { ScrollState(0) },
     modifier: Modifier = Modifier,
 ) {
     DiscoverHomeFeedView(
@@ -148,17 +148,22 @@ fun DiscoverHomeFeedView(
     onDownloadTrack: (OnlineCatalogTrack) -> Unit,
     onSelectAlbum: (CatalogAlbum) -> Unit,
     onSaveAlbum: (CatalogAlbum) -> Unit,
-    scrollState: ScrollState = rememberSaveable(saver = ScrollState.Saver) { ScrollState(0) },
+    scrollState: ScrollState? = rememberSaveable(saver = ScrollState.Saver) { ScrollState(0) },
     modifier: Modifier = Modifier,
 ) {
     val isFeedEmpty = feed.recommendedTracks.isEmpty() && feed.recommendedAlbums.isEmpty() && feed.chartTracks.isEmpty()
 
+    val scrollModifier =
+        if (scrollState != null) {
+            Modifier.fillMaxSize().verticalScroll(scrollState).padding(bottom = 80.dp)
+        } else {
+            Modifier.fillMaxWidth()
+        }
+
     Column(
         modifier =
             modifier
-                .fillMaxSize()
-                .verticalScroll(scrollState)
-                .padding(bottom = 80.dp),
+                .then(scrollModifier),
         verticalArrangement = Arrangement.spacedBy(20.dp),
     ) {
         // Section: Fuente del catálogo (Ambos / Deezer / ListenBrainz)

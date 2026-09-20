@@ -7,6 +7,7 @@ import com.bestiapop.android.data.preferences.LibraryPreferencesRepository
 import com.bestiapop.android.data.preferences.LibraryStackLookups
 import com.bestiapop.android.data.preferences.LibraryUiPreferencesCodec
 import com.bestiapop.android.data.preferences.NAV_DOWNLOADS
+import com.bestiapop.android.data.preferences.NAV_HOME
 import com.bestiapop.android.data.preferences.NAV_LIBRARY
 import com.bestiapop.android.data.preferences.NAV_PLAYLISTS
 import com.bestiapop.android.data.preferences.NAV_SETTINGS
@@ -73,7 +74,7 @@ class UiNavigationCoordinator(
         val sanitized = LibraryUiPreferencesCodec.sanitizeNavIndex(index)
         navIndexBeforeTransient = null
         if (_selectedNavIndex.value == sanitized && _navigation.value.selectedNavIndex == sanitized) {
-            if (sanitized == NAV_PLAYLISTS) maybeRestoreDiscoverDetail()
+            if (sanitized == NAV_HOME) maybeRestoreDiscoverDetail()
             return
         }
         _selectedNavIndex.value = sanitized
@@ -82,7 +83,7 @@ class UiNavigationCoordinator(
             persistedNavIndex = sanitized
             persistNavSnapshot()
         }
-        if (sanitized == NAV_PLAYLISTS) maybeRestoreDiscoverDetail()
+        if (sanitized == NAV_HOME) maybeRestoreDiscoverDetail()
     }
 
     fun openDownloadsTabTransient() {

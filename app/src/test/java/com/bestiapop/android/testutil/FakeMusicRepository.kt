@@ -28,6 +28,7 @@ import kotlinx.coroutines.flow.flowOf
 open class FakeMusicRepository : IMusicRepository {
     override val allSongsFlow: Flow<List<Song>> = emptyFlow()
     override val songPlayStatsFlow: Flow<Map<Long, Long>> = flowOf(emptyMap())
+    override val songPlayCountsFlow: Flow<Map<Long, Int>> = flowOf(emptyMap())
     override val playlistsFlow: Flow<List<Playlist>> = emptyFlow()
     override val albumOverridesFlow: Flow<List<AlbumOverride>> = emptyFlow()
 

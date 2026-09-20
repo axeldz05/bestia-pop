@@ -196,16 +196,13 @@ fun Modifier.sheetDragUpTrigger(
                     val change = event.changes.firstOrNull { it.id == down.id } ?: break
 
                     if (!change.pressed) {
-                        change.consume()
                         if (isDragging) {
+                            change.consume()
                             val velocity = velocityTracker.calculateVelocity().y
                             state.settleFromOpenDrag(velocity)
-                        } else {
-                            if (onClick != null) {
-                                onClick()
-                            } else {
-                                state.open()
-                            }
+                        } else if (!change.isConsumed) {
+                            change.consume()
+                            onClick?.invoke()
                         }
                         break
                     }

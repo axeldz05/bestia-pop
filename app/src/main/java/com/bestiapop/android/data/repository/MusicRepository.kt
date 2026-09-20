@@ -207,6 +207,12 @@ class MusicRepository private constructor(
             .map { stats -> stats.associate { it.songId to it.lastPlayedAt } }
             .distinctUntilChanged()
 
+    override val songPlayCountsFlow: Flow<Map<Long, Int>> =
+        musicDao
+            .getPlayStatsFlow()
+            .map { stats -> stats.associate { it.songId to it.playCount } }
+            .distinctUntilChanged()
+
     override val albumOverridesFlow: Flow<List<AlbumOverride>> =
         musicDao.getAllAlbumOverridesFlow()
 

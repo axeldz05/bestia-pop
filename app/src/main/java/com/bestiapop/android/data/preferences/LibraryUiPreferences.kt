@@ -8,12 +8,15 @@ const val DEFAULT_SORT_DIRECTION_NAME = "ASC"
 const val DEFAULT_VIEW_MODE_NAME = "ALBUM_GROUPS"
 const val DEFAULT_BROWSE_FILTER_NAME = "SONGS"
 
+const val NAV_HOME = 0
 const val NAV_LIBRARY = 0
-const val NAV_DISCOVER = 1
-const val NAV_PLAYLISTS = 1
-const val NAV_DOWNLOADS = 2
-const val NAV_WIFI = 3
-const val NAV_SETTINGS = 4
+const val NAV_DOWNLOADS = 1
+const val NAV_WIFI = 2
+const val NAV_SETTINGS = 3
+
+/** Legacy nav indexes kept for DataStore / call-site compatibility. */
+const val NAV_DISCOVER = 0
+const val NAV_PLAYLISTS = 0
 
 /** Legacy tab ints (pre–browse-filter). Kept for DataStore migration only. */
 const val LIBRARY_TAB_SONGS = 0
@@ -179,7 +182,15 @@ object LibraryUiPreferencesCodec {
 
     fun sanitizeViewModeName(name: String?): String = name?.takeIf { it in VALID_VIEW_MODE_NAMES } ?: DEFAULT_VIEW_MODE_NAME
 
-    fun sanitizeNavIndex(index: Int?): Int = index?.takeIf { it in NAV_LIBRARY..NAV_SETTINGS } ?: NAV_LIBRARY
+    fun sanitizeNavIndex(index: Int?): Int =
+        when (index) {
+            NAV_HOME -> NAV_HOME
+            NAV_DOWNLOADS -> NAV_DOWNLOADS
+            NAV_WIFI -> NAV_WIFI
+            NAV_SETTINGS -> NAV_SETTINGS
+            4 -> NAV_SETTINGS
+            else -> NAV_HOME
+        }
 
     /** @deprecated Prefer [sanitizeBrowseFilterName]. */
     fun sanitizeLibraryTab(tab: Int?): Int = tab?.takeIf { it in LIBRARY_TAB_SONGS..LIBRARY_TAB_ARTISTS } ?: LIBRARY_TAB_SONGS

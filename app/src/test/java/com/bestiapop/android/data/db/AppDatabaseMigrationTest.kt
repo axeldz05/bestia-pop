@@ -285,6 +285,39 @@ class AppDatabaseMigrationTest {
         }
 
     @Test
+    fun migration16To17_addsPlayCountColumnToSongPlayStats() =
+        runTest {
+            createLegacyDatabase(version = 10, schema = ::createVersion10Schema) { db ->
+                db.execSQL(
+                    legacySongInsert(
+                        id = 42,
+                        uri = "/music/stat_test.mp3",
+                        title = "Stat Song",
+                    ),
+                )
+                db.execSQL(
+                    "INSERT INTO song_play_stats (songId, lastPlayedAt) VALUES (42, 123456)",
+                )
+            }
+
+            val database = AppDatabase.getDatabase(context)
+            val musicDao = database.musicDao()
+
+            val initialStat = musicDao.getSongPlayStat(42L)
+            assertEquals(123456L, initialStat?.lastPlayedAt)
+            assertEquals(0, initialStat?.playCount)
+
+            musicDao.updateLastPlayedAt(42L, 999999L)
+            val updatedStat = musicDao.getSongPlayStat(42L)
+            assertEquals(999999L, updatedStat?.lastPlayedAt)
+            assertEquals(1, updatedStat?.playCount)
+
+            musicDao.updateLastPlayedAt(42L, 1000000L)
+            val secondUpdate = musicDao.getSongPlayStat(42L)
+            assertEquals(2, secondUpdate?.playCount)
+        }
+
+    @Test
     fun migration1To13_runsWholeChainAndKeepsLegacyLibraryDataUsable() =
         runTest {
             createLegacyDatabase(version = 1, schema = ::createVersion1Schema) { db ->

@@ -26,6 +26,7 @@ typealias LibraryScanProgress = (done: Int, total: Int, fileName: String) -> Uni
 interface IMusicRepository {
     val allSongsFlow: Flow<List<Song>>
     val songPlayStatsFlow: Flow<Map<Long, Long>>
+    val songPlayCountsFlow: Flow<Map<Long, Int>>
     val albumOverridesFlow: Flow<List<AlbumOverride>>
     val playlistsFlow: Flow<List<Playlist>>
 

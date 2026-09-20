@@ -220,6 +220,29 @@ class GetLibrarySongsUseCase {
             .sortedByDescending { it.lastPlayedAt }
     }
 
+    fun frequentSongs(
+        songs: List<Song>,
+        query: String = "",
+        playCountsById: Map<Long, Int> = emptyMap(),
+        lastPlayedAtById: Map<Long, Long> = emptyMap(),
+        minPlays: Int = 1,
+        limit: Int = 20,
+    ): List<Song> {
+        val stamped = ArrayList<Song>()
+        for (song in songs) {
+            val count = playCountsById[song.id] ?: 0
+            if (count < minPlays) continue
+            val ts = lastPlayedAtById[song.id] ?: song.lastPlayedAt
+            stamped += if (song.lastPlayedAt == ts) song else song.copy(lastPlayedAt = ts)
+        }
+        val filtered = if (query.isNotBlank()) filterSongs(stamped, query, haystackById = null) else stamped
+        return filtered
+            .sortedWith(
+                compareByDescending<Song> { playCountsById[it.id] ?: 0 }
+                    .thenByDescending { it.lastPlayedAt },
+            ).take(limit)
+    }
+
     fun songsInOrder(
         pool: List<Song>,
         ids: List<Long>,

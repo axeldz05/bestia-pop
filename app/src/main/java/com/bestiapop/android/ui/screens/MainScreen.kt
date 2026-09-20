@@ -21,6 +21,7 @@ import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.DriveFolderUpload
 import androidx.compose.material.icons.filled.Explore
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
@@ -60,6 +61,10 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.bestiapop.android.data.preferences.NAV_DOWNLOADS
+import com.bestiapop.android.data.preferences.NAV_HOME
+import com.bestiapop.android.data.preferences.NAV_SETTINGS
+import com.bestiapop.android.data.preferences.NAV_WIFI
 import com.bestiapop.android.data.system.BackgroundExecutionProbe
 import com.bestiapop.android.ui.MusicPlayerViewModel
 import com.bestiapop.android.ui.components.BottomPlayerBar
@@ -67,6 +72,7 @@ import com.bestiapop.android.ui.components.VolumeBoostHud
 import com.bestiapop.android.ui.components.rememberProgressiveSheetState
 import com.bestiapop.android.ui.components.sheetDragUpTrigger
 import com.bestiapop.android.ui.screens.discover.DiscoverScreen
+import com.bestiapop.android.ui.screens.home.HomeScreen
 import com.bestiapop.android.ui.state.LibraryBrowseFilter
 import com.bestiapop.android.ui.update.AppUpdateDialogs
 import com.bestiapop.android.ui.update.AppUpdateUiState
@@ -178,8 +184,6 @@ fun MainScreen(
         appUpdateViewModel.launchInstaller(apk)
     }
 
-    var targetPlaylistForAddition by remember { mutableStateOf<com.bestiapop.android.data.model.Playlist?>(null) }
-
     val density = LocalDensity.current
     val configuration = LocalConfiguration.current
     val screenHeightPx = with(density) { configuration.screenHeightDp.dp.toPx() }
@@ -190,23 +194,14 @@ fun MainScreen(
         }
     val isOfflineMode by viewModel.isOfflineMode.collectAsStateWithLifecycle()
 
-    LaunchedEffect(isOfflineMode, selectedNavIndex) {
-        if (isOfflineMode && selectedNavIndex == com.bestiapop.android.data.preferences.NAV_DISCOVER) {
-            viewModel.setSelectedNavIndex(com.bestiapop.android.data.preferences.NAV_LIBRARY)
-        }
-    }
-
     val navItems =
-        remember(isOfflineMode) {
-            buildList {
-                add(NavItem(com.bestiapop.android.data.preferences.NAV_LIBRARY, "Biblioteca", Icons.Default.LibraryMusic))
-                if (!isOfflineMode) {
-                    add(NavItem(com.bestiapop.android.data.preferences.NAV_DISCOVER, "Descubrir", Icons.Default.Explore))
-                }
-                add(NavItem(com.bestiapop.android.data.preferences.NAV_DOWNLOADS, "Descargas", Icons.Default.Download))
-                add(NavItem(com.bestiapop.android.data.preferences.NAV_WIFI, "Añadir", Icons.Default.DriveFolderUpload))
-                add(NavItem(com.bestiapop.android.data.preferences.NAV_SETTINGS, "Ajustes", Icons.Default.Settings))
-            }
+        remember {
+            listOf(
+                NavItem(NAV_HOME, "Inicio", Icons.Default.Home),
+                NavItem(NAV_DOWNLOADS, "Descargas", Icons.Default.Download),
+                NavItem(NAV_WIFI, "Añadir", Icons.Default.DriveFolderUpload),
+                NavItem(NAV_SETTINGS, "Ajustes", Icons.Default.Settings),
+            )
         }
 
     val nowPlayingSheetState =
@@ -276,47 +271,26 @@ fun MainScreen(
             ) {
                 navSaveableStateHolder.SaveableStateProvider(selectedNavIndex) {
                     when (selectedNavIndex) {
-                        0 -> {
-                            LibraryScreen(
-                                viewModel = viewModel,
-                                targetPlaylistForAddition = targetPlaylistForAddition,
-                                onCompletePlaylistAddition = {
-                                    val playlistId = targetPlaylistForAddition?.id
-                                    targetPlaylistForAddition = null
-                                    if (playlistId != null) viewModel.openLocalPlaylist(playlistId)
-                                    viewModel.setLibraryBrowseFilter(LibraryBrowseFilter.PLAYLISTS)
-                                    clearPendingExit()
-                                },
-                                onCancelPlaylistAddition = {
-                                    val playlistId = targetPlaylistForAddition?.id
-                                    targetPlaylistForAddition = null
-                                    if (playlistId != null) viewModel.openLocalPlaylist(playlistId)
-                                    viewModel.setLibraryBrowseFilter(LibraryBrowseFilter.PLAYLISTS)
-                                    clearPendingExit()
-                                },
-                            )
+                        NAV_HOME -> {
+                            HomeScreen(viewModel = viewModel)
                         }
 
-                        1 -> {
-                            if (!isOfflineMode) DiscoverScreen(viewModel = viewModel)
-                        }
-
-                        2 -> {
+                        NAV_DOWNLOADS -> {
                             DownloadsScreen(viewModel = viewModel)
                         }
 
-                        3 -> {
+                        NAV_WIFI -> {
                             WebServerScreen(
                                 viewModel = viewModel,
                                 onSelectFolderClick = onSelectFolderClick,
                                 onOpenDownloads = {
-                                    viewModel.setSelectedNavIndex(2)
+                                    viewModel.setSelectedNavIndex(NAV_DOWNLOADS)
                                     clearPendingExit()
                                 },
                             )
                         }
 
-                        4 -> {
+                        NAV_SETTINGS -> {
                             SettingsScreen(
                                 viewModel = viewModel,
                                 appUpdateViewModel = appUpdateViewModel,
@@ -365,7 +339,7 @@ fun MainScreen(
                 modifier =
                     Modifier.sheetDragUpTrigger(
                         state = nowPlayingSheetState,
-                        onClick = { openFullPlayer() },
+                        onClick = null,
                         onStartDrag = {
                             showFullPlayer = true
                         },

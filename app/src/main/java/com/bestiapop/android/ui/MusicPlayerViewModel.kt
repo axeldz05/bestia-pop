@@ -544,6 +544,21 @@ class MusicPlayerViewModel(
             prefsReady = libraryPrefsReady,
         )
 
+    val frequentSongs: StateFlow<List<Song>> =
+        combine(
+            libraryProjection.songs,
+            repository.songPlayCountsFlow,
+            repository.songPlayStatsFlow,
+        ) { songs, counts, stats ->
+            getLibrarySongsUseCase.frequentSongs(
+                songs = songs,
+                playCountsById = counts,
+                lastPlayedAtById = stats,
+                minPlays = 1,
+                limit = 20,
+            )
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000L), emptyList())
+
     fun buildLibraryListModel(
         songs: List<Song>,
         viewMode: LibraryViewMode,

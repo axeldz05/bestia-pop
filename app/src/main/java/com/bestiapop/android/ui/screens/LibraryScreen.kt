@@ -35,6 +35,7 @@ import com.bestiapop.android.ui.components.PlaylistAdditionActionBar
 import com.bestiapop.android.ui.components.SearchHistorySheet
 import com.bestiapop.android.ui.components.SearchRecentChipsRow
 import com.bestiapop.android.ui.components.SimilarPlaylistPreviewDialog
+import com.bestiapop.android.ui.components.SubmenuSwipeBox
 import com.bestiapop.android.ui.components.rememberSongQueueActions
 import com.bestiapop.android.ui.screens.library.AggregateBrowseActions
 import com.bestiapop.android.ui.screens.library.AlbumBrowseActions
@@ -65,6 +66,7 @@ fun LibraryScreen(
     targetPlaylistForAddition: Playlist? = null,
     onCompletePlaylistAddition: () -> Unit = {},
     onCancelPlaylistAddition: () -> Unit = {},
+    onBackToHome: (() -> Unit)? = null,
 ) {
     val identifyReview by viewModel.identifyReview.collectAsStateWithLifecycle()
     val catalogLoaded by viewModel.libraryProjection.catalogLoaded.collectAsStateWithLifecycle()
@@ -295,7 +297,8 @@ fun LibraryScreen(
             isPlaylistAdditionMode ||
             hasNestedDetail ||
             searchQuery.isNotEmpty() ||
-            searchExpanded
+            searchExpanded ||
+            onBackToHome != null
 
     BackHandler(enabled = hasNestedBack) {
         when {
@@ -312,6 +315,8 @@ fun LibraryScreen(
             searchQuery.isNotEmpty() -> collapseSearch()
 
             searchExpanded -> collapseSearch()
+
+            onBackToHome != null -> onBackToHome()
         }
     }
 
@@ -476,235 +481,253 @@ fun LibraryScreen(
         )
     }
 
+    val canSwipeBackToHome =
+        onBackToHome != null &&
+            !hasNestedDetail &&
+            !hasPlaylistDetail &&
+            !isMultiSelectMode &&
+            !isPlaylistAdditionMode &&
+            !searchExpanded &&
+            searchQuery.isEmpty()
+
     CompositionLocalProvider(LocalSubmenuGestureSettings provides gestureSettings) {
-        Column(modifier = Modifier.fillMaxSize()) {
-            val nestedTitle =
-                when {
-                    selectedAlbumName != null -> {
-                        NestedAlbumDisplayName(
-                            viewModel = viewModel,
-                            albumKey = selectedAlbumName,
-                        )
-                    }
-
-                    else -> {
-                        selectedArtistName ?: selectedGenreName
-                    }
-                }
-
-            val onPlayAll: () -> Unit = {
-                if (hasNestedDetail) {
-                    val nestedSongs =
-                        libraryNestedSongs(
-                            viewModel = viewModel,
-                            songs = viewModel.libraryProjection.songs.value,
-                            selectedAlbumName = selectedAlbumName,
-                            selectedArtistName = selectedArtistName,
-                            selectedGenreName = selectedGenreName,
-                        )
-                    viewModel.playCollection(nestedSongs, startShuffled = false)
-                } else {
-                    viewModel.playCurrentLibraryBrowse(shuffle = false)
-                }
-            }
-
-            val onShuffleAll: () -> Unit = {
-                if (hasNestedDetail) {
-                    val nestedSongs =
-                        libraryNestedSongs(
-                            viewModel = viewModel,
-                            songs = viewModel.libraryProjection.songs.value,
-                            selectedAlbumName = selectedAlbumName,
-                            selectedArtistName = selectedArtistName,
-                            selectedGenreName = selectedGenreName,
-                        )
-                    viewModel.playCollection(nestedSongs, startShuffled = true)
-                } else {
-                    viewModel.playCurrentLibraryBrowse(shuffle = true)
-                }
-            }
-
-            val showLibraryTopBar = !hasNestedDetail || isMultiSelectMode || isPlaylistAdditionMode
-            if (showLibraryTopBar) {
-                LibraryTopBar(
-                    hasNestedDetail = hasNestedDetail,
-                    onBackClick = {
-                        if (hasPlaylistDetail) {
-                            viewModel.closePlaylistDetail()
-                        } else {
-                            viewModel.popLibraryNested()
-                        }
-                    },
-                    nestedTitle = nestedTitle,
-                    isPlaylistAdditionMode = isPlaylistAdditionMode,
-                    filterButtonLabel = filterButtonLabel,
-                    orderSummary = orderSummary,
-                    onOpenSortSheet = { showBrowseSortSheet = true },
-                    searchExpanded = searchExpanded,
-                    searchQuery = searchQuery,
-                    onSearchQueryChange = { viewModel.setSearchQuery(it) },
-                    onSearchExpand = { searchExpanded = true },
-                    onSearchCollapse = collapseSearch,
-                    recentSearches = recentSearches,
-                    onOpenSearchHistory = { showSearchHistorySheet = true },
-                    searchFocusRequester = searchFocusRequester,
-                    onSearchSubmit = { query ->
-                        if (query.isNotBlank()) {
-                            viewModel.addRecentSearch(query)
-                        }
-                    },
-                    selectedAlbumName = selectedAlbumName,
-                    onEditAlbum = { selectedAlbumName?.let { onEditAlbumByKey(it) } },
-                    isMultiSelectMode = isMultiSelectMode,
-                    onPlayAll = onPlayAll,
-                    onShuffleAll = onShuffleAll,
-                )
-
-                if (searchExpanded && searchQuery.isBlank() && recentSearches.isNotEmpty()) {
-                    SearchRecentChipsRow(
-                        recentSearches = recentSearches,
-                        onSelectQuery = { query ->
-                            viewModel.setSearchQuery(query)
-                            viewModel.addRecentSearch(query)
-                        },
-                        onRemoveQuery = { viewModel.removeRecentSearch(it) },
-                        onClearAll = { viewModel.clearRecentSearches() },
-                        onOpenFullHistory = { showSearchHistorySheet = true },
-                    )
-                }
-            }
-
-            // Hidden during multi-select: switching to Álbumes/Artistas/Géneros made "Seleccionar todo"
-            // resolve against songsForBrowseProjection, i.e. the whole library, over rows the user cannot
-            // see or untick.
-            if (!hasNestedDetail && !isPlaylistAdditionMode && !isMultiSelectMode) {
-                LibraryFilterChipRow(
-                    selected = browseFilter,
-                    onSelect = { viewModel.setLibraryBrowseFilter(it) },
-                    filters = libraryBlobsSettings.enabledFilters,
-                )
-            }
-
-            libraryJobProgress?.let { job ->
-                LibraryProgressBanner(
-                    progress = job,
-                    onCancel =
-                        if (job.kind == LibraryJobKind.IDENTIFY) {
-                            { showAbortIdentifyDialog = true }
-                        } else {
-                            null
-                        },
-                )
-            }
-            if (identifyReview.pendingCount > 0 && !identifyReview.isVisible) {
-                IdentifyPendingBanner(
-                    pendingCount = identifyReview.pendingCount,
-                    onReview = { viewModel.showIdentifyReview() },
-                )
-            }
-
-            if (!isMultiSelectMode && !isPlaylistAdditionMode && !hasNestedDetail &&
-                activeFilter == LibraryBrowseFilter.SONGS
-            ) {
-                LibraryViewModeToggleRow(
-                    showAlbumHeaders = showAlbumHeaders,
-                    hasAlbums = libraryAlbumNames.isNotEmpty(),
-                    allAlbumsCollapsed = allAlbumsCollapsed,
-                    onToggleCollapseAllAlbums = toggleCollapseAllAlbums,
-                    onToggleLibraryViewMode = { viewModel.toggleLibraryViewMode() },
-                )
-            }
-
-            if (isMultiSelectMode && !isPlaylistAdditionMode) {
-                // Resolved against the *unfiltered* library, so searching narrows what you can tick
-                // without losing what you already ticked, and the actions still cover all of it.
-                val selectedSongs = viewModel.songsForIds(selectedSongIds)
-                val multiSelectActions =
-                    remember(viewModel, selectedSongs, songDialogs) {
-                        MultiSelectActions(
-                            onPlaySelected = {
-                                viewModel.playCollection(selectedSongs)
-                                clearSelection()
-                            },
-                            onEnqueueSelected = {
-                                viewModel.enqueueCollection(selectedSongs)
-                                clearSelection()
-                            },
-                            onAddToPlaylist = {
-                                if (selectedSongs.isNotEmpty()) {
-                                    songDialogs.onAddManyToPlaylist(selectedSongs)
-                                }
-                            },
-                            onIdentifySelected = {
-                                viewModel.openIdentifySetup(
-                                    selectedSongs,
-                                    contextTitle = "${selectedSongs.size} canciones seleccionadas",
-                                )
-                                clearSelection()
-                            },
-                            onSimilarSelected = {
-                                viewModel.previewSimilarFromSelection(selectedSongs)
-                                clearSelection()
-                            },
-                            onDeleteSelected = {
-                                songDialogs.onDeleteMany(selectedSongs)
-                            },
-                            onSelectAll = selectAllSongs,
-                            onClearSelection = clearSelection,
-                        )
-                    }
-                MultiSelectActionBar(
-                    selectedCount = selectedSongs.size,
-                    actions = multiSelectActions,
-                )
-            }
-
-            if (isPlaylistAdditionMode) {
-                PlaylistAdditionActionBar(
-                    playlistName = effectiveTargetPlaylist?.name ?: "Playlist",
-                    selectedCount = selectedSongIds.size,
-                    onConfirmAddition = {
-                        val targetId = effectiveTargetPlaylist?.id ?: 0L
-                        if (targetId != 0L && selectedSongIds.isNotEmpty()) {
-                            viewModel.addSongsToPlaylist(
-                                targetId,
-                                selectedSongIds.toList(),
+        SubmenuSwipeBox(
+            settings = gestureSettings,
+            onSwipeRight = onBackToHome,
+            canSwipeBack = canSwipeBackToHome,
+            modifier = Modifier.fillMaxSize(),
+        ) {
+            Column(modifier = Modifier.fillMaxSize()) {
+                val nestedTitle =
+                    when {
+                        selectedAlbumName != null -> {
+                            NestedAlbumDisplayName(
+                                viewModel = viewModel,
+                                albumKey = selectedAlbumName,
                             )
                         }
-                        completePlaylistAddition()
-                    },
-                    onCancelAddition = cancelPlaylistAddition,
-                    onSelectAll = selectAllSongs,
-                )
-            }
 
-            Box(modifier = Modifier.weight(1f)) {
-                LibraryBrowsePane(
-                    selectedAlbumName = selectedAlbumName,
-                    selectedArtistName = selectedArtistName,
-                    selectedGenreName = selectedGenreName,
-                    activeFilter = activeFilter,
-                    isPlaylistAdditionMode = isPlaylistAdditionMode,
-                    isMultiSelectMode = isMultiSelectMode,
-                    songList = songList,
-                    catalogLoaded = catalogLoaded,
-                    viewModel = viewModel,
-                    currentSongIdFlow = currentSongId,
-                    selectedSongIds = selectedSongIds,
-                    collapsedAlbumNames = collapsedAlbumNames,
-                    sortOption = sortOption,
-                    sortDirection = sortDirection,
-                    actions = songListActions,
-                    onToggleSelect = toggleSelectSong,
-                    searchQuery = searchQuery,
-                    albumBrowseActions = albumBrowseActions,
-                    artistBrowseActions = artistBrowseActions,
-                    genreBrowseActions = genreBrowseActions,
-                    fastScrollSettings = fastScrollSettings,
-                    listStates = browseListStates,
-                    onAddSongsToPlaylist = { localTargetPlaylistForAddition = it },
-                    onAddManyToPlaylist = { songDialogs.onAddManyToPlaylist(it) },
-                )
+                        else -> {
+                            selectedArtistName ?: selectedGenreName
+                        }
+                    }
+
+                val onPlayAll: () -> Unit = {
+                    if (hasNestedDetail) {
+                        val nestedSongs =
+                            libraryNestedSongs(
+                                viewModel = viewModel,
+                                songs = viewModel.libraryProjection.songs.value,
+                                selectedAlbumName = selectedAlbumName,
+                                selectedArtistName = selectedArtistName,
+                                selectedGenreName = selectedGenreName,
+                            )
+                        viewModel.playCollection(nestedSongs, startShuffled = false)
+                    } else {
+                        viewModel.playCurrentLibraryBrowse(shuffle = false)
+                    }
+                }
+
+                val onShuffleAll: () -> Unit = {
+                    if (hasNestedDetail) {
+                        val nestedSongs =
+                            libraryNestedSongs(
+                                viewModel = viewModel,
+                                songs = viewModel.libraryProjection.songs.value,
+                                selectedAlbumName = selectedAlbumName,
+                                selectedArtistName = selectedArtistName,
+                                selectedGenreName = selectedGenreName,
+                            )
+                        viewModel.playCollection(nestedSongs, startShuffled = true)
+                    } else {
+                        viewModel.playCurrentLibraryBrowse(shuffle = true)
+                    }
+                }
+
+                val showLibraryTopBar = !hasNestedDetail || isMultiSelectMode || isPlaylistAdditionMode
+                if (showLibraryTopBar) {
+                    LibraryTopBar(
+                        hasNestedDetail = hasNestedDetail || onBackToHome != null,
+                        onBackClick = {
+                            if (hasPlaylistDetail) {
+                                viewModel.closePlaylistDetail()
+                            } else if (hasNestedDetail) {
+                                viewModel.popLibraryNested()
+                            } else {
+                                onBackToHome?.invoke()
+                            }
+                        },
+                        nestedTitle = nestedTitle,
+                        isPlaylistAdditionMode = isPlaylistAdditionMode,
+                        filterButtonLabel = filterButtonLabel,
+                        orderSummary = orderSummary,
+                        onOpenSortSheet = { showBrowseSortSheet = true },
+                        searchExpanded = searchExpanded,
+                        searchQuery = searchQuery,
+                        onSearchQueryChange = { viewModel.setSearchQuery(it) },
+                        onSearchExpand = { searchExpanded = true },
+                        onSearchCollapse = collapseSearch,
+                        recentSearches = recentSearches,
+                        onOpenSearchHistory = { showSearchHistorySheet = true },
+                        searchFocusRequester = searchFocusRequester,
+                        onSearchSubmit = { query ->
+                            if (query.isNotBlank()) {
+                                viewModel.addRecentSearch(query)
+                            }
+                        },
+                        selectedAlbumName = selectedAlbumName,
+                        onEditAlbum = { selectedAlbumName?.let { onEditAlbumByKey(it) } },
+                        isMultiSelectMode = isMultiSelectMode,
+                        onPlayAll = onPlayAll,
+                        onShuffleAll = onShuffleAll,
+                    )
+
+                    if (searchExpanded && searchQuery.isBlank() && recentSearches.isNotEmpty()) {
+                        SearchRecentChipsRow(
+                            recentSearches = recentSearches,
+                            onSelectQuery = { query ->
+                                viewModel.setSearchQuery(query)
+                                viewModel.addRecentSearch(query)
+                            },
+                            onRemoveQuery = { viewModel.removeRecentSearch(it) },
+                            onClearAll = { viewModel.clearRecentSearches() },
+                            onOpenFullHistory = { showSearchHistorySheet = true },
+                        )
+                    }
+                }
+
+                // Hidden during multi-select: switching to Álbumes/Artistas/Géneros made "Seleccionar todo"
+                // resolve against songsForBrowseProjection, i.e. the whole library, over rows the user cannot
+                // see or untick.
+                if (!hasNestedDetail && !isPlaylistAdditionMode && !isMultiSelectMode) {
+                    LibraryFilterChipRow(
+                        selected = browseFilter,
+                        onSelect = { viewModel.setLibraryBrowseFilter(it) },
+                        filters = libraryBlobsSettings.enabledFilters,
+                    )
+                }
+
+                libraryJobProgress?.let { job ->
+                    LibraryProgressBanner(
+                        progress = job,
+                        onCancel =
+                            if (job.kind == LibraryJobKind.IDENTIFY) {
+                                { showAbortIdentifyDialog = true }
+                            } else {
+                                null
+                            },
+                    )
+                }
+                if (identifyReview.pendingCount > 0 && !identifyReview.isVisible) {
+                    IdentifyPendingBanner(
+                        pendingCount = identifyReview.pendingCount,
+                        onReview = { viewModel.showIdentifyReview() },
+                    )
+                }
+
+                if (!isMultiSelectMode && !isPlaylistAdditionMode && !hasNestedDetail &&
+                    activeFilter == LibraryBrowseFilter.SONGS
+                ) {
+                    LibraryViewModeToggleRow(
+                        showAlbumHeaders = showAlbumHeaders,
+                        hasAlbums = libraryAlbumNames.isNotEmpty(),
+                        allAlbumsCollapsed = allAlbumsCollapsed,
+                        onToggleCollapseAllAlbums = toggleCollapseAllAlbums,
+                        onToggleLibraryViewMode = { viewModel.toggleLibraryViewMode() },
+                    )
+                }
+
+                if (isMultiSelectMode && !isPlaylistAdditionMode) {
+                    // Resolved against the *unfiltered* library, so searching narrows what you can tick
+                    // without losing what you already ticked, and the actions still cover all of it.
+                    val selectedSongs = viewModel.songsForIds(selectedSongIds)
+                    val multiSelectActions =
+                        remember(viewModel, selectedSongs, songDialogs) {
+                            MultiSelectActions(
+                                onPlaySelected = {
+                                    viewModel.playCollection(selectedSongs)
+                                    clearSelection()
+                                },
+                                onEnqueueSelected = {
+                                    viewModel.enqueueCollection(selectedSongs)
+                                    clearSelection()
+                                },
+                                onAddToPlaylist = {
+                                    if (selectedSongs.isNotEmpty()) {
+                                        songDialogs.onAddManyToPlaylist(selectedSongs)
+                                    }
+                                },
+                                onIdentifySelected = {
+                                    viewModel.openIdentifySetup(
+                                        selectedSongs,
+                                        contextTitle = "${selectedSongs.size} canciones seleccionadas",
+                                    )
+                                    clearSelection()
+                                },
+                                onSimilarSelected = {
+                                    viewModel.previewSimilarFromSelection(selectedSongs)
+                                    clearSelection()
+                                },
+                                onDeleteSelected = {
+                                    songDialogs.onDeleteMany(selectedSongs)
+                                },
+                                onSelectAll = selectAllSongs,
+                                onClearSelection = clearSelection,
+                            )
+                        }
+                    MultiSelectActionBar(
+                        selectedCount = selectedSongs.size,
+                        actions = multiSelectActions,
+                    )
+                }
+
+                if (isPlaylistAdditionMode) {
+                    PlaylistAdditionActionBar(
+                        playlistName = effectiveTargetPlaylist?.name ?: "Playlist",
+                        selectedCount = selectedSongIds.size,
+                        onConfirmAddition = {
+                            val targetId = effectiveTargetPlaylist?.id ?: 0L
+                            if (targetId != 0L && selectedSongIds.isNotEmpty()) {
+                                viewModel.addSongsToPlaylist(
+                                    targetId,
+                                    selectedSongIds.toList(),
+                                )
+                            }
+                            completePlaylistAddition()
+                        },
+                        onCancelAddition = cancelPlaylistAddition,
+                        onSelectAll = selectAllSongs,
+                    )
+                }
+
+                Box(modifier = Modifier.weight(1f)) {
+                    LibraryBrowsePane(
+                        selectedAlbumName = selectedAlbumName,
+                        selectedArtistName = selectedArtistName,
+                        selectedGenreName = selectedGenreName,
+                        activeFilter = activeFilter,
+                        isPlaylistAdditionMode = isPlaylistAdditionMode,
+                        isMultiSelectMode = isMultiSelectMode,
+                        songList = songList,
+                        catalogLoaded = catalogLoaded,
+                        viewModel = viewModel,
+                        currentSongIdFlow = currentSongId,
+                        selectedSongIds = selectedSongIds,
+                        collapsedAlbumNames = collapsedAlbumNames,
+                        sortOption = sortOption,
+                        sortDirection = sortDirection,
+                        actions = songListActions,
+                        onToggleSelect = toggleSelectSong,
+                        searchQuery = searchQuery,
+                        albumBrowseActions = albumBrowseActions,
+                        artistBrowseActions = artistBrowseActions,
+                        genreBrowseActions = genreBrowseActions,
+                        fastScrollSettings = fastScrollSettings,
+                        listStates = browseListStates,
+                        onAddSongsToPlaylist = { localTargetPlaylistForAddition = it },
+                        onAddManyToPlaylist = { songDialogs.onAddManyToPlaylist(it) },
+                    )
+                }
             }
         }
 

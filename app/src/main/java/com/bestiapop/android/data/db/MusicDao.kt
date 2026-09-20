@@ -204,11 +204,21 @@ interface MusicDao {
         durationMs: Long,
     )
 
-    @Query("INSERT OR REPLACE INTO song_play_stats (songId, lastPlayedAt) VALUES (:songId, :ts)")
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertSongPlayStat(stat: SongPlayStat)
+
+    @Query("SELECT * FROM song_play_stats WHERE songId = :songId")
+    suspend fun getSongPlayStat(songId: Long): SongPlayStat?
+
+    @Transaction
     suspend fun updateLastPlayedAt(
         songId: Long,
         ts: Long,
-    )
+    ) {
+        val current = getSongPlayStat(songId)
+        val newCount = (current?.playCount ?: 0) + 1
+        upsertSongPlayStat(SongPlayStat(songId = songId, lastPlayedAt = ts, playCount = newCount))
+    }
 
     @Query("SELECT * FROM song_play_stats")
     fun getPlayStatsFlow(): Flow<List<SongPlayStat>>
